@@ -195,6 +195,13 @@ def transfer_between_branches(
 
     if clase == Transferencia.Clase.DINERO and (monto is None or monto <= 0):
         raise ValidationError({"monto": "El monto es obligatorio para transferencias de dinero."})
+    if clase == Transferencia.Clase.DINERO and (caja_origen is None or caja_destino is None):
+        raise ValidationError(
+            {
+                "caja_origen": "Las transferencias de dinero requieren caja origen y destino.",
+                "caja_destino": "Las transferencias de dinero requieren caja origen y destino.",
+            }
+        )
     if clase == Transferencia.Clase.MERCADERIA and not observacion:
         raise ValidationError({"observacion": "La observacion es obligatoria para mercaderia."})
 
@@ -267,18 +274,14 @@ def close_box(
         raise ValidationError({"justificacion": "La diferencia supera 10.000 y requiere justificacion."})
 
     ajuste_movimiento = None
-    if diferencia != 0:
+    if diferencia != 0 and abs_difference <= CLOSING_DIFF_THRESHOLD:
         ajuste_movimiento = _create_movement(
             caja=caja,
             tipo=MovimientoCaja.Tipo.AJUSTE_CIERRE,
             sentido=MovimientoCaja.Sentido.INGRESO if diferencia > 0 else MovimientoCaja.Sentido.EGRESO,
             monto=abs_difference,
             categoria="CIERRE",
-            observacion=(
-                "Ajuste de cierre automatico"
-                if abs_difference <= CLOSING_DIFF_THRESHOLD
-                else "Ajuste de cierre con diferencia grave"
-            ),
+            observacion="Ajuste de cierre automatico",
             creado_por=cerrado_por,
         )
 

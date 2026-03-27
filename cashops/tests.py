@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from django.urls import reverse
 
 from .models import AlertaOperativa, Caja, CierreCaja, MovimientoCaja, Sucursal, Turno
 from .services import (
@@ -115,6 +116,7 @@ class CashopsServiceTests(TestCase):
         self.assertEqual(cierre.estado, CierreCaja.Estado.JUSTIFICADO)
         self.assertTrue(hasattr(cierre, "justificacion"))
         self.assertEqual(AlertaOperativa.objects.count(), 1)
+        self.assertIsNone(cierre.ajuste_movimiento)
 
     def test_closed_box_rejects_new_movements(self):
         caja = open_box(user=self.user, turno=self.turno, sucursal=self.branch_a, monto_inicial=Decimal("1000.00"))
@@ -149,6 +151,17 @@ class CashopsServiceTests(TestCase):
         self.assertEqual(caja_origen.saldo_esperado, Decimal("1700.00"))
         self.assertEqual(caja_destino.saldo_esperado, Decimal("800.00"))
 
+    def test_branch_cash_transfer_requires_origin_and_destination_boxes(self):
+        with self.assertRaises(ValidationError):
+            transfer_between_branches(
+                sucursal_origen=self.branch_a,
+                sucursal_destino=self.branch_b,
+                clase="DINERO",
+                monto=Decimal("300.00"),
+                observacion="Envio incompleto",
+                creado_por=self.user,
+            )
+
     def test_turn_closes_after_last_box_is_closed(self):
         caja = open_box(user=self.user, turno=self.turno, sucursal=self.branch_a, monto_inicial=Decimal("1000.00"))
 
@@ -156,3 +169,34 @@ class CashopsServiceTests(TestCase):
 
         self.turno.refresh_from_db()
         self.assertEqual(self.turno.estado, Turno.Estado.CERRADO)
+
+
+class CashopsViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="viewer", password="test")
+        self.branch = Sucursal.objects.create(codigo="SUC-V", nombre="Sucursal Vista")
+        self.turno = Turno.objects.create(
+            sucursal=self.branch,
+            fecha_operativa="2026-03-27",
+            tipo=Turno.Tipo.MANANA,
+            estado=Turno.Estado.ABIERTO,
+            creado_por=self.user,
+        )
+        self.caja = open_box(user=self.user, turno=self.turno, sucursal=self.branch, monto_inicial=Decimal("1000.00"))
+        self.client.force_login(self.user)
+
+    def test_close_preview_indicates_justification_for_large_difference(self):
+        response = self.client.get(
+            reverse("cashops:box_close_preview", args=[self.caja.pk]),
+            {"saldo_fisico": "15050.00"},
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "justificacion obligatoria")
+
+    def test_close_view_renders_htmx_preview_container(self):
+        response = self.client.get(reverse("cashops:box_close", args=[self.caja.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="close-preview"', html=False)

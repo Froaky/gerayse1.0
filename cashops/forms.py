@@ -172,10 +172,20 @@ class TransferenciaEntreSucursalesForm(forms.Form):
         clase = cleaned_data.get("clase")
         monto = cleaned_data.get("monto")
         observacion = (cleaned_data.get("observacion") or "").strip()
+        caja_origen = cleaned_data.get("caja_origen")
+        caja_destino = cleaned_data.get("caja_destino")
         if sucursal_origen and sucursal_destino and sucursal_origen == sucursal_destino:
             self.add_error("sucursal_destino", "El origen y el destino no pueden ser la misma sucursal.")
         if clase == Transferencia.Clase.DINERO and (monto is None or monto <= 0):
             self.add_error("monto", "El monto es obligatorio para transferencias de dinero.")
+        if clase == Transferencia.Clase.DINERO and not caja_origen:
+            self.add_error("caja_origen", "La caja origen es obligatoria para transferencias de dinero.")
+        if clase == Transferencia.Clase.DINERO and not caja_destino:
+            self.add_error("caja_destino", "La caja destino es obligatoria para transferencias de dinero.")
+        if caja_origen and sucursal_origen and caja_origen.sucursal_id != sucursal_origen.id:
+            self.add_error("caja_origen", "La caja origen debe pertenecer a la sucursal origen.")
+        if caja_destino and sucursal_destino and caja_destino.sucursal_id != sucursal_destino.id:
+            self.add_error("caja_destino", "La caja destino debe pertenecer a la sucursal destino.")
         if clase == Transferencia.Clase.MERCADERIA and not observacion:
             self.add_error("observacion", "La observacion es obligatoria para mercaderia.")
         return cleaned_data

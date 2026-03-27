@@ -13,8 +13,8 @@ urlpatterns = [
     path("cajas/nueva/", views.open_box_view, name="box_open"),
     path("cajas/<int:box_id>/gasto/", views.register_expense_view, name="box_expense"),
     path("cajas/<int:box_id>/pos/", views.register_card_sale_view, name="box_pos"),
+    path("cajas/<int:box_id>/cerrar/preview/", views.close_box_preview, name="box_close_preview"),
     path("cajas/<int:box_id>/cerrar/", views.close_box_view, name="box_close"),
     path("traspasos/cajas/", views.transfer_between_boxes_view, name="transfer_boxes"),
     path("traspasos/sucursales/", views.transfer_between_branches_view, name="transfer_branches"),
 ]
-

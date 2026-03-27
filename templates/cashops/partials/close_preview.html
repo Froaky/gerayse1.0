@@ -1,0 +1,38 @@
+<section class="summary" style="margin-top:8px;">
+  <span class="muted">Previsualizacion del cierre</span>
+  <div class="list" style="margin-top:12px;">
+    <div class="list-item">
+      <div class="row">
+        <strong>Saldo esperado</strong>
+        <span>${{ saldo_esperado }}</span>
+      </div>
+      {% if invalid_amount %}
+        <p class="muted" style="margin-top:8px;">Ingresar un saldo fisico valido para calcular la diferencia.</p>
+      {% elif not has_preview %}
+        <p class="muted" style="margin-top:8px;">Al ingresar el saldo fisico se calcula la diferencia automaticamente.</p>
+      {% else %}
+        <div class="row" style="margin-top:8px;">
+          <span class="muted">Saldo fisico</span>
+          <strong>${{ saldo_fisico }}</strong>
+        </div>
+        <div class="row" style="margin-top:8px;">
+          <span class="muted">Diferencia</span>
+          <strong>{% if diferencia > 0 %}+{% endif %}${{ diferencia }}</strong>
+        </div>
+        {% if requires_justification %}
+          <div class="message error" style="margin-top:12px;">
+            La diferencia supera ${{ closing_diff_threshold }}. Se requiere justificacion obligatoria y se generara una alerta.
+          </div>
+        {% elif diferencia == 0 %}
+          <div class="message success" style="margin-top:12px;">
+            Cierre sin diferencia. La caja puede cerrarse de inmediato.
+          </div>
+        {% else %}
+          <div class="message success" style="margin-top:12px;">
+            Diferencia dentro del rango automatico. Se registrara el ajuste de cierre.
+          </div>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+</section>

@@ -1,3 +1,5 @@
+from decimal import Decimal, InvalidOperation
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Q
@@ -18,6 +20,7 @@ from .forms import (
 )
 from .models import Caja, CierreCaja, Sucursal, Turno
 from .services import (
+    CLOSING_DIFF_THRESHOLD,
     close_box,
     open_box,
     register_card_sale,
@@ -58,6 +61,34 @@ def _hx_redirect(url: str) -> HttpResponse:
 def _render_form(request, full_template: str, partial_template: str, context: dict, status: int = 200):
     template = partial_template if _is_htmx(request) else full_template
     return render(request, template, context, status=status)
+
+
+def _build_close_preview_context(box: Caja, raw_amount: str | None = None):
+    saldo_fisico = None
+    diferencia = None
+    requires_justification = False
+    invalid_amount = False
+    has_preview = False
+
+    if raw_amount not in (None, ""):
+        try:
+            saldo_fisico = Decimal(raw_amount)
+            diferencia = saldo_fisico - box.saldo_esperado
+            requires_justification = abs(diferencia) > CLOSING_DIFF_THRESHOLD
+            has_preview = True
+        except (InvalidOperation, TypeError):
+            invalid_amount = True
+
+    return {
+        "box": box,
+        "saldo_esperado": box.saldo_esperado,
+        "saldo_fisico": saldo_fisico,
+        "diferencia": diferencia,
+        "requires_justification": requires_justification,
+        "closing_diff_threshold": CLOSING_DIFF_THRESHOLD,
+        "invalid_amount": invalid_amount,
+        "has_preview": has_preview,
+    }
 
 
 @login_required
@@ -345,10 +376,25 @@ def transfer_between_branches_view(request):
 
 
 @login_required
+def close_box_preview(request, box_id: int):
+    box = _get_box_for_request(request, box_id)
+    context = _build_close_preview_context(box, request.GET.get("saldo_fisico"))
+    return render(request, "cashops/partials/close_preview.html", context)
+
+
+@login_required
 @require_http_methods(["GET", "POST"])
 def close_box_view(request, box_id: int):
     box = _get_box_for_request(request, box_id)
     form = CierreCajaForm(request.POST or None, caja=box)
+    form.fields["saldo_fisico"].widget.attrs.update(
+        {
+            "hx-get": reverse("cashops:box_close_preview", args=[box.pk]),
+            "hx-target": "#close-preview",
+            "hx-trigger": "input changed delay:250ms, blur",
+            "hx-include": "closest form",
+        }
+    )
     if request.method == "POST" and form.is_valid():
         cierre = close_box(
             caja=box,
@@ -363,17 +409,19 @@ def close_box_view(request, box_id: int):
         url = reverse("cashops:dashboard")
         return _hx_redirect(url) if _is_htmx(request) else redirect(url)
 
-    return _render_form(
+    context = {
+        "title": "Cerrar caja",
+        "subtitle": f"Caja activa: {box.id}",
+        "form": form,
+        "submit_label": "Cerrar caja",
+        "back_url": f"{reverse('cashops:dashboard')}?box={box.pk}",
+        "form_action": reverse("cashops:box_close", args=[box.pk]),
+        "preview_url": reverse("cashops:box_close_preview", args=[box.pk]),
+        "preview": _build_close_preview_context(box, request.POST.get("saldo_fisico")),
+    }
+    return render(
         request,
-        "cashops/form_page.html",
-        "cashops/partials/form_card.html",
-        {
-            "title": "Cerrar caja",
-            "subtitle": f"Caja activa: {box.id} | Saldo esperado: {box.saldo_esperado}",
-            "form": form,
-            "submit_label": "Cerrar caja",
-            "back_url": f"{reverse('cashops:dashboard')}?box={box.pk}",
-            "form_action": reverse("cashops:box_close", args=[box.pk]),
-        },
+        "cashops/close_box.html",
+        context,
         status=400 if request.method == "POST" and not form.is_valid() else 200,
     )

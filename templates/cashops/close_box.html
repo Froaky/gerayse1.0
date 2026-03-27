@@ -1,0 +1,50 @@
+{% extends "cashops/layout.html" %}
+{% block title %}Cerrar caja | Gerayse{% endblock %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>{{ title }}</h1>
+        <p class="muted">{{ subtitle }} | Saldo esperado: ${{ preview.saldo_esperado }}</p>
+      </div>
+      <a class="button-secondary" href="{{ back_url }}">Volver</a>
+    </div>
+
+    {% if form.non_field_errors %}
+      <ul class="errors">
+        {% for error in form.non_field_errors %}
+          <li>{{ error }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    <form method="post" action="{{ form_action }}" class="stack" style="margin-top:16px;">
+      {% csrf_token %}
+      <div class="field">
+        <label for="{{ form.saldo_fisico.id_for_label }}">{{ form.saldo_fisico.label }}</label>
+        {{ form.saldo_fisico }}
+        {% for error in form.saldo_fisico.errors %}
+          <div class="error">{{ error }}</div>
+        {% endfor %}
+      </div>
+
+      <div class="field">
+        <label for="{{ form.justificacion.id_for_label }}">{{ form.justificacion.label }}</label>
+        {{ form.justificacion }}
+        <small class="muted">Solo es obligatoria si la diferencia supera ${{ preview.closing_diff_threshold }}.</small>
+        {% for error in form.justificacion.errors %}
+          <div class="error">{{ error }}</div>
+        {% endfor %}
+      </div>
+
+      <div id="close-preview">
+        {% include "cashops/partials/close_preview.html" with box=preview.box saldo_esperado=preview.saldo_esperado saldo_fisico=preview.saldo_fisico diferencia=preview.diferencia requires_justification=preview.requires_justification closing_diff_threshold=preview.closing_diff_threshold invalid_amount=preview.invalid_amount has_preview=preview.has_preview %}
+      </div>
+
+      <div class="row" style="margin-top:8px;">
+        <span class="muted">El cierre valida antes de registrar la diferencia.</span>
+        <button class="button" type="submit">{{ submit_label }}</button>
+      </div>
+    </form>
+  </section>
+{% endblock %}
