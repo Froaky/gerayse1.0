@@ -1,4 +1,8 @@
+import sys
+
 from django.contrib import admin
+from django.contrib.staticfiles.urls import staticfiles_urlpatterns
+from django.conf import settings
 from django.urls import include, path
 
 urlpatterns = [
@@ -6,3 +10,6 @@ urlpatterns = [
     path('', include('users.urls')),
     path('', include('cashops.urls')),
 ]
+
+if settings.DEBUG or "runserver" in sys.argv:
+    urlpatterns += staticfiles_urlpatterns()

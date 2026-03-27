@@ -43,6 +43,7 @@
       .brand strong { font-size: 1.05rem; letter-spacing: 0.02em; }
       .brand span { color: var(--muted); font-size: 0.92rem; }
       .nav { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+      .nav form { margin: 0; }
       .chip, .button, .button-secondary, .card-link {
         display: inline-flex;
         align-items: center;
@@ -54,6 +55,10 @@
         background: var(--panel);
         box-shadow: var(--shadow);
         font-weight: 600;
+      }
+      .chip-button {
+        cursor: pointer;
+        font: inherit;
       }
       .button { background: var(--accent); color: #fff; border-color: transparent; }
       .button-secondary { background: var(--panel-soft); color: var(--text); }
@@ -178,7 +183,10 @@
           <a class="chip" href="{% url 'cashops:turno_list' %}">Turnos</a>
           {% if request.user.is_authenticated %}
             <span class="chip">{{ request.user }}</span>
-            <a class="chip" href="{% url 'users:logout' %}">Salir</a>
+            <form method="post" action="{% url 'users:logout' %}">
+              {% csrf_token %}
+              <button class="chip chip-button" type="submit">Salir</button>
+            </form>
           {% endif %}
         </nav>
       </header>

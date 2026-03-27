@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 
 import environ
@@ -14,6 +15,7 @@ SECRET_KEY = env(
     default="django-insecure-gerayse-dev-key-change-me",
 )
 DEBUG = env.bool("DEBUG", default=True)
+RUNNING_DEV_SERVER = "runserver" in sys.argv
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
 INSTALLED_APPS = [
@@ -92,6 +94,8 @@ STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+WHITENOISE_USE_FINDERS = DEBUG or RUNNING_DEV_SERVER
+WHITENOISE_AUTOREFRESH = DEBUG or RUNNING_DEV_SERVER
 
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'

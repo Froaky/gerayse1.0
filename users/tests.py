@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.urls import reverse
 from django.test import TestCase
 
 from users.models import Role, User
@@ -41,3 +42,18 @@ class AdminRegistrationTests(TestCase):
     def test_role_and_user_are_registered_in_admin(self):
         self.assertIn(Role, admin.site._registry)
         self.assertIn(User, admin.site._registry)
+
+
+class AuthFlowTests(TestCase):
+    def test_logout_requires_post_and_ends_session(self):
+        user = User.objects.create_user(
+            username="operador_logout",
+            password="secret12345",
+        )
+        self.client.force_login(user)
+
+        response = self.client.post(reverse("users:logout"))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertRedirects(response, reverse("users:login"), fetch_redirect_response=False)
+        self.assertNotIn("_auth_user_id", self.client.session)

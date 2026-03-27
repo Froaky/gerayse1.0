@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="{% static 'css/gerayse.css' %}">
     {% block extra_head %}{% endblock %}
   </head>
-  <body class="app-shell">
+  <body class="app-shell {% block body_class %}{% endblock %}">
     <div class="app-shell__bg"></div>
     <div class="app-shell__grain"></div>
 
@@ -23,24 +23,27 @@
       </a>
 
       <div class="topbar__status">
-        <span class="pill pill--muted">MVP EP-01</span>
-        {% block topbar_status %}{% endblock %}
+        {% block topbar_status %}
+          <span class="pill pill--muted">Operacion diaria</span>
+        {% endblock %}
       </div>
     </header>
 
-    <main class="layout">
-      <aside class="sidebar">
-        <nav class="nav-card" aria-label="Navegacion principal">
-          <a class="nav-card__item" href="/">Dashboard</a>
-          <a class="nav-card__item" href="#acciones">Operacion rapida</a>
-          <a class="nav-card__item" href="#movimientos">Movimientos</a>
-          <a class="nav-card__item" href="#cierre">Cierre</a>
-        </nav>
-        <section class="info-card">
-          <p class="eyebrow">Regla operativa</p>
-          <p>La caja activa siempre manda. Cada movimiento queda trazado y el cierre valida la diferencia.</p>
-        </section>
-      </aside>
+    <main class="layout {% if not request.user.is_authenticated %}layout--auth{% endif %}">
+      {% if request.user.is_authenticated %}
+        <aside class="sidebar">
+          <nav class="nav-card" aria-label="Navegacion principal">
+            <a class="nav-card__item" href="/">Dashboard</a>
+            <a class="nav-card__item" href="#acciones">Operacion rapida</a>
+            <a class="nav-card__item" href="#movimientos">Movimientos</a>
+            <a class="nav-card__item" href="#cierre">Cierre</a>
+          </nav>
+          <section class="info-card">
+            <p class="eyebrow">Regla operativa</p>
+            <p>La caja activa siempre manda. Cada movimiento queda trazado y el cierre valida la diferencia.</p>
+          </section>
+        </aside>
+      {% endif %}
 
       <section class="content">
         {% if messages %}
@@ -55,12 +58,14 @@
       </section>
     </main>
 
-    <nav class="mobile-nav" aria-label="Acciones rapidas">
-      <a href="/">Inicio</a>
-      <a href="#acciones">Caja</a>
-      <a href="#movimientos">Movimientos</a>
-      <a href="#cierre">Cerrar</a>
-    </nav>
+    {% if request.user.is_authenticated %}
+      <nav class="mobile-nav" aria-label="Acciones rapidas">
+        <a href="/">Inicio</a>
+        <a href="#acciones">Caja</a>
+        <a href="#movimientos">Movimientos</a>
+        <a href="#cierre">Cerrar</a>
+      </nav>
+    {% endif %}
 
     {% block scripts %}{% endblock %}
   </body>

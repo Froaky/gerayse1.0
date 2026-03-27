@@ -1,38 +1,60 @@
 {% extends "base.html" %}
 
 {% block title %}Gerayse | Ingresar{% endblock %}
+{% block body_class %}app-shell--auth{% endblock %}
+{% block topbar_status %}
+  <span class="pill auth-pill">Acceso seguro</span>
+{% endblock %}
 
 {% block content %}
   <section class="auth-shell">
-    <article class="auth-card">
-      <p class="eyebrow">Acceso operativo</p>
-      <h1>Ingresar a Gerayse</h1>
-      <p class="muted">Acceso rapido para operar cajas, turnos y cierres desde el celular o la computadora.</p>
+    <div class="auth-layout">
+      <article class="auth-card auth-card--login">
+        <div class="auth-card__header">
+          <span class="auth-badge">Acceso</span>
+          <h2>Ingresar</h2>
+          <p class="muted">Usa tu cuenta operativa para continuar.</p>
+        </div>
 
-      <form method="post" class="form-stack" novalidate>
-        {% csrf_token %}
-        {% if form.non_field_errors %}
-          <div class="alert alert--danger">{{ form.non_field_errors }}</div>
-        {% endif %}
+        <form method="post" class="form-stack" novalidate>
+          {% csrf_token %}
+          {% if form.non_field_errors %}
+            <div class="alert alert--danger">{{ form.non_field_errors }}</div>
+          {% endif %}
 
-        <label class="field">
-          <span>Usuario</span>
-          {{ form.username }}
-          {% if form.username.errors %}<small class="field__error">{{ form.username.errors }}</small>{% endif %}
-        </label>
+          <label class="field">
+            <span>Usuario</span>
+            {{ form.username }}
+            {% if form.username.errors %}<small class="field__error">{{ form.username.errors }}</small>{% endif %}
+          </label>
 
-        <label class="field">
-          <span>Contrasena</span>
-          {{ form.password }}
-          {% if form.password.errors %}<small class="field__error">{{ form.password.errors }}</small>{% endif %}
-        </label>
+          <label class="field">
+            <span>Contrasena</span>
+            {{ form.password }}
+            {% if form.password.errors %}<small class="field__error">{{ form.password.errors }}</small>{% endif %}
+          </label>
 
-        {% if next %}
-          <input type="hidden" name="next" value="{{ next }}">
-        {% endif %}
+          {% if next %}
+            <input type="hidden" name="next" value="{{ next }}">
+          {% endif %}
 
-        <button class="button button--primary" type="submit">Entrar</button>
-      </form>
-    </article>
+          <button class="button button--primary button--block" type="submit">Entrar</button>
+        </form>
+
+        <p class="auth-help">Si no podes ingresar, pedi acceso al administrador del sistema.</p>
+      </article>
+
+      <article class="auth-copy">
+        <p class="eyebrow">Sistema de cajas</p>
+        <h1>Ingreso simple, claro y comodo</h1>
+        <p class="auth-lead">Pensado para entrar rapido, entender todo de un vistazo y trabajar bien tanto en celular como en computadora.</p>
+
+        <ul class="auth-list">
+          <li><strong>Rapido.</strong> Acceso directo a la operacion diaria.</li>
+          <li><strong>Claro.</strong> Cajas, turnos y cierres sin pasos innecesarios.</li>
+          <li><strong>Confiable.</strong> Movimientos y diferencias con trazabilidad.</li>
+        </ul>
+      </article>
+    </div>
   </section>
 {% endblock %}

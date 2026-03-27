@@ -13,6 +13,7 @@ class GerayseLoginView(LoginView):
                 "class": "app-input",
                 "placeholder": "Usuario",
                 "autocomplete": "username",
+                "autofocus": True,
             }
         )
         form.fields["password"].widget.attrs.update(
