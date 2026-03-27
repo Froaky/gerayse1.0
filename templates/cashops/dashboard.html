@@ -1,0 +1,134 @@
+{% extends "cashops/layout.html" %}
+{% block title %}Dashboard | Gerayse{% endblock %}
+{% block content %}
+  <section class="hero">
+    <div class="card">
+      <h1>Operacion de cajas</h1>
+      <p class="muted">Resumen rapido para celular. Abrir, mover, vender y cerrar sin perder trazabilidad.</p>
+    </div>
+    <div class="summary-grid">
+      <div class="summary">
+        <span class="muted">Cajas abiertas</span>
+        <strong>{{ open_boxes|length }}</strong>
+      </div>
+      <div class="summary">
+        <span class="muted">Turnos abiertos</span>
+        <strong>{{ turnos_abiertos|length }}</strong>
+      </div>
+      <div class="summary">
+        <span class="muted">Sucursales activas</span>
+        <strong>{{ sucursales|length }}</strong>
+      </div>
+    </div>
+  </section>
+
+  {% if selected_box %}
+    <section class="grid layout-two">
+      <div class="card">
+        <div class="row">
+          <div>
+            <span class="badge">Caja activa</span>
+            <h2 style="margin-top:8px;">Caja #{{ selected_box.id }}</h2>
+          </div>
+          <a class="button-secondary" href="{% url 'cashops:dashboard' %}?box={{ selected_box.id }}">Recargar</a>
+        </div>
+        <div class="summary-grid" style="margin-top:14px;">
+          <div class="summary">
+            <span class="muted">Sucursal</span>
+            <strong>{{ selected_box.sucursal.nombre }}</strong>
+          </div>
+          <div class="summary">
+            <span class="muted">Turno</span>
+            <strong>{{ selected_box.turno.get_tipo_display }}</strong>
+          </div>
+          <div class="summary">
+            <span class="muted">Saldo esperado</span>
+            <strong>${{ selected_box.saldo_esperado }}</strong>
+          </div>
+        </div>
+
+        {% if selected_box.estado == 'ABIERTA' %}
+          <div class="action-grid" style="margin-top:16px;">
+            <a class="action-card" href="{% url 'cashops:box_expense' selected_box.id %}">
+              <span>Gasto rapido</span>
+              <small>monto, categoria, observacion</small>
+            </a>
+            <a class="action-card" href="{% url 'cashops:box_pos' selected_box.id %}">
+              <span>Venta POS</span>
+              <small>carga rapida del total</small>
+            </a>
+            <a class="action-card" href="{% url 'cashops:box_close' selected_box.id %}">
+              <span>Cerrar caja</span>
+              <small>saldo fisico y justificacion</small>
+            </a>
+            <a class="action-card" href="{% url 'cashops:transfer_boxes' %}">
+              <span>Traspaso entre cajas</span>
+              <small>origen, destino y monto</small>
+            </a>
+            <a class="action-card" href="{% url 'cashops:transfer_branches' %}">
+              <span>Traspaso sucursal</span>
+              <small>dinero o mercaderia</small>
+            </a>
+            <a class="action-card" href="{% url 'cashops:box_open' %}">
+              <span>Abrir otra caja</span>
+              <small>nuevo operador o contexto</small>
+            </a>
+          </div>
+        {% else %}
+          <div class="summary" style="margin-top:16px;">
+            <span class="muted">Estado</span>
+            <strong>Caja cerrada</strong>
+            <p class="muted" style="margin:0;">Abrir una nueva caja para seguir operando.</p>
+          </div>
+        {% endif %}
+      </div>
+
+      <div class="card">
+        <h3>Cajas abiertas</h3>
+        <div class="list" style="margin-top:12px;">
+          {% for box in open_boxes %}
+            <a class="list-item" href="{% url 'cashops:dashboard' %}?box={{ box.id }}">
+              <div class="row">
+                <strong>#{{ box.id }} - {{ box.usuario }}</strong>
+                <span class="badge">{{ box.sucursal.codigo }}</span>
+              </div>
+              <div class="row" style="margin-top:8px;">
+                <span class="muted">{{ box.turno.get_tipo_display }} | ${{ box.saldo_esperado }}</span>
+                <span class="badge-muted">{{ box.estado }}</span>
+              </div>
+            </a>
+          {% empty %}
+            <p class="muted">No hay cajas abiertas.</p>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top:16px;">
+      <div class="row">
+        <h3>Ultimos movimientos</h3>
+        <span class="badge-muted">{{ recent_movements|length }} registros</span>
+      </div>
+      {% include "cashops/partials/movement_list.html" with movements=recent_movements %}
+    </section>
+  {% else %}
+    <section class="card">
+      <h2>No hay caja seleccionada</h2>
+      <p class="muted">Abrir una caja o elegir una activa para ver movimientos y cargar operaciones.</p>
+      <div class="action-grid" style="margin-top:16px;">
+        <a class="action-card" href="{% url 'cashops:box_open' %}">
+          <span>Abrir caja</span>
+          <small>inicio de turno</small>
+        </a>
+        <a class="action-card" href="{% url 'cashops:sucursal_create' %}">
+          <span>Nueva sucursal</span>
+          <small>alta administrativa</small>
+        </a>
+        <a class="action-card" href="{% url 'cashops:turno_create' %}">
+          <span>Nuevo turno</span>
+          <small>T.M. o T.T.</small>
+        </a>
+      </div>
+    </section>
+  {% endif %}
+{% endblock %}

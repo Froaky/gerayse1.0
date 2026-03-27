@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Gerayse{% endblock %}</title>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <style>
+      :root {
+        --bg: #f4efe8;
+        --panel: #ffffff;
+        --panel-soft: #f8f5f0;
+        --text: #1f1d1a;
+        --muted: #6c6459;
+        --line: #ded6cb;
+        --accent: #1f5b4d;
+        --accent-2: #d47d2c;
+        --danger: #9b2d30;
+        --success: #2f6b3d;
+        --shadow: 0 12px 30px rgba(35, 29, 19, 0.08);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(31, 91, 77, 0.08), transparent 28%),
+          radial-gradient(circle at top right, rgba(212, 125, 44, 0.08), transparent 24%),
+          var(--bg);
+      }
+      a { color: inherit; text-decoration: none; }
+      .shell { max-width: 1200px; margin: 0 auto; padding: 16px; }
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+      }
+      .brand { display: flex; flex-direction: column; gap: 2px; }
+      .brand strong { font-size: 1.05rem; letter-spacing: 0.02em; }
+      .brand span { color: var(--muted); font-size: 0.92rem; }
+      .nav { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+      .chip, .button, .button-secondary, .card-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 44px;
+        padding: 10px 14px;
+        border-radius: 14px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        font-weight: 600;
+      }
+      .button { background: var(--accent); color: #fff; border-color: transparent; }
+      .button-secondary { background: var(--panel-soft); color: var(--text); }
+      .grid { display: grid; gap: 16px; }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        box-shadow: var(--shadow);
+        padding: 16px;
+      }
+      .hero {
+        display: grid;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+      .hero h1, .card h2, .card h3 { margin: 0; }
+      .muted { color: var(--muted); }
+      .summary-grid { display: grid; gap: 12px; }
+      .summary {
+        display: grid;
+        gap: 4px;
+        padding: 14px;
+        border-radius: 16px;
+        background: linear-gradient(180deg, var(--panel), var(--panel-soft));
+        border: 1px solid var(--line);
+      }
+      .summary strong { font-size: 1.15rem; }
+      .action-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .action-card {
+        min-height: 86px;
+        padding: 14px;
+        border-radius: 18px;
+        background: linear-gradient(180deg, rgba(31, 91, 77, 0.08), rgba(31, 91, 77, 0.03));
+        border: 1px solid rgba(31, 91, 77, 0.18);
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 8px;
+        font-weight: 700;
+      }
+      .action-card small { color: var(--muted); font-weight: 500; }
+      .stack { display: grid; gap: 12px; }
+      .field { display: grid; gap: 6px; }
+      label { font-weight: 600; }
+      .input, .select, .textarea {
+        width: 100%;
+        min-height: 48px;
+        padding: 12px 14px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: #fff;
+        font: inherit;
+      }
+      .textarea { min-height: 96px; resize: vertical; }
+      .errors, .errorlist {
+        margin: 0;
+        padding-left: 18px;
+        color: var(--danger);
+      }
+      .error {
+        color: var(--danger);
+        font-size: 0.92rem;
+      }
+      .messages {
+        display: grid;
+        gap: 8px;
+        margin-bottom: 16px;
+      }
+      .message {
+        padding: 12px 14px;
+        border-radius: 14px;
+        border: 1px solid var(--line);
+        background: #fff;
+      }
+      .message.success { border-color: rgba(47, 107, 61, 0.25); background: rgba(47, 107, 61, 0.08); }
+      .message.error { border-color: rgba(155, 45, 48, 0.25); background: rgba(155, 45, 48, 0.08); }
+      .list { display: grid; gap: 10px; }
+      .list-item {
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--panel);
+      }
+      .row { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 30px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: rgba(31, 91, 77, 0.1);
+        color: var(--accent);
+        font-size: 0.84rem;
+        font-weight: 700;
+      }
+      .badge-danger { background: rgba(155, 45, 48, 0.1); color: var(--danger); }
+      .badge-muted { background: rgba(108, 100, 89, 0.1); color: var(--muted); }
+      .footer-space { height: 24px; }
+      @media (min-width: 880px) {
+        .summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .layout-two { grid-template-columns: 1.2fr 0.8fr; align-items: start; }
+        .action-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <strong>Gerayse</strong>
+          <span>Cajas, turnos y movimientos financieros</span>
+        </div>
+        <nav class="nav">
+          <a class="chip" href="{% url 'cashops:dashboard' %}">Dashboard</a>
+          <a class="chip" href="{% url 'cashops:box_open' %}">Abrir caja</a>
+          <a class="chip" href="{% url 'cashops:sucursal_list' %}">Sucursales</a>
+          <a class="chip" href="{% url 'cashops:turno_list' %}">Turnos</a>
+        </nav>
+      </header>
+      {% if messages %}
+        <div class="messages">
+          {% for message in messages %}
+            <div class="message {{ message.tags }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+      {% block content %}{% endblock %}
+      <div class="footer-space"></div>
+    </div>
+  </body>
+</html>

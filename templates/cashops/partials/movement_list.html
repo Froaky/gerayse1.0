@@ -1,0 +1,26 @@
+<div class="list" style="margin-top:12px;">
+  {% for movement in movements %}
+    <article class="list-item">
+      <div class="row">
+        <strong>{{ movement.get_tipo_display }}</strong>
+        <span class="badge {% if movement.sentido == 'EGRESO' %}badge-danger{% endif %}">
+          {{ movement.sentido }}
+        </span>
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <span class="muted">Monto</span>
+        <strong>${{ movement.monto }}</strong>
+      </div>
+      {% if movement.categoria %}
+        <div class="muted" style="margin-top:6px;">Categoria: {{ movement.categoria }}</div>
+      {% endif %}
+      {% if movement.observacion %}
+        <div class="muted" style="margin-top:6px;">{{ movement.observacion }}</div>
+      {% endif %}
+      <div class="muted" style="margin-top:6px;">{{ movement.creado_en }}</div>
+    </article>
+  {% empty %}
+    <p class="muted">No hay movimientos para mostrar.</p>
+  {% endfor %}
+</div>
+

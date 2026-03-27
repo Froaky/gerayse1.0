@@ -1,0 +1,23 @@
+{% extends "cashops/layout.html" %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>{{ title }}</h1>
+        <p class="muted">Carga administrativa simple, pensada para operar rapido.</p>
+      </div>
+      <a class="button" href="{{ create_url }}">Nuevo</a>
+    </div>
+    <div class="list" style="margin-top:16px;">
+      {% for item in items %}
+        <div class="list-item">
+          <strong>{{ item }}</strong>
+          <div class="muted" style="margin-top:6px;">{{ item.created_at|default:item.creado_en|default:item.abierto_en }}</div>
+        </div>
+      {% empty %}
+        <p class="muted">Sin registros todavia.</p>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}
+
