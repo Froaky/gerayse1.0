@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}Gerayse | Dashboard{% endblock %}
+
+{% block topbar_status %}
+  <span class="pill pill--success">{{ active_box.status }}</span>
+{% endblock %}
+
+{% block content %}
+  <section class="hero-card">
+    <div class="hero-card__header">
+      <div>
+        <p class="eyebrow">{{ active_box.label }}</p>
+        <h1>{{ active_box.name }}</h1>
+        <p class="muted">{{ active_box.branch }} - Turno {{ active_box.turno }}</p>
+      </div>
+      <div class="balance">
+        <span>Saldo esperado</span>
+        <strong>{{ active_box.balance }}</strong>
+      </div>
+    </div>
+
+    <div class="summary-grid">
+      {% for item in operational_summary %}
+        <article class="metric-card">
+          <span class="metric-card__label">{{ item.label }}</span>
+          <strong class="metric-card__value">{{ item.value }}</strong>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="section" id="acciones">
+    <div class="section__heading">
+      <div>
+        <p class="eyebrow">Acciones rapidas</p>
+        <h2>Operacion en pocos taps</h2>
+      </div>
+    </div>
+
+    <div class="action-grid">
+      {% for action in quick_actions %}
+        <a class="action-card" href="{{ action.href }}">
+          <strong>{{ action.label }}</strong>
+          <span>{{ action.hint }}</span>
+        </a>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="section" id="movimientos">
+    <div class="section__heading">
+      <div>
+        <p class="eyebrow">Ultimos movimientos</p>
+        <h2>Libro de caja reciente</h2>
+      </div>
+    </div>
+
+    <div class="stack">
+      {% for movement in recent_movements %}
+        <article class="movement-card movement-card--{{ movement.tone }}">
+          <div>
+            <strong>{{ movement.title }}</strong>
+            <p>{{ movement.meta }}</p>
+          </div>
+          <span>{{ movement.amount }}</span>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="section section--split" id="cierre">
+    <article class="panel panel--warning">
+      <p class="eyebrow">Alertas</p>
+      <ul class="bullet-list">
+        {% for alert in alerts %}
+          <li>{{ alert }}</li>
+        {% endfor %}
+      </ul>
+    </article>
+
+    <article class="panel">
+      <p class="eyebrow">Cierre</p>
+      <h2>Diferencia menor a $10.000 cierra automatico.</h2>
+      <p class="muted">Si la diferencia supera el umbral, el sistema debe exigir justificacion antes de cerrar.</p>
+    </article>
+  </section>
+{% endblock %}

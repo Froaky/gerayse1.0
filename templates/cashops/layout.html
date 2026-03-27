@@ -176,6 +176,10 @@
           <a class="chip" href="{% url 'cashops:box_open' %}">Abrir caja</a>
           <a class="chip" href="{% url 'cashops:sucursal_list' %}">Sucursales</a>
           <a class="chip" href="{% url 'cashops:turno_list' %}">Turnos</a>
+          {% if request.user.is_authenticated %}
+            <span class="chip">{{ request.user }}</span>
+            <a class="chip" href="{% url 'users:logout' %}">Salir</a>
+          {% endif %}
         </nav>
       </header>
       {% if messages %}

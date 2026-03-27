@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 
-from .models import Caja, CierreCaja, MovimientoCaja, Sucursal, Turno
+from .models import AlertaOperativa, Caja, CierreCaja, MovimientoCaja, Sucursal, Turno
 from .services import (
     close_box,
     open_box,
@@ -114,6 +114,7 @@ class CashopsServiceTests(TestCase):
 
         self.assertEqual(cierre.estado, CierreCaja.Estado.JUSTIFICADO)
         self.assertTrue(hasattr(cierre, "justificacion"))
+        self.assertEqual(AlertaOperativa.objects.count(), 1)
 
     def test_closed_box_rejects_new_movements(self):
         caja = open_box(user=self.user, turno=self.turno, sucursal=self.branch_a, monto_inicial=Decimal("1000.00"))
@@ -147,3 +148,11 @@ class CashopsServiceTests(TestCase):
         self.assertEqual(MovimientoCaja.objects.filter(transferencia=transferencia).count(), 2)
         self.assertEqual(caja_origen.saldo_esperado, Decimal("1700.00"))
         self.assertEqual(caja_destino.saldo_esperado, Decimal("800.00"))
+
+    def test_turn_closes_after_last_box_is_closed(self):
+        caja = open_box(user=self.user, turno=self.turno, sucursal=self.branch_a, monto_inicial=Decimal("1000.00"))
+
+        close_box(caja=caja, saldo_fisico=Decimal("1000.00"), cerrado_por=self.user)
+
+        self.turno.refresh_from_db()
+        self.assertEqual(self.turno.estado, Turno.Estado.CERRADO)

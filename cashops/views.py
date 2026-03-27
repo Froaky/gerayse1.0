@@ -1,4 +1,6 @@
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.db.models import Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -14,7 +16,7 @@ from .forms import (
     TransferenciaEntreSucursalesForm,
     VentaTarjetaForm,
 )
-from .models import Caja, Sucursal, Turno
+from .models import Caja, CierreCaja, Sucursal, Turno
 from .services import (
     close_box,
     open_box,
@@ -23,6 +25,24 @@ from .services import (
     transfer_between_boxes,
     transfer_between_branches,
 )
+
+
+def _boxes_for_request(request):
+    queryset = Caja.objects.select_related("sucursal", "turno", "usuario")
+    if request.user.is_superuser:
+        return queryset
+    return queryset.filter(Q(usuario=request.user) | Q(turno__creado_por=request.user)).distinct()
+
+
+def _owned_open_boxes(request):
+    queryset = Caja.objects.select_related("turno", "sucursal", "usuario").filter(estado=Caja.Estado.ABIERTA)
+    if request.user.is_superuser:
+        return queryset
+    return queryset.filter(usuario=request.user)
+
+
+def _get_box_for_request(request, box_id: int):
+    return get_object_or_404(_boxes_for_request(request), pk=box_id)
 
 
 def _is_htmx(request) -> bool:
@@ -40,8 +60,9 @@ def _render_form(request, full_template: str, partial_template: str, context: di
     return render(request, template, context, status=status)
 
 
+@login_required
 def dashboard(request):
-    boxes = Caja.objects.select_related("sucursal", "turno", "usuario").order_by("-abierta_en")
+    boxes = _boxes_for_request(request).order_by("-abierta_en")
     selected_box = None
     box_id = request.GET.get("box")
     if box_id:
@@ -62,10 +83,12 @@ def dashboard(request):
         "recent_movements": recent_movements,
         "turnos_abiertos": Turno.objects.select_related("sucursal").filter(estado=Turno.Estado.ABIERTO),
         "sucursales": Sucursal.objects.filter(activa=True),
+        "alertas": selected_box.alertas.filter(resuelta=False)[:4] if selected_box else [],
     }
     return render(request, "cashops/dashboard.html", context)
 
 
+@login_required
 @require_http_methods(["GET", "POST"])
 def sucursal_create(request):
     form = SucursalForm(request.POST or None)
@@ -91,6 +114,7 @@ def sucursal_create(request):
     )
 
 
+@login_required
 def sucursal_list(request):
     return render(
         request,
@@ -103,6 +127,7 @@ def sucursal_list(request):
     )
 
 
+@login_required
 @require_http_methods(["GET", "POST"])
 def turno_create(request):
     form = TurnoForm(request.POST or None)
@@ -133,6 +158,7 @@ def turno_create(request):
     )
 
 
+@login_required
 def turno_list(request):
     return render(
         request,
@@ -145,6 +171,7 @@ def turno_list(request):
     )
 
 
+@login_required
 @require_http_methods(["GET", "POST"])
 def open_box_view(request):
     form = CajaAperturaForm(request.POST or None)
@@ -152,7 +179,7 @@ def open_box_view(request):
     form.fields["turno"].queryset = Turno.objects.select_related("sucursal").filter(estado=Turno.Estado.ABIERTO)
     if request.method == "POST" and form.is_valid():
         box = open_box(
-            user=request.user if request.user.is_authenticated else None,
+            user=request.user,
             turno=form.cleaned_data["turno"],
             sucursal=form.cleaned_data["sucursal"],
             monto_inicial=form.cleaned_data["monto_inicial"],
@@ -177,9 +204,10 @@ def open_box_view(request):
     )
 
 
+@login_required
 @require_http_methods(["GET", "POST"])
 def register_expense_view(request, box_id: int):
-    box = get_object_or_404(Caja.objects.select_related("turno", "sucursal", "usuario"), pk=box_id)
+    box = _get_box_for_request(request, box_id)
     form = GastoRapidoForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         register_expense(
@@ -187,7 +215,7 @@ def register_expense_view(request, box_id: int):
             monto=form.cleaned_data["monto"],
             categoria=form.cleaned_data["categoria"],
             observacion=form.cleaned_data["observacion"],
-            creado_por=request.user if request.user.is_authenticated else None,
+            creado_por=request.user,
         )
         messages.success(request, "Gasto registrado.")
         url = f"{reverse('cashops:dashboard')}?box={box.pk}"
@@ -209,16 +237,17 @@ def register_expense_view(request, box_id: int):
     )
 
 
+@login_required
 @require_http_methods(["GET", "POST"])
 def register_card_sale_view(request, box_id: int):
-    box = get_object_or_404(Caja.objects.select_related("turno", "sucursal", "usuario"), pk=box_id)
+    box = _get_box_for_request(request, box_id)
     form = VentaTarjetaForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         register_card_sale(
             caja=box,
             monto=form.cleaned_data["monto"],
             observacion=form.cleaned_data["observacion"],
-            creado_por=request.user if request.user.is_authenticated else None,
+            creado_por=request.user,
         )
         messages.success(request, "Venta POS registrada.")
         url = f"{reverse('cashops:dashboard')}?box={box.pk}"
@@ -240,11 +269,12 @@ def register_card_sale_view(request, box_id: int):
     )
 
 
+@login_required
 @require_http_methods(["GET", "POST"])
 def transfer_between_boxes_view(request):
     form = TransferenciaEntreCajasForm(request.POST or None)
     open_boxes = Caja.objects.select_related("turno", "sucursal", "usuario").filter(estado=Caja.Estado.ABIERTA)
-    form.fields["caja_origen"].queryset = open_boxes
+    form.fields["caja_origen"].queryset = _owned_open_boxes(request)
     form.fields["caja_destino"].queryset = open_boxes
     if request.method == "POST" and form.is_valid():
         transfer_between_boxes(
@@ -252,7 +282,7 @@ def transfer_between_boxes_view(request):
             caja_destino=form.cleaned_data["caja_destino"],
             monto=form.cleaned_data["monto"],
             observacion=form.cleaned_data["observacion"],
-            creado_por=request.user if request.user.is_authenticated else None,
+            creado_por=request.user,
         )
         messages.success(request, "Traspaso entre cajas registrado.")
         url = reverse("cashops:dashboard")
@@ -274,13 +304,14 @@ def transfer_between_boxes_view(request):
     )
 
 
+@login_required
 @require_http_methods(["GET", "POST"])
 def transfer_between_branches_view(request):
     form = TransferenciaEntreSucursalesForm(request.POST or None)
     form.fields["sucursal_origen"].queryset = Sucursal.objects.filter(activa=True)
     form.fields["sucursal_destino"].queryset = Sucursal.objects.filter(activa=True)
     open_boxes = Caja.objects.select_related("turno", "sucursal", "usuario").filter(estado=Caja.Estado.ABIERTA)
-    form.fields["caja_origen"].queryset = open_boxes
+    form.fields["caja_origen"].queryset = _owned_open_boxes(request)
     form.fields["caja_destino"].queryset = open_boxes
     if request.method == "POST" and form.is_valid():
         transfer_between_branches(
@@ -291,7 +322,7 @@ def transfer_between_branches_view(request):
             observacion=form.cleaned_data["observacion"],
             caja_origen=form.cleaned_data["caja_origen"],
             caja_destino=form.cleaned_data["caja_destino"],
-            creado_por=request.user if request.user.is_authenticated else None,
+            creado_por=request.user,
         )
         messages.success(request, "Transferencia entre sucursales registrada.")
         url = reverse("cashops:dashboard")
@@ -313,18 +344,22 @@ def transfer_between_branches_view(request):
     )
 
 
+@login_required
 @require_http_methods(["GET", "POST"])
 def close_box_view(request, box_id: int):
-    box = get_object_or_404(Caja.objects.select_related("turno", "sucursal", "usuario"), pk=box_id)
+    box = _get_box_for_request(request, box_id)
     form = CierreCajaForm(request.POST or None, caja=box)
     if request.method == "POST" and form.is_valid():
-        close_box(
+        cierre = close_box(
             caja=box,
             saldo_fisico=form.cleaned_data["saldo_fisico"],
             justificacion=form.cleaned_data["justificacion"],
-            cerrado_por=request.user if request.user.is_authenticated else None,
+            cerrado_por=request.user,
         )
-        messages.success(request, "Caja cerrada.")
+        if cierre.estado == CierreCaja.Estado.JUSTIFICADO:
+            messages.warning(request, "Caja cerrada con diferencia grave y alerta registrada.")
+        else:
+            messages.success(request, "Caja cerrada.")
         url = reverse("cashops:dashboard")
         return _hx_redirect(url) if _is_htmx(request) else redirect(url)
 
@@ -342,4 +377,3 @@ def close_box_view(request, box_id: int):
         },
         status=400 if request.method == "POST" and not form.is_valid() else 200,
     )
-

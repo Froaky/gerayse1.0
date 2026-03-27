@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Caja, CierreCaja, Justificacion, MovimientoCaja, Sucursal, Transferencia, Turno
+from .models import AlertaOperativa, Caja, CierreCaja, Justificacion, MovimientoCaja, Sucursal, Transferencia, Turno
 
 
 @admin.register(Sucursal)
@@ -82,3 +82,11 @@ class JustificacionAdmin(admin.ModelAdmin):
     list_display = ("cierre", "creado_por", "creado_en")
     search_fields = ("motivo",)
     autocomplete_fields = ("cierre", "creado_por")
+
+
+@admin.register(AlertaOperativa)
+class AlertaOperativaAdmin(admin.ModelAdmin):
+    list_display = ("tipo", "caja", "sucursal", "resuelta", "creada_en")
+    list_filter = ("tipo", "resuelta", "sucursal")
+    search_fields = ("mensaje",)
+    autocomplete_fields = ("cierre", "caja", "sucursal")

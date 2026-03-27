@@ -111,6 +111,25 @@
       </div>
       {% include "cashops/partials/movement_list.html" with movements=recent_movements %}
     </section>
+    {% if alertas %}
+      <section class="card" style="margin-top:16px;">
+        <div class="row">
+          <h3>Alertas operativas</h3>
+          <span class="badge-danger">{{ alertas|length }} activas</span>
+        </div>
+        <div class="list" style="margin-top:12px;">
+          {% for alerta in alertas %}
+            <div class="list-item">
+              <div class="row">
+                <strong>{{ alerta.get_tipo_display }}</strong>
+                <span class="badge-danger">Caja #{{ alerta.caja_id }}</span>
+              </div>
+              <p class="muted" style="margin-top:8px;">{{ alerta.mensaje }}</p>
+            </div>
+          {% endfor %}
+        </div>
+      </section>
+    {% endif %}
   {% else %}
     <section class="card">
       <h2>No hay caja seleccionada</h2>

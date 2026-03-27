@@ -308,3 +308,26 @@ class Justificacion(models.Model):
 
     def __str__(self) -> str:
         return f"Justificacion cierre {self.cierre_id}"
+
+
+class AlertaOperativa(models.Model):
+    class Tipo(models.TextChoices):
+        DIFERENCIA_GRAVE = "DIFERENCIA_GRAVE", "Diferencia grave"
+
+    tipo = models.CharField(max_length=30, choices=Tipo.choices, default=Tipo.DIFERENCIA_GRAVE)
+    cierre = models.ForeignKey(CierreCaja, on_delete=models.CASCADE, related_name="alertas")
+    caja = models.ForeignKey(Caja, on_delete=models.PROTECT, related_name="alertas")
+    sucursal = models.ForeignKey(Sucursal, on_delete=models.PROTECT, related_name="alertas")
+    mensaje = models.CharField(max_length=255)
+    resuelta = models.BooleanField(default=False)
+    creada_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-creada_en", "-id"]
+        indexes = [
+            models.Index(fields=["tipo", "resuelta"]),
+            models.Index(fields=["sucursal", "creada_en"]),
+        ]
+
+    def __str__(self) -> str:
+        return self.mensaje

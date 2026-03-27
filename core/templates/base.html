@@ -1,0 +1,67 @@
+{% load static %}
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Gerayse{% endblock %}</title>
+    <meta name="theme-color" content="#102018">
+    <link rel="stylesheet" href="{% static 'css/gerayse.css' %}">
+    {% block extra_head %}{% endblock %}
+  </head>
+  <body class="app-shell">
+    <div class="app-shell__bg"></div>
+    <div class="app-shell__grain"></div>
+
+    <header class="topbar">
+      <a class="brand" href="/">
+        <span class="brand__mark">G</span>
+        <span class="brand__text">
+          <strong>Gerayse</strong>
+          <small>cajas, turnos y cierres</small>
+        </span>
+      </a>
+
+      <div class="topbar__status">
+        <span class="pill pill--muted">MVP EP-01</span>
+        {% block topbar_status %}{% endblock %}
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="sidebar">
+        <nav class="nav-card" aria-label="Navegacion principal">
+          <a class="nav-card__item" href="/">Dashboard</a>
+          <a class="nav-card__item" href="#acciones">Operacion rapida</a>
+          <a class="nav-card__item" href="#movimientos">Movimientos</a>
+          <a class="nav-card__item" href="#cierre">Cierre</a>
+        </nav>
+        <section class="info-card">
+          <p class="eyebrow">Regla operativa</p>
+          <p>La caja activa siempre manda. Cada movimiento queda trazado y el cierre valida la diferencia.</p>
+        </section>
+      </aside>
+
+      <section class="content">
+        {% if messages %}
+          <div class="stack stack--tight">
+            {% for message in messages %}
+              <div class="alert alert--{{ message.tags|default:'info' }}">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        {% block content %}{% endblock %}
+      </section>
+    </main>
+
+    <nav class="mobile-nav" aria-label="Acciones rapidas">
+      <a href="/">Inicio</a>
+      <a href="#acciones">Caja</a>
+      <a href="#movimientos">Movimientos</a>
+      <a href="#cierre">Cerrar</a>
+    </nav>
+
+    {% block scripts %}{% endblock %}
+  </body>
+</html>

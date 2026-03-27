@@ -4,7 +4,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
-from .models import Caja, CierreCaja, Justificacion, MovimientoCaja, Sucursal, Transferencia, Turno
+from .models import AlertaOperativa, Caja, CierreCaja, Justificacion, MovimientoCaja, Sucursal, Transferencia, Turno
 
 
 CLOSING_DIFF_THRESHOLD = Decimal("10000.00")
@@ -75,7 +75,7 @@ def open_box(*, user, turno: Turno, sucursal: Sucursal, monto_inicial: Decimal) 
 
 
 def _validate_open_box(caja: Caja) -> Caja:
-    caja = Caja.objects.select_related("turno", "sucursal", "usuario").get(pk=caja.pk)
+    caja = Caja.objects.select_for_update().select_related("turno", "sucursal", "usuario").get(pk=caja.pk)
     if caja.estado != Caja.Estado.ABIERTA:
         raise ValidationError({"caja": "La caja esta cerrada."})
     if caja.turno.estado != Turno.Estado.ABIERTO:
@@ -274,7 +274,11 @@ def close_box(
             sentido=MovimientoCaja.Sentido.INGRESO if diferencia > 0 else MovimientoCaja.Sentido.EGRESO,
             monto=abs_difference,
             categoria="CIERRE",
-            observacion="Ajuste de cierre automatico",
+            observacion=(
+                "Ajuste de cierre automatico"
+                if abs_difference <= CLOSING_DIFF_THRESHOLD
+                else "Ajuste de cierre con diferencia grave"
+            ),
             creado_por=cerrado_por,
         )
 
@@ -290,11 +294,21 @@ def close_box(
 
     if abs_difference > CLOSING_DIFF_THRESHOLD and justificacion.strip():
         Justificacion.objects.create(cierre=cierre, motivo=justificacion.strip(), creado_por=cerrado_por)
+        AlertaOperativa.objects.create(
+            cierre=cierre,
+            caja=caja,
+            sucursal=caja.sucursal,
+            mensaje=f"Diferencia grave detectada en caja {caja.id}: {diferencia}.",
+        )
 
     caja.estado = Caja.Estado.CERRADA
     caja.cerrada_en = timezone.now()
     caja.cerrada_por = cerrado_por
     caja.save(update_fields=["estado", "cerrada_en", "cerrada_por"])
+    if not caja.turno.cajas.filter(estado=Caja.Estado.ABIERTA).exists():
+        caja.turno.estado = Turno.Estado.CERRADO
+        caja.turno.cerrado_en = timezone.now()
+        caja.turno.save(update_fields=["estado", "cerrado_en"])
     caja_ref.estado = caja.estado
     caja_ref.cerrada_en = caja.cerrada_en
     caja_ref.cerrada_por = caja.cerrada_por

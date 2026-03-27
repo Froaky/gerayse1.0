@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}Gerayse | Ingresar{% endblock %}
+
+{% block content %}
+  <section class="auth-shell">
+    <article class="auth-card">
+      <p class="eyebrow">Acceso operativo</p>
+      <h1>Ingresar a Gerayse</h1>
+      <p class="muted">Acceso rapido para operar cajas, turnos y cierres desde el celular o la computadora.</p>
+
+      <form method="post" class="form-stack" novalidate>
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+          <div class="alert alert--danger">{{ form.non_field_errors }}</div>
+        {% endif %}
+
+        <label class="field">
+          <span>Usuario</span>
+          {{ form.username }}
+          {% if form.username.errors %}<small class="field__error">{{ form.username.errors }}</small>{% endif %}
+        </label>
+
+        <label class="field">
+          <span>Contrasena</span>
+          {{ form.password }}
+          {% if form.password.errors %}<small class="field__error">{{ form.password.errors }}</small>{% endif %}
+        </label>
+
+        {% if next %}
+          <input type="hidden" name="next" value="{{ next }}">
+        {% endif %}
+
+        <button class="button button--primary" type="submit">Entrar</button>
+      </form>
+    </article>
+  </section>
+{% endblock %}
