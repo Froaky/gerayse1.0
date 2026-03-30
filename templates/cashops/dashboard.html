@@ -4,149 +4,335 @@
   <section class="hero">
     <div class="card">
       <h1>Operacion de cajas</h1>
-      <p class="muted">Resumen rapido para celular. Abrir, mover, vender y cerrar sin perder trazabilidad.</p>
+      <p class="muted">Dashboard operativo con alcance explicito. KPIs, semaforo y alertas usan la misma base de calculo y el mismo scope.</p>
     </div>
     <div class="summary-grid">
       <div class="summary">
         <span class="muted">Cajas abiertas</span>
         <strong>{{ open_boxes|length }}</strong>
       </div>
-      <div class="summary">
-        <span class="muted">Turnos abiertos</span>
-        <strong>{{ turnos_abiertos|length }}</strong>
-      </div>
-      <div class="summary">
-        <span class="muted">Sucursales activas</span>
-        <strong>{{ sucursales|length }}</strong>
-      </div>
+      {% if is_cashops_admin %}
+        <div class="summary">
+          <span class="muted">Turnos abiertos</span>
+          <strong>{{ turnos_abiertos|length }}</strong>
+        </div>
+        <div class="summary">
+          <span class="muted">Sucursales activas</span>
+          <strong>{{ sucursales|length }}</strong>
+        </div>
+      {% else %}
+        <div class="summary">
+          <span class="muted">Alcance</span>
+          <strong>Seleccion manual de caja</strong>
+        </div>
+        <div class="summary">
+          <span class="muted">Permisos</span>
+          <strong>Sin vista global</strong>
+        </div>
+      {% endif %}
     </div>
   </section>
 
-  {% if selected_box %}
-    <section class="grid layout-two">
-      <div class="card">
-        <div class="row">
-          <div>
-            <span class="badge">Caja activa</span>
-            <h2 style="margin-top:8px;">Caja #{{ selected_box.id }}</h2>
-          </div>
-          <a class="button-secondary" href="{% url 'cashops:dashboard' %}?box={{ selected_box.id }}">Recargar</a>
-        </div>
-        <div class="summary-grid" style="margin-top:14px;">
-          <div class="summary">
-            <span class="muted">Sucursal</span>
-            <strong>{{ selected_box.sucursal.nombre }}</strong>
-          </div>
-          <div class="summary">
-            <span class="muted">Turno</span>
-            <strong>{{ selected_box.turno.get_tipo_display }}</strong>
-          </div>
-          <div class="summary">
-            <span class="muted">Saldo esperado</span>
-            <strong>${{ selected_box.saldo_esperado }}</strong>
-          </div>
-        </div>
-
-        {% if selected_box.estado == 'ABIERTA' %}
-          <div class="action-grid" style="margin-top:16px;">
-            <a class="action-card" href="{% url 'cashops:box_expense' selected_box.id %}">
-              <span>Gasto rapido</span>
-              <small>monto, categoria, observacion</small>
-            </a>
-            <a class="action-card" href="{% url 'cashops:box_pos' selected_box.id %}">
-              <span>Venta POS</span>
-              <small>carga rapida del total</small>
-            </a>
-            <a class="action-card" href="{% url 'cashops:box_close' selected_box.id %}">
-              <span>Cerrar caja</span>
-              <small>saldo fisico y justificacion</small>
-            </a>
-            <a class="action-card" href="{% url 'cashops:transfer_boxes' %}">
-              <span>Traspaso entre cajas</span>
-              <small>origen, destino y monto</small>
-            </a>
-            <a class="action-card" href="{% url 'cashops:transfer_branches' %}">
-              <span>Traspaso sucursal</span>
-              <small>dinero o mercaderia</small>
-            </a>
-            <a class="action-card" href="{% url 'cashops:box_open' %}">
-              <span>Abrir otra caja</span>
-              <small>nuevo operador o contexto</small>
-            </a>
-          </div>
-        {% else %}
-          <div class="summary" style="margin-top:16px;">
-            <span class="muted">Estado</span>
-            <strong>Caja cerrada</strong>
-            <p class="muted" style="margin:0;">Abrir una nueva caja para seguir operando.</p>
-          </div>
-        {% endif %}
+  <section class="card" style="margin-bottom:16px;">
+    <div class="row">
+      <div>
+        <h3>Alcance del dashboard</h3>
+        <p class="muted">No se autoseleccionan cajas. El alcance visible define tambien KPIs, semaforo y alertas.</p>
       </div>
-
-      <div class="card">
-        <h3>Cajas abiertas</h3>
-        <div class="list" style="margin-top:12px;">
-          {% for box in open_boxes %}
-            <a class="list-item" href="{% url 'cashops:dashboard' %}?box={{ box.id }}">
-              <div class="row">
-                <strong>#{{ box.id }} - {{ box.usuario }}</strong>
-                <span class="badge">{{ box.sucursal.codigo }}</span>
-              </div>
-              <div class="row" style="margin-top:8px;">
-                <span class="muted">{{ box.turno.get_tipo_display }} | ${{ box.saldo_esperado }}</span>
-                <span class="badge-muted">{{ box.estado }}</span>
-              </div>
-            </a>
-          {% empty %}
-            <p class="muted">No hay cajas abiertas.</p>
-          {% endfor %}
-        </div>
+      {% if is_cashops_admin %}
+        <a class="button-secondary" href="{% url 'cashops:alert_panel' %}">Panel de alertas</a>
+      {% endif %}
+    </div>
+    <div class="list-actions">
+      {% if is_cashops_admin %}
+        <a class="button-secondary" href="{% url 'cashops:dashboard' %}?scope=global&fecha={{ dashboard_scope_date|date:'Y-m-d' }}">Global</a>
+        {% for sucursal in sucursales %}
+          <a class="button-secondary" href="{% url 'cashops:dashboard' %}?scope=branch&sucursal={{ sucursal.id }}&fecha={{ dashboard_scope_date|date:'Y-m-d' }}">{{ sucursal.codigo }}</a>
+        {% endfor %}
+      {% endif %}
+      {% for box in open_boxes %}
+        <a class="button-secondary" href="{% url 'cashops:dashboard' %}?scope=box&box={{ box.id }}">Caja #{{ box.id }}</a>
+      {% endfor %}
+    </div>
+    <form method="get" class="stack" style="margin-top:16px;">
+      <input type="hidden" name="scope" value="{{ dashboard_scope }}">
+      {% if selected_branch %}<input type="hidden" name="sucursal" value="{{ selected_branch.id }}">{% endif %}
+      {% if selected_box %}<input type="hidden" name="box" value="{{ selected_box.id }}">{% endif %}
+      <div class="field">
+        <label for="id_fecha">Fecha operativa</label>
+        <input id="id_fecha" class="input" type="date" name="fecha" value="{{ dashboard_scope_date|date:'Y-m-d' }}">
       </div>
-    </section>
-
-    <section class="card" style="margin-top:16px;">
       <div class="row">
-        <h3>Ultimos movimientos</h3>
-        <span class="badge-muted">{{ recent_movements|length }} registros</span>
+        <span class="muted">
+          {% if dashboard_snapshot %}
+            Scope actual: {{ dashboard_snapshot.scope_kind_label }} | {{ dashboard_snapshot.scope_label }}
+          {% else %}
+            Elegi un alcance para ver control operativo.
+          {% endif %}
+        </span>
+        <button class="button" type="submit">Aplicar fecha</button>
       </div>
-      {% include "cashops/partials/movement_list.html" with movements=recent_movements %}
-    </section>
-    {% if alertas %}
-      <section class="card" style="margin-top:16px;">
-        <div class="row">
-          <h3>Alertas operativas</h3>
-          <span class="badge-danger">{{ alertas|length }} activas</span>
+    </form>
+  </section>
+
+  {% if dashboard_snapshot %}
+    <section class="card">
+      <div class="row">
+        <div>
+          <h2>{{ dashboard_snapshot.scope_kind_label }} | {{ dashboard_snapshot.scope_label }}</h2>
+          <p class="muted">Periodo {{ dashboard_snapshot.fecha_operativa }}. Base de calculo: {{ dashboard_snapshot.base_calculo_label }}.</p>
         </div>
-        <div class="list" style="margin-top:12px;">
-          {% for alerta in alertas %}
-            <div class="list-item">
-              <div class="row">
-                <strong>{{ alerta.get_tipo_display }}</strong>
-                <span class="badge-danger">Caja #{{ alerta.caja_id }}</span>
-              </div>
-              <p class="muted" style="margin-top:8px;">{{ alerta.mensaje }}</p>
+        <span class="badge-muted">{{ dashboard_snapshot.base_calculo_codigo }}</span>
+      </div>
+      <div class="summary-grid" style="margin-top:16px;">
+        <div class="summary">
+          <span class="muted">Ingresos</span>
+          <strong>${{ dashboard_snapshot.total_ingresos }}</strong>
+        </div>
+        <div class="summary">
+          <span class="muted">Egresos</span>
+          <strong>${{ dashboard_snapshot.total_egresos }}</strong>
+        </div>
+        <div class="summary">
+          <span class="muted">Total operativo</span>
+          <strong>${{ dashboard_snapshot.total_operativo }}</strong>
+        </div>
+        <div class="summary">
+          <span class="muted">Alertas activas</span>
+          <strong>{{ dashboard_snapshot.active_alert_count }}</strong>
+        </div>
+      </div>
+    </section>
+
+    {% if selected_box %}
+      <section class="grid layout-two" style="margin-top:16px;">
+        <div class="card">
+          <div class="row">
+            <div>
+              <span class="badge">Caja activa</span>
+              <h2 style="margin-top:8px;">Caja #{{ selected_box.id }}</h2>
             </div>
-          {% endfor %}
+            <a class="button-secondary" href="{% url 'cashops:dashboard' %}?scope=box&box={{ selected_box.id }}">Recargar</a>
+          </div>
+          <div class="summary-grid" style="margin-top:14px;">
+            <div class="summary">
+              <span class="muted">Sucursal</span>
+              <strong>{{ selected_box.sucursal.nombre }}</strong>
+            </div>
+            <div class="summary">
+              <span class="muted">Turno</span>
+              <strong>{{ selected_box.turno.get_tipo_display }}</strong>
+            </div>
+            <div class="summary">
+              <span class="muted">Saldo esperado</span>
+              <strong>${{ selected_box.saldo_esperado }}</strong>
+            </div>
+          </div>
+          {% if selected_box.estado == 'ABIERTA' %}
+            <div class="action-grid" style="margin-top:16px;">
+              <a class="action-card" href="{% url 'cashops:box_expense' selected_box.id %}">
+                <span>Gasto rapido</span>
+                <small>monto, rubro y detalle</small>
+              </a>
+              <a class="action-card" href="{% url 'cashops:box_pos' selected_box.id %}">
+                <span>Venta POS</span>
+                <small>registro inmediato</small>
+              </a>
+              <a class="action-card" href="{% url 'cashops:box_income' selected_box.id %}">
+                <span>Ingreso efectivo</span>
+                <small>cobro manual</small>
+              </a>
+              <a class="action-card" href="{% url 'cashops:box_close' selected_box.id %}">
+                <span>Cerrar caja</span>
+                <small>saldo fisico y validacion</small>
+              </a>
+              <a class="action-card" href="{% url 'cashops:transfer_boxes' %}">
+                <span>Traspaso entre cajas</span>
+                <small>origen, destino y monto</small>
+              </a>
+              {% if is_cashops_admin %}
+                <a class="action-card" href="{% url 'cashops:transfer_branches' %}">
+                  <span>Traspaso sucursal</span>
+                  <small>dinero o mercaderia</small>
+                </a>
+              {% endif %}
+            </div>
+          {% endif %}
+        </div>
+        <div class="card">
+          <h3>Cajas abiertas</h3>
+          <div class="list" style="margin-top:12px;">
+            {% for box in open_boxes %}
+              <a class="list-item" href="{% url 'cashops:dashboard' %}?scope=box&box={{ box.id }}">
+                <div class="row">
+                  <strong>#{{ box.id }} - {{ box.usuario }}</strong>
+                  <span class="badge">{{ box.sucursal.codigo }}</span>
+                </div>
+                <div class="row" style="margin-top:8px;">
+                  <span class="muted">{{ box.turno.get_tipo_display }} | ${{ box.saldo_esperado }}</span>
+                  <span class="badge-muted">{{ box.estado }}</span>
+                </div>
+              </a>
+            {% empty %}
+              <p class="muted">No hay cajas abiertas.</p>
+            {% endfor %}
+          </div>
+        </div>
+      </section>
+    {% else %}
+      <section class="grid layout-two" style="margin-top:16px;">
+        <div class="card">
+          <div class="row">
+            <div>
+              <h3>Detalle del alcance</h3>
+              <p class="muted">No hay caja seleccionada. El control se esta mostrando para el scope {{ dashboard_snapshot.scope_label }}.</p>
+            </div>
+            {% if is_cashops_admin %}
+              <a class="button-secondary" href="{% url 'cashops:operational_limit_list' %}">Configurar limites</a>
+            {% endif %}
+          </div>
+        </div>
+        <div class="card">
+          <h3>Cajas abiertas</h3>
+          <div class="list" style="margin-top:12px;">
+            {% for box in open_boxes %}
+              <a class="list-item" href="{% url 'cashops:dashboard' %}?scope=box&box={{ box.id }}">
+                <div class="row">
+                  <strong>#{{ box.id }} - {{ box.usuario }}</strong>
+                  <span class="badge">{{ box.sucursal.codigo }}</span>
+                </div>
+                <div class="row" style="margin-top:8px;">
+                  <span class="muted">{{ box.turno.get_tipo_display }} | ${{ box.saldo_esperado }}</span>
+                  <span class="badge-muted">{{ box.estado }}</span>
+                </div>
+              </a>
+            {% empty %}
+              <p class="muted">No hay cajas abiertas.</p>
+            {% endfor %}
+          </div>
         </div>
       </section>
     {% endif %}
+
+    <section class="card" style="margin-top:16px;">
+      <div class="row">
+        <div>
+          <h3>Semaforo operativo</h3>
+          <p class="muted">Todos los porcentajes usan la misma base: {{ dashboard_snapshot.base_calculo_label }}.</p>
+        </div>
+        <span class="badge-muted">{{ dashboard_snapshot.items|length }} rubros</span>
+      </div>
+      <div class="list" style="margin-top:12px;">
+        {% for item in dashboard_snapshot.items %}
+          <article class="list-item">
+            <div class="row">
+              <strong>{{ item.rubro.nombre }}</strong>
+              <span class="badge {{ item.badge_class }}">{{ item.estado_label }}</span>
+            </div>
+            <div class="summary-grid" style="margin-top:12px;">
+              <div class="summary">
+                <span class="muted">Gastado</span>
+                <strong>${{ item.total_gastado }}</strong>
+              </div>
+              <div class="summary">
+                <span class="muted">% consumido</span>
+                <strong>{{ item.porcentaje_consumido }}%</strong>
+              </div>
+              <div class="summary">
+                <span class="muted">Limite</span>
+                {% if item.has_limit %}
+                  <strong>{{ item.porcentaje_maximo }}%</strong>
+                  <small class="muted">{{ item.limit_scope_label }}</small>
+                {% else %}
+                  <strong>Sin limite</strong>
+                  <small class="muted">No genera alerta automatica</small>
+                {% endif %}
+              </div>
+            </div>
+          </article>
+        {% empty %}
+          <p class="muted">No hay gastos operativos para el alcance seleccionado.</p>
+        {% endfor %}
+      </div>
+    </section>
+
+    {% if selected_box %}
+      <section class="card" style="margin-top:16px;">
+        <div class="row">
+          <h3>Ultimos movimientos de la caja</h3>
+          <span class="badge-muted">{{ recent_movements|length }} registros</span>
+        </div>
+        {% include "cashops/partials/movement_list.html" with movements=recent_movements %}
+      </section>
+    {% endif %}
+
+    <section class="card" style="margin-top:16px;">
+      <div class="row">
+        <h3>Alertas operativas</h3>
+        <span class="badge-danger">{{ alertas|length }} visibles</span>
+      </div>
+      <div class="list" style="margin-top:12px;">
+        {% for alerta in alertas %}
+          <div class="list-item">
+            <div class="row">
+              <strong>{{ alerta.get_tipo_display }}</strong>
+              {% if alerta.rubro_operativo %}
+                <span class="badge-danger">{{ alerta.rubro_operativo.nombre }}</span>
+              {% elif alerta.caja_id %}
+                <span class="badge-danger">Caja #{{ alerta.caja_id }}</span>
+              {% endif %}
+            </div>
+            <p class="muted" style="margin-top:8px;">{{ alerta.mensaje }}</p>
+            <div class="muted" style="margin-top:8px;">
+              {% if alerta.sucursal %}Sucursal {{ alerta.sucursal.nombre }}{% else %}Global{% endif %}
+              {% if alerta.turno %} | {{ alerta.turno.get_tipo_display }}{% endif %}
+              {% if alerta.periodo_fecha %} | {{ alerta.periodo_fecha }}{% endif %}
+            </div>
+          </div>
+        {% empty %}
+          <p class="muted">No hay alertas activas para este alcance.</p>
+        {% endfor %}
+      </div>
+    </section>
   {% else %}
     <section class="card">
-      <h2>No hay caja seleccionada</h2>
-      <p class="muted">Abrir una caja o elegir una activa para ver movimientos y cargar operaciones.</p>
+      <h2>Sin alcance seleccionado</h2>
+      <p class="muted">Elegi una caja desde la lista o, si sos administrador, usa Global o una sucursal para ver el control operativo.</p>
+      <div class="list" style="margin-top:16px;">
+        {% for box in open_boxes %}
+          <a class="list-item" href="{% url 'cashops:dashboard' %}?scope=box&box={{ box.id }}">
+            <div class="row">
+              <strong>#{{ box.id }} - {{ box.usuario }}</strong>
+              <span class="badge">{{ box.sucursal.codigo }}</span>
+            </div>
+            <div class="row" style="margin-top:8px;">
+              <span class="muted">{{ box.turno.get_tipo_display }} | ${{ box.saldo_esperado }}</span>
+              <span class="badge-muted">{{ box.estado }}</span>
+            </div>
+          </a>
+        {% empty %}
+          <p class="muted">No hay cajas abiertas.</p>
+        {% endfor %}
+      </div>
       <div class="action-grid" style="margin-top:16px;">
         <a class="action-card" href="{% url 'cashops:box_open' %}">
           <span>Abrir caja</span>
           <small>inicio de turno</small>
         </a>
-        <a class="action-card" href="{% url 'cashops:sucursal_create' %}">
-          <span>Nueva sucursal</span>
-          <small>alta administrativa</small>
-        </a>
-        <a class="action-card" href="{% url 'cashops:turno_create' %}">
-          <span>Nuevo turno</span>
-          <small>T.M. o T.T.</small>
-        </a>
+        {% if is_cashops_admin %}
+          <a class="action-card" href="{% url 'cashops:operational_category_create' %}">
+            <span>Nuevo rubro</span>
+            <small>clasificacion de gastos</small>
+          </a>
+          <a class="action-card" href="{% url 'cashops:operational_limit_create' %}">
+            <span>Nuevo limite</span>
+            <small>porcentaje por rubro</small>
+          </a>
+          <a class="action-card" href="{% url 'cashops:alert_panel' %}">
+            <span>Panel de alertas</span>
+            <small>seguimiento completo</small>
+          </a>
+        {% endif %}
       </div>
     </section>
   {% endif %}

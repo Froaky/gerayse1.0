@@ -17,6 +17,8 @@ class Role(models.Model):
 
 
 class User(AbstractUser):
+    ADMIN_ROLE_CODES = {"ADMIN", "ADMINISTRADOR"}
+
     role = models.ForeignKey(
         Role,
         on_delete=models.SET_NULL,
@@ -28,6 +30,15 @@ class User(AbstractUser):
     class Meta:
         verbose_name = "user"
         verbose_name_plural = "users"
+
+    @property
+    def normalized_role_code(self) -> str:
+        if not self.role_id or not self.role or not self.role.code:
+            return ""
+        return self.role.code.strip().upper()
+
+    def is_cashops_admin(self) -> bool:
+        return self.is_superuser or self.normalized_role_code in self.ADMIN_ROLE_CODES
 
     def __str__(self) -> str:
         if self.get_full_name():

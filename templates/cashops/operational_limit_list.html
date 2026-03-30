@@ -1,0 +1,35 @@
+{% extends "cashops/layout.html" %}
+{% block title %}Limites Por Rubro | Gerayse{% endblock %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Limites por rubro</h1>
+        <p class="muted">Cada limite define el porcentaje maximo permitido sobre el total operativo del periodo.</p>
+      </div>
+      <a class="button" href="{% url 'cashops:operational_limit_create' %}">Nuevo limite</a>
+    </div>
+    <div class="list" style="margin-top:16px;">
+      {% for limit in limits %}
+        <article class="list-item">
+          <div class="row">
+            <strong>{{ limit.rubro.nombre }}</strong>
+            <span class="badge">{{ limit.porcentaje_maximo }}%</span>
+          </div>
+          <div class="muted" style="margin-top:8px;">
+            {% if limit.sucursal %}
+              Sucursal {{ limit.sucursal.nombre }}
+            {% else %}
+              Alcance global
+            {% endif %}
+          </div>
+          <div class="list-actions">
+            <a class="button-secondary" href="{% url 'cashops:operational_limit_update' limit.id %}">Editar</a>
+          </div>
+        </article>
+      {% empty %}
+        <p class="muted">Todavia no hay limites configurados.</p>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

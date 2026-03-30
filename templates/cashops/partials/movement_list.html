@@ -11,6 +11,9 @@
         <span class="muted">Monto</span>
         <strong>${{ movement.monto }}</strong>
       </div>
+      {% if movement.rubro_operativo %}
+        <div class="muted" style="margin-top:6px;">Rubro: {{ movement.rubro_operativo.nombre }}</div>
+      {% endif %}
       {% if movement.categoria %}
         <div class="muted" style="margin-top:6px;">Categoria: {{ movement.categoria }}</div>
       {% endif %}

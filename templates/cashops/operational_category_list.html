@@ -1,0 +1,43 @@
+{% extends "cashops/layout.html" %}
+{% block title %}Rubros Operativos | Gerayse{% endblock %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Rubros operativos</h1>
+        <p class="muted">Clasificacion oficial de gastos operativos. Solo los rubros activos aparecen al cargar un gasto.</p>
+      </div>
+      <a class="button" href="{% url 'cashops:operational_category_create' %}">Nuevo rubro</a>
+    </div>
+    <div class="list" style="margin-top:16px;">
+      {% for category in categories %}
+        <article class="list-item">
+          <div class="row">
+            <strong>{{ category.nombre }}</strong>
+            {% if category.es_sistema %}
+              <span class="badge-muted">Sistema</span>
+            {% elif category.activo %}
+              <span class="badge badge-success">Activo</span>
+            {% else %}
+              <span class="badge-muted">Inactivo</span>
+            {% endif %}
+          </div>
+          <div class="muted" style="margin-top:8px;">{{ category.limit_count }} limite{{ category.limit_count|pluralize }} configurado{{ category.limit_count|pluralize }}</div>
+          {% if not category.es_sistema %}
+            <div class="list-actions">
+              <a class="button-secondary" href="{% url 'cashops:operational_category_update' category.id %}">Editar</a>
+              <form method="post" action="{% url 'cashops:operational_category_toggle' category.id %}">
+                {% csrf_token %}
+                <button class="button-secondary" type="submit">
+                  {% if category.activo %}Desactivar{% else %}Activar{% endif %}
+                </button>
+              </form>
+            </div>
+          {% endif %}
+        </article>
+      {% empty %}
+        <p class="muted">Todavia no hay rubros creados.</p>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

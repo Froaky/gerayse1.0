@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     'core',
     'users',
     'cashops',
+    'treasury',
 ]
 
 MIDDLEWARE = [

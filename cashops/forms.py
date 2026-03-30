@@ -1,9 +1,15 @@
 from decimal import Decimal
 
 from django import forms
+from django.contrib.auth import get_user_model
+from django.db.models import Q
 
-from .models import Caja, Sucursal, Transferencia, Turno
-from .services import CLOSING_DIFF_THRESHOLD
+from .models import Caja, LimiteRubroOperativo, RubroOperativo, Sucursal, Transferencia, Turno
+from .permissions import can_assign_box_to_user, is_cashops_admin
+from .services import CLOSING_DIFF_THRESHOLD, MAX_OPERATIONAL_LIMIT_PERCENTAGE
+
+
+User = get_user_model()
 
 
 class SucursalForm(forms.ModelForm):
@@ -43,6 +49,7 @@ class TurnoForm(forms.ModelForm):
 
 
 class CajaAperturaForm(forms.Form):
+    usuario = forms.ModelChoiceField(queryset=User.objects.none(), label="Responsable")
     sucursal = forms.ModelChoiceField(queryset=Sucursal.objects.none())
     turno = forms.ModelChoiceField(queryset=Turno.objects.none())
     monto_inicial = forms.DecimalField(
@@ -53,22 +60,67 @@ class CajaAperturaForm(forms.Form):
     )
 
     def __init__(self, *args, **kwargs):
+        self.actor = kwargs.pop("actor", None)
         super().__init__(*args, **kwargs)
+        if self.actor and not is_cashops_admin(self.actor):
+            self.fields["usuario"].help_text = "La caja se abre a tu nombre."
         for field in self.fields.values():
             if isinstance(field.widget, forms.Select):
                 field.widget.attrs.setdefault("class", "input select")
             else:
                 field.widget.attrs.setdefault("class", "input")
 
+    def clean(self):
+        cleaned_data = super().clean()
+        usuario = cleaned_data.get("usuario")
+        sucursal = cleaned_data.get("sucursal")
+        turno = cleaned_data.get("turno")
+        if turno and sucursal and turno.sucursal_id != sucursal.id:
+            self.add_error("turno", "El turno seleccionado no pertenece a la sucursal elegida.")
+        if self.actor and usuario and not can_assign_box_to_user(self.actor, usuario):
+            self.add_error("usuario", "No podes asignar una caja a otro usuario.")
+        return cleaned_data
 
-class GastoRapidoForm(forms.Form):
+
+class IngresoEfectivoForm(forms.Form):
     monto = forms.DecimalField(
         max_digits=14,
         decimal_places=2,
         min_value=Decimal("0.01"),
         widget=forms.NumberInput(attrs={"step": "0.01", "placeholder": "0.00"}),
     )
-    categoria = forms.CharField(max_length=80, widget=forms.TextInput(attrs={"placeholder": "Viaticos, insumos..."}))
+    categoria = forms.CharField(
+        max_length=80,
+        widget=forms.TextInput(attrs={"placeholder": "Cobro extra, reintegro, fondo..."}),
+    )
+    observacion = forms.CharField(
+        max_length=255,
+        required=False,
+        widget=forms.Textarea(attrs={"placeholder": "Detalle breve del ingreso"}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            if isinstance(field.widget, forms.Textarea):
+                field.widget.attrs.setdefault("class", "input textarea")
+            else:
+                field.widget.attrs.setdefault("class", "input")
+
+
+class GastoRapidoForm(forms.Form):
+    rubro_operativo = forms.ModelChoiceField(queryset=RubroOperativo.objects.none(), label="Rubro")
+    monto = forms.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        min_value=Decimal("0.01"),
+        widget=forms.NumberInput(attrs={"step": "0.01", "placeholder": "0.00"}),
+    )
+    categoria = forms.CharField(
+        max_length=80,
+        label="Detalle corto",
+        widget=forms.TextInput(attrs={"placeholder": "Compra menor, viatico, insumo..."}),
+    )
     observacion = forms.CharField(
         max_length=255,
         required=False,
@@ -77,9 +129,15 @@ class GastoRapidoForm(forms.Form):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["rubro_operativo"].queryset = RubroOperativo.objects.filter(
+            activo=True,
+            es_sistema=False,
+        )
         for field in self.fields.values():
             if isinstance(field.widget, forms.Textarea):
                 field.widget.attrs.setdefault("class", "input textarea")
+            elif isinstance(field.widget, forms.Select):
+                field.widget.attrs.setdefault("class", "input select")
             else:
                 field.widget.attrs.setdefault("class", "input")
 
@@ -221,4 +279,85 @@ class CierreCajaForm(forms.Form):
             diferencia = saldo_fisico - self.caja.saldo_esperado
             if abs(diferencia) > CLOSING_DIFF_THRESHOLD and not justificacion:
                 self.add_error("justificacion", "La diferencia supera 10.000 y requiere justificacion.")
+        return cleaned_data
+
+
+class RubroOperativoForm(forms.ModelForm):
+    class Meta:
+        model = RubroOperativo
+        fields = ["nombre", "activo"]
+        widgets = {
+            "nombre": forms.TextInput(attrs={"placeholder": "Insumos, mantenimiento, viaticos..."}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            if isinstance(field.widget, forms.Select):
+                field.widget.attrs.setdefault("class", "input select")
+            else:
+                field.widget.attrs.setdefault("class", "input")
+
+    def clean_nombre(self):
+        nombre = (self.cleaned_data.get("nombre") or "").strip()
+        queryset = RubroOperativo.objects.filter(nombre__iexact=nombre)
+        if self.instance.pk:
+            queryset = queryset.exclude(pk=self.instance.pk)
+        if queryset.exists():
+            raise forms.ValidationError("Ya existe un rubro con ese nombre.")
+        return nombre
+
+
+class LimiteRubroOperativoForm(forms.ModelForm):
+    class Meta:
+        model = LimiteRubroOperativo
+        fields = ["rubro", "sucursal", "porcentaje_maximo"]
+        widgets = {
+            "porcentaje_maximo": forms.NumberInput(attrs={"step": "0.01", "placeholder": "15.00"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        rubro_queryset = RubroOperativo.objects.filter(activo=True, es_sistema=False)
+        if self.instance.pk and self.instance.rubro_id:
+            rubro_queryset = RubroOperativo.objects.filter(
+                (Q(activo=True, es_sistema=False) | Q(pk=self.instance.rubro_id))
+            )
+        self.fields["rubro"].queryset = rubro_queryset.order_by("nombre")
+        self.fields["sucursal"].queryset = Sucursal.objects.filter(activa=True)
+        self.fields["sucursal"].required = False
+        self.fields["sucursal"].empty_label = "Global"
+        for field in self.fields.values():
+            if isinstance(field.widget, forms.Select):
+                field.widget.attrs.setdefault("class", "input select")
+            else:
+                field.widget.attrs.setdefault("class", "input")
+
+    def clean_porcentaje_maximo(self):
+        porcentaje = self.cleaned_data["porcentaje_maximo"]
+        if porcentaje <= 0:
+            raise forms.ValidationError("El porcentaje maximo debe ser mayor que cero.")
+        if porcentaje > MAX_OPERATIONAL_LIMIT_PERCENTAGE:
+            raise forms.ValidationError("El porcentaje maximo no puede superar 100%.")
+        return porcentaje
+
+    def clean(self):
+        cleaned_data = super().clean()
+        rubro = cleaned_data.get("rubro")
+        sucursal = cleaned_data.get("sucursal")
+        if not rubro:
+            return cleaned_data
+
+        queryset = LimiteRubroOperativo.objects.filter(rubro=rubro)
+        if sucursal:
+            queryset = queryset.filter(sucursal=sucursal)
+        else:
+            queryset = queryset.filter(sucursal__isnull=True)
+        if self.instance.pk:
+            queryset = queryset.exclude(pk=self.instance.pk)
+        if queryset.exists():
+            if sucursal:
+                self.add_error("sucursal", "Ese rubro ya tiene un limite configurado para la sucursal.")
+            else:
+                self.add_error("sucursal", "Ese rubro ya tiene un limite global configurado.")
         return cleaned_data

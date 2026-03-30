@@ -1,0 +1,134 @@
+{% extends "cashops/layout.html" %}
+{% block title %}Alertas Operativas | Gerayse{% endblock %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Panel de alertas</h1>
+        <p class="muted">Vista centralizada sin limite artificial. Ordenada por criticidad, periodo operativo y alcance.</p>
+      </div>
+      <a class="button-secondary" href="{% url 'cashops:dashboard' %}?scope=global">Volver al dashboard</a>
+    </div>
+    <div class="summary-grid" style="margin-top:16px;">
+      <div class="summary">
+        <span class="muted">Politica de lectura por scope</span>
+        <strong>Caja &gt; Sucursal &gt; Global</strong>
+        <p class="muted" style="margin-top:8px;">{{ scope_policy }}</p>
+        <div class="stack" style="margin-top:12px;">
+          {% for rule in scope_policy_rules %}
+            <p class="muted">{{ rule }}</p>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    <form method="get" class="stack" style="margin-top:16px;">
+      <div class="summary-grid">
+        <div class="field">
+          <label for="id_estado">Estado</label>
+          <select id="id_estado" name="estado" class="input select">
+            <option value="activas" {% if estado_actual == 'activas' %}selected{% endif %}>Activas</option>
+            <option value="resueltas" {% if estado_actual == 'resueltas' %}selected{% endif %}>Resueltas</option>
+            <option value="todas" {% if estado_actual == 'todas' %}selected{% endif %}>Todas</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="id_periodo_desde">Periodo desde</label>
+          <input id="id_periodo_desde" class="input" type="date" name="periodo_desde" value="{{ periodo_desde }}">
+        </div>
+        <div class="field">
+          <label for="id_periodo_hasta">Periodo hasta</label>
+          <input id="id_periodo_hasta" class="input" type="date" name="periodo_hasta" value="{{ periodo_hasta }}">
+        </div>
+        <div class="field">
+          <label for="id_alcance">Alcance</label>
+          <select id="id_alcance" name="alcance" class="input select">
+            <option value="todos" {% if alcance_actual == 'todos' %}selected{% endif %}>Todos</option>
+            <option value="caja" {% if alcance_actual == 'caja' %}selected{% endif %}>Caja</option>
+            <option value="sucursal" {% if alcance_actual == 'sucursal' %}selected{% endif %}>Sucursal</option>
+            <option value="global" {% if alcance_actual == 'global' %}selected{% endif %}>Global</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="id_rubro">Rubro</label>
+          <select id="id_rubro" name="rubro" class="input select">
+            <option value="">Todos</option>
+            {% for rubro in rubros %}
+              <option value="{{ rubro.id }}" {% if rubro_actual == rubro.id %}selected{% endif %}>{{ rubro.nombre }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="id_sucursal">Sucursal</label>
+          <select id="id_sucursal" name="sucursal" class="input select">
+            <option value="">Todas</option>
+            {% for sucursal in sucursales %}
+              <option value="{{ sucursal.id }}" {% if sucursal_actual == sucursal.id %}selected{% endif %}>{{ sucursal.nombre }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <span class="muted">Filtros server-side sobre alertas persistidas usando periodo operativo real.</span>
+        <button class="button" type="submit">Filtrar</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card" style="margin-top:16px;">
+    <div class="row">
+      <h3>Resultados</h3>
+      <span class="badge-muted">{{ alertas|length }} alertas</span>
+    </div>
+    <div class="list" style="margin-top:12px;">
+      {% for alerta in alertas %}
+        <article class="list-item">
+          <div class="row">
+            <strong>{{ alerta.get_tipo_display }}</strong>
+            <div class="row">
+              <span class="badge-muted">Alcance {{ alerta.alcance_tipo }}</span>
+              {% if alerta.resuelta %}
+                <span class="badge-muted">Resuelta</span>
+              {% else %}
+                <span class="badge-danger">Activa</span>
+              {% endif %}
+            </div>
+          </div>
+          <p class="muted" style="margin-top:8px;">{{ alerta.mensaje }}</p>
+          <div class="summary-grid" style="margin-top:12px;">
+            <div class="summary">
+              <span class="muted">Alcance</span>
+              <strong>{{ alerta.alcance_detalle }}</strong>
+            </div>
+            <div class="summary">
+              <span class="muted">Rubro</span>
+              <strong>{% if alerta.rubro_operativo %}{{ alerta.rubro_operativo.nombre }}{% else %}-{% endif %}</strong>
+            </div>
+            <div class="summary">
+              <span class="muted">Sucursal</span>
+              <strong>{% if alerta.sucursal %}{{ alerta.sucursal.nombre }}{% else %}Global{% endif %}</strong>
+            </div>
+            <div class="summary">
+              <span class="muted">Periodo</span>
+              <strong>{% if alerta.periodo_fecha %}{{ alerta.periodo_fecha }}{% else %}-{% endif %}</strong>
+            </div>
+            <div class="summary">
+              <span class="muted">Caja</span>
+              <strong>{% if alerta.caja_id %}#{{ alerta.caja_id }}{% else %}-{% endif %}</strong>
+            </div>
+            <div class="summary">
+              <span class="muted">Turno</span>
+              <strong>{{ alerta.turno_resumen }}</strong>
+            </div>
+            <div class="summary">
+              <span class="muted">Usuario</span>
+              <strong>{{ alerta.usuario_resumen }}</strong>
+            </div>
+          </div>
+          <div class="muted" style="margin-top:8px;">Creada {{ alerta.creada_en }}</div>
+        </article>
+      {% empty %}
+        <p class="muted">No hay alertas para los filtros seleccionados.</p>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

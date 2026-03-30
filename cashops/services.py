@@ -1,13 +1,80 @@
-from decimal import Decimal
+from dataclasses import dataclass
+from datetime import date
+from decimal import Decimal, ROUND_HALF_UP
 
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.db.models import Case, IntegerField, Q, Sum, Value, When
 from django.utils import timezone
 
-from .models import AlertaOperativa, Caja, CierreCaja, Justificacion, MovimientoCaja, Sucursal, Transferencia, Turno
+from .models import (
+    AlertaOperativa,
+    Caja,
+    CierreCaja,
+    Justificacion,
+    LimiteRubroOperativo,
+    MovimientoCaja,
+    RubroOperativo,
+    Sucursal,
+    Transferencia,
+    Turno,
+)
+from .permissions import can_assign_box_to_user, ensure_can_operate_box
 
 
 CLOSING_DIFF_THRESHOLD = Decimal("10000.00")
+OPERATIONAL_WARNING_RATIO = Decimal("0.90")
+PERCENTAGE_QUANTIZER = Decimal("0.01")
+MAX_OPERATIONAL_LIMIT_PERCENTAGE = Decimal("100.00")
+OPERATIONAL_CONTROL_BASE_CODE = "EGRESOS_OPERATIVOS_DEL_PERIODO"
+OPERATIONAL_CONTROL_BASE_LABEL = "Egresos operativos del periodo"
+UNCATEGORIZED_OPERATIONAL_CATEGORY_NAME = "Sin clasificar"
+OPERATIONAL_ALERT_SCOPE_POLICY = (
+    "Las alertas equivalentes se muestran todas y se ordenan de la mas especifica a la mas general: "
+    "Caja, Sucursal y Global."
+)
+OPERATIONAL_ALERT_SCOPE_POLICY_RULES = (
+    "Rubro excedido puede coexistir en global, sucursal y caja para el mismo rubro y periodo.",
+    "Diferencia grave se registra solo a nivel caja porque nace de un cierre concreto.",
+    "El filtro de alcance es de lectura: no altera el motor ni consolida registros persistidos.",
+)
+
+
+@dataclass(frozen=True)
+class OperationalControlScope:
+    kind: str
+    fecha_operativa: date
+    sucursal: Sucursal | None = None
+    caja: Caja | None = None
+
+    @property
+    def label(self) -> str:
+        if self.kind == "CAJA" and self.caja is not None:
+            return f"Caja #{self.caja.pk}"
+        if self.kind == "SUCURSAL" and self.sucursal is not None:
+            return self.sucursal.nombre
+        return "Global"
+
+    @property
+    def kind_label(self) -> str:
+        if self.kind == "CAJA":
+            return "Caja"
+        if self.kind == "SUCURSAL":
+            return "Sucursal"
+        return "Global"
+
+    @property
+    def dedupe_scope(self) -> str:
+        if self.kind == "CAJA" and self.caja is not None:
+            return f"caja-{self.caja.pk}"
+        if self.kind == "SUCURSAL" and self.sucursal is not None:
+            return f"sucursal-{self.sucursal.pk}"
+        return "global"
+
+
+def _require_actor(actor, message: str = "Se requiere un usuario autenticado para operar.") -> None:
+    if actor is None or not getattr(actor, "is_authenticated", False):
+        raise PermissionDenied(message)
 
 
 def _lock_caja(caja: Caja) -> Caja:
@@ -20,8 +87,10 @@ def _create_movement(
     tipo: str,
     sentido: str,
     monto: Decimal,
+    impacta_saldo_caja: bool = True,
     categoria: str = "",
     observacion: str = "",
+    rubro_operativo: RubroOperativo | None = None,
     transferencia: Transferencia | None = None,
     creado_por=None,
 ) -> MovimientoCaja:
@@ -30,11 +99,18 @@ def _create_movement(
         tipo=tipo,
         sentido=sentido,
         monto=monto,
+        impacta_saldo_caja=impacta_saldo_caja,
         categoria=categoria,
         observacion=observacion,
+        rubro_operativo=rubro_operativo,
         transferencia=transferencia,
         creado_por=creado_por,
     )
+
+
+def _validate_available_funds(caja: Caja, monto: Decimal) -> None:
+    if caja.saldo_esperado < monto:
+        raise ValidationError({"monto": "El monto supera el saldo disponible de la caja origen."})
 
 
 def calculate_expected_balance(caja: Caja) -> Decimal:
@@ -42,18 +118,533 @@ def calculate_expected_balance(caja: Caja) -> Decimal:
     return caja.saldo_esperado
 
 
+def _quantize_percentage(value: Decimal) -> Decimal:
+    return value.quantize(PERCENTAGE_QUANTIZER, rounding=ROUND_HALF_UP)
+
+
+def _warning_threshold(limit_value: Decimal) -> Decimal:
+    return _quantize_percentage(limit_value * OPERATIONAL_WARNING_RATIO)
+
+
+def get_uncategorized_operational_category() -> RubroOperativo:
+    category = RubroOperativo.objects.filter(es_sistema=True).first()
+    if category:
+        return category
+
+    category = RubroOperativo.objects.filter(nombre__iexact=UNCATEGORIZED_OPERATIONAL_CATEGORY_NAME).first()
+    if category:
+        updated_fields = []
+        if category.activo:
+            category.activo = False
+            updated_fields.append("activo")
+        if not category.es_sistema:
+            category.es_sistema = True
+            updated_fields.append("es_sistema")
+        if updated_fields:
+            category.save(update_fields=updated_fields + ["actualizado_en"])
+        return category
+
+    return RubroOperativo.objects.create(
+        nombre=UNCATEGORIZED_OPERATIONAL_CATEGORY_NAME,
+        activo=False,
+        es_sistema=True,
+    )
+
+
+def build_global_control_scope(*, fecha_operativa: date) -> OperationalControlScope:
+    return OperationalControlScope(kind="GLOBAL", fecha_operativa=fecha_operativa)
+
+
+def build_branch_control_scope(*, fecha_operativa: date, sucursal: Sucursal) -> OperationalControlScope:
+    return OperationalControlScope(kind="SUCURSAL", fecha_operativa=fecha_operativa, sucursal=sucursal)
+
+
+def build_box_control_scope(*, caja: Caja) -> OperationalControlScope:
+    if not hasattr(caja, "turno") or not hasattr(caja, "sucursal"):
+        caja = Caja.objects.select_related("turno", "sucursal", "usuario").get(pk=caja.pk)
+    return OperationalControlScope(
+        kind="CAJA",
+        fecha_operativa=caja.turno.fecha_operativa,
+        sucursal=caja.sucursal,
+        caja=caja,
+    )
+
+
+def _movement_scope_filter(scope: OperationalControlScope) -> Q:
+    query = Q(caja__turno__fecha_operativa=scope.fecha_operativa)
+    if scope.kind == "CAJA" and scope.caja is not None:
+        return query & Q(caja=scope.caja)
+    if scope.kind == "SUCURSAL" and scope.sucursal is not None:
+        return query & Q(caja__sucursal=scope.sucursal)
+    return query
+
+
+def _limit_scope_filter(scope: OperationalControlScope) -> Q:
+    if scope.sucursal is None:
+        return Q(sucursal__isnull=True)
+    return Q(sucursal=scope.sucursal) | Q(sucursal__isnull=True)
+
+
+def _rubro_alert_scope_filter(scope: OperationalControlScope) -> Q:
+    if scope.kind == "CAJA" and scope.caja is not None:
+        return Q(caja=scope.caja)
+    if scope.kind == "SUCURSAL" and scope.sucursal is not None:
+        return Q(caja__isnull=True, sucursal=scope.sucursal)
+    return Q(caja__isnull=True, sucursal__isnull=True)
+
+
+def _alerts_filter_for_scope(scope: OperationalControlScope) -> Q:
+    rubro_alerts = Q(
+        tipo=AlertaOperativa.Tipo.RUBRO_EXCEDIDO,
+        periodo_fecha=scope.fecha_operativa,
+    ) & _rubro_alert_scope_filter(scope)
+    if scope.kind == "CAJA" and scope.caja is not None:
+        closure_alerts = Q(tipo=AlertaOperativa.Tipo.DIFERENCIA_GRAVE, caja=scope.caja)
+    elif scope.kind == "SUCURSAL" and scope.sucursal is not None:
+        closure_alerts = Q(
+            tipo=AlertaOperativa.Tipo.DIFERENCIA_GRAVE,
+            sucursal=scope.sucursal,
+            periodo_fecha=scope.fecha_operativa,
+        )
+    else:
+        closure_alerts = Q(
+            tipo=AlertaOperativa.Tipo.DIFERENCIA_GRAVE,
+            periodo_fecha=scope.fecha_operativa,
+        )
+    return rubro_alerts | closure_alerts
+
+
+def _effective_limits_by_category(
+    *,
+    rubro_ids: list[int],
+    scope: OperationalControlScope,
+) -> dict[int, LimiteRubroOperativo]:
+    if not rubro_ids:
+        return {}
+
+    limit_map: dict[int, LimiteRubroOperativo] = {}
+    limits = (
+        LimiteRubroOperativo.objects.select_related("rubro", "sucursal")
+        .filter(rubro_id__in=rubro_ids)
+        .filter(_limit_scope_filter(scope))
+        .order_by("rubro_id", "sucursal_id")
+    )
+    for limit in limits:
+        current = limit_map.get(limit.rubro_id)
+        if current is None:
+            limit_map[limit.rubro_id] = limit
+            continue
+        if scope.sucursal is not None and limit.sucursal_id == scope.sucursal.id:
+            limit_map[limit.rubro_id] = limit
+    return limit_map
+
+
+def _build_expense_alert_key(*, scope: OperationalControlScope, rubro: RubroOperativo) -> str:
+    return f"RUBRO_EXCEDIDO:{scope.dedupe_scope}:{scope.fecha_operativa.isoformat()}:{rubro.pk}"
+
+
+def _build_closing_alert_key(*, cierre: CierreCaja) -> str:
+    return f"DIFERENCIA_GRAVE:cierre:{cierre.pk}"
+
+
+def _upsert_alert(*, dedupe_key: str | None = None, **defaults) -> AlertaOperativa:
+    if dedupe_key:
+        alert, created = AlertaOperativa.objects.get_or_create(dedupe_key=dedupe_key, defaults=defaults)
+        if created:
+            return alert
+        update_fields = []
+        for field_name, value in defaults.items():
+            if getattr(alert, field_name) != value:
+                setattr(alert, field_name, value)
+                update_fields.append(field_name)
+        if alert.resuelta:
+            alert.resuelta = False
+            update_fields.append("resuelta")
+        if update_fields:
+            alert.save(update_fields=update_fields)
+        return alert
+    return AlertaOperativa.objects.create(**defaults)
+
+
+def get_alerts_for_scope(
+    scope: OperationalControlScope,
+    *,
+    resuelta: bool | None = False,
+    limit: int | None = None,
+):
+    queryset = AlertaOperativa.objects.select_related(
+        "caja",
+        "sucursal",
+        "rubro_operativo",
+        "turno",
+        "usuario",
+        "cierre",
+    ).filter(_alerts_filter_for_scope(scope))
+    if resuelta is not None:
+        queryset = queryset.filter(resuelta=resuelta)
+    queryset = queryset.order_by("-creada_en", "-id")
+    if limit is not None:
+        return queryset[:limit]
+    return queryset
+
+
+def build_alert_panel_queryset(
+    *,
+    estado: str = "activas",
+    periodo_desde=None,
+    periodo_hasta=None,
+    rubro: RubroOperativo | None = None,
+    sucursal: Sucursal | None = None,
+    alcance: str = "todos",
+):
+    """Lee alertas persistidas para auditoria usando periodo operativo real."""
+    severity_order = Case(
+        When(tipo=AlertaOperativa.Tipo.DIFERENCIA_GRAVE, then=Value(0)),
+        When(tipo=AlertaOperativa.Tipo.RUBRO_EXCEDIDO, then=Value(1)),
+        default=Value(9),
+        output_field=IntegerField(),
+    )
+    scope_order = Case(
+        When(caja__isnull=False, then=Value(0)),
+        When(sucursal__isnull=False, then=Value(1)),
+        default=Value(2),
+        output_field=IntegerField(),
+    )
+    queryset = AlertaOperativa.objects.select_related(
+        "caja",
+        "sucursal",
+        "rubro_operativo",
+        "turno",
+        "usuario",
+        "cierre",
+    ).annotate(severity_order=severity_order, scope_order=scope_order)
+    if estado == "activas":
+        queryset = queryset.filter(resuelta=False)
+    elif estado == "resueltas":
+        queryset = queryset.filter(resuelta=True)
+    if periodo_desde:
+        queryset = queryset.filter(periodo_fecha__gte=periodo_desde)
+    if periodo_hasta:
+        queryset = queryset.filter(periodo_fecha__lte=periodo_hasta)
+    if rubro is not None:
+        queryset = queryset.filter(rubro_operativo=rubro)
+    if sucursal is not None:
+        queryset = queryset.filter(sucursal=sucursal)
+    if alcance == "global":
+        queryset = queryset.filter(caja__isnull=True, sucursal__isnull=True)
+    elif alcance == "sucursal":
+        queryset = queryset.filter(caja__isnull=True, sucursal__isnull=False)
+    elif alcance == "caja":
+        queryset = queryset.filter(caja__isnull=False)
+    return queryset.order_by("resuelta", "severity_order", "-periodo_fecha", "scope_order", "-creada_en", "-id")
+
+
+def build_operational_control_snapshot(
+    scope: OperationalControlScope,
+    *,
+    sync_alerts: bool = False,
+) -> dict:
+    movement_qs = MovimientoCaja.objects.filter(_movement_scope_filter(scope)).exclude(
+        tipo=MovimientoCaja.Tipo.APERTURA
+    )
+    totals = movement_qs.aggregate(
+        total_ingresos=Sum("monto", filter=Q(sentido=MovimientoCaja.Sentido.INGRESO)),
+        total_egresos=Sum("monto", filter=Q(sentido=MovimientoCaja.Sentido.EGRESO)),
+    )
+    expense_qs = movement_qs.filter(tipo=MovimientoCaja.Tipo.GASTO)
+    totals_by_category = {
+        row["rubro_operativo"]: row["total_gastado"] or Decimal("0.00")
+        for row in expense_qs.values("rubro_operativo").annotate(total_gastado=Sum("monto"))
+    }
+    base_calculo_total = sum(totals_by_category.values(), Decimal("0.00"))
+    rubro_ids = set(totals_by_category.keys())
+    rubro_ids.update(
+        RubroOperativo.objects.filter(activo=True, es_sistema=False).values_list("id", flat=True)
+    )
+    rubro_ids.update(
+        LimiteRubroOperativo.objects.filter(_limit_scope_filter(scope)).values_list("rubro_id", flat=True)
+    )
+    rubros = list(RubroOperativo.objects.filter(pk__in=rubro_ids).order_by("nombre"))
+    effective_limits = _effective_limits_by_category(rubro_ids=list(rubro_ids), scope=scope)
+
+    items = []
+    for rubro in rubros:
+        total_gastado = totals_by_category.get(rubro.id, Decimal("0.00"))
+        porcentaje_consumido = (
+            _quantize_percentage((total_gastado * Decimal("100.00")) / base_calculo_total)
+            if base_calculo_total > 0
+            else Decimal("0.00")
+        )
+        limit_config = effective_limits.get(rubro.id)
+        if limit_config is None:
+            estado_item = "SIN_LIMITE"
+            estado_label = "Sin limite"
+            badge_class = "badge-muted"
+            warning_threshold = None
+        elif porcentaje_consumido > limit_config.porcentaje_maximo:
+            estado_item = "ROJO"
+            estado_label = "Excedido"
+            badge_class = "badge-danger"
+            warning_threshold = _warning_threshold(limit_config.porcentaje_maximo)
+        elif porcentaje_consumido >= _warning_threshold(limit_config.porcentaje_maximo):
+            estado_item = "AMARILLO"
+            estado_label = "Cerca del limite"
+            badge_class = "badge-warning"
+            warning_threshold = _warning_threshold(limit_config.porcentaje_maximo)
+        else:
+            estado_item = "VERDE"
+            estado_label = "Controlado"
+            badge_class = "badge-success"
+            warning_threshold = _warning_threshold(limit_config.porcentaje_maximo)
+
+        items.append(
+            {
+                "rubro": rubro,
+                "total_gastado": total_gastado,
+                "porcentaje_consumido": porcentaje_consumido,
+                "porcentaje_maximo": limit_config.porcentaje_maximo if limit_config else None,
+                "warning_threshold": warning_threshold,
+                "estado": estado_item,
+                "estado_label": estado_label,
+                "badge_class": badge_class,
+                "limit_scope_label": (
+                    limit_config.sucursal.nombre if limit_config and limit_config.sucursal_id else "Global"
+                ),
+                "has_limit": limit_config is not None,
+                "alert_should_exist": estado_item == "ROJO" and limit_config is not None,
+            }
+        )
+
+    status_order = {"ROJO": 0, "AMARILLO": 1, "VERDE": 2, "SIN_LIMITE": 3}
+    items.sort(key=lambda item: (status_order[item["estado"]], item["rubro"].nombre.lower()))
+
+    snapshot = {
+        "scope": scope,
+        "scope_kind": scope.kind,
+        "scope_kind_label": scope.kind_label,
+        "scope_label": scope.label,
+        "fecha_operativa": scope.fecha_operativa,
+        "base_calculo_codigo": OPERATIONAL_CONTROL_BASE_CODE,
+        "base_calculo_label": OPERATIONAL_CONTROL_BASE_LABEL,
+        "base_calculo_total": base_calculo_total,
+        "total_operativo": base_calculo_total,
+        "total_ingresos": totals["total_ingresos"] or Decimal("0.00"),
+        "total_egresos": totals["total_egresos"] or Decimal("0.00"),
+        "saldo_neto": (totals["total_ingresos"] or Decimal("0.00")) - (totals["total_egresos"] or Decimal("0.00")),
+        "items": items,
+    }
+    if sync_alerts:
+        sync_operational_alerts_for_scope(scope, snapshot_items=items)
+    active_alerts = list(get_alerts_for_scope(scope, resuelta=False))
+    snapshot["active_alerts"] = active_alerts
+    snapshot["active_alert_count"] = len(active_alerts)
+    return snapshot
+
+
+def build_operational_category_overview(*, fecha_operativa, sucursal: Sucursal | None = None) -> dict:
+    scope = (
+        build_branch_control_scope(fecha_operativa=fecha_operativa, sucursal=sucursal)
+        if sucursal is not None
+        else build_global_control_scope(fecha_operativa=fecha_operativa)
+    )
+    snapshot = build_operational_control_snapshot(scope)
+    return {
+        "fecha_operativa": snapshot["fecha_operativa"],
+        "scope_label": snapshot["scope_label"],
+        "scope_branch": scope.sucursal,
+        "total_operativo": snapshot["total_operativo"],
+        "items": snapshot["items"],
+    }
+
+
+def sync_operational_alerts_for_scope(
+    scope: OperationalControlScope,
+    *,
+    snapshot_items: list[dict] | None = None,
+) -> list[AlertaOperativa]:
+    if snapshot_items is None:
+        snapshot_items = build_operational_control_snapshot(scope)["items"]
+
+    active_keys: set[str] = set()
+    active_alerts: list[AlertaOperativa] = []
+    for item in snapshot_items:
+        if not item["alert_should_exist"]:
+            continue
+        dedupe_key = _build_expense_alert_key(scope=scope, rubro=item["rubro"])
+        active_keys.add(dedupe_key)
+        alert_defaults = {
+            "tipo": AlertaOperativa.Tipo.RUBRO_EXCEDIDO,
+            "cierre": None,
+            "periodo_fecha": scope.fecha_operativa,
+            "rubro_operativo": item["rubro"],
+            "mensaje": (
+                f"El rubro {item['rubro'].nombre} representa {item['porcentaje_consumido']}% sobre "
+                f"{OPERATIONAL_CONTROL_BASE_LABEL.lower()} y supera su limite de {item['porcentaje_maximo']}% "
+                f"en {scope.kind_label.lower()} {scope.label}."
+            ),
+            "resuelta": False,
+        }
+        if scope.kind == "CAJA" and scope.caja is not None:
+            alert_defaults.update(
+                {
+                    "caja": scope.caja,
+                    "sucursal": scope.sucursal,
+                    "turno": scope.caja.turno,
+                    "usuario": scope.caja.usuario,
+                }
+            )
+        elif scope.kind == "SUCURSAL" and scope.sucursal is not None:
+            alert_defaults.update(
+                {
+                    "caja": None,
+                    "sucursal": scope.sucursal,
+                    "turno": None,
+                    "usuario": None,
+                }
+            )
+        else:
+            alert_defaults.update(
+                {
+                    "caja": None,
+                    "sucursal": None,
+                    "turno": None,
+                    "usuario": None,
+                }
+            )
+        active_alerts.append(_upsert_alert(dedupe_key=dedupe_key, **alert_defaults))
+
+    stale_alerts = AlertaOperativa.objects.filter(
+        tipo=AlertaOperativa.Tipo.RUBRO_EXCEDIDO,
+        periodo_fecha=scope.fecha_operativa,
+        resuelta=False,
+    ).filter(_rubro_alert_scope_filter(scope))
+    if active_keys:
+        stale_alerts = stale_alerts.exclude(dedupe_key__in=active_keys)
+    stale_alerts.update(resuelta=True)
+    return active_alerts
+
+
+def resync_operational_control_for_caja(caja: Caja) -> None:
+    caja = Caja.objects.select_related("turno", "sucursal", "usuario").get(pk=caja.pk)
+    scopes = [
+        build_global_control_scope(fecha_operativa=caja.turno.fecha_operativa),
+        build_branch_control_scope(fecha_operativa=caja.turno.fecha_operativa, sucursal=caja.sucursal),
+        build_box_control_scope(caja=caja),
+    ]
+    for scope in scopes:
+        build_operational_control_snapshot(scope, sync_alerts=True)
+
+
+def _distinct_operational_scope_rows(*, rubro: RubroOperativo | None = None):
+    queryset = MovimientoCaja.objects.filter(tipo=MovimientoCaja.Tipo.GASTO, rubro_operativo__isnull=False)
+    if rubro is not None:
+        queryset = queryset.filter(rubro_operativo=rubro)
+    return queryset.values(
+        "caja__turno__fecha_operativa",
+        "caja__sucursal_id",
+        "caja_id",
+    ).distinct()
+
+
+def resync_operational_control_for_rubro(rubro: RubroOperativo) -> None:
+    rows = list(_distinct_operational_scope_rows(rubro=rubro))
+    if not rows:
+        return
+
+    branch_ids = {row["caja__sucursal_id"] for row in rows if row["caja__sucursal_id"]}
+    box_ids = {row["caja_id"] for row in rows if row["caja_id"]}
+    branches = Sucursal.objects.in_bulk(branch_ids)
+    boxes = Caja.objects.select_related("turno", "sucursal", "usuario").in_bulk(box_ids)
+
+    for fecha_operativa in {row["caja__turno__fecha_operativa"] for row in rows}:
+        build_operational_control_snapshot(
+            build_global_control_scope(fecha_operativa=fecha_operativa),
+            sync_alerts=True,
+        )
+    for fecha_operativa, sucursal_id in {
+        (row["caja__turno__fecha_operativa"], row["caja__sucursal_id"])
+        for row in rows
+        if row["caja__sucursal_id"]
+    }:
+        sucursal = branches.get(sucursal_id)
+        if sucursal is None:
+            continue
+        build_operational_control_snapshot(
+            build_branch_control_scope(fecha_operativa=fecha_operativa, sucursal=sucursal),
+            sync_alerts=True,
+        )
+    for box_id in {row["caja_id"] for row in rows if row["caja_id"]}:
+        box = boxes.get(box_id)
+        if box is None:
+            continue
+        build_operational_control_snapshot(build_box_control_scope(caja=box), sync_alerts=True)
+
+
+def resync_all_operational_controls() -> int:
+    rows = list(_distinct_operational_scope_rows())
+    if not rows:
+        return 0
+
+    branch_ids = {row["caja__sucursal_id"] for row in rows if row["caja__sucursal_id"]}
+    box_ids = {row["caja_id"] for row in rows if row["caja_id"]}
+    branches = Sucursal.objects.in_bulk(branch_ids)
+    boxes = Caja.objects.select_related("turno", "sucursal", "usuario").in_bulk(box_ids)
+
+    recalculated = 0
+    for fecha_operativa in {row["caja__turno__fecha_operativa"] for row in rows}:
+        build_operational_control_snapshot(
+            build_global_control_scope(fecha_operativa=fecha_operativa),
+            sync_alerts=True,
+        )
+        recalculated += 1
+    for fecha_operativa, sucursal_id in {
+        (row["caja__turno__fecha_operativa"], row["caja__sucursal_id"])
+        for row in rows
+        if row["caja__sucursal_id"]
+    }:
+        sucursal = branches.get(sucursal_id)
+        if sucursal is None:
+            continue
+        build_operational_control_snapshot(
+            build_branch_control_scope(fecha_operativa=fecha_operativa, sucursal=sucursal),
+            sync_alerts=True,
+        )
+        recalculated += 1
+    for box_id in {row["caja_id"] for row in rows if row["caja_id"]}:
+        box = boxes.get(box_id)
+        if box is None:
+            continue
+        build_operational_control_snapshot(build_box_control_scope(caja=box), sync_alerts=True)
+        recalculated += 1
+    return recalculated
+
+
 @transaction.atomic
-def open_box(*, user, turno: Turno, sucursal: Sucursal, monto_inicial: Decimal) -> Caja:
+def open_box(*, user, turno: Turno, sucursal: Sucursal, monto_inicial: Decimal, actor=None) -> Caja:
+    actor = actor or user
+    _require_actor(actor)
     if user is None:
-        raise ValidationError({"usuario": "Se requiere un usuario para abrir una caja."})
-    if turno.estado != Turno.Estado.ABIERTO:
-        raise ValidationError({"turno": "El turno debe estar abierto para abrir una caja."})
-    if turno.sucursal_id != sucursal.id:
-        raise ValidationError({"sucursal": "La sucursal debe coincidir con el turno."})
+        raise ValidationError({"usuario": "Se requiere un usuario responsable para abrir una caja."})
+    if not can_assign_box_to_user(actor, user):
+        raise PermissionDenied("No tenes permiso para asignar una caja a otro usuario.")
     if monto_inicial < 0:
         raise ValidationError({"monto_inicial": "El monto inicial no puede ser negativo."})
 
     turno = Turno.objects.select_for_update().select_related("sucursal").get(pk=turno.pk)
+    if turno.estado != Turno.Estado.ABIERTO:
+        raise ValidationError({"turno": "El turno debe estar abierto para abrir una caja."})
+    if turno.sucursal_id != sucursal.id:
+        raise ValidationError({"sucursal": "La sucursal debe coincidir con el turno."})
+    if Caja.objects.filter(
+        usuario=user,
+        turno=turno,
+        sucursal=sucursal,
+        estado=Caja.Estado.ABIERTA,
+    ).exists():
+        raise ValidationError(
+            {"usuario": "Ya existe una caja abierta para ese usuario en este turno y sucursal."}
+        )
+
     caja = Caja.objects.create(
         sucursal=sucursal,
         turno=turno,
@@ -62,20 +653,24 @@ def open_box(*, user, turno: Turno, sucursal: Sucursal, monto_inicial: Decimal) 
         estado=Caja.Estado.ABIERTA,
         abierta_en=timezone.now(),
     )
-    _create_movement(
-        caja=caja,
-        tipo=MovimientoCaja.Tipo.APERTURA,
-        sentido=MovimientoCaja.Sentido.INGRESO,
-        monto=monto_inicial,
-        categoria="APERTURA",
-        observacion="Monto inicial de caja",
-        creado_por=user,
-    )
+    if monto_inicial > 0:
+        _create_movement(
+            caja=caja,
+            tipo=MovimientoCaja.Tipo.APERTURA,
+            sentido=MovimientoCaja.Sentido.INGRESO,
+            monto=monto_inicial,
+            categoria="APERTURA",
+            observacion="Monto inicial de caja",
+            creado_por=actor,
+        )
     return caja
 
 
-def _validate_open_box(caja: Caja) -> Caja:
-    caja = Caja.objects.select_for_update().select_related("turno", "sucursal", "usuario").get(pk=caja.pk)
+def _validate_open_box(caja: Caja, *, actor=None, lock: bool = True) -> Caja:
+    if lock:
+        caja = Caja.objects.select_for_update().select_related("turno", "sucursal", "usuario").get(pk=caja.pk)
+    if actor is not None:
+        ensure_can_operate_box(actor, caja)
     if caja.estado != Caja.Estado.ABIERTA:
         raise ValidationError({"caja": "La caja esta cerrada."})
     if caja.turno.estado != Turno.Estado.ABIERTO:
@@ -84,31 +679,77 @@ def _validate_open_box(caja: Caja) -> Caja:
 
 
 @transaction.atomic
-def register_expense(
+def register_cash_income(
     *,
     caja: Caja,
     monto: Decimal,
     categoria: str,
     observacion: str = "",
     creado_por=None,
+    actor=None,
 ) -> MovimientoCaja:
-    caja = _validate_open_box(caja)
+    actor = actor or creado_por
+    _require_actor(actor)
+    caja = _validate_open_box(caja, actor=actor)
     if monto <= 0:
         raise ValidationError({"monto": "El monto debe ser mayor que cero."})
     return _create_movement(
+        caja=caja,
+        tipo=MovimientoCaja.Tipo.INGRESO_EFECTIVO,
+        sentido=MovimientoCaja.Sentido.INGRESO,
+        monto=monto,
+        categoria=categoria,
+        observacion=observacion,
+        creado_por=actor,
+    )
+
+
+@transaction.atomic
+def register_expense(
+    *,
+    caja: Caja,
+    monto: Decimal,
+    rubro_operativo: RubroOperativo,
+    categoria: str,
+    observacion: str = "",
+    creado_por=None,
+    actor=None,
+) -> MovimientoCaja:
+    actor = actor or creado_por
+    _require_actor(actor)
+    caja = _validate_open_box(caja, actor=actor)
+    if monto <= 0:
+        raise ValidationError({"monto": "El monto debe ser mayor que cero."})
+    if rubro_operativo is None:
+        raise ValidationError({"rubro_operativo": "El rubro es obligatorio para gastos operativos."})
+    if not rubro_operativo.activo or rubro_operativo.es_sistema:
+        raise ValidationError({"rubro_operativo": "Tenes que elegir un rubro operativo activo y valido."})
+    movement = _create_movement(
         caja=caja,
         tipo=MovimientoCaja.Tipo.GASTO,
         sentido=MovimientoCaja.Sentido.EGRESO,
         monto=monto,
         categoria=categoria,
         observacion=observacion,
-        creado_por=creado_por,
+        rubro_operativo=rubro_operativo,
+        creado_por=actor,
     )
+    resync_operational_control_for_caja(caja)
+    return movement
 
 
 @transaction.atomic
-def register_card_sale(*, caja: Caja, monto: Decimal, observacion: str = "", creado_por=None) -> MovimientoCaja:
-    caja = _validate_open_box(caja)
+def register_card_sale(
+    *,
+    caja: Caja,
+    monto: Decimal,
+    observacion: str = "",
+    creado_por=None,
+    actor=None,
+) -> MovimientoCaja:
+    actor = actor or creado_por
+    _require_actor(actor)
+    caja = _validate_open_box(caja, actor=actor)
     if monto <= 0:
         raise ValidationError({"monto": "El monto debe ser mayor que cero."})
     return _create_movement(
@@ -116,9 +757,10 @@ def register_card_sale(*, caja: Caja, monto: Decimal, observacion: str = "", cre
         tipo=MovimientoCaja.Tipo.VENTA_TARJETA,
         sentido=MovimientoCaja.Sentido.INGRESO,
         monto=monto,
+        impacta_saldo_caja=False,
         categoria="POS",
         observacion=observacion,
-        creado_por=creado_por,
+        creado_por=actor,
     )
 
 
@@ -130,10 +772,12 @@ def transfer_between_boxes(
     monto: Decimal,
     observacion: str = "",
     creado_por=None,
+    actor=None,
 ) -> Transferencia:
+    actor = actor or creado_por
+    _require_actor(actor)
     if monto <= 0:
         raise ValidationError({"monto": "El monto debe ser mayor que cero."})
-
     if caja_origen.pk == caja_destino.pk:
         raise ValidationError({"caja_destino": "El origen y el destino no pueden ser la misma caja."})
 
@@ -141,8 +785,9 @@ def transfer_between_boxes(
         pk__in=[caja_origen.pk, caja_destino.pk]
     ).order_by("pk")
     locked = {box.pk: box for box in cajas}
-    caja_origen = _validate_open_box(locked[caja_origen.pk])
-    caja_destino = _validate_open_box(locked[caja_destino.pk])
+    caja_origen = _validate_open_box(locked[caja_origen.pk], actor=actor, lock=False)
+    caja_destino = _validate_open_box(locked[caja_destino.pk], actor=actor, lock=False)
+    _validate_available_funds(caja_origen, monto)
 
     transferencia = Transferencia.objects.create(
         tipo=Transferencia.Tipo.ENTRE_CAJAS,
@@ -153,7 +798,7 @@ def transfer_between_boxes(
         sucursal_destino=caja_destino.sucursal,
         monto=monto,
         observacion=observacion,
-        creado_por=creado_por,
+        creado_por=actor,
     )
     _create_movement(
         caja=caja_origen,
@@ -163,7 +808,7 @@ def transfer_between_boxes(
         categoria="TRANSFERENCIA",
         observacion=observacion,
         transferencia=transferencia,
-        creado_por=creado_por,
+        creado_por=actor,
     )
     _create_movement(
         caja=caja_destino,
@@ -173,7 +818,7 @@ def transfer_between_boxes(
         categoria="TRANSFERENCIA",
         observacion=observacion,
         transferencia=transferencia,
-        creado_por=creado_por,
+        creado_por=actor,
     )
     return transferencia
 
@@ -189,7 +834,10 @@ def transfer_between_branches(
     caja_origen: Caja | None = None,
     caja_destino: Caja | None = None,
     creado_por=None,
+    actor=None,
 ) -> Transferencia:
+    actor = actor or creado_por
+    _require_actor(actor)
     if sucursal_origen.pk == sucursal_destino.pk:
         raise ValidationError({"sucursal_destino": "El origen y el destino no pueden ser la misma sucursal."})
 
@@ -210,6 +858,15 @@ def transfer_between_branches(
     if caja_destino and caja_destino.sucursal_id != sucursal_destino.pk:
         raise ValidationError({"caja_destino": "La caja de destino debe pertenecer a la sucursal destino."})
 
+    if clase == Transferencia.Clase.DINERO and caja_origen and caja_destino:
+        cajas = Caja.objects.select_for_update().select_related("turno", "sucursal", "usuario").filter(
+            pk__in=[caja_origen.pk, caja_destino.pk]
+        ).order_by("pk")
+        locked = {box.pk: box for box in cajas}
+        caja_origen = _validate_open_box(locked[caja_origen.pk], actor=actor, lock=False)
+        caja_destino = _validate_open_box(locked[caja_destino.pk], actor=actor, lock=False)
+        _validate_available_funds(caja_origen, monto)
+
     transferencia = Transferencia.objects.create(
         tipo=Transferencia.Tipo.ENTRE_SUCURSALES,
         clase=clase,
@@ -219,16 +876,10 @@ def transfer_between_branches(
         sucursal_destino=sucursal_destino,
         monto=monto if clase == Transferencia.Clase.DINERO else None,
         observacion=observacion,
-        creado_por=creado_por,
+        creado_por=actor,
     )
 
     if clase == Transferencia.Clase.DINERO and caja_origen and caja_destino:
-        cajas = Caja.objects.select_for_update().select_related("turno", "sucursal", "usuario").filter(
-            pk__in=[caja_origen.pk, caja_destino.pk]
-        ).order_by("pk")
-        locked = {box.pk: box for box in cajas}
-        caja_origen = _validate_open_box(locked[caja_origen.pk])
-        caja_destino = _validate_open_box(locked[caja_destino.pk])
         _create_movement(
             caja=caja_origen,
             tipo=MovimientoCaja.Tipo.TRANSFERENCIA_SUCURSAL_SALIDA,
@@ -237,7 +888,7 @@ def transfer_between_branches(
             categoria="TRANSFERENCIA SUCURSAL",
             observacion=observacion,
             transferencia=transferencia,
-            creado_por=creado_por,
+            creado_por=actor,
         )
         _create_movement(
             caja=caja_destino,
@@ -247,7 +898,7 @@ def transfer_between_branches(
             categoria="TRANSFERENCIA SUCURSAL",
             observacion=observacion,
             transferencia=transferencia,
-            creado_por=creado_por,
+            creado_por=actor,
         )
 
     return transferencia
@@ -260,11 +911,12 @@ def close_box(
     saldo_fisico: Decimal,
     justificacion: str = "",
     cerrado_por=None,
+    actor=None,
 ) -> CierreCaja:
+    actor = actor or cerrado_por
+    _require_actor(actor)
     caja_ref = caja
-    caja = _lock_caja(caja)
-    if caja.estado != Caja.Estado.ABIERTA:
-        raise ValidationError({"caja": "La caja ya esta cerrada."})
+    caja = _validate_open_box(_lock_caja(caja), actor=actor, lock=False)
 
     saldo_esperado = caja.saldo_esperado
     diferencia = saldo_fisico - saldo_esperado
@@ -282,7 +934,7 @@ def close_box(
             monto=abs_difference,
             categoria="CIERRE",
             observacion="Ajuste de cierre automatico",
-            creado_por=cerrado_por,
+            creado_por=actor,
         )
 
     cierre = CierreCaja.objects.create(
@@ -292,21 +944,28 @@ def close_box(
         diferencia=diferencia,
         estado=CierreCaja.Estado.JUSTIFICADO if abs_difference > CLOSING_DIFF_THRESHOLD else CierreCaja.Estado.AUTO,
         ajuste_movimiento=ajuste_movimiento,
-        cerrado_por=cerrado_por,
+        cerrado_por=actor,
     )
 
     if abs_difference > CLOSING_DIFF_THRESHOLD and justificacion.strip():
-        Justificacion.objects.create(cierre=cierre, motivo=justificacion.strip(), creado_por=cerrado_por)
-        AlertaOperativa.objects.create(
+        Justificacion.objects.create(cierre=cierre, motivo=justificacion.strip(), creado_por=actor)
+        _upsert_alert(
+            dedupe_key=_build_closing_alert_key(cierre=cierre),
+            tipo=AlertaOperativa.Tipo.DIFERENCIA_GRAVE,
             cierre=cierre,
             caja=caja,
+            turno=caja.turno,
             sucursal=caja.sucursal,
+            usuario=caja.usuario,
+            rubro_operativo=None,
+            periodo_fecha=caja.turno.fecha_operativa,
             mensaje=f"Diferencia grave detectada en caja {caja.id}: {diferencia}.",
+            resuelta=False,
         )
 
     caja.estado = Caja.Estado.CERRADA
     caja.cerrada_en = timezone.now()
-    caja.cerrada_por = cerrado_por
+    caja.cerrada_por = actor
     caja.save(update_fields=["estado", "cerrada_en", "cerrada_por"])
     if not caja.turno.cajas.filter(estado=Caja.Estado.ABIERTA).exists():
         caja.turno.estado = Turno.Estado.CERRADO

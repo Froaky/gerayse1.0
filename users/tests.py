@@ -1,6 +1,6 @@
 from django.contrib import admin
-from django.urls import reverse
 from django.test import TestCase
+from django.urls import reverse
 
 from users.models import Role, User
 
@@ -21,7 +21,31 @@ class UserModelTests(TestCase):
         )
 
         self.assertIsNone(user.role)
+        self.assertFalse(user.is_cashops_admin())
         self.assertEqual(str(user), "encargado1")
+
+    def test_user_role_detection_marks_admin_roles(self):
+        admin_role = Role.objects.create(code="ADMIN", name="Administrador")
+        legacy_admin_role = Role.objects.create(code="administrador", name="Administrador legacy")
+        operator_role = Role.objects.create(code="ENCARGADO", name="Encargado")
+
+        admin_user = User.objects.create_user(username="admin", password="secret12345", role=admin_role)
+        legacy_admin_user = User.objects.create_user(
+            username="admin2",
+            password="secret12345",
+            role=legacy_admin_role,
+        )
+        operator_user = User.objects.create_user(
+            username="caja1",
+            password="secret12345",
+            role=operator_role,
+        )
+        superuser = User.objects.create_superuser(username="root", password="secret12345")
+
+        self.assertTrue(admin_user.is_cashops_admin())
+        self.assertTrue(legacy_admin_user.is_cashops_admin())
+        self.assertTrue(superuser.is_cashops_admin())
+        self.assertFalse(operator_user.is_cashops_admin())
 
     def test_user_can_be_assigned_a_role(self):
         role = Role.objects.create(code="ENCARGADO", name="Encargado")
