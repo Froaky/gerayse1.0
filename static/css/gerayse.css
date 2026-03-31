@@ -666,10 +666,21 @@ h1, h2, h3, p {
 }
 
 @media (min-width: 900px) {
+  /*
+   * Desktop-first guardrail:
+   * Never force two-column app shell on public/auth pages.
+   * `layout--auth` must stay single-column so landing/login can use full width.
+   * If UI looks compressed on desktop, check this block first.
+   */
   .layout {
     grid-template-columns: 280px minmax(0, 1fr);
     align-items: start;
     padding-bottom: 32px;
+  }
+
+  .layout--auth {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 16px 20px 36px;
   }
 
   .sidebar {
@@ -709,7 +720,7 @@ h1, h2, h3, p {
   }
 
   .landing-hero {
-    grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.9fr);
+    grid-template-columns: minmax(0, 1.25fr) minmax(340px, 0.75fr);
     align-items: stretch;
   }
 }

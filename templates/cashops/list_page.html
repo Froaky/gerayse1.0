@@ -8,11 +8,11 @@
       </div>
       <a class="button" href="{{ create_url }}">Nuevo</a>
     </div>
-    <div class="list" style="margin-top:16px;">
+    <div class="list mt-16">
       {% for item in items %}
         <div class="list-item">
           <strong>{{ item }}</strong>
-          <div class="muted" style="margin-top:6px;">{% firstof item.creado_en item.creada_en item.abierto_en item.abierta_en "Sin fecha" %}</div>
+          <div class="muted mt-8">{% firstof item.creado_en item.creada_en item.abierto_en item.abierta_en "Sin fecha" %}</div>
         </div>
       {% empty %}
         <p class="muted">Sin registros todavia.</p>

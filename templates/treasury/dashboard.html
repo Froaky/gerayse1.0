@@ -3,22 +3,22 @@
 {% block title %}Dashboard de Tesoreria | Gerayse{% endblock %}
 {% block content %}
   <section class="hero">
-    <div class="card" style="background: rgba(255,255,255,0.7); backdrop-filter: blur(10px);">
+    <div class="card">
       <div class="row">
         <div>
           <h1>Dashboard de tesoreria</h1>
           <p class="muted">Resumen de deuda, vencimientos y bancos - {% if selected_sucursal %}{{ selected_sucursal.nombre }}{% else %}Vista Consolidada{% endif %}</p>
         </div>
-        <div class="nav" style="gap: 8px;">
+        <div class="list-actions">
           <a class="button {% if not selected_sucursal %}button-primary{% else %}button-secondary{% endif %}" href="{% url 'treasury:dashboard' %}">Consolidado</a>
           {% for suc in sucursales %}
             <a class="button {% if selected_sucursal.pk == suc.pk %}button-primary{% else %}button-secondary{% endif %}" href="{% url 'treasury:dashboard' %}?sucursal={{ suc.pk }}">{{ suc.codigo }}</a>
           {% endfor %}
-          <a class="button-secondary" href="{{ cashops_dashboard_url }}" style="margin-left: 20px;">Operación de Caja</a>
+          <a class="button-secondary" href="{{ cashops_dashboard_url }}">Operacion de Caja</a>
         </div>
       </div>
     </div>
-    <div class="summary-grid" style="grid-template-columns: repeat(4, minmax(0, 1fr));">
+    <div class="summary-grid grid-4">
       {% for card in cards %}
         <div class="summary">
           <span class="muted">{{ card.label }}</span>
@@ -28,7 +28,7 @@
       {% endfor %}
       <div class="summary">
         <span class="muted">Efectivo Central</span>
-        <strong class="has-text-primary">{{ central_cash_balance|money }}</strong>
+        <strong>{{ central_cash_balance|money }}</strong>
         <small class="muted">Saldo en boveda</small>
       </div>
     </div>
@@ -41,9 +41,9 @@
         <p class="muted">Gestion de efectivo, bancos y reportes consolidados.</p>
       </div>
     </div>
-    <div class="action-grid" style="margin-top:16px; grid-template-columns: repeat(4, 1fr);">
-      <a class="action-card" href="{% url 'treasury:disponibilidades' %}" style="border: 2px solid var(--primary);">
-        <strong class="has-text-primary">Disponibilidades</strong>
+    <div class="action-grid grid-4 mt-16">
+      <a class="action-card" href="{% url 'treasury:disponibilidades' %}">
+        <strong>Disponibilidades</strong>
         <small>Reporte consolidado mensual</small>
         <small>Efectivo + Bancos</small>
       </a>
@@ -71,17 +71,17 @@
         </div>
         <span class="badge badge-warning">{{ upcoming_payables|length }}</span>
       </div>
-      <div class="list" style="margin-top:16px;">
+      <div class="list mt-16">
         {% for payable in upcoming_payables %}
           <a class="list-item" href="{% url 'treasury:cuentas_por_pagar_detail' payable.pk %}">
             <div class="row">
               <div>
                 <strong>{{ payable.proveedor.razon_social }}</strong>
-                <div class="muted" style="margin-top:6px;">{{ payable.concepto }} · {{ payable.categoria.nombre }}</div>
+                <div class="muted mt-8">{{ payable.concepto }} · {{ payable.categoria.nombre }}</div>
               </div>
               <span class="badge badge-warning">{{ payable.fecha_vencimiento|date:"d/m/Y" }}</span>
             </div>
-            <div class="muted" style="margin-top:8px;">Pendiente {{ payable.saldo_pendiente|money }}</div>
+            <div class="muted mt-8">Pendiente {{ payable.saldo_pendiente|money }}</div>
           </a>
         {% empty %}
           <p class="muted">No hay vencimientos proximos.</p>
@@ -97,17 +97,17 @@
         </div>
         <span class="badge badge-danger">{{ overdue_payables|length }}</span>
       </div>
-      <div class="list" style="margin-top:16px;">
+      <div class="list mt-16">
         {% for payable in overdue_payables %}
           <a class="list-item" href="{% url 'treasury:cuentas_por_pagar_detail' payable.pk %}">
             <div class="row">
               <div>
                 <strong>{{ payable.proveedor.razon_social }}</strong>
-                <div class="muted" style="margin-top:6px;">{{ payable.concepto }} · {{ payable.categoria.nombre }}</div>
+                <div class="muted mt-8">{{ payable.concepto }} · {{ payable.categoria.nombre }}</div>
               </div>
               <span class="badge badge-danger">Vencida</span>
             </div>
-            <div class="muted" style="margin-top:8px;">Vencio {{ payable.fecha_vencimiento|date:"d/m/Y" }} · Pendiente {{ payable.saldo_pendiente|money }}</div>
+            <div class="muted mt-8">Vencio {{ payable.fecha_vencimiento|date:"d/m/Y" }} · Pendiente {{ payable.saldo_pendiente|money }}</div>
           </a>
         {% empty %}
           <p class="muted">No hay deuda vencida.</p>
@@ -125,17 +125,17 @@
         </div>
         <span class="badge">{{ recent_movements|length }}</span>
       </div>
-      <div class="list" style="margin-top:16px;">
+      <div class="list mt-16">
         {% for m in recent_movements %}
           <a class="list-item" href="{% url 'treasury:bank_movements_detail' m.pk %}">
             <div class="row">
               <div>
                 <strong>{{ m.concepto }}</strong>
-                <div class="muted" style="margin-top:6px;">{{ m.cuenta_bancaria.nombre }}</div>
+                <div class="muted mt-8">{{ m.cuenta_bancaria.nombre }}</div>
               </div>
               <span class="badge {% if m.tipo == 'CREDITO' %}badge-success{% else %}badge-danger{% endif %}">{{ m.monto|money }}</span>
             </div>
-            <div class="muted" style="margin-top:8px;">{{ m.fecha|date:"d/m/Y" }} · {{ m.get_tipo_display }}</div>
+            <div class="muted mt-8">{{ m.fecha|date:"d/m/Y" }} · {{ m.get_tipo_display }}</div>
           </a>
         {% empty %}
           <p class="muted">No hay movimientos recientes.</p>
@@ -151,17 +151,17 @@
         </div>
         <span class="badge">{{ recent_batches|length }}</span>
       </div>
-      <div class="list" style="margin-top:16px;">
+      <div class="list mt-16">
         {% for b in recent_batches %}
           <div class="list-item">
             <div class="row">
               <div>
                 <strong>{{ b.operador|default:"Lote" }} {{ b.terminal }}</strong>
-                <div class="muted" style="margin-top:6px;">{{ b.cuenta_bancaria.nombre|default:"Sin cuenta" }}</div>
+                <div class="muted mt-8">{{ b.cuenta_bancaria.nombre|default:"Sin cuenta" }}</div>
               </div>
               <span class="badge badge-info">{{ b.total_lote|money }}</span>
             </div>
-            <div class="muted" style="margin-top:8px;">{{ b.fecha_lote|date:"d/m/Y" }}</div>
+            <div class="muted mt-8">{{ b.fecha_lote|date:"d/m/Y" }}</div>
           </div>
         {% empty %}
           <p class="muted">No hay lotes recientes.</p>
@@ -178,17 +178,17 @@
       </div>
       <span class="badge">{{ recent_payments|length }}</span>
     </div>
-    <div class="list" style="margin-top:16px;">
+    <div class="list mt-16">
       {% for payment in recent_payments %}
         <a class="list-item" href="{% url 'treasury:pagos_detail' payment.pk %}">
           <div class="row">
             <div>
               <strong>{{ payment.cuenta_por_pagar.proveedor.razon_social }}</strong>
-              <div class="muted" style="margin-top:6px;">{{ payment.get_medio_pago_display }} · {{ payment.cuenta_por_pagar.concepto }}</div>
+              <div class="muted mt-8">{{ payment.get_medio_pago_display }} · {{ payment.cuenta_por_pagar.concepto }}</div>
             </div>
             <span class="badge badge-success">{{ payment.monto|money }}</span>
           </div>
-          <div class="muted" style="margin-top:8px;">{{ payment.fecha_pago|date:"d/m/Y" }} · {{ payment.cuenta_bancaria.nombre }}</div>
+          <div class="muted mt-8">{{ payment.fecha_pago|date:"d/m/Y" }} · {{ payment.cuenta_bancaria.nombre }}</div>
         </a>
       {% empty %}
         <p class="muted">Todavia no hay pagos registrados.</p>

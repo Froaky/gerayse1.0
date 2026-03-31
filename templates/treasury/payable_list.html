@@ -1,4 +1,4 @@
-{% extends "cashops/layout.html" %}
+{% extends "treasury/layout.html" %}
 
 {% block title %}Gerayse | Cuentas por pagar{% endblock %}
 
@@ -11,7 +11,7 @@
       </div>
       <a class="button" href="{% url 'treasury:cuenta_por_pagar_create' %}">Nueva deuda</a>
     </div>
-    <form method="get" class="summary-grid" style="margin-top: 16px;">
+    <form method="get" class="summary-grid mt-16">
       {% for field in filter_form %}
         <div class="field">
           <label for="{{ field.id_for_label }}">{{ field.label }}</label>
@@ -23,7 +23,7 @@
         <button class="button-secondary" type="submit">Filtrar</button>
       </div>
     </form>
-    <div class="list" style="margin-top: 16px;">
+    <div class="list mt-16">
       {% for payable in payables %}
         <div class="list-item">
           <div class="row">

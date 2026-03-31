@@ -15,7 +15,7 @@
     </ul>
   {% endif %}
 
-  <form method="post" action="{{ form_action }}" hx-post="{{ form_action }}" hx-target="#form-card" hx-swap="outerHTML" class="stack" style="margin-top:16px;">
+  <form method="post" action="{{ form_action }}" hx-post="{{ form_action }}" hx-target="#form-card" hx-swap="outerHTML" class="stack mt-16">
     {% csrf_token %}
     {% for hidden in form.hidden_fields %}
       {{ hidden }}
@@ -32,7 +32,7 @@
         {% endfor %}
       </div>
     {% endfor %}
-    <div class="row" style="margin-top:8px;">
+    <div class="row mt-8">
       <span class="muted">Formulario reusable para alta y edicion.</span>
       <button class="button" type="submit">{{ submit_label }}</button>
     </div>

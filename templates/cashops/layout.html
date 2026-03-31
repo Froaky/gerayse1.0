@@ -168,6 +168,11 @@
         margin-top: 12px;
       }
       .row { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
+      .mt-8 { margin-top: 8px; }
+      .mt-12 { margin-top: 12px; }
+      .mt-16 { margin-top: 16px; }
+      .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
       .badge {
         display: inline-flex;
         align-items: center;
@@ -206,6 +211,10 @@
       @media (max-width: 640px) {
         .shell {
           padding: 16px;
+        }
+        .grid-2,
+        .grid-4 {
+          grid-template-columns: 1fr;
         }
       }
     </style>

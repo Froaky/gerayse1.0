@@ -1,15 +1,15 @@
-<div class="list" style="margin-top:16px;">
+<div class="list mt-16">
   {% for item in items %}
     <a class="list-item" href="{{ item.href }}">
       <div class="row">
         <div>
           <strong>{{ item.title }}</strong>
-          <div class="muted" style="margin-top:6px;">{{ item.subtitle }}</div>
+          <div class="muted mt-8">{{ item.subtitle }}</div>
         </div>
         <span class="badge {% if item.badge_class %}{{ item.badge_class }}{% endif %}">{{ item.badge }}</span>
       </div>
       {% if item.meta %}
-        <div class="muted" style="margin-top:8px;">{{ item.meta }}</div>
+        <div class="muted mt-8">{{ item.meta }}</div>
       {% endif %}
     </a>
   {% empty %}

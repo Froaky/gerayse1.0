@@ -14,6 +14,7 @@
         --muted: #5f6b78;
         --line: #d8e0ea;
         --accent: #183b66;
+        --primary: #183b66;
         --accent-2: #8b6a1f;
         --danger: #a33a32;
         --success: #2f6b4c;
@@ -81,6 +82,7 @@
       
       .button { background: var(--gradient-primary); color: #fff; border: none; }
       .button:hover { transform: translateY(-2px); filter: brightness(1.1); box-shadow: 0 10px 25px rgba(24, 59, 102, 0.3); }
+      .button-primary { background: var(--gradient-primary); color: #fff; border: none; }
       .button-secondary { background: var(--panel-soft); color: var(--text); }
       .button-secondary:hover { background: #fff; transform: translateY(-2px); box-shadow: var(--shadow-hover); }
 
@@ -174,6 +176,9 @@
       }
       .list-item:hover { transform: translateX(6px); border-color: var(--accent); }
       .row { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
+      .mt-16 { margin-top: 16px; }
+      .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
       
       .badge {
         display: inline-flex;
@@ -191,6 +196,7 @@
       .badge-success { background: rgba(47, 107, 77, 0.12); color: var(--success); }
       .badge-warning { background: rgba(139, 106, 31, 0.15); color: #8a6415; }
       .badge-danger { background: rgba(163, 58, 50, 0.12); color: var(--danger); }
+      .badge-info { background: rgba(24, 59, 102, 0.12); color: var(--accent); }
       .badge-muted { background: rgba(95, 107, 120, 0.12); color: var(--muted); }
       .footer-space { height: 40px; }
       @media (min-width: 880px) {
@@ -212,6 +218,10 @@
       @media (max-width: 640px) {
         .shell {
           padding: 16px;
+        }
+        .grid-2,
+        .grid-4 {
+          grid-template-columns: 1fr;
         }
       }
     </style>

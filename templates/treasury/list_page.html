@@ -20,8 +20,8 @@
       </div>
     </div>
     {% if filter_form %}
-      <form method="get" class="stack" style="margin-top:16px;">
-        <div class="summary-grid" style="grid-template-columns: repeat(2, minmax(0, 1fr));">
+      <form method="get" class="stack mt-16">
+        <div class="summary-grid grid-2">
           {% for field in filter_form.visible_fields %}
             <div class="field">
               <label for="{{ field.id_for_label }}">{{ field.label }}</label>
