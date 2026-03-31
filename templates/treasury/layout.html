@@ -34,26 +34,39 @@
         transition: var(--transition);
       }
       a { color: inherit; text-decoration: none; }
-      .shell { max-width: 1240px; margin: 0 auto; padding: 16px; min-height: 100vh; }
+      .shell { max-width: 1360px; margin: 0 auto; padding: 24px 20px 28px; min-height: 100vh; }
       .topbar {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 12px;
+        display: grid;
+        gap: 14px;
         margin-bottom: 24px;
-        flex-wrap: wrap;
       }
       .brand { display: flex; flex-direction: column; gap: 2px; }
       .brand strong { font-size: 1.2rem; letter-spacing: 0.02em; font-weight: 800; }
       .brand span { color: var(--muted); font-size: 0.88rem; }
-      .nav { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
+      .nav {
+        display: grid;
+        gap: 10px;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.82);
+      }
       .nav form { margin: 0; }
+      .nav-primary,
+      .nav-user {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .nav-user {
+        justify-content: flex-end;
+      }
       
       .chip, .button, .button-secondary {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        min-height: 42px;
+        min-height: 40px;
         padding: 8px 16px;
         border-radius: 12px;
         border: 1px solid var(--line);
@@ -87,7 +100,7 @@
       .card h2, .card h3 { margin: 0; font-weight: 800; letter-spacing: -0.01em; }
       .muted { color: var(--muted); }
       
-      .summary-grid { display: grid; gap: 16px; }
+      .summary-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
       .summary {
         display: grid;
         gap: 6px;
@@ -102,7 +115,7 @@
       
       .action-grid {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
         gap: 12px;
       }
       .action-card {
@@ -160,6 +173,7 @@
         transition: var(--transition);
       }
       .list-item:hover { transform: translateX(6px); border-color: var(--accent); }
+      .row { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
       
       .badge {
         display: inline-flex;
@@ -180,9 +194,25 @@
       .badge-muted { background: rgba(95, 107, 120, 0.12); color: var(--muted); }
       .footer-space { height: 40px; }
       @media (min-width: 880px) {
-        .summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .topbar {
+          grid-template-columns: auto minmax(0, 1fr);
+          align-items: center;
+        }
+        .nav {
+          grid-template-columns: minmax(0, 1fr) auto;
+          align-items: center;
+          padding: 10px 12px;
+        }
+        .nav-user {
+          flex-wrap: nowrap;
+          align-items: center;
+        }
         .layout-two { grid-template-columns: 1.2fr 0.8fr; align-items: start; }
-        .action-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      }
+      @media (max-width: 640px) {
+        .shell {
+          padding: 16px;
+        }
       }
     </style>
   </head>
@@ -194,22 +224,26 @@
           <span>Proveedores, categorias, deuda, bancos y pagos administrativos</span>
         </div>
         <nav class="nav">
-          <a class="chip" href="{% url 'treasury:dashboard' %}">Inicio</a>
-          <a class="chip" href="{% url 'treasury:cuentas_por_pagar_list' %}">Deudas</a>
-          <a class="chip" href="{% url 'treasury:pagos_list' %}">Pagos</a>
-          <a class="chip" href="{% url 'treasury:bank_movements_list' %}">Bancos</a>
-          <a class="chip" href="{% url 'treasury:pos_batches_list' %}">Lotes POS</a>
-          <a class="chip" href="{% url 'treasury:bank_reconciliation' %}"><b>Conciliacion</b></a>
-          <a class="chip" href="{% url 'treasury:disponibilidades' %}"><b>Disponibilidades</b></a>
-          <a class="chip" href="{% url 'treasury:central_cash_list' %}">Efectivo</a>
-          <a class="chip" href="{% url 'treasury:proveedores_list' %}">Prov.</a>
-          <a class="chip" href="{% url 'cashops:dashboard' %}">Caja</a>
+          <div class="nav-primary">
+            <a class="chip" href="{% url 'treasury:dashboard' %}">Inicio</a>
+            <a class="chip" href="{% url 'treasury:cuentas_por_pagar_list' %}">Deudas</a>
+            <a class="chip" href="{% url 'treasury:pagos_list' %}">Pagos</a>
+            <a class="chip" href="{% url 'treasury:bank_movements_list' %}">Bancos</a>
+            <a class="chip" href="{% url 'treasury:pos_batches_list' %}">Lotes POS</a>
+            <a class="chip" href="{% url 'treasury:bank_reconciliation' %}"><b>Conciliacion</b></a>
+            <a class="chip" href="{% url 'treasury:disponibilidades' %}"><b>Disponibilidades</b></a>
+            <a class="chip" href="{% url 'treasury:central_cash_list' %}">Efectivo</a>
+            <a class="chip" href="{% url 'treasury:proveedores_list' %}">Prov.</a>
+            <a class="chip" href="{% url 'cashops:dashboard' %}">Caja</a>
+          </div>
           {% if request.user.is_authenticated %}
-            <span class="chip">{{ request.user }}</span>
-            <form method="post" action="{% url 'users:logout' %}">
-              {% csrf_token %}
-              <button class="chip chip-button" type="submit">Salir</button>
-            </form>
+            <div class="nav-user">
+              <span class="chip">{{ request.user }}</span>
+              <form method="post" action="{% url 'users:logout' %}">
+                {% csrf_token %}
+                <button class="chip chip-button" type="submit">Salir</button>
+              </form>
+            </div>
           {% endif %}
         </nav>
       </header>

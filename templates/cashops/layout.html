@@ -30,26 +30,39 @@
           var(--bg);
       }
       a { color: inherit; text-decoration: none; }
-      .shell { max-width: 1200px; margin: 0 auto; padding: 16px; }
+      .shell { max-width: 1360px; margin: 0 auto; padding: 24px 20px 28px; }
       .topbar {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 16px;
-        flex-wrap: wrap;
+        display: grid;
+        gap: 14px;
+        margin-bottom: 20px;
       }
       .brand { display: flex; flex-direction: column; gap: 2px; }
       .brand strong { font-size: 1.05rem; letter-spacing: 0.02em; }
       .brand span { color: var(--muted); font-size: 0.92rem; }
-      .nav { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+      .nav {
+        display: grid;
+        gap: 10px;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.75);
+      }
       .nav form { margin: 0; }
+      .nav-primary,
+      .nav-user {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .nav-user {
+        justify-content: flex-end;
+      }
       .chip, .button, .button-secondary, .card-link {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        min-height: 44px;
-        padding: 10px 14px;
+        min-height: 40px;
+        padding: 9px 14px;
         border-radius: 14px;
         border: 1px solid var(--line);
         background: var(--panel);
@@ -68,7 +81,7 @@
         border: 1px solid var(--line);
         border-radius: 20px;
         box-shadow: var(--shadow);
-        padding: 16px;
+        padding: 20px;
       }
       .hero {
         display: grid;
@@ -77,7 +90,7 @@
       }
       .hero h1, .card h2, .card h3 { margin: 0; }
       .muted { color: var(--muted); }
-      .summary-grid { display: grid; gap: 12px; }
+      .summary-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
       .summary {
         display: grid;
         gap: 4px;
@@ -89,7 +102,7 @@
       .summary strong { font-size: 1.15rem; }
       .action-grid {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
         gap: 10px;
       }
       .action-card {
@@ -140,20 +153,21 @@
       }
       .message.success { border-color: rgba(47, 107, 61, 0.25); background: rgba(47, 107, 61, 0.08); }
       .message.error { border-color: rgba(155, 45, 48, 0.25); background: rgba(155, 45, 48, 0.08); }
-      .list { display: grid; gap: 10px; }
+      .list { display: grid; gap: 12px; }
       .list-item {
         padding: 14px;
         border: 1px solid var(--line);
         border-radius: 16px;
         background: var(--panel);
       }
+      .list-item:hover { border-color: rgba(31, 91, 77, 0.28); }
       .list-actions {
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
         margin-top: 12px;
       }
-      .row { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+      .row { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
       .badge {
         display: inline-flex;
         align-items: center;
@@ -171,9 +185,28 @@
       .badge-muted { background: rgba(108, 100, 89, 0.1); color: var(--muted); }
       .footer-space { height: 24px; }
       @media (min-width: 880px) {
-        .summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .topbar {
+          grid-template-columns: auto minmax(0, 1fr);
+          align-items: center;
+        }
+        .nav {
+          grid-template-columns: minmax(0, 1fr) auto;
+          align-items: center;
+          padding: 10px 12px;
+        }
+        .nav-primary {
+          justify-content: flex-start;
+        }
+        .nav-user {
+          flex-wrap: nowrap;
+          align-items: center;
+        }
         .layout-two { grid-template-columns: 1.2fr 0.8fr; align-items: start; }
-        .action-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      }
+      @media (max-width: 640px) {
+        .shell {
+          padding: 16px;
+        }
       }
     </style>
   </head>
@@ -185,22 +218,26 @@
           <span>Cajas, turnos y movimientos financieros</span>
         </div>
         <nav class="nav">
-          <a class="chip" href="{% url 'cashops:dashboard' %}">Dashboard</a>
-          <a class="chip" href="{% url 'cashops:box_open' %}">Abrir caja</a>
-          {% if request.user.is_authenticated and request.user.is_cashops_admin %}
-            <a class="chip" href="{% url 'cashops:alert_panel' %}">Alertas</a>
-            <a class="chip" href="{% url 'treasury:dashboard' %}">Tesoreria</a>
-            <a class="chip" href="{% url 'cashops:operational_category_list' %}">Rubros</a>
-            <a class="chip" href="{% url 'cashops:operational_limit_list' %}">Limites</a>
-            <a class="chip" href="{% url 'cashops:sucursal_list' %}">Sucursales</a>
-            <a class="chip" href="{% url 'cashops:turno_list' %}">Turnos</a>
-          {% endif %}
+          <div class="nav-primary">
+            <a class="chip" href="{% url 'cashops:dashboard' %}">Dashboard</a>
+            <a class="chip" href="{% url 'cashops:box_open' %}">Abrir caja</a>
+            {% if request.user.is_authenticated and request.user.is_cashops_admin %}
+              <a class="chip" href="{% url 'cashops:alert_panel' %}">Alertas</a>
+              <a class="chip" href="{% url 'treasury:dashboard' %}">Tesoreria</a>
+              <a class="chip" href="{% url 'cashops:operational_category_list' %}">Rubros</a>
+              <a class="chip" href="{% url 'cashops:operational_limit_list' %}">Limites</a>
+              <a class="chip" href="{% url 'cashops:sucursal_list' %}">Sucursales</a>
+              <a class="chip" href="{% url 'cashops:turno_list' %}">Turnos</a>
+            {% endif %}
+          </div>
           {% if request.user.is_authenticated %}
-            <span class="chip">{{ request.user }}</span>
-            <form method="post" action="{% url 'users:logout' %}">
-              {% csrf_token %}
-              <button class="chip chip-button" type="submit">Salir</button>
-            </form>
+            <div class="nav-user">
+              <span class="chip">{{ request.user }}</span>
+              <form method="post" action="{% url 'users:logout' %}">
+                {% csrf_token %}
+                <button class="chip chip-button" type="submit">Salir</button>
+              </form>
+            </div>
           {% endif %}
         </nav>
       </header>

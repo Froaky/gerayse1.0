@@ -161,7 +161,7 @@ h1, h2, h3, p {
 
 .layout--auth {
   grid-template-columns: minmax(0, 1fr);
-  padding-bottom: 32px;
+  padding: 12px 20px 36px;
 }
 
 .sidebar {
@@ -384,16 +384,16 @@ h1, h2, h3, p {
 }
 
 .auth-shell {
-  min-height: calc(100vh - 136px);
+  min-height: calc(100vh - 154px);
   display: grid;
   align-items: center;
-  padding: 24px 0 28px;
+  padding: 28px 0 36px;
 }
 
 .auth-layout {
   display: grid;
-  gap: 20px;
-  width: min(100%, 860px);
+  gap: 24px;
+  width: min(100%, 1120px);
   margin: 0 auto;
 }
 
@@ -401,8 +401,13 @@ h1, h2, h3, p {
   order: 2;
   display: grid;
   gap: 16px;
-  max-width: 440px;
+  max-width: 520px;
   justify-self: center;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow: var(--shadow);
 }
 
 .auth-lead {
@@ -432,7 +437,7 @@ h1, h2, h3, p {
   order: 1;
   width: min(100%, 400px);
   justify-self: center;
-  padding: 28px;
+  padding: 30px;
   border: 1px solid var(--line);
   border-radius: 22px;
   background: #ffffff;
@@ -447,7 +452,7 @@ h1, h2, h3, p {
 
 .auth-card__header h2 {
   margin: 0;
-  font-size: 1.8rem;
+  font-size: 1.9rem;
   line-height: 1.05;
   letter-spacing: -0.03em;
 }
@@ -469,7 +474,7 @@ h1, h2, h3, p {
 .form-stack {
   display: grid;
   gap: 16px;
-  margin-top: 20px;
+  margin-top: 18px;
 }
 
 .field {
@@ -480,7 +485,7 @@ h1, h2, h3, p {
 .field input,
 .app-input {
   width: 100%;
-  min-height: 52px;
+  min-height: 50px;
   padding: 0 16px;
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -529,6 +534,8 @@ h1, h2, h3, p {
   margin-top: 16px;
   color: var(--muted);
   font-size: 0.92rem;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
 }
 
 .app-shell--auth .topbar {
@@ -606,9 +613,9 @@ h1, h2, h3, p {
   }
 
   .auth-layout {
-    grid-template-columns: minmax(0, 1fr) minmax(360px, 400px);
+    grid-template-columns: minmax(460px, 1fr) minmax(380px, 460px);
     align-items: center;
-    gap: 36px;
+    gap: 44px;
   }
 
   .auth-copy {
@@ -619,6 +626,7 @@ h1, h2, h3, p {
   .auth-card--login {
     order: 2;
     justify-self: start;
+    width: min(100%, 440px);
   }
 }
 
