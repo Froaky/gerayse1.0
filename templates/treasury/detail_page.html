@@ -1,0 +1,82 @@
+{% extends "treasury/layout.html" %}
+{% block title %}{{ title }} | Tesoreria | Gerayse{% endblock %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>{{ title }}</h1>
+        <p class="muted">{{ subtitle }}</p>
+      </div>
+      <a class="button-secondary" href="{{ back_url }}">Volver</a>
+    </div>
+    {% if filter_form %}
+      <form method="get" class="stack" style="margin-top:16px;">
+        <div class="summary-grid" style="grid-template-columns: repeat(2, minmax(0, 1fr));">
+          {% for field in filter_form.visible_fields %}
+            <div class="field">
+              <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+              {{ field }}
+            </div>
+          {% endfor %}
+        </div>
+        <div class="list-actions">
+          <button class="button" type="submit">Filtrar historial</button>
+          <a class="button-secondary" href=".">Limpiar</a>
+        </div>
+      </form>
+    {% endif %}
+    <div style="margin-top:12px;">
+      <span class="badge {% if section_label_class %}{{ section_label_class }}{% endif %}">{{ section_label }}</span>
+    </div>
+
+    <div class="summary-grid" style="margin-top:16px;">
+      {% include "treasury/partials/detail_fields.html" %}
+    </div>
+
+    {% if actions %}
+      <div class="list-actions" style="margin-top:16px;">
+        {% for action in actions %}
+          {% if action.method == "post" %}
+            <form method="post" action="{{ action.href }}" style="margin:0;">
+              {% csrf_token %}
+              <button class="{% if action.kind == 'primary' %}button{% else %}button-secondary{% endif %}" type="submit">{{ action.label }}</button>
+            </form>
+          {% else %}
+            <a class="{% if action.kind == 'primary' %}button{% else %}button-secondary{% endif %}" href="{{ action.href }}">{{ action.label }}</a>
+          {% endif %}
+        {% endfor %}
+      </div>
+    {% endif %}
+  </section>
+  {% for section in extra_sections %}
+    <section class="card" style="margin-top:16px;">
+      <div class="row">
+        <div>
+          <h2>{{ section.title }}</h2>
+          {% if section.subtitle %}
+            <p class="muted">{{ section.subtitle }}</p>
+          {% endif %}
+        </div>
+        <span class="badge">{{ section.items|length }}</span>
+      </div>
+      <div class="list" style="margin-top:16px;">
+        {% for item in section.items %}
+          <a class="list-item" href="{{ item.href }}">
+            <div class="row">
+              <div>
+                <strong>{{ item.title }}</strong>
+                <div class="muted" style="margin-top:6px;">{{ item.subtitle }}</div>
+              </div>
+              <span class="badge {% if item.badge_class %}{{ item.badge_class }}{% endif %}">{{ item.badge }}</span>
+            </div>
+            {% if item.meta %}
+              <div class="muted" style="margin-top:8px;">{{ item.meta }}</div>
+            {% endif %}
+          </a>
+        {% empty %}
+          <p class="muted">{{ section.empty_label|default:"Todavia no hay registros." }}</p>
+        {% endfor %}
+      </div>
+    </section>
+  {% endfor %}
+{% endblock %}

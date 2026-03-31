@@ -1,0 +1,48 @@
+{% extends "treasury/layout.html" %}
+
+{% block title %}Gerayse | Cuentas bancarias{% endblock %}
+
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Cuentas bancarias</h1>
+        <p class="muted">Cuentas habilitadas para pagos, movimientos y acreditaciones.</p>
+      </div>
+      <a class="button" href="{% url 'treasury:cuenta_bancaria_create' %}">Nueva cuenta</a>
+    </div>
+    <form method="get" class="summary-grid" style="margin-top: 16px;">
+      {% for field in filter_form %}
+        <div class="field">
+          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+        </div>
+      {% endfor %}
+      <div class="row" style="grid-column: 1 / -1;">
+        <span class="muted">{{ accounts|length }} registros visibles.</span>
+        <button class="button-secondary" type="submit">Filtrar</button>
+      </div>
+    </form>
+    <div class="list" style="margin-top: 16px;">
+      {% for account in accounts %}
+        <div class="list-item">
+          <div class="row">
+            <strong>{{ account.nombre }} - {{ account.banco }}</strong>
+            <span class="badge {% if account.activa %}badge-success{% else %}badge-muted{% endif %}">
+              {% if account.activa %}Activa{% else %}Inactiva{% endif %}
+            </span>
+          </div>
+          <div class="muted" style="margin-top: 6px;">{{ account.get_tipo_cuenta_display }} | {{ account.numero_cuenta }} | {{ account.alias|default:"Sin alias" }}</div>
+          <div class="list-actions">
+            <form method="post" action="{% url 'treasury:cuenta_bancaria_toggle' account.pk %}">
+              {% csrf_token %}
+              <button class="button-secondary" type="submit">Toggle estado</button>
+            </form>
+          </div>
+        </div>
+      {% empty %}
+        <p class="muted">Sin cuentas bancarias cargadas.</p>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

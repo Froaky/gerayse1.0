@@ -1,0 +1,154 @@
+{% extends "treasury/layout.html" %}
+
+{% block title %}Conciliacion Bancaria - {{ block.super }}{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-1">Conciliacion de Tarjetas</h1>
+            <p class="text-muted small">Flujo: Venta -> Lote POS -> Acreditacion Bancaria</p>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0 mb-4 bg-light">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    {{ form.cuenta_bancaria.label_tag }}
+                    {{ form.cuenta_bancaria }}
+                </div>
+                <div class="col-md-3">
+                    {{ form.fecha_desde.label_tag }}
+                    {{ form.fecha_desde }}
+                </div>
+                <div class="col-md-3">
+                    {{ form.fecha_hasta.label_tag }}
+                    {{ form.fecha_hasta }}
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-search me-1"></i> Consultar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if snapshot %}
+    <div class="row g-4 mb-5">
+        <!-- Stage 1: Sales -->
+        <div class="col-md-4">
+            <div class="card h-100 shadow-sm border-0 border-start border-4 border-primary">
+                <div class="card-body">
+                    <h6 class="text-uppercase text-muted fw-bold small mb-3">1. Ventas por Tarjeta</h6>
+                    <div class="h2 mb-2">$ {{ snapshot.total_sales|floatformat:2 }}</div>
+                    <p class="text-muted small mb-0">Total registrado en cierres de caja (CashOps)</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stage 2: POS Batches -->
+        <div class="col-md-4">
+            <div class="card h-100 shadow-sm border-0 border-start border-4 border-info">
+                <div class="card-body">
+                    <h6 class="text-uppercase text-muted fw-bold small mb-3">2. Lotes POS Informados</h6>
+                    <div class="h2 mb-2">$ {{ snapshot.total_batches|floatformat:2 }}</div>
+                    {% if snapshot.diff_sales_batches != 0 %}
+                    <div class="badge {% if snapshot.diff_sales_batches < 0 %}bg-danger{% else %}bg-warning text-dark{% endif %}">
+                        Dif: $ {{ snapshot.diff_sales_batches|floatformat:2 }} vs Ventas
+                    </div>
+                    {% else %}
+                    <div class="badge bg-success">Coincide con Ventas</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Stage 3: Bank -->
+        <div class="col-md-4">
+            <div class="card h-100 shadow-sm border-0 border-start border-4 border-success">
+                <div class="card-body">
+                    <h6 class="text-uppercase text-muted fw-bold small mb-3">3. Acreditado en Banco</h6>
+                    <div class="h2 mb-2">$ {{ snapshot.total_accredited_bruto|floatformat:2 }}</div>
+                    <p class="text-muted small mb-2">(Bruto antes de retenciones)</p>
+                    {% if snapshot.diff_batches_accretion != 0 %}
+                    <div class="badge bg-warning text-dark">
+                        Pendiente: $ {{ snapshot.diff_batches_accretion|floatformat:2 }}
+                    </div>
+                    {% else %}
+                    <div class="badge bg-success">Lotes totalmente acreditados</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Breakdown Section -->
+    <div class="row g-4">
+        <div class="col-md-6">
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-white border-0 py-3">
+                    <h5 class="mb-0">Composicion de Acreditaciones</h5>
+                </div>
+                <div class="card-body pt-0">
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item d-flex justify-content-between align-items-center border-0 px-0">
+                            <span class="text-muted">Monto Neto Recibido</span>
+                            <span class="fw-bold text-success">$ {{ snapshot.total_accredited_net|floatformat:2 }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center border-0 px-0">
+                            <span class="text-muted">Retenciones y Comisiones (-)</span>
+                            <span class="text-danger">$ {{ snapshot.total_discounts|floatformat:2 }}</span>
+                        </li>
+                        <hr class="my-1">
+                        <li class="list-group-item d-flex justify-content-between align-items-center border-0 px-0">
+                            <span class="fw-bold">Total Bruto</span>
+                            <span class="fw-bold h5 mb-0">$ {{ snapshot.total_accredited_bruto|floatformat:2 }}</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card shadow-sm border-0 bg-dark text-white">
+                <div class="card-body p-4">
+                    <h5 class="mb-4">Resumen de Diferencias</h5>
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span>Ventas vs Lotes POS</span>
+                            <span class="{% if snapshot.diff_sales_batches == 0 %}text-success{% else %}text-warning{% endif %}">
+                                $ {{ snapshot.diff_sales_batches|floatformat:2 }}
+                            </span>
+                        </div>
+                        <div class="progress" style="height: 4px;">
+                            <div class="progress-bar {% if snapshot.diff_sales_batches == 0 %}bg-success{% else %}bg-warning{% endif %}" style="width: {% if snapshot.total_sales > 0 %}{% widthratio snapshot.total_batches snapshot.total_sales 100 %}{% else %}0{% endif %}%"></div>
+                        </div>
+                    </div>
+                    <div class="mb-0">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span>Lotes vs Cupón Banco</span>
+                            <span class="{% if snapshot.diff_batches_accretion == 0 %}text-success{% else %}text-warning{% endif %}">
+                                $ {{ snapshot.diff_batches_accretion|floatformat:2 }}
+                            </span>
+                        </div>
+                        <div class="progress" style="height: 4px;">
+                            <div class="progress-bar {% if snapshot.diff_batches_accretion == 0 %}bg-success{% else %}bg-warning{% endif %}" style="width: {% if snapshot.total_batches > 0 %}{% widthratio snapshot.total_accredited_bruto snapshot.total_batches 100 %}{% else %}0{% endif %}%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="text-center py-5">
+        <div class="mb-3">
+            <i class="bi bi-clipboard-check h1 text-muted"></i>
+        </div>
+        <h5>Seleccioná una cuenta y rango de fechas</h5>
+        <p class="text-muted">Para comenzar la conciliacion de de ventas con tarjeta.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

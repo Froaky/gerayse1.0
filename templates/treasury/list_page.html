@@ -1,0 +1,45 @@
+{% extends "treasury/layout.html" %}
+{% block title %}{{ title }} | Tesoreria | Gerayse{% endblock %}
+{% block content %}
+  <section class="card" style="margin-bottom:16px;">
+    <div class="row">
+      <div>
+        <h1>{{ title }}</h1>
+        <p class="muted">{{ subtitle }}</p>
+      </div>
+      <div class="list-actions">
+        {% if secondary_url %}
+          <a class="button-secondary" href="{{ secondary_url }}">{{ secondary_label }}</a>
+        {% endif %}
+        {% for action in actions %}
+          <a class="{% if action.kind == 'primary' %}button{% else %}button-secondary{% endif %}" href="{{ action.href }}">{{ action.label }}</a>
+        {% endfor %}
+        {% if create_url %}
+          <a class="button" href="{{ create_url }}">Nuevo</a>
+        {% endif %}
+      </div>
+    </div>
+    {% if filter_form %}
+      <form method="get" class="stack" style="margin-top:16px;">
+        <div class="summary-grid" style="grid-template-columns: repeat(2, minmax(0, 1fr));">
+          {% for field in filter_form.visible_fields %}
+            <div class="field">
+              <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+              {{ field }}
+              {% for error in field.errors %}
+                <div class="error">{{ error }}</div>
+              {% endfor %}
+            </div>
+          {% endfor %}
+        </div>
+        <div class="list-actions">
+          <button class="button" type="submit">Filtrar</button>
+          <a class="button-secondary" href=".">Limpiar</a>
+        </div>
+      </form>
+    {% endif %}
+  </section>
+  <section class="card">
+    {% include "treasury/partials/list_items.html" %}
+  </section>
+{% endblock %}

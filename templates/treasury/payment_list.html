@@ -1,0 +1,47 @@
+{% extends "treasury/layout.html" %}
+
+{% block title %}Gerayse | Pagos de tesoreria{% endblock %}
+
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Pagos de tesoreria</h1>
+        <p class="muted">Pagos administrativos con estado operativo y estado bancario separados.</p>
+      </div>
+      <a class="button" href="{% url 'treasury:payment_bank_trace_create' %}">Nueva trazabilidad</a>
+    </div>
+    <form method="get" class="summary-grid" style="margin-top: 16px;">
+      {% for field in filter_form %}
+        <div class="field">
+          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+        </div>
+      {% endfor %}
+      <div class="row" style="grid-column: 1 / -1;">
+        <span class="muted">{{ payments|length }} registros visibles.</span>
+        <button class="button-secondary" type="submit">Filtrar</button>
+      </div>
+    </form>
+    <div class="list" style="margin-top: 16px;">
+      {% for payment in payments %}
+        <div class="list-item">
+          <div class="row">
+            <strong>#{{ payment.pk }} - {{ payment.cuenta_por_pagar.proveedor.razon_social }}</strong>
+            <span class="badge {% if payment.estado_bancario == 'IMPACTADO' %}badge-success{% elif payment.estado_bancario == 'RECHAZADO' %}badge-danger{% else %}badge-warning{% endif %}">
+              {{ payment.get_estado_bancario_display }}
+            </span>
+          </div>
+          <div class="muted" style="margin-top: 6px;">
+            {{ payment.fecha_pago }} | {{ payment.get_medio_pago_display }} | {{ payment.cuenta_bancaria.nombre }} | ${{ payment.monto }}
+          </div>
+          <div class="list-actions">
+            <a class="button-secondary" href="{% url 'treasury:payment_bank_trace_list' %}">Ver trazabilidad bancaria</a>
+          </div>
+        </div>
+      {% empty %}
+        <p class="muted">Sin pagos registrados.</p>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

@@ -1,0 +1,1365 @@
+[30/Mar/2026 10:20:13] "GET / HTTP/1.1" 302 0
+[30/Mar/2026 10:20:13,668] - Broken pipe from ('127.0.0.1', 56859)
+[30/Mar/2026 10:20:43] "GET /users/login/ HTTP/1.1" 404 179
+[30/Mar/2026 10:20:43,815] - Broken pipe from ('127.0.0.1', 53737)
+[30/Mar/2026 10:20:58] "GET /login/ HTTP/1.1" 200 2878
+[30/Mar/2026 10:20:58,708] - Broken pipe from ('127.0.0.1', 49275)
+[30/Mar/2026 10:37:57] "GET / HTTP/1.1" 302 0
+[30/Mar/2026 10:37:57] "GET /login/?next=/ HTTP/1.1" 200 2945
+[30/Mar/2026 10:37:57] "GET /static/css/gerayse.css HTTP/1.1" 200 11255
+[30/Mar/2026 10:37:57] "GET /favicon.ico HTTP/1.1" 404 179
+[30/Mar/2026 10:39:39] "POST /login/?next=/ HTTP/1.1" 200 3216
+[30/Mar/2026 10:39:39] "GET /static/css/gerayse.css HTTP/1.1" 304 0
+[30/Mar/2026 10:40:17] "POST /login/?next=/ HTTP/1.1" 200 3216
+[30/Mar/2026 10:40:47] "POST /login/?next=/ HTTP/1.1" 302 0
+[30/Mar/2026 10:40:47] "GET / HTTP/1.1" 200 15632
+[30/Mar/2026 10:41:20] "GET /cajas/nueva/ HTTP/1.1" 200 9456
+[30/Mar/2026 10:41:21] "GET /alertas/ HTTP/1.1" 200 16017
+[30/Mar/2026 10:42:01] "GET /rubros/ HTTP/1.1" 200 10269
+[30/Mar/2026 10:42:07] "GET /limites-rubros/ HTTP/1.1" 200 8884
+[30/Mar/2026 10:42:38] "GET /limites-rubros/nuevo/ HTTP/1.1" 200 8892
+[30/Mar/2026 10:43:03] "GET /rubros/ HTTP/1.1" 200 10269
+[30/Mar/2026 10:43:12] "GET /limites-rubros/ HTTP/1.1" 200 8884
+[30/Mar/2026 10:43:14] "GET /rubros/ HTTP/1.1" 200 10269
+[30/Mar/2026 10:43:15] "GET /limites-rubros/ HTTP/1.1" 200 8884
+[30/Mar/2026 10:43:16] "GET /sucursales/ HTTP/1.1" 500 145
+[30/Mar/2026 10:43:19] "GET /turnos/ HTTP/1.1" 500 145
+[30/Mar/2026 10:46:11] "GET / HTTP/1.1" 200 15632
+[30/Mar/2026 10:46:14] "GET /?scope=branch&sucursal=1&fecha=2026-03-30 HTTP/1.1" 200 15658
+[30/Mar/2026 10:46:23] "GET /?scope=branch&sucursal=1&fecha=2026-03-30 HTTP/1.1" 200 15658
+[30/Mar/2026 10:46:25] "GET /?scope=branch&sucursal=1&fecha=2026-03-30 HTTP/1.1" 200 15658
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 1041, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 992, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+    ~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\commands\runserver.py", line 134, in inner_run
+    self.check(**check_kwargs)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\base.py", line 492, in check
+    all_issues = checks.run_checks(
+        app_configs=app_configs,
+    ...<2 lines>...
+        databases=databases,
+    )
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\registry.py", line 89, in run_checks
+    new_errors = check(app_configs=app_configs, databases=databases)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 16, in check_url_config
+    return check_resolver(resolver)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 26, in check_resolver
+    return check_method()
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 531, in check
+    for pattern in self.url_patterns:
+                   ^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 718, in url_patterns
+    patterns = getattr(self.urlconf_module, "urlpatterns", self.urlconf_module)
+                       ^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 711, in urlconf_module
+    return import_module(self.urlconf_name)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\config\urls.py", line 12, in <module>
+    path('tesoreria/', include('treasury.urls')),
+                       ~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\conf.py", line 39, in include
+    urlconf_module = import_module(urlconf_module)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\treasury\urls.py", line 8, in <module>
+    path("", views.dashboard, name="dashboard"),
+             ^^^^^^^^^^^^^^^
+AttributeError: module 'treasury.views' has no attribute 'dashboard'
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 1041, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 992, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+    ~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\commands\runserver.py", line 134, in inner_run
+    self.check(**check_kwargs)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\base.py", line 492, in check
+    all_issues = checks.run_checks(
+        app_configs=app_configs,
+    ...<2 lines>...
+        databases=databases,
+    )
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\registry.py", line 89, in run_checks
+    new_errors = check(app_configs=app_configs, databases=databases)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 16, in check_url_config
+    return check_resolver(resolver)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 26, in check_resolver
+    return check_method()
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 531, in check
+    for pattern in self.url_patterns:
+                   ^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 718, in url_patterns
+    patterns = getattr(self.urlconf_module, "urlpatterns", self.urlconf_module)
+                       ^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 711, in urlconf_module
+    return import_module(self.urlconf_name)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\config\urls.py", line 12, in <module>
+    path('tesoreria/', include('treasury.urls')),
+                       ~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\conf.py", line 39, in include
+    urlconf_module = import_module(urlconf_module)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\treasury\urls.py", line 3, in <module>
+    from . import views
+  File "C:\code\gerayse1.0\treasury\views.py", line 11, in <module>
+    from .forms import (
+    ...<11 lines>...
+    )
+ImportError: cannot import name 'CategoriaCuentaPagarFilterForm' from 'treasury.forms' (C:\code\gerayse1.0\treasury\forms.py)
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 1041, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 992, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+    ~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\commands\runserver.py", line 124, in inner_run
+    autoreload.raise_last_exception()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 86, in raise_last_exception
+    raise _exception[1]
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\__init__.py", line 394, in execute
+    autoreload.check_errors(django.setup)()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+    ~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\__init__.py", line 24, in setup
+    apps.populate(settings.INSTALLED_APPS)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\apps\registry.py", line 116, in populate
+    app_config.import_models()
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\apps\config.py", line 269, in import_models
+    self.models_module = import_module(models_module_name)
+                         ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\treasury\models.py", line 394, in <module>
+    class MovimientoBancario(models.Model):
+    ...<71 lines>...
+            return f"{self.get_tipo_display()} {self.monto} - {self.cuenta_bancaria}"
+  File "C:\code\gerayse1.0\treasury\models.py", line 427, in MovimientoBancario
+    class Meta:
+    ...<12 lines>...
+        ]
+  File "C:\code\gerayse1.0\treasury\models.py", line 432, in Meta
+    check=Q(pago_tesoreria__isnull=True) | Q(tipo=Tipo.DEBITO),
+                                                  ^^^^
+NameError: name 'Tipo' is not defined
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 1041, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 992, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+    ~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\commands\runserver.py", line 134, in inner_run
+    self.check(**check_kwargs)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\base.py", line 492, in check
+    all_issues = checks.run_checks(
+        app_configs=app_configs,
+    ...<2 lines>...
+        databases=databases,
+    )
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\registry.py", line 89, in run_checks
+    new_errors = check(app_configs=app_configs, databases=databases)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 16, in check_url_config
+    return check_resolver(resolver)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 26, in check_resolver
+    return check_method()
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 531, in check
+    for pattern in self.url_patterns:
+                   ^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 718, in url_patterns
+    patterns = getattr(self.urlconf_module, "urlpatterns", self.urlconf_module)
+                       ^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 711, in urlconf_module
+    return import_module(self.urlconf_name)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\config\urls.py", line 12, in <module>
+    path('tesoreria/', include('treasury.urls')),
+                       ~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\conf.py", line 39, in include
+    urlconf_module = import_module(urlconf_module)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\treasury\urls.py", line 3, in <module>
+    from . import views
+  File "C:\code\gerayse1.0\treasury\views.py", line 11, in <module>
+    from .forms import (
+    ...<11 lines>...
+    )
+ImportError: cannot import name 'CategoriaCuentaPagarFilterForm' from 'treasury.forms' (C:\code\gerayse1.0\treasury\forms.py)
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 1041, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 992, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+    ~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\commands\runserver.py", line 134, in inner_run
+    self.check(**check_kwargs)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\base.py", line 492, in check
+    all_issues = checks.run_checks(
+        app_configs=app_configs,
+    ...<2 lines>...
+        databases=databases,
+    )
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\registry.py", line 89, in run_checks
+    new_errors = check(app_configs=app_configs, databases=databases)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 16, in check_url_config
+    return check_resolver(resolver)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 26, in check_resolver
+    return check_method()
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 531, in check
+    for pattern in self.url_patterns:
+                   ^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 718, in url_patterns
+    patterns = getattr(self.urlconf_module, "urlpatterns", self.urlconf_module)
+                       ^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 711, in urlconf_module
+    return import_module(self.urlconf_name)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\config\urls.py", line 12, in <module>
+    path('tesoreria/', include('treasury.urls')),
+                       ~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\conf.py", line 39, in include
+    urlconf_module = import_module(urlconf_module)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\treasury\urls.py", line 3, in <module>
+    from . import views
+  File "C:\code\gerayse1.0\treasury\views.py", line 11, in <module>
+    from .forms import (
+    ...<11 lines>...
+    )
+ImportError: cannot import name 'CategoriaCuentaPagarFilterForm' from 'treasury.forms' (C:\code\gerayse1.0\treasury\forms.py)
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 1041, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 992, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+    ~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\commands\runserver.py", line 124, in inner_run
+    autoreload.raise_last_exception()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 86, in raise_last_exception
+    raise _exception[1]
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\__init__.py", line 394, in execute
+    autoreload.check_errors(django.setup)()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+    ~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\__init__.py", line 24, in setup
+    apps.populate(settings.INSTALLED_APPS)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\apps\registry.py", line 124, in populate
+    app_config.ready()
+    ~~~~~~~~~~~~~~~~^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\contrib\admin\apps.py", line 27, in ready
+    self.module.autodiscover()
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\contrib\admin\__init__.py", line 52, in autodiscover
+    autodiscover_modules("admin", register_to=site)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\module_loading.py", line 58, in autodiscover_modules
+    import_module("%s.%s" % (app_config.name, module_to_search))
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\treasury\admin.py", line 4, in <module>
+    from .models import (
+    ...<9 lines>...
+    )
+ImportError: cannot import name 'CategoriaCuentaPagar' from 'treasury.models' (C:\code\gerayse1.0\treasury\models.py)
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 1041, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 992, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+    ~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\commands\runserver.py", line 124, in inner_run
+    autoreload.raise_last_exception()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 86, in raise_last_exception
+    raise _exception[1]
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\__init__.py", line 394, in execute
+    autoreload.check_errors(django.setup)()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+    ~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\__init__.py", line 24, in setup
+    apps.populate(settings.INSTALLED_APPS)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\apps\registry.py", line 124, in populate
+    app_config.ready()
+    ~~~~~~~~~~~~~~~~^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\contrib\admin\apps.py", line 27, in ready
+    self.module.autodiscover()
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\contrib\admin\__init__.py", line 52, in autodiscover
+    autodiscover_modules("admin", register_to=site)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\module_loading.py", line 58, in autodiscover_modules
+    import_module("%s.%s" % (app_config.name, module_to_search))
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\treasury\admin.py", line 4, in <module>
+    from .models import (
+    ...<9 lines>...
+    )
+ImportError: cannot import name 'CategoriaCuentaPagar' from 'treasury.models' (C:\code\gerayse1.0\treasury\models.py)
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 1041, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 992, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+    ~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\commands\runserver.py", line 124, in inner_run
+    autoreload.raise_last_exception()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 86, in raise_last_exception
+    raise _exception[1]
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\__init__.py", line 394, in execute
+    autoreload.check_errors(django.setup)()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+    ~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\__init__.py", line 24, in setup
+    apps.populate(settings.INSTALLED_APPS)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\apps\registry.py", line 124, in populate
+    app_config.ready()
+    ~~~~~~~~~~~~~~~~^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\contrib\admin\apps.py", line 27, in ready
+    self.module.autodiscover()
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\contrib\admin\__init__.py", line 52, in autodiscover
+    autodiscover_modules("admin", register_to=site)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\module_loading.py", line 58, in autodiscover_modules
+    import_module("%s.%s" % (app_config.name, module_to_search))
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\treasury\admin.py", line 4, in <module>
+    from .models import (
+    ...<9 lines>...
+    )
+ImportError: cannot import name 'DescuentoBancario' from 'treasury.models' (C:\code\gerayse1.0\treasury\models.py)
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 1041, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 992, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+    ~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\commands\runserver.py", line 134, in inner_run
+    self.check(**check_kwargs)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\base.py", line 492, in check
+    all_issues = checks.run_checks(
+        app_configs=app_configs,
+    ...<2 lines>...
+        databases=databases,
+    )
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\registry.py", line 89, in run_checks
+    new_errors = check(app_configs=app_configs, databases=databases)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 16, in check_url_config
+    return check_resolver(resolver)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 26, in check_resolver
+    return check_method()
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 531, in check
+    for pattern in self.url_patterns:
+                   ^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 718, in url_patterns
+    patterns = getattr(self.urlconf_module, "urlpatterns", self.urlconf_module)
+                       ^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 711, in urlconf_module
+    return import_module(self.urlconf_name)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\config\urls.py", line 12, in <module>
+    path('tesoreria/', include('treasury.urls')),
+                       ~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\conf.py", line 39, in include
+    urlconf_module = import_module(urlconf_module)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\treasury\urls.py", line 3, in <module>
+    from . import views
+  File "C:\code\gerayse1.0\treasury\views.py", line 13, in <module>
+    from .forms import (
+    ...<17 lines>...
+    )
+ModuleNotFoundError: No module named 'treasury.forms'
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 1041, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 992, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+    ~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\commands\runserver.py", line 134, in inner_run
+    self.check(**check_kwargs)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\base.py", line 492, in check
+    all_issues = checks.run_checks(
+        app_configs=app_configs,
+    ...<2 lines>...
+        databases=databases,
+    )
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\registry.py", line 89, in run_checks
+    new_errors = check(app_configs=app_configs, databases=databases)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 16, in check_url_config
+    return check_resolver(resolver)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 26, in check_resolver
+    return check_method()
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 531, in check
+    for pattern in self.url_patterns:
+                   ^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 718, in url_patterns
+    patterns = getattr(self.urlconf_module, "urlpatterns", self.urlconf_module)
+                       ^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 711, in urlconf_module
+    return import_module(self.urlconf_name)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\config\urls.py", line 12, in <module>
+    path('tesoreria/', include('treasury.urls')),
+                       ~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\conf.py", line 39, in include
+    urlconf_module = import_module(urlconf_module)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\treasury\urls.py", line 3, in <module>
+    from . import views
+  File "C:\code\gerayse1.0\treasury\views.py", line 13, in <module>
+    from .forms import (
+    ...<12 lines>...
+    )
+ModuleNotFoundError: No module named 'treasury.forms'
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 1041, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 992, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+    ~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\commands\runserver.py", line 134, in inner_run
+    self.check(**check_kwargs)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\base.py", line 492, in check
+    all_issues = checks.run_checks(
+        app_configs=app_configs,
+    ...<2 lines>...
+        databases=databases,
+    )
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\registry.py", line 89, in run_checks
+    new_errors = check(app_configs=app_configs, databases=databases)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 16, in check_url_config
+    return check_resolver(resolver)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 26, in check_resolver
+    return check_method()
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 531, in check
+    for pattern in self.url_patterns:
+                   ^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 718, in url_patterns
+    patterns = getattr(self.urlconf_module, "urlpatterns", self.urlconf_module)
+                       ^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 711, in urlconf_module
+    return import_module(self.urlconf_name)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\config\urls.py", line 12, in <module>
+    path('tesoreria/', include('treasury.urls')),
+                       ~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\conf.py", line 39, in include
+    urlconf_module = import_module(urlconf_module)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\treasury\urls.py", line 3, in <module>
+    from . import web_views as views
+  File "C:\code\gerayse1.0\treasury\web_views.py", line 14, in <module>
+    from .forms import (
+    ...<20 lines>...
+    )
+  File "C:\code\gerayse1.0\treasury\forms.py", line 307, in <module>
+    class PaymentFilterForm(TreasuryStyledFormMixin, forms.Form):
+    ...<22 lines>...
+            self._apply_input_classes()
+  File "C:\code\gerayse1.0\treasury\forms.py", line 315, in PaymentFilterForm
+    choices=(("", "Todos los medios"),) + PagoTesoreria.MedioPago.choices,
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+TypeError: can only concatenate tuple (not "list") to tuple
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 1041, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 992, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+    ~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\commands\runserver.py", line 134, in inner_run
+    self.check(**check_kwargs)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\base.py", line 492, in check
+    all_issues = checks.run_checks(
+        app_configs=app_configs,
+    ...<2 lines>...
+        databases=databases,
+    )
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\registry.py", line 89, in run_checks
+    new_errors = check(app_configs=app_configs, databases=databases)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 16, in check_url_config
+    return check_resolver(resolver)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 26, in check_resolver
+    return check_method()
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 531, in check
+    for pattern in self.url_patterns:
+                   ^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 718, in url_patterns
+    patterns = getattr(self.urlconf_module, "urlpatterns", self.urlconf_module)
+                       ^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 711, in urlconf_module
+    return import_module(self.urlconf_name)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\config\urls.py", line 12, in <module>
+    path('tesoreria/', include('treasury.urls')),
+                       ~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\conf.py", line 39, in include
+    urlconf_module = import_module(urlconf_module)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\treasury\urls.py", line 3, in <module>
+    from . import web_views as views
+  File "C:\code\gerayse1.0\treasury\web_views.py", line 14, in <module>
+    from .forms import (
+    ...<20 lines>...
+    )
+  File "C:\code\gerayse1.0\treasury\forms.py", line 166, in <module>
+    class PayableFilterForm(TreasuryStyledFormMixin, forms.Form):
+    ...<11 lines>...
+            self._apply_input_classes()
+  File "C:\code\gerayse1.0\treasury\forms.py", line 170, in PayableFilterForm
+    estado = forms.ChoiceField(required=False, choices=(("", "Todos"),) + CuentaPorPagar.Estado.choices + (("VENCIDA", "Vencida"),))
+                                                       ~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+TypeError: can only concatenate tuple (not "list") to tuple
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 1041, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 992, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+    ~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\commands\runserver.py", line 134, in inner_run
+    self.check(**check_kwargs)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\base.py", line 492, in check
+    all_issues = checks.run_checks(
+        app_configs=app_configs,
+    ...<2 lines>...
+        databases=databases,
+    )
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\registry.py", line 89, in run_checks
+    new_errors = check(app_configs=app_configs, databases=databases)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 16, in check_url_config
+    return check_resolver(resolver)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 26, in check_resolver
+    return check_method()
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 531, in check
+    for pattern in self.url_patterns:
+                   ^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 718, in url_patterns
+    patterns = getattr(self.urlconf_module, "urlpatterns", self.urlconf_module)
+                       ^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 711, in urlconf_module
+    return import_module(self.urlconf_name)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\config\urls.py", line 12, in <module>
+    path('tesoreria/', include('treasury.urls')),
+                       ~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\conf.py", line 39, in include
+    urlconf_module = import_module(urlconf_module)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\treasury\urls.py", line 3, in <module>
+    from . import views
+  File "C:\code\gerayse1.0\treasury\views.py", line 13, in <module>
+    from .forms import (
+    ...<17 lines>...
+    )
+  File "C:\code\gerayse1.0\treasury\forms.py", line 172, in <module>
+    class PayableFilterForm(TreasuryStyledFormMixin, forms.Form):
+    ...<11 lines>...
+            self._apply_input_classes()
+  File "C:\code\gerayse1.0\treasury\forms.py", line 176, in PayableFilterForm
+    estado = forms.ChoiceField(required=False, choices=(("", "Todos"),) + CuentaPorPagar.Estado.choices + (("VENCIDA", "Vencida"),))
+                                                       ~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+TypeError: can only concatenate tuple (not "list") to tuple
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 1041, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 992, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+    ~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\commands\runserver.py", line 134, in inner_run
+    self.check(**check_kwargs)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\base.py", line 492, in check
+    all_issues = checks.run_checks(
+        app_configs=app_configs,
+    ...<2 lines>...
+        databases=databases,
+    )
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\registry.py", line 89, in run_checks
+    new_errors = check(app_configs=app_configs, databases=databases)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 16, in check_url_config
+    return check_resolver(resolver)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 26, in check_resolver
+    return check_method()
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 531, in check
+    for pattern in self.url_patterns:
+                   ^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 718, in url_patterns
+    patterns = getattr(self.urlconf_module, "urlpatterns", self.urlconf_module)
+                       ^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 711, in urlconf_module
+    return import_module(self.urlconf_name)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\config\urls.py", line 12, in <module>
+    path('tesoreria/', include('treasury.urls')),
+                       ~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\conf.py", line 39, in include
+    urlconf_module = import_module(urlconf_module)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\treasury\urls.py", line 3, in <module>
+    from . import views, web_views
+  File "C:\code\gerayse1.0\treasury\web_views.py", line 14, in <module>
+    from .forms import (
+    ...<20 lines>...
+    )
+ImportError: cannot import name 'BankPeriodFilterForm' from 'treasury.forms' (C:\code\gerayse1.0\treasury\forms.py)
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 1041, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 992, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+    ~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\commands\runserver.py", line 134, in inner_run
+    self.check(**check_kwargs)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\base.py", line 492, in check
+    all_issues = checks.run_checks(
+        app_configs=app_configs,
+    ...<2 lines>...
+        databases=databases,
+    )
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\registry.py", line 89, in run_checks
+    new_errors = check(app_configs=app_configs, databases=databases)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 16, in check_url_config
+    return check_resolver(resolver)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 26, in check_resolver
+    return check_method()
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 531, in check
+    for pattern in self.url_patterns:
+                   ^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 718, in url_patterns
+    patterns = getattr(self.urlconf_module, "urlpatterns", self.urlconf_module)
+                       ^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 711, in urlconf_module
+    return import_module(self.urlconf_name)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\config\urls.py", line 12, in <module>
+    path('tesoreria/', include('treasury.urls')),
+                       ~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\conf.py", line 39, in include
+    urlconf_module = import_module(urlconf_module)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\treasury\urls.py", line 8, in <module>
+    path("", views.index, name="index"),
+             ^^^^^^^^^^^
+AttributeError: module 'treasury.views' has no attribute 'index'
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 1041, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 992, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+    ~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\commands\runserver.py", line 134, in inner_run
+    self.check(**check_kwargs)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\base.py", line 492, in check
+    all_issues = checks.run_checks(
+        app_configs=app_configs,
+    ...<2 lines>...
+        databases=databases,
+    )
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\registry.py", line 89, in run_checks
+    new_errors = check(app_configs=app_configs, databases=databases)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 16, in check_url_config
+    return check_resolver(resolver)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 26, in check_resolver
+    return check_method()
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 531, in check
+    for pattern in self.url_patterns:
+                   ^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 718, in url_patterns
+    patterns = getattr(self.urlconf_module, "urlpatterns", self.urlconf_module)
+                       ^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 711, in urlconf_module
+    return import_module(self.urlconf_name)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\config\urls.py", line 12, in <module>
+    path('tesoreria/', include('treasury.urls')),
+                       ~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\conf.py", line 39, in include
+    urlconf_module = import_module(urlconf_module)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\treasury\urls.py", line 3, in <module>
+    from . import views
+ImportError: cannot import name 'views' from 'treasury' (C:\code\gerayse1.0\treasury\__init__.py)
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 1041, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 992, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+    ~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\commands\runserver.py", line 134, in inner_run
+    self.check(**check_kwargs)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\base.py", line 492, in check
+    all_issues = checks.run_checks(
+        app_configs=app_configs,
+    ...<2 lines>...
+        databases=databases,
+    )
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\registry.py", line 89, in run_checks
+    new_errors = check(app_configs=app_configs, databases=databases)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 16, in check_url_config
+    return check_resolver(resolver)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 26, in check_resolver
+    return check_method()
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 531, in check
+    for pattern in self.url_patterns:
+                   ^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 718, in url_patterns
+    patterns = getattr(self.urlconf_module, "urlpatterns", self.urlconf_module)
+                       ^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 711, in urlconf_module
+    return import_module(self.urlconf_name)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\config\urls.py", line 12, in <module>
+    path('tesoreria/', include('treasury.urls')),
+                       ~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\conf.py", line 39, in include
+    urlconf_module = import_module(urlconf_module)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\treasury\urls.py", line 3, in <module>
+    from . import views
+  File "C:\code\gerayse1.0\treasury\views.py", line 631
+    ]
+    ^
+SyntaxError: unmatched ']'
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 1041, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 992, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+    ~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\commands\runserver.py", line 134, in inner_run
+    self.check(**check_kwargs)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\base.py", line 492, in check
+    all_issues = checks.run_checks(
+        app_configs=app_configs,
+    ...<2 lines>...
+        databases=databases,
+    )
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\registry.py", line 89, in run_checks
+    new_errors = check(app_configs=app_configs, databases=databases)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 16, in check_url_config
+    return check_resolver(resolver)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 26, in check_resolver
+    return check_method()
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 531, in check
+    for pattern in self.url_patterns:
+                   ^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 718, in url_patterns
+    patterns = getattr(self.urlconf_module, "urlpatterns", self.urlconf_module)
+                       ^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 711, in urlconf_module
+    return import_module(self.urlconf_name)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\config\urls.py", line 12, in <module>
+    path('tesoreria/', include('treasury.urls')),
+                       ~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\conf.py", line 39, in include
+    urlconf_module = import_module(urlconf_module)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\treasury\urls.py", line 3, in <module>
+    from . import views
+  File "C:\code\gerayse1.0\treasury\views.py", line 974, in <module>
+    @ensure_treasury_admin
+     ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\treasury\permissions.py", line 15, in ensure_treasury_admin
+    raise PermissionDenied("No tenes permisos de tesoreria para esta operacion.")
+django.core.exceptions.PermissionDenied: No tenes permisos de tesoreria para esta operacion.
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 1041, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 992, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+    ~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\commands\runserver.py", line 134, in inner_run
+    self.check(**check_kwargs)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\base.py", line 492, in check
+    all_issues = checks.run_checks(
+        app_configs=app_configs,
+    ...<2 lines>...
+        databases=databases,
+    )
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\registry.py", line 89, in run_checks
+    new_errors = check(app_configs=app_configs, databases=databases)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 16, in check_url_config
+    return check_resolver(resolver)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 26, in check_resolver
+    return check_method()
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 531, in check
+    for pattern in self.url_patterns:
+                   ^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 718, in url_patterns
+    patterns = getattr(self.urlconf_module, "urlpatterns", self.urlconf_module)
+                       ^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 711, in urlconf_module
+    return import_module(self.urlconf_name)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\config\urls.py", line 12, in <module>
+    path('tesoreria/', include('treasury.urls')),
+                       ~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\conf.py", line 39, in include
+    urlconf_module = import_module(urlconf_module)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\treasury\urls.py", line 3, in <module>
+    from . import views
+  File "C:\code\gerayse1.0\treasury\views.py", line 974, in <module>
+    @ensure_treasury_admin
+     ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\treasury\permissions.py", line 15, in ensure_treasury_admin
+    raise PermissionDenied("No tenes permisos de tesoreria para esta operacion.")
+django.core.exceptions.PermissionDenied: No tenes permisos de tesoreria para esta operacion.
+Exception in thread django-main-thread:
+Traceback (most recent call last):
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 1041, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\threading.py", line 992, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\autoreload.py", line 64, in wrapper
+    fn(*args, **kwargs)
+    ~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\commands\runserver.py", line 134, in inner_run
+    self.check(**check_kwargs)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\management\base.py", line 492, in check
+    all_issues = checks.run_checks(
+        app_configs=app_configs,
+    ...<2 lines>...
+        databases=databases,
+    )
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\registry.py", line 89, in run_checks
+    new_errors = check(app_configs=app_configs, databases=databases)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 16, in check_url_config
+    return check_resolver(resolver)
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\core\checks\urls.py", line 26, in check_resolver
+    return check_method()
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 531, in check
+    for pattern in self.url_patterns:
+                   ^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 718, in url_patterns
+    patterns = getattr(self.urlconf_module, "urlpatterns", self.urlconf_module)
+                       ^^^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\utils\functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\resolvers.py", line 711, in urlconf_module
+    return import_module(self.urlconf_name)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\config\urls.py", line 12, in <module>
+    path('tesoreria/', include('treasury.urls')),
+                       ~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\code\gerayse1.0\.venv\Lib\site-packages\django\urls\conf.py", line 39, in include
+    urlconf_module = import_module(urlconf_module)
+  File "C:\Users\theco\AppData\Local\Programs\Python\Python313\Lib\importlib\__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\code\gerayse1.0\treasury\urls.py", line 3, in <module>
+    from . import views
+  File "C:\code\gerayse1.0\treasury\views.py", line 57, in <module>
+    from .permissions import _require_treasury_admin
+ImportError: cannot import name '_require_treasury_admin' from 'treasury.permissions' (C:\code\gerayse1.0\treasury\permissions.py)

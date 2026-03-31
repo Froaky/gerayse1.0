@@ -1,0 +1,48 @@
+{% extends "treasury/layout.html" %}
+
+{% block title %}Gerayse | Categorias de deuda{% endblock %}
+
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Categorias de deuda</h1>
+        <p class="muted">Ordenan cuentas por pagar y facilitan lectura operativa.</p>
+      </div>
+      <a class="button" href="{% url 'treasury:categoria_cuenta_pagar_create' %}">Nueva categoria</a>
+    </div>
+    <form method="get" class="summary-grid" style="margin-top: 16px;">
+      {% for field in filter_form %}
+        <div class="field">
+          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+        </div>
+      {% endfor %}
+      <div class="row" style="grid-column: 1 / -1;">
+        <span class="muted">{{ categories|length }} registros visibles.</span>
+        <button class="button-secondary" type="submit">Filtrar</button>
+      </div>
+    </form>
+    <div class="list" style="margin-top: 16px;">
+      {% for category in categories %}
+        <div class="list-item">
+          <div class="row">
+            <strong>{{ category.nombre }}</strong>
+            <span class="badge {% if category.activo %}badge-success{% else %}badge-muted{% endif %}">
+              {% if category.activo %}Activa{% else %}Inactiva{% endif %}
+            </span>
+          </div>
+          <div class="list-actions">
+            <a class="button-secondary" href="{% url 'treasury:categoria_cuenta_pagar_update' category.pk %}">Editar</a>
+            <form method="post" action="{% url 'treasury:categoria_cuenta_pagar_toggle' category.pk %}">
+              {% csrf_token %}
+              <button class="button-secondary" type="submit">Toggle estado</button>
+            </form>
+          </div>
+        </div>
+      {% empty %}
+        <p class="muted">Sin categorias cargadas.</p>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

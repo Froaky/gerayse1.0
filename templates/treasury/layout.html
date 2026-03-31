@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Tesoreria | Gerayse{% endblock %}</title>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <style>
+      :root {
+        --bg: #f3f5f8;
+        --panel: #ffffff;
+        --panel-soft: #f7f9fc;
+        --text: #17202b;
+        --muted: #5f6b78;
+        --line: #d8e0ea;
+        --accent: #183b66;
+        --accent-2: #8b6a1f;
+        --danger: #a33a32;
+        --success: #2f6b4c;
+        --shadow: 0 12px 30px rgba(21, 35, 52, 0.08);
+        --shadow-hover: 0 20px 45px rgba(21, 35, 52, 0.12);
+        --gradient-primary: linear-gradient(135deg, #183b66, #2c5282);
+        --transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(24, 59, 102, 0.08), transparent 28%),
+          radial-gradient(circle at top right, rgba(139, 106, 31, 0.08), transparent 24%),
+          var(--bg);
+        transition: var(--transition);
+      }
+      a { color: inherit; text-decoration: none; }
+      .shell { max-width: 1240px; margin: 0 auto; padding: 16px; min-height: 100vh; }
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 24px;
+        flex-wrap: wrap;
+      }
+      .brand { display: flex; flex-direction: column; gap: 2px; }
+      .brand strong { font-size: 1.2rem; letter-spacing: 0.02em; font-weight: 800; }
+      .brand span { color: var(--muted); font-size: 0.88rem; }
+      .nav { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
+      .nav form { margin: 0; }
+      
+      .chip, .button, .button-secondary {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 42px;
+        padding: 8px 16px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        font-weight: 600;
+        transition: var(--transition);
+        cursor: pointer;
+      }
+      .chip:hover { transform: translateY(-2px); box-shadow: var(--shadow-hover); border-color: var(--accent); }
+      .chip-button { font: inherit; }
+      
+      .button { background: var(--gradient-primary); color: #fff; border: none; }
+      .button:hover { transform: translateY(-2px); filter: brightness(1.1); box-shadow: 0 10px 25px rgba(24, 59, 102, 0.3); }
+      .button-secondary { background: var(--panel-soft); color: var(--text); }
+      .button-secondary:hover { background: #fff; transform: translateY(-2px); box-shadow: var(--shadow-hover); }
+
+      .grid { display: grid; gap: 20px; }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        box-shadow: var(--shadow);
+        padding: 24px;
+        transition: var(--transition);
+      }
+      .card:hover { transform: translateY(-4px); box-shadow: var(--shadow-hover); }
+      
+      .hero { display: grid; gap: 16px; margin-bottom: 24px; }
+      .hero h1 { font-size: 2.2rem; font-weight: 900; letter-spacing: -0.03em; margin: 0; }
+      .card h2, .card h3 { margin: 0; font-weight: 800; letter-spacing: -0.01em; }
+      .muted { color: var(--muted); }
+      
+      .summary-grid { display: grid; gap: 16px; }
+      .summary {
+        display: grid;
+        gap: 6px;
+        padding: 20px;
+        border-radius: 18px;
+        background: linear-gradient(180deg, var(--panel), var(--panel-soft));
+        border: 1px solid var(--line);
+        transition: var(--transition);
+      }
+      .summary:hover { transform: scale(1.02); border-color: var(--accent); }
+      .summary strong { font-size: 1.4rem; font-weight: 800; }
+      
+      .action-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .action-card {
+        min-height: 90px;
+        padding: 16px;
+        border-radius: 18px;
+        background: linear-gradient(180deg, rgba(24, 59, 102, 0.06), rgba(24, 59, 102, 0.02));
+        border: 1px solid rgba(24, 59, 102, 0.12);
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 8px;
+        font-weight: 700;
+        transition: var(--transition);
+      }
+      .action-card:hover { transform: translateY(-4px) scale(1.03); background: #fff; border-color: var(--accent); box-shadow: var(--shadow-hover); }
+      .action-card small { color: var(--muted); font-weight: 500; }
+      
+      .stack { display: grid; gap: 16px; }
+      .field { display: grid; gap: 8px; }
+      label { font-weight: 700; font-size: 0.9rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; }
+      
+      .input, .select, .textarea {
+        width: 100%;
+        min-height: 48px;
+        padding: 12px 16px;
+        border: 2px solid var(--line);
+        border-radius: 14px;
+        background: #fff;
+        font: inherit;
+        transition: var(--transition);
+      }
+      .input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px rgba(24, 59, 102, 0.1); }
+      .textarea { min-height: 110px; resize: vertical; }
+      
+      .messages { display: grid; gap: 10px; margin-bottom: 24px; }
+      .message {
+        padding: 14px 18px;
+        border-radius: 14px;
+        border: 1px solid var(--line);
+        background: #fff;
+        font-weight: 600;
+        animation: slideIn 0.4s ease-out;
+      }
+      @keyframes slideIn { from { opacity:0; transform:translateY(-10px); } to { opacity:1; transform:translateY(0); } }
+      .message.success { border-color: var(--success); color: var(--success); background: rgba(47, 107, 77, 0.05); }
+      .message.error { border-color: var(--danger); color: var(--danger); background: rgba(163, 58, 50, 0.05); }
+      
+      .list { display: grid; gap: 12px; }
+      .list-item {
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--panel);
+        transition: var(--transition);
+      }
+      .list-item:hover { transform: translateX(6px); border-color: var(--accent); }
+      
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 30px;
+        padding: 4px 12px;
+        border-radius: 999px;
+        background: rgba(24, 59, 102, 0.08);
+        color: var(--accent);
+        font-size: 0.8rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .badge-success { background: rgba(47, 107, 77, 0.12); color: var(--success); }
+      .badge-warning { background: rgba(139, 106, 31, 0.15); color: #8a6415; }
+      .badge-danger { background: rgba(163, 58, 50, 0.12); color: var(--danger); }
+      .badge-muted { background: rgba(95, 107, 120, 0.12); color: var(--muted); }
+      .footer-space { height: 40px; }
+      @media (min-width: 880px) {
+        .summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .layout-two { grid-template-columns: 1.2fr 0.8fr; align-items: start; }
+        .action-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <strong>Tesoreria</strong>
+          <span>Proveedores, categorias, deuda, bancos y pagos administrativos</span>
+        </div>
+        <nav class="nav">
+          <a class="chip" href="{% url 'treasury:dashboard' %}">Inicio</a>
+          <a class="chip" href="{% url 'treasury:cuentas_por_pagar_list' %}">Deudas</a>
+          <a class="chip" href="{% url 'treasury:pagos_list' %}">Pagos</a>
+          <a class="chip" href="{% url 'treasury:bank_movements_list' %}">Bancos</a>
+          <a class="chip" href="{% url 'treasury:pos_batches_list' %}">Lotes POS</a>
+          <a class="chip" href="{% url 'treasury:bank_reconciliation' %}"><b>Conciliacion</b></a>
+          <a class="chip" href="{% url 'treasury:disponibilidades' %}"><b>Disponibilidades</b></a>
+          <a class="chip" href="{% url 'treasury:central_cash_list' %}">Efectivo</a>
+          <a class="chip" href="{% url 'treasury:proveedores_list' %}">Prov.</a>
+          <a class="chip" href="{% url 'cashops:dashboard' %}">Caja</a>
+          {% if request.user.is_authenticated %}
+            <span class="chip">{{ request.user }}</span>
+            <form method="post" action="{% url 'users:logout' %}">
+              {% csrf_token %}
+              <button class="chip chip-button" type="submit">Salir</button>
+            </form>
+          {% endif %}
+        </nav>
+      </header>
+      {% if messages %}
+        <div class="messages">
+          {% for message in messages %}
+            <div class="message {{ message.tags }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+      {% block content %}{% endblock %}
+      <div class="footer-space"></div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,42 @@
+{% extends "treasury/layout.html" %}
+{% block title %}{{ title }} | Tesoreria | Gerayse{% endblock %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>{{ title }}</h1>
+        <p class="muted">{{ accreditation.cuenta_bancaria.nombre }} · {{ accreditation.operador_canal }}</p>
+      </div>
+      <a class="button-secondary" href="{% url 'treasury:card_accreditation_list' %}">Volver</a>
+    </div>
+    <div class="summary-grid" style="margin-top:16px;">
+      <div class="summary"><span class="muted">Fecha</span><strong>{{ accreditation.fecha_acreditacion|date:"d/m/Y" }}</strong></div>
+      <div class="summary"><span class="muted">Neto acreditado</span><strong>$ {{ accreditation.monto_acreditado|floatformat:2 }}</strong></div>
+      <div class="summary"><span class="muted">Bruto estimado</span><strong>$ {{ accreditation.monto_bruto_estimado|floatformat:2 }}</strong></div>
+      <div class="summary"><span class="muted">Descuentos</span><strong>$ {{ accreditation.total_descuentos|floatformat:2 }}</strong></div>
+    </div>
+  </section>
+
+  <section class="card" style="margin-top:16px;">
+    <div class="row">
+      <div>
+        <h2>Descuentos</h2>
+        <p class="muted">Retenciones, comisiones y otros descuentos aplicados.</p>
+      </div>
+      <a class="button" href="{% url 'treasury:descuento_bancario_create' accreditation.pk %}">Nuevo descuento</a>
+    </div>
+    <div class="list" style="margin-top:16px;">
+      {% for discount in discounts %}
+        <div class="list-item">
+          <div class="row">
+            <strong>{{ discount.get_tipo_display }}</strong>
+            <span class="badge badge-warning">$ {{ discount.monto|floatformat:2 }}</span>
+          </div>
+          <div class="muted" style="margin-top:6px;">{{ discount.descripcion }}</div>
+        </div>
+      {% empty %}
+        <p class="muted">Todavia no hay descuentos asociados.</p>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

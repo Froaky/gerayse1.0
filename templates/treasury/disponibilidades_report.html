@@ -1,0 +1,190 @@
+{% extends "treasury/layout.html" %}
+{% load humanize %}
+{% load treasury_tags %}
+
+{% block content %}
+<style>
+    .distribution-bar {
+        height: 12px;
+        width: 100%;
+        background: var(--line);
+        border-radius: 6px;
+        overflow: hidden;
+        margin-top: 10px;
+        display: flex;
+    }
+    .bar-segment { height: 100%; transition: var(--transition); }
+    .bar-cash { background: var(--success); }
+    .bar-bank { background: var(--accent); }
+    
+    .report-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        margin-bottom: 24px;
+    }
+    
+    .total-card-highlight {
+        background: var(--gradient-primary) !important;
+        color: #fff !important;
+    }
+    .total-card-highlight .muted, .total-card-highlight .has-text-primary {
+        color: rgba(255,255,255,0.85) !important;
+    }
+    
+    .data-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 10px 0;
+        border-bottom: 1px solid var(--line);
+    }
+    .data-row:last-child { border-bottom: none; }
+</style>
+
+<section class="hero">
+    <div class="card" style="background: rgba(255,255,255,0.7); backdrop-filter: blur(10px);">
+        <div class="row">
+            <div>
+                <h1>{{ title }}</h1>
+                <p class="muted">{{ subtitle }}</p>
+            </div>
+            <form method="get" class="nav">
+                <div class="field">
+                    {{ form.month }}
+                </div>
+                <div class="field">
+                    {{ form.year }}
+                </div>
+                <button type="submit" class="button">Filtrar</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Totales Consolidados -->
+    <div class="summary-grid" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
+        <div class="summary">
+            <span class="muted">Efectivo Final</span>
+            <strong>{{ snapshot.saldo_final_efectivo|money }}</strong>
+            <small class="badge badge-success">Físico</small>
+        </div>
+        <div class="summary">
+            <span class="muted">Total Bancos</span>
+            <strong>{{ snapshot.total_bancos_final|money }}</strong>
+            <small class="badge">Digital</small>
+        </div>
+        <div class="summary total-card-highlight">
+            <span class="muted">Disponibilidad Total</span>
+            <strong>{{ snapshot.total_consolidado|money }}</strong>
+            <div class="distribution-bar">
+                <!-- Simple logic to show distribution if positive -->
+                <div class="bar-segment bar-cash" style="width: 40%"></div>
+                <div class="bar-segment bar-bank" style="width: 60%"></div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<div class="grid layout-two">
+    <!-- Flujo Efectivo -->
+    <div class="card">
+        <div class="row" style="margin-bottom: 20px;">
+            <h2>Efectivo Central</h2>
+            <span class="badge badge-success">Caja Bóveda</span>
+        </div>
+        <div class="stack">
+            <div class="data-row">
+                <span>Saldo Inicial (Arrastre)</span>
+                <strong>{{ snapshot.saldo_inicial_efectivo|money }}</strong>
+            </div>
+            <div class="data-row">
+                <span class="has-text-success">Ingresos del Periodo</span>
+                <strong class="has-text-success">+ {{ snapshot.cash_in|money }}</strong>
+            </div>
+            <div class="data-row">
+                <span class="has-text-danger">Egresos del Periodo</span>
+                <strong class="has-text-danger">- {{ snapshot.cash_out|money }}</strong>
+            </div>
+            <div class="summary" style="margin-top: 10px; background: var(--panel-soft);">
+                <div class="row">
+                    <span class="muted">SALDO FINAL</span>
+                    <strong>{{ snapshot.saldo_final_efectivo|money }}</strong>
+                </div>
+            </div>
+        </div>
+        <div class="list-actions" style="justify-content: flex-end; margin-top: 20px;">
+            <a href="{% url 'treasury:central_cash_list' %}" class="button-secondary">Detalle de movimientos</a>
+        </div>
+    </div>
+
+    <!-- Flujo Bancario -->
+    <div class="card">
+        <div class="row" style="margin-bottom: 20px;">
+            <h2>Cuentas Bancarias</h2>
+            <span class="badge">{{ snapshot.accounts_info|length }} Cuentas</span>
+        </div>
+        <div class="list">
+            {% for item in snapshot.accounts_info %}
+            <div class="list-item">
+                <div class="row">
+                    <div>
+                        <strong>{{ item.account.nombre }}</strong>
+                        <div class="muted" style="font-size: 0.8rem; margin-top: 4px;">Inicial: {{ item.initial|money }}</div>
+                    </div>
+                    <span class="{% if item.final < 0 %}has-text-danger{% endif %}">{{ item.final|money }}</span>
+                </div>
+            </div>
+            {% empty %}
+            <p class="muted">Sin cuentas activas registradas.</p>
+            {% endfor %}
+            
+            <div class="summary" style="margin-top: 10px; background: var(--panel-soft);">
+                <div class="row">
+                    <span class="muted">TOTAL BANCOS</span>
+                    <strong>{{ snapshot.total_bancos_final|money }}</strong>
+                </div>
+            </div>
+        </div>
+        <div class="list-actions" style="justify-content: flex-end; margin-top: 20px;">
+            <a href="{% url 'treasury:bank_movements_list' %}" class="button-secondary">Extractos conciliados</a>
+        </div>
+    </div>
+</div>
+
+<!-- Acciones de Cierre -->
+<section class="card" style="margin-top:20px; border-left: 6px solid {% if snapshot.is_closed %}var(--success){% else %}var(--warning){% endif %};">
+    <div class="row">
+        <div class="stack" style="gap: 4px;">
+            <div class="row" style="justify-content: flex-start; gap: 12px;">
+                 <strong>Estado del Periodo:</strong> 
+                {% if snapshot.is_closed %}
+                    <span class="badge badge-success">Cerrado</span>
+                {% else %}
+                    <span class="badge badge-warning">Abierto</span>
+                {% endif %}
+            </div>
+            <p class="muted" style="font-size: 0.9rem;">
+                {% if snapshot.is_closed %}
+                    Este mes ya ha sido conciliado y cerrado. Los saldos no pueden modificarse.
+                {% else %}
+                    Al cerrar el mes, el saldo final de efectivo y bancos se convertirá en el saldo inicial del mes siguiente.
+                {% endif %}
+            </p>
+        </div>
+        <div>
+            {% if not snapshot.is_closed %}
+                <form action="{% url 'treasury:close_month' %}" method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="year" value="{{ snapshot.year }}">
+                    <input type="hidden" name="month" value="{{ snapshot.month }}">
+                    <button type="submit" class="button" style="background: var(--danger);"
+                            onclick="return confirm('¿Estas seguro de cerrar este mes? Esta acción congelará los saldos para el siguiente período.')">
+                        Cerrar Mes {{ snapshot.month }}/{{ snapshot.year }}
+                    </button>
+                </form>
+            {% else %}
+                <button class="button-secondary" disabled>Periodo Congelado</button>
+            {% endif %}
+        </div>
+    </div>
+</section>
+{% endblock %}

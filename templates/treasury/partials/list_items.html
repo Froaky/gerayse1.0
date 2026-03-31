@@ -1,0 +1,18 @@
+<div class="list" style="margin-top:16px;">
+  {% for item in items %}
+    <a class="list-item" href="{{ item.href }}">
+      <div class="row">
+        <div>
+          <strong>{{ item.title }}</strong>
+          <div class="muted" style="margin-top:6px;">{{ item.subtitle }}</div>
+        </div>
+        <span class="badge {% if item.badge_class %}{{ item.badge_class }}{% endif %}">{{ item.badge }}</span>
+      </div>
+      {% if item.meta %}
+        <div class="muted" style="margin-top:8px;">{{ item.meta }}</div>
+      {% endif %}
+    </a>
+  {% empty %}
+    <p class="muted">Todavia no hay registros para esta seccion.</p>
+  {% endfor %}
+</div>

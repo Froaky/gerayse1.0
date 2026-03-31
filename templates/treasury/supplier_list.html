@@ -1,0 +1,51 @@
+{% extends "treasury/layout.html" %}
+
+{% block title %}Gerayse | Proveedores{% endblock %}
+
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Proveedores</h1>
+        <p class="muted">Base maestra para deuda y pagos administrativos.</p>
+      </div>
+      <a class="button" href="{% url 'treasury:proveedor_create' %}">Nuevo proveedor</a>
+    </div>
+    <form method="get" class="summary-grid" style="margin-top: 16px;">
+      {% for field in filter_form %}
+        <div class="field">
+          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+        </div>
+      {% endfor %}
+      <div class="row" style="grid-column: 1 / -1;">
+        <span class="muted">{{ suppliers|length }} registros visibles.</span>
+        <button class="button-secondary" type="submit">Filtrar</button>
+      </div>
+    </form>
+    <div class="list" style="margin-top: 16px;">
+      {% for supplier in suppliers %}
+        <div class="list-item">
+          <div class="row">
+            <strong>{{ supplier.razon_social }}</strong>
+            <span class="badge {% if supplier.activo %}badge-success{% else %}badge-muted{% endif %}">
+              {% if supplier.activo %}Activo{% else %}Inactivo{% endif %}
+            </span>
+          </div>
+          <div class="muted" style="margin-top: 6px;">
+            {{ supplier.identificador_fiscal|default:"Sin CUIT" }} | {{ supplier.contacto|default:"Sin contacto" }}
+          </div>
+          <div class="list-actions">
+            <a class="button-secondary" href="{% url 'treasury:proveedor_update' supplier.pk %}">Editar</a>
+            <form method="post" action="{% url 'treasury:proveedor_toggle' supplier.pk %}">
+              {% csrf_token %}
+              <button class="button-secondary" type="submit">Toggle estado</button>
+            </form>
+          </div>
+        </div>
+      {% empty %}
+        <p class="muted">Sin proveedores cargados.</p>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

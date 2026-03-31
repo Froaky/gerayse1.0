@@ -1,7 +1,17 @@
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied
 
-from .models import CuentaBancaria, CuentaPorPagar, PagoTesoreria, Proveedor
+from .models import (
+    AcreditacionTarjeta,
+    CategoriaCuentaPagar,
+    CuentaBancaria,
+    CuentaPorPagar,
+    DescuentoAcreditacion,
+    LotePOS,
+    MovimientoBancario,
+    PagoTesoreria,
+    Proveedor,
+)
 
 
 class TreasuryNoDeleteAdminMixin:
@@ -9,10 +19,10 @@ class TreasuryNoDeleteAdminMixin:
         return False
 
     def delete_model(self, request, obj):
-        raise PermissionDenied("Deletion via admin is disabled for treasury models.")
+        raise PermissionDenied("El borrado fisico esta deshabilitado para tesoreria.")
 
     def delete_queryset(self, request, queryset):
-        raise PermissionDenied("Bulk deletion via admin is disabled for treasury models.")
+        raise PermissionDenied("El borrado masivo esta deshabilitado para tesoreria.")
 
 
 class TreasuryReadOnlyAdminMixin(TreasuryNoDeleteAdminMixin):
@@ -25,9 +35,17 @@ class TreasuryReadOnlyAdminMixin(TreasuryNoDeleteAdminMixin):
 
 @admin.register(Proveedor)
 class ProveedorAdmin(TreasuryNoDeleteAdminMixin, admin.ModelAdmin):
-    list_display = ("razon_social", "identificador_fiscal", "activo", "creado_en")
+    list_display = ("razon_social", "identificador_fiscal", "contacto", "activo", "creado_en")
     list_filter = ("activo",)
     search_fields = ("razon_social", "identificador_fiscal", "contacto", "email")
+    autocomplete_fields = ("creado_por",)
+
+
+@admin.register(CategoriaCuentaPagar)
+class CategoriaCuentaPagarAdmin(TreasuryNoDeleteAdminMixin, admin.ModelAdmin):
+    list_display = ("nombre", "activo", "creado_en")
+    list_filter = ("activo",)
+    search_fields = ("nombre",)
     autocomplete_fields = ("creado_por",)
 
 
@@ -43,21 +61,97 @@ class CuentaBancariaAdmin(TreasuryNoDeleteAdminMixin, admin.ModelAdmin):
 class CuentaPorPagarAdmin(TreasuryReadOnlyAdminMixin, admin.ModelAdmin):
     list_display = (
         "proveedor",
+        "categoria",
         "concepto",
         "fecha_vencimiento",
         "importe_total",
         "saldo_pendiente",
         "estado",
     )
-    list_filter = ("estado", "fecha_vencimiento")
+    list_filter = ("estado", "categoria", "fecha_vencimiento")
     search_fields = ("proveedor__razon_social", "concepto", "referencia_comprobante")
-    autocomplete_fields = ("proveedor", "creado_por", "anulada_por")
-    inlines = []
+    autocomplete_fields = ("proveedor", "categoria", "creado_por", "anulada_por")
+    readonly_fields = (
+        "proveedor",
+        "categoria",
+        "concepto",
+        "referencia_comprobante",
+        "fecha_emision",
+        "fecha_vencimiento",
+        "importe_total",
+        "saldo_pendiente",
+        "estado",
+        "observaciones",
+        "creado_por",
+        "creado_en",
+        "actualizado_en",
+        "anulada_por",
+        "anulada_en",
+        "motivo_anulacion",
+    )
 
 
 @admin.register(PagoTesoreria)
 class PagoTesoreriaAdmin(TreasuryReadOnlyAdminMixin, admin.ModelAdmin):
-    list_display = ("cuenta_por_pagar", "cuenta_bancaria", "medio_pago", "fecha_pago", "monto", "estado")
-    list_filter = ("estado", "medio_pago", "fecha_pago", "cuenta_bancaria")
-    search_fields = ("referencia", "observaciones", "cuenta_por_pagar__concepto")
+    list_display = (
+        "cuenta_por_pagar",
+        "cuenta_bancaria",
+        "medio_pago",
+        "fecha_pago",
+        "monto",
+        "estado",
+        "estado_bancario",
+    )
+    list_filter = ("estado", "estado_bancario", "medio_pago", "fecha_pago", "cuenta_bancaria")
+    search_fields = ("referencia", "cuenta_por_pagar__concepto", "cuenta_por_pagar__proveedor__razon_social")
     autocomplete_fields = ("cuenta_por_pagar", "cuenta_bancaria", "creado_por", "anulado_por")
+    readonly_fields = (
+        "cuenta_por_pagar",
+        "cuenta_bancaria",
+        "medio_pago",
+        "fecha_pago",
+        "fecha_diferida",
+        "monto",
+        "referencia",
+        "observaciones",
+        "estado",
+        "estado_bancario",
+        "observacion_bancaria",
+        "creado_por",
+        "creado_en",
+        "anulado_por",
+        "anulado_en",
+        "motivo_anulacion",
+    )
+
+
+@admin.register(MovimientoBancario)
+class MovimientoBancarioAdmin(TreasuryReadOnlyAdminMixin, admin.ModelAdmin):
+    list_display = ("fecha", "cuenta_bancaria", "tipo", "origen", "monto", "concepto", "pago_tesoreria")
+    list_filter = ("tipo", "origen", "fecha", "cuenta_bancaria")
+    search_fields = ("concepto", "referencia", "observaciones")
+    autocomplete_fields = ("cuenta_bancaria", "pago_tesoreria", "creado_por")
+
+
+@admin.register(LotePOS)
+class LotePOSAdmin(TreasuryReadOnlyAdminMixin, admin.ModelAdmin):
+    list_display = ("fecha_lote", "operador", "terminal", "cuenta_bancaria", "total_lote")
+    list_filter = ("fecha_lote", "operador", "cuenta_bancaria")
+    search_fields = ("operador", "terminal", "observaciones")
+    autocomplete_fields = ("cuenta_bancaria", "creado_por")
+
+
+@admin.register(AcreditacionTarjeta)
+class AcreditacionTarjetaAdmin(TreasuryReadOnlyAdminMixin, admin.ModelAdmin):
+    list_display = ("fecha_acreditacion", "cuenta_bancaria", "canal", "monto_acreditado")
+    list_filter = ("movimiento_bancario__fecha", "movimiento_bancario__cuenta_bancaria", "canal")
+    search_fields = ("canal", "referencia_externa", "observaciones")
+    autocomplete_fields = ("movimiento_bancario", "lote_pos", "creado_por")
+
+
+@admin.register(DescuentoAcreditacion)
+class DescuentoAcreditacionAdmin(TreasuryReadOnlyAdminMixin, admin.ModelAdmin):
+    list_display = ("acreditacion", "tipo", "monto", "descripcion")
+    list_filter = ("tipo",)
+    search_fields = ("descripcion", "acreditacion__referencia_externa", "acreditacion__canal")
+    autocomplete_fields = ("acreditacion", "creado_por")

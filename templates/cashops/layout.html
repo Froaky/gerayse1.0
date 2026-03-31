@@ -189,6 +189,7 @@
           <a class="chip" href="{% url 'cashops:box_open' %}">Abrir caja</a>
           {% if request.user.is_authenticated and request.user.is_cashops_admin %}
             <a class="chip" href="{% url 'cashops:alert_panel' %}">Alertas</a>
+            <a class="chip" href="{% url 'treasury:dashboard' %}">Tesoreria</a>
             <a class="chip" href="{% url 'cashops:operational_category_list' %}">Rubros</a>
             <a class="chip" href="{% url 'cashops:operational_limit_list' %}">Limites</a>
             <a class="chip" href="{% url 'cashops:sucursal_list' %}">Sucursales</a>

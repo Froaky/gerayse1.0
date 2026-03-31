@@ -1,0 +1,40 @@
+{% extends "treasury/layout.html" %}
+
+{% block title %}Gerayse | Lotes POS{% endblock %}
+
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Lotes POS</h1>
+        <p class="muted">Cierres de lote usados como dato fuente para conciliacion simple.</p>
+      </div>
+      <a class="button" href="{% url 'treasury:lote_pos_create' %}">Nuevo lote</a>
+    </div>
+    <form method="get" class="summary-grid" style="margin-top: 16px;">
+      {% for field in filter_form %}
+        <div class="field">
+          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+        </div>
+      {% endfor %}
+      <div class="row" style="grid-column: 1 / -1;">
+        <span class="muted">{{ batches|length }} registros visibles.</span>
+        <button class="button-secondary" type="submit">Filtrar</button>
+      </div>
+    </form>
+    <div class="list" style="margin-top: 16px;">
+      {% for batch in batches %}
+        <div class="list-item">
+          <div class="row">
+            <strong>{{ batch.fecha_lote }} - {{ batch.operador|default:batch.terminal|default:"Sin operador" }}</strong>
+            <span class="badge badge-success">${{ batch.total_lote }}</span>
+          </div>
+          <div class="muted" style="margin-top: 6px;">Terminal {{ batch.terminal|default:"n/d" }} | {{ batch.observaciones|default:"Sin observaciones" }}</div>
+        </div>
+      {% empty %}
+        <p class="muted">Sin lotes POS cargados.</p>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

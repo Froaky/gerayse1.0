@@ -12,7 +12,7 @@
       {% for item in items %}
         <div class="list-item">
           <strong>{{ item }}</strong>
-          <div class="muted" style="margin-top:6px;">{{ item.created_at|default:item.creado_en|default:item.abierto_en }}</div>
+          <div class="muted" style="margin-top:6px;">{% firstof item.creado_en item.creada_en item.abierto_en item.abierta_en "Sin fecha" %}</div>
         </div>
       {% empty %}
         <p class="muted">Sin registros todavia.</p>

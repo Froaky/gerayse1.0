@@ -1,0 +1,87 @@
+{% extends "treasury/layout.html" %}
+{% block title %}Conciliacion simple | Tesoreria | Gerayse{% endblock %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Conciliacion simple tarjeta vs banco</h1>
+        <p class="muted">Comparacion operativa entre venta tarjeta, lote POS y acreditacion bancaria.</p>
+      </div>
+      <a class="button-secondary" href="{% url 'treasury:dashboard' %}">Volver al dashboard</a>
+    </div>
+    <form method="get" class="stack" style="margin-top:16px;">
+      <div class="summary-grid" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
+        {% for field in filter_form.visible_fields %}
+          <div class="field">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+          </div>
+        {% endfor %}
+      </div>
+      <div class="list-actions">
+        <button class="button" type="submit">Aplicar filtros</button>
+        <a class="button-secondary" href=".">Limpiar</a>
+      </div>
+    </form>
+  </section>
+
+  <section class="summary-grid" style="margin-top:16px;">
+    <article class="summary">
+      <span class="muted">Vendido por tarjeta</span>
+      <strong>${{ summary.total_sold_card }}</strong>
+    </article>
+    <article class="summary">
+      <span class="muted">Total lote POS</span>
+      <strong>${{ summary.total_pos_batches }}</strong>
+    </article>
+    <article class="summary">
+      <span class="muted">Acreditado neto</span>
+      <strong>${{ summary.total_accredited_net }}</strong>
+    </article>
+    <article class="summary">
+      <span class="muted">Descuentos bancarios</span>
+      <strong>${{ summary.total_bank_discounts }}</strong>
+    </article>
+    <article class="summary">
+      <span class="muted">Acreditado bruto</span>
+      <strong>${{ summary.total_accredited_gross }}</strong>
+    </article>
+    <article class="summary">
+      <span class="muted">Venta vs banco</span>
+      <strong>${{ summary.sales_vs_accreditation_difference }}</strong>
+    </article>
+  </section>
+
+  {% if summary.account_filter_limits_sales %}
+    <section class="card" style="margin-top:16px;">
+      <p class="muted">La cuenta bancaria filtra lotes POS y acreditaciones. Las ventas tarjeta siguen viniendo del total operativo del periodo porque la fuente actual de caja no separa ventas por cuenta bancaria.</p>
+    </section>
+  {% endif %}
+
+  <section class="card" style="margin-top:16px;">
+    <div class="row">
+      <div>
+        <h2>Detalle por fecha</h2>
+        <p class="muted">Vista diaria para detectar donde aparece la diferencia.</p>
+      </div>
+    </div>
+    <div class="list" style="margin-top:16px;">
+      {% for row in summary.detail_rows %}
+        <div class="list-item">
+          <div class="row">
+            <strong>{{ row.date }}</strong>
+            <span class="badge">{{ row.sales_vs_accreditation_difference }}</span>
+          </div>
+          <div class="muted" style="margin-top:8px;">
+            Venta ${{ row.card_sales }} · Lote ${{ row.pos_batches }} · Neto ${{ row.accredited_net }} · Descuentos ${{ row.bank_discounts }} · Bruto ${{ row.accredited_gross }}
+          </div>
+          <div class="muted" style="margin-top:8px;">
+            Venta vs lote ${{ row.sales_vs_batches_difference }} · Lote vs acreditacion ${{ row.batches_vs_accreditation_difference }}
+          </div>
+        </div>
+      {% empty %}
+        <p class="muted">No hay datos para el periodo seleccionado.</p>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

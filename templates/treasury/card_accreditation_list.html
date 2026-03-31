@@ -1,0 +1,46 @@
+{% extends "treasury/layout.html" %}
+
+{% block title %}Gerayse | Acreditaciones de tarjeta{% endblock %}
+
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Acreditaciones de tarjeta</h1>
+        <p class="muted">Registro neto acreditado con descuentos separados y bruto derivable.</p>
+      </div>
+      <a class="button" href="{% url 'treasury:card_accreditation_create' %}">Nueva acreditacion</a>
+    </div>
+    <form method="get" class="summary-grid" style="margin-top: 16px;">
+      {% for field in filter_form %}
+        <div class="field">
+          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+        </div>
+      {% endfor %}
+      <div class="row" style="grid-column: 1 / -1;">
+        <span class="muted">{{ accreditations|length }} registros visibles.</span>
+        <button class="button-secondary" type="submit">Filtrar</button>
+      </div>
+    </form>
+    <div class="list" style="margin-top: 16px;">
+      {% for accreditation in accreditations %}
+        <div class="list-item">
+          <div class="row">
+            <strong>{{ accreditation.fecha_acreditacion }} - {{ accreditation.operador_canal }}</strong>
+            <span class="badge badge-success">${{ accreditation.monto_acreditado }}</span>
+          </div>
+          <div class="muted" style="margin-top: 6px;">
+            {{ accreditation.cuenta_bancaria.nombre }} | bruto ${{ accreditation.monto_bruto_estimado }} | descuentos ${{ accreditation.total_descuentos }}
+          </div>
+          <div class="list-actions">
+            <a class="button-secondary" href="{% url 'treasury:acreditacion_tarjeta_detail' accreditation.pk %}">Ver detalle</a>
+            <a class="button-secondary" href="{% url 'treasury:descuento_bancario_create' accreditation.pk %}">Agregar descuento</a>
+          </div>
+        </div>
+      {% empty %}
+        <p class="muted">Sin acreditaciones registradas.</p>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

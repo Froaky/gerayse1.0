@@ -14,3 +14,7 @@ def ensure_treasury_admin(user) -> None:
     if not is_treasury_admin(user):
         raise PermissionDenied("No tenes permisos de tesoreria para esta operacion.")
 
+
+def _require_treasury_admin(request) -> None:
+    ensure_treasury_admin(request.user)
+

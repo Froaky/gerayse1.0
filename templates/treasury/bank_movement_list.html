@@ -1,0 +1,45 @@
+{% extends "treasury/layout.html" %}
+
+{% block title %}Gerayse | Movimientos bancarios{% endblock %}
+
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Movimientos bancarios</h1>
+        <p class="muted">Debitos y creditos administrativos con opcion de traza contra pagos.</p>
+      </div>
+      <a class="button" href="{% url 'treasury:movimiento_bancario_create' %}">Nuevo movimiento</a>
+    </div>
+    <form method="get" class="summary-grid" style="margin-top: 16px;">
+      {% for field in filter_form %}
+        <div class="field">
+          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+        </div>
+      {% endfor %}
+      <div class="row" style="grid-column: 1 / -1;">
+        <span class="muted">{{ movements|length }} registros visibles.</span>
+        <button class="button-secondary" type="submit">Filtrar</button>
+      </div>
+    </form>
+    <div class="list" style="margin-top: 16px;">
+      {% for movement in movements %}
+        <div class="list-item">
+          <div class="row">
+            <strong>{{ movement.fecha }} - {{ movement.cuenta_bancaria.nombre }}</strong>
+            <span class="badge {% if movement.tipo == 'DEBITO' %}badge-danger{% else %}badge-success{% endif %}">
+              {{ movement.get_tipo_display }}
+            </span>
+          </div>
+          <div class="muted" style="margin-top: 6px;">{{ movement.concepto }} | {{ movement.referencia|default:"Sin referencia" }} | ${{ movement.monto }}</div>
+          {% if movement.pago_tesoreria %}
+            <div class="muted" style="margin-top: 6px;">Vinculado al pago #{{ movement.pago_tesoreria.pk }}</div>
+          {% endif %}
+        </div>
+      {% empty %}
+        <p class="muted">Sin movimientos bancarios registrados.</p>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}
