@@ -4,9 +4,11 @@ from django.contrib import admin
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 from django.conf import settings
 from django.urls import include, path
+from core import views as core_views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('', core_views.home, name='home'),
     path('', include('users.urls')),
     path('', include('cashops.urls')),
     path('tesoreria/', include('treasury.urls')),

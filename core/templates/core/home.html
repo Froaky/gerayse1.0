@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}Gerayse | Sistema de cajas y tesoreria{% endblock %}
+{% block body_class %}app-shell--auth{% endblock %}
+{% block topbar_status %}
+  <a class="pill pill--success" href="{% url 'users:login' %}">Ingresar al sistema</a>
+{% endblock %}
+
+{% block content %}
+  <section class="landing-hero">
+    <div class="landing-hero__copy">
+      <p class="eyebrow">Software operativo para sucursales</p>
+      <h1>Controla cajas, turnos y tesoreria sin hojas de calculo.</h1>
+      <p class="landing-lead">
+        Gerayse centraliza operaciones diarias, trazabilidad de movimientos y alertas de desvio
+        para equipos que trabajan fuerte en escritorio y tambien en piso.
+      </p>
+      <div class="landing-actions">
+        <a class="button button--primary" href="{% url 'users:login' %}">Probar acceso</a>
+        <a class="button button--ghost" href="#modulos">Ver modulos</a>
+      </div>
+      <div class="landing-kpis">
+        <article class="metric-card">
+          <span class="metric-card__label">Operaciones</span>
+          <strong class="metric-card__value">Caja + Tesoreria</strong>
+        </article>
+        <article class="metric-card">
+          <span class="metric-card__label">Flujo</span>
+          <strong class="metric-card__value">Tiempo real</strong>
+        </article>
+        <article class="metric-card">
+          <span class="metric-card__label">Implementacion</span>
+          <strong class="metric-card__value">Cloud listo</strong>
+        </article>
+      </div>
+    </div>
+    <aside class="landing-hero__panel">
+      <h3>Que resuelve Gerayse</h3>
+      <ul class="bullet-list">
+        <li>Apertura y cierre de cajas con validacion de diferencias.</li>
+        <li>Traspasos entre cajas y sucursales con trazabilidad completa.</li>
+        <li>Control de rubros, limites y alertas por alcance.</li>
+        <li>Tesoreria con bancos, pagos, proveedores y conciliacion.</li>
+      </ul>
+    </aside>
+  </section>
+
+  <section class="landing-section" id="modulos">
+    <div class="section__heading">
+      <div>
+        <p class="eyebrow">Modulos principales</p>
+        <h2>Todo el flujo operativo en una sola plataforma</h2>
+      </div>
+    </div>
+    <div class="landing-cards">
+      <article class="panel">
+        <h3>Caja Operativa</h3>
+        <p class="muted">Apertura, gastos rapidos, ventas POS, ingresos y cierre con reglas de negocio.</p>
+      </article>
+      <article class="panel">
+        <h3>Alertas y Limites</h3>
+        <p class="muted">Semaforo por rubros con alertas activas y filtros por caja, sucursal o global.</p>
+      </article>
+      <article class="panel">
+        <h3>Tesoreria</h3>
+        <p class="muted">Bancos, conciliacion, deudas, pagos y disponibilidades con vista administrativa.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="landing-section landing-section--cta">
+    <div>
+      <p class="eyebrow">Listo para operar</p>
+      <h2>Empieza con tu equipo hoy</h2>
+      <p class="muted">Accede a tu cuenta y comienza a registrar operaciones desde el primer dia.</p>
+    </div>
+    <a class="button button--primary" href="{% url 'users:login' %}">Ir al login</a>
+  </section>
+{% endblock %}

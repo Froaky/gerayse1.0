@@ -1,4 +1,4 @@
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 
 
 def dashboard(request):
@@ -51,3 +51,12 @@ def dashboard(request):
 
 
 home = dashboard
+
+
+def public_home(request):
+    if request.user.is_authenticated:
+        return redirect("cashops:dashboard")
+    return render(request, "core/home.html")
+
+
+home = public_home

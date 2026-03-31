@@ -530,12 +530,91 @@ h1, h2, h3, p {
   width: 100%;
 }
 
+.button--ghost {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.66);
+  color: var(--text);
+}
+
 .auth-help {
   margin-top: 16px;
   color: var(--muted);
   font-size: 0.92rem;
   border-top: 1px solid var(--line);
   padding-top: 14px;
+}
+
+.landing-hero {
+  display: grid;
+  gap: 18px;
+}
+
+.landing-hero__copy,
+.landing-hero__panel,
+.landing-section {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  border-radius: var(--radius-lg);
+}
+
+.landing-hero__copy {
+  padding: 24px;
+  display: grid;
+  gap: 16px;
+}
+
+.landing-hero__copy h1 {
+  font-size: clamp(2rem, 4.1vw, 3.2rem);
+  line-height: 1.03;
+  letter-spacing: -0.03em;
+}
+
+.landing-lead {
+  color: var(--muted);
+  font-size: 1.02rem;
+  max-width: 58ch;
+}
+
+.landing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.landing-kpis {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.landing-hero__panel {
+  padding: 22px;
+}
+
+.landing-hero__panel h3 {
+  margin-bottom: 10px;
+}
+
+.landing-section {
+  margin-top: 16px;
+  padding: 22px;
+  display: grid;
+  gap: 14px;
+}
+
+.landing-cards {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.landing-section--cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
 }
 
 .app-shell--auth .topbar {
@@ -627,6 +706,11 @@ h1, h2, h3, p {
     order: 2;
     justify-self: start;
     width: min(100%, 440px);
+  }
+
+  .landing-hero {
+    grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.9fr);
+    align-items: stretch;
   }
 }
 

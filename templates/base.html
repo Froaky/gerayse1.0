@@ -14,7 +14,7 @@
     <div class="app-shell__grain"></div>
 
     <header class="topbar">
-      <a class="brand" href="/">
+      <a class="brand" href="{% if request.user.is_authenticated %}{% url 'cashops:dashboard' %}{% else %}{% url 'home' %}{% endif %}">
         <span class="brand__mark">G</span>
         <span class="brand__text">
           <strong>Gerayse</strong>
@@ -33,7 +33,7 @@
       {% if request.user.is_authenticated %}
         <aside class="sidebar">
           <nav class="nav-card" aria-label="Navegacion principal">
-            <a class="nav-card__item" href="/">Dashboard</a>
+            <a class="nav-card__item" href="{% url 'cashops:dashboard' %}">Dashboard</a>
             <a class="nav-card__item" href="#acciones">Operacion rapida</a>
             <a class="nav-card__item" href="#movimientos">Movimientos</a>
             <a class="nav-card__item" href="#cierre">Cierre</a>
@@ -60,7 +60,7 @@
 
     {% if request.user.is_authenticated %}
       <nav class="mobile-nav" aria-label="Acciones rapidas">
-        <a href="/">Inicio</a>
+        <a href="{% url 'cashops:dashboard' %}">Inicio</a>
         <a href="#acciones">Caja</a>
         <a href="#movimientos">Movimientos</a>
         <a href="#cierre">Cerrar</a>
