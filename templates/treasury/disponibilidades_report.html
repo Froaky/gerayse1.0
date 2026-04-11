@@ -39,6 +39,9 @@
         border-bottom: 1px solid var(--line);
     }
     .data-row:last-child { border-bottom: none; }
+    
+    .status-card { margin-top: 20px; border-left: 6px solid var(--warning); }
+    .status-card.is-closed { border-left-color: var(--success); }
 </style>
 
 <section class="hero">
@@ -151,7 +154,8 @@
 </div>
 
 <!-- Acciones de Cierre -->
-<section class="card" style="margin-top:20px; border-left: 6px solid {% if snapshot.is_closed %}var(--success){% else %}var(--warning){% endif %};">
+<!-- Acciones de Cierre -->
+<section class="card status-card {% if snapshot.is_closed %}is-closed{% endif %}">
     <div class="row">
         <div class="stack" style="gap: 4px;">
             <div class="row" style="justify-content: flex-start; gap: 12px;">
