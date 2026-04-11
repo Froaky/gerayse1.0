@@ -237,6 +237,7 @@
               <a class="chip" href="{% url 'cashops:operational_limit_list' %}">Limites</a>
               <a class="chip" href="{% url 'cashops:sucursal_list' %}">Sucursales</a>
               <a class="chip" href="{% url 'cashops:turno_list' %}">Turnos</a>
+              <a class="chip" href="{% url 'users:personal_list' %}">Personal</a>
             {% endif %}
           </div>
           {% if request.user.is_authenticated %}

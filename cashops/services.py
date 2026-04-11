@@ -14,6 +14,7 @@ from .models import (
     Justificacion,
     LimiteRubroOperativo,
     MovimientoCaja,
+    Producto,
     RubroOperativo,
     Sucursal,
     Transferencia,
@@ -762,6 +763,47 @@ def register_card_sale(
         observacion=observacion,
         creado_por=actor,
     )
+
+
+@transaction.atomic
+def register_general_sale(
+    *,
+    caja: Caja,
+    monto: Decimal,
+    tipo_venta: str,
+    rubro: RubroOperativo,
+    producto: Producto | None = None,
+    observacion: str = "",
+    creado_por=None,
+    actor=None,
+) -> MovimientoCaja:
+    actor = actor or creado_por
+    _require_actor(actor)
+    caja = _validate_open_box(caja, actor=actor)
+
+    if monto <= 0:
+        raise ValidationError({"monto": "El monto debe ser mayor que cero."})
+    if rubro is None:
+        raise ValidationError({"rubro": "El rubro es obligatorio para registrar la venta."})
+    if producto and producto.rubro_id != rubro.id:
+        raise ValidationError({"producto": "El producto no pertenece al rubro seleccionado."})
+
+    # Solo las ventas en efectivo impactan el saldo fisico de la caja
+    impacta_saldo = tipo_venta == MovimientoCaja.Tipo.INGRESO_EFECTIVO
+
+    movement = _create_movement(
+        caja=caja,
+        tipo=tipo_venta,
+        sentido=MovimientoCaja.Sentido.INGRESO,
+        monto=monto,
+        impacta_saldo_caja=impacta_saldo,
+        categoria=rubro.nombre,
+        observacion=observacion,
+        rubro_operativo=rubro,
+        producto=producto,
+        creado_por=actor,
+    )
+    return movement
 
 
 @transaction.atomic

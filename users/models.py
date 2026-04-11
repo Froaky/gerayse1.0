@@ -26,6 +26,10 @@ class User(AbstractUser):
         blank=True,
         related_name="users",
     )
+    dni = models.CharField(max_length=20, blank=True, verbose_name="DNI")
+    legajo = models.CharField(max_length=20, blank=True, verbose_name="Nro Legajo")
+    telefono = models.CharField(max_length=40, blank=True, verbose_name="Telefono")
+
 
     class Meta:
         verbose_name = "user"

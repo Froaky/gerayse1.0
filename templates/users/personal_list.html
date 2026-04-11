@@ -1,0 +1,47 @@
+{% extends "cashops/layout.html" %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Personal Operativo</h1>
+        <p class="muted">Lista de empleados, administradores y responsables asociados.</p>
+      </div>
+      <a class="button" href="{% url 'users:personal_create' %}">Nuevo Personal</a>
+    </div>
+    <div class="list mt-16">
+      {% for member in items %}
+        <div class="list-item">
+          <div class="row">
+            <div>
+              <strong>{{ member.get_full_name|default:member.username }}</strong>
+              <div class="muted">@{{ member.username }} | {{ member.role.name|default:"Sin Rol" }}</div>
+            </div>
+            <a class="button-secondary" href="{% url 'users:personal_update' member.id %}">Editar</a>
+          </div>
+          <div class="summary-grid mt-12" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
+            <div class="summary">
+              <span class="muted">DNI</span>
+              <strong>{{ member.dni|default:"-" }}</strong>
+            </div>
+            <div class="summary">
+              <span class="muted">Legajo</span>
+              <strong>{{ member.legajo|default:"-" }}</strong>
+            </div>
+            <div class="summary">
+              <span class="muted">Telefono</span>
+              <strong>{{ member.telefono|default:"-" }}</strong>
+            </div>
+            <div class="summary">
+              <span class="muted">Estado</span>
+              <span class="badge {% if member.is_active %}badge-success{% else %}badge-danger{% endif %}">
+                {% if member.is_active %}Activo{% else %}Inactivo{% endif %}
+              </span>
+            </div>
+          </div>
+        </div>
+      {% empty %}
+        <p class="muted">No hay personal cargado todavia.</p>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

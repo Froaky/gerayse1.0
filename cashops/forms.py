@@ -4,7 +4,9 @@ from django import forms
 from django.contrib.auth import get_user_model
 from django.db.models import Q
 
-from .models import Caja, LimiteRubroOperativo, RubroOperativo, Sucursal, Transferencia, Turno
+from django.urls import reverse_lazy
+
+from .models import Caja, LimiteRubroOperativo, MovimientoCaja, Producto, RubroOperativo, Sucursal, Transferencia, Turno
 from .permissions import can_assign_box_to_user, is_cashops_admin
 from .services import CLOSING_DIFF_THRESHOLD, MAX_OPERATIONAL_LIMIT_PERCENTAGE
 
@@ -142,7 +144,28 @@ class GastoRapidoForm(forms.Form):
                 field.widget.attrs.setdefault("class", "input")
 
 
-class VentaTarjetaForm(forms.Form):
+class VentaGeneralForm(forms.Form):
+    tipo_venta = forms.ChoiceField(
+        choices=[
+            (MovimientoCaja.Tipo.INGRESO_EFECTIVO, "Efectivo"),
+            (MovimientoCaja.Tipo.VENTA_TARJETA, "Tarjeta (POS)"),
+            (MovimientoCaja.Tipo.VENTA_TRANSFERENCIA, "Transferencia"),
+            (MovimientoCaja.Tipo.VENTA_PEDIDOSYA, "PedidosYa"),
+            (MovimientoCaja.Tipo.VENTA_QR, "QR / MercadoPago"),
+        ],
+        label="Medio de Pago",
+    )
+    rubro = forms.ModelChoiceField(
+        queryset=RubroOperativo.objects.filter(activo=True, es_sistema=False),
+        label="Rubro / Categoria",
+        required=True,
+    )
+    producto = forms.ModelChoiceField(
+        queryset=Producto.objects.filter(activo=True),
+        label="Objeto / Producto",
+        required=False,
+        empty_label="Seleccionar producto (opcional)",
+    )
     monto = forms.DecimalField(
         max_digits=14,
         decimal_places=2,
@@ -152,13 +175,39 @@ class VentaTarjetaForm(forms.Form):
     observacion = forms.CharField(
         max_length=255,
         required=False,
-        widget=forms.TextInput(attrs={"placeholder": "Detalle opcional"}),
+        widget=forms.TextInput(attrs={"placeholder": "Comentario opcional"}),
     )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        
+        # Atributos HTMX para interactividad
+        self.fields["rubro"].widget.attrs.update({
+            "hx-get": reverse_lazy("cashops:filter_products_by_rubro"),
+            "hx-target": "#id_producto",
+            "hx-trigger": "change",
+        })
+        self.fields["producto"].widget.attrs.update({
+            "hx-get": reverse_lazy("cashops:get_rubro_by_product"),
+            "hx-target": "#id_rubro",
+            "hx-trigger": "change",
+        })
+
         for field in self.fields.values():
-            field.widget.attrs.setdefault("class", "input")
+            if isinstance(field.widget, forms.Select):
+                field.widget.attrs.setdefault("class", "input select")
+            else:
+                field.widget.attrs.setdefault("class", "input")
+
+    def clean(self):
+        cleaned_data = super().clean()
+        producto = cleaned_data.get("producto")
+        rubro = cleaned_data.get("rubro")
+        
+        if producto and rubro and producto.rubro_id != rubro.id:
+            cleaned_data["rubro"] = producto.rubro
+            
+        return cleaned_data
 
 
 class TransferenciaEntreCajasForm(forms.Form):

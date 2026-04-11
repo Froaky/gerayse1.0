@@ -232,6 +232,26 @@ class RubroOperativo(models.Model):
         return self.nombre
 
 
+class Producto(models.Model):
+    nombre = models.CharField(max_length=120)
+    rubro = models.ForeignKey(RubroOperativo, on_delete=models.PROTECT, related_name="productos")
+    precio_referencia = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    activo = models.BooleanField(default=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["nombre"]
+        constraints = [
+            models.UniqueConstraint(
+                Lower("nombre"),
+                name="unique_product_name_ci",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.nombre} ({self.rubro.nombre})"
+
+
 class LimiteRubroOperativo(models.Model):
     rubro = models.ForeignKey(RubroOperativo, on_delete=models.CASCADE, related_name="limites")
     sucursal = models.ForeignKey(
@@ -287,7 +307,10 @@ class MovimientoCaja(models.Model):
         APERTURA = "APERTURA", "Apertura"
         INGRESO_EFECTIVO = "INGRESO_EFECTIVO", "Ingreso efectivo"
         GASTO = "GASTO", "Gasto"
-        VENTA_TARJETA = "VENTA_TARJETA", "Venta tarjeta"
+        VENTA_TARJETA = "VENTA_TARJETA", "Venta tarjeta (POS)"
+        VENTA_TRANSFERENCIA = "VENTA_TRANSFERENCIA", "Venta transferencia"
+        VENTA_PEDIDOSYA = "VENTA_PEDIDOSYA", "Venta PedidosYa"
+        VENTA_QR = "VENTA_QR", "Venta QR / MercadoPago"
         TRANSFERENCIA_SALIDA = "TRANSFERENCIA_SALIDA", "Transferencia salida"
         TRANSFERENCIA_ENTRADA = "TRANSFERENCIA_ENTRADA", "Transferencia entrada"
         TRANSFERENCIA_SUCURSAL_SALIDA = "TRANSFERENCIA_SUCURSAL_SALIDA", "Transferencia sucursal salida"
@@ -308,6 +331,13 @@ class MovimientoCaja(models.Model):
     rubro_operativo = models.ForeignKey(
         RubroOperativo,
         on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="movimientos",
+    )
+    producto = models.ForeignKey(
+        Producto,
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="movimientos",

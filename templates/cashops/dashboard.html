@@ -134,9 +134,9 @@
                 <span>Gasto rapido</span>
                 <small>monto, rubro y detalle</small>
               </a>
-              <a class="action-card" href="{% url 'cashops:box_pos' selected_box.id %}">
-                <span>Venta POS</span>
-                <small>registro inmediato</small>
+              <a class="action-card" href="{% url 'cashops:register_sale' selected_box.id %}">
+                <span>Registrar venta</span>
+                <small>efectivo, pos, depo, etc.</small>
               </a>
               <a class="action-card" href="{% url 'cashops:box_income' selected_box.id %}">
                 <span>Ingreso efectivo</span>

@@ -38,23 +38,32 @@ class SupplierForm(TreasuryStyledFormMixin, forms.ModelForm):
         fields = [
             "razon_social",
             "identificador_fiscal",
+            "direccion",
             "contacto",
             "telefono",
             "email",
+            "sitio_web",
             "alias_bancario",
             "cbu",
             "observaciones",
             "activo",
         ]
+        labels = {
+            "razon_social": "Nombre / Razon Social",
+            "identificador_fiscal": "CUIT / Identificador",
+            "sitio_web": "Sitio Web / Redes",
+        }
         widgets = {
             "razon_social": forms.TextInput(attrs={"placeholder": "Proveedor SA"}),
             "identificador_fiscal": forms.TextInput(attrs={"placeholder": "30-12345678-9"}),
-            "contacto": forms.TextInput(attrs={"placeholder": "Contacto principal"}),
-            "telefono": forms.TextInput(attrs={"placeholder": "387-..."}),
+            "direccion": forms.TextInput(attrs={"placeholder": "Av. Siempre Viva 742"}),
+            "contacto": forms.TextInput(attrs={"placeholder": "Nombre del contacto"}),
+            "telefono": forms.TextInput(attrs={"placeholder": "387-5555555"}),
             "email": forms.EmailInput(attrs={"placeholder": "compras@proveedor.com"}),
+            "sitio_web": forms.URLInput(attrs={"placeholder": "https://..."}),
             "alias_bancario": forms.TextInput(attrs={"placeholder": "Alias bancario"}),
-            "cbu": forms.TextInput(attrs={"placeholder": "CBU opcional"}),
-            "observaciones": forms.Textarea(attrs={"placeholder": "Observaciones internas"}),
+            "cbu": forms.TextInput(attrs={"placeholder": "CBU de 22 digitos"}),
+            "observaciones": forms.Textarea(attrs={"placeholder": "Notas internas sobre el proveedor"}),
         }
 
     def __init__(self, *args, **kwargs):
