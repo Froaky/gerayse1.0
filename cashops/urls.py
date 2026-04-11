@@ -5,7 +5,7 @@ from . import views
 app_name = "cashops"
 
 urlpatterns = [
-    path("", views.dashboard, name="dashboard"),
+    path("operacion/", views.dashboard, name="dashboard"),
     path("alertas/", views.alert_panel, name="alert_panel"),
     path("rubros/", views.operational_category_list, name="operational_category_list"),
     path("rubros/nuevo/", views.operational_category_create, name="operational_category_create"),
