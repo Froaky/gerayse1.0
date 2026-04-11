@@ -16,7 +16,7 @@ SECRET_KEY = env(
 )
 DEBUG = env.bool("DEBUG", default=True)
 RUNNING_DEV_SERVER = "runserver" in sys.argv
-ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
+ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1", "gerayse10-production.up.railway.app"])
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -116,7 +116,7 @@ MESSAGE_TAGS = {
     40: 'error',
 }
 
-CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[])
+CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=["https://gerayse10-production.up.railway.app"])
 
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
