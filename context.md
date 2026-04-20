@@ -45,6 +45,7 @@ Last updated: 2026-04-20
 
 - Stabilize treasury for a same-day internal-control demo.
 - Reduce emphasis on bank integration features that are not part of the real operating model.
+- Convert the user-provided `Fixes y detalles para Gerayse.docx` requirements into executable backlog epics and user stories.
 
 ### Findings Before Fixes
 
@@ -65,6 +66,14 @@ Last updated: 2026-04-20
 - `docs/manual-demo-camino-feliz.md`
 - `docs/manual-demo-camino-feliz.pdf`
 - `docs/generate_demo_manual_pdf.py`
+- `.agents/skills/analista-funcional-backlog/SKILL.md`
+- `.agents/skills/analista-funcional-backlog/references/gerayse-backlog-format.md`
+- `.agents/skills/analista-funcional-backlog/agents/openai.yaml`
+- `docs/epics/README.md`
+- `docs/epics/EP-08-ajustes-operativos-de-caja-y-sucursales.md`
+- `docs/epics/EP-09-usuarios-operativos-y-datos-minimos.md`
+- `docs/epics/EP-10-situacion-financiera-y-alertas-consolidadas.md`
+- `docs/epics/EP-11-rentabilidad-y-situacion-economica.md`
 - `treasury/services.py`
 - `treasury/views.py`
 - `treasury/urls.py`
@@ -99,6 +108,23 @@ Last updated: 2026-04-20
   - added a reproducible PDF generator for the demo manual
 - `docs/manual-demo-camino-feliz.pdf`
   - generated the final shareable PDF output
+- `.agents/skills/analista-funcional-backlog/SKILL.md`
+  - added a local functional-analyst skill to draft and refine epics and user stories
+  - aligned the workflow with the repo's existing `docs/epics` structure
+- `.agents/skills/analista-funcional-backlog/references/gerayse-backlog-format.md`
+  - documented the observed epic format, numbering, and scope rules for this product
+- `.agents/skills/analista-funcional-backlog/agents/openai.yaml`
+  - added UI-facing metadata so the skill can appear as a named specialist agent
+- `docs/epics/EP-08-ajustes-operativos-de-caja-y-sucursales.md`
+  - grouped docx requirements about caja, sucursales, traspasos, and carry-over scenarios into a dedicated operational epic
+- `docs/epics/EP-09-usuarios-operativos-y-datos-minimos.md`
+  - separated user/personal simplification from cash and treasury scope to keep backlog slices smaller
+- `docs/epics/EP-10-situacion-financiera-y-alertas-consolidadas.md`
+  - grouped dashboard unification, bank movement taxonomy, pending accreditations, and due alerts into one financial-reading epic
+- `docs/epics/EP-11-rentabilidad-y-situacion-economica.md`
+  - grouped profitability, period-based debt, and economic views into one later-stage management epic
+- `docs/epics/README.md`
+  - added the four new proposed epics to the backlog index and implementation order
 
 ### Validation Results
 
@@ -106,6 +132,9 @@ Last updated: 2026-04-20
   - `python manage.py test treasury.tests.TreasuryServiceTests treasury.tests.TreasuryViewTests treasury.tests_ep05 -v 2`
   - `python manage.py test treasury.tests.TreasuryAdminProtectionTests treasury.tests.TreasuryPermissionTests -v 2`
   - `python manage.py test treasury.tests.TreasuryServiceTests treasury.tests.TreasuryViewTests treasury.tests_ep05 -v 1`
+  - `python C:\Users\theco\.codex\skills\.system\skill-creator\scripts\quick_validate.py .agents\skills\analista-funcional-backlog`
+- Not run:
+  - application tests for the new epic docs, because this task only added backlog markdown
 - Treasury status after this session:
   - supplier create/update flow works again
   - payable create/update flow works again
@@ -119,6 +148,8 @@ Last updated: 2026-04-20
 - `cashops/test_migration_safety.py` still failed earlier because legacy user creation hit `users_user.dni` on SQLite test migration flow.
 - `treasury/views.py` contains duplicated imports and some mojibake/encoding noise in labels. Not a blocker for behavior, but worth cleanup later.
 - Monthly closing by `sucursal` still deserves a separate design pass if branch-specific treasury closings become mandatory.
+- The source doc mixes immediate UI fixes with larger business capabilities; the backlog split into EP-08..EP-11 is an analytic decision, not an explicit grouping from the user.
+- `P2` was interpreted as the current personal/users screen because the source document does not define that label.
 
 ## Useful Commands
 
@@ -137,3 +168,4 @@ Last updated: 2026-04-20
 - Decide whether `CuentaBancaria` should be renamed at UI level to reflect internal-control usage more clearly.
 - Revisit branch-specific treasury closing if the operation requires separate monthly closure per `sucursal`.
 - If demo scope remains internal-control only, keep bank reconciliation/accreditation out of the presentation path.
+- Use `analista-funcional-backlog` for new backlog work under `docs/epics` so future epics keep the same structure and numbering rules.

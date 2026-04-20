@@ -11,6 +11,10 @@ Estado actual:
 - `EP-01`: caja operativa, movimientos y cierres. Implementada.
 - `EP-02`: alertas y semaforos operativos. Implementada.
 - `EP-03`: tesoreria central base. Iniciada.
+- `EP-08`: ajustes operativos de caja y sucursales. Propuesta.
+- `EP-09`: usuarios operativos y datos minimos. Propuesta.
+- `EP-10`: situacion financiera y alertas consolidadas. Propuesta.
+- `EP-11`: rentabilidad y situacion economica. Propuesta.
 
 Archivos de referencia de negocio:
 - [matriz-sistema-vs-relevo.md](/C:/code/gerayse1.0/docs/epics/matriz-sistema-vs-relevo.md)
@@ -23,6 +27,10 @@ Orden recomendado de implementacion:
 3. [EP-05-flujo-de-disponibilidades.md](/C:/code/gerayse1.0/docs/epics/EP-05-flujo-de-disponibilidades.md)
 4. [EP-06-control-de-gestion-y-alertas.md](/C:/code/gerayse1.0/docs/epics/EP-06-control-de-gestion-y-alertas.md)
 5. [EP-07-impuestos-planes-y-autorizaciones.md](/C:/code/gerayse1.0/docs/epics/EP-07-impuestos-planes-y-autorizaciones.md)
+6. [EP-08-ajustes-operativos-de-caja-y-sucursales.md](/C:/code/gerayse1.0/docs/epics/EP-08-ajustes-operativos-de-caja-y-sucursales.md)
+7. [EP-09-usuarios-operativos-y-datos-minimos.md](/C:/code/gerayse1.0/docs/epics/EP-09-usuarios-operativos-y-datos-minimos.md)
+8. [EP-10-situacion-financiera-y-alertas-consolidadas.md](/C:/code/gerayse1.0/docs/epics/EP-10-situacion-financiera-y-alertas-consolidadas.md)
+9. [EP-11-rentabilidad-y-situacion-economica.md](/C:/code/gerayse1.0/docs/epics/EP-11-rentabilidad-y-situacion-economica.md)
 
 Principios de implementacion:
 - no copiar el Excel celda por celda; replicar el resultado funcional con datos estructurados
