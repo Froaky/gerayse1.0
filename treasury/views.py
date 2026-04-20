@@ -54,7 +54,7 @@ from .models import (
     PagoTesoreria,
     Proveedor,
 )
-from .permissions import _require_treasury_admin
+from .permissions import ensure_treasury_admin
 from .services import (
     annul_payable,
     annul_payment,
@@ -77,67 +77,15 @@ from .services import (
     register_cheque_payment,
     register_echeq_payment,
     register_payable,
-    register_payment,
-    register_transfer_payment,
-    update_bank_account,
-    update_bank_movement,
-    update_payable,
-    update_payable_category,
-    update_pos_batch,
-    update_supplier,
-)
-from .forms import (
-    ArqueoForm,
-    BankAccountFilterForm,
-    BankAccountForm,
-    BankMovementFilterForm,
-    BankMovementForm,
-    BankReconciliationFilterForm,
-    CardAccreditationFilterForm,
-    CardAccreditationForm,
-    CashPaymentForm,
-    CentralCashMovementForm,
-    ChequePaymentForm,
-    DisponibilidadesFilterForm,
-    ECheqPaymentForm,
-    PayableAnnulForm,
-    PayableCategoryFilterForm,
-    PayableCategoryForm,
-    PayableFilterForm,
-    PayableForm,
-    PaymentAnnulForm,
-    PaymentFilterForm,
-    PosBatchFilterForm,
-    PosBatchForm,
-    SupplierFilterForm,
-    SupplierForm,
-    SupplierHistoryFilterForm,
-    TransferPaymentForm,
-)
-from .permissions import ensure_treasury_admin
-from .services import (
-    annul_payable,
-    annul_payment,
-    build_bank_reconciliation_snapshot,
-    build_supplier_history_snapshot,
-    build_treasury_dashboard_snapshot,
-    create_bank_account,
-    create_bank_movement,
-    create_payable_category,
-    create_pos_batch,
-    create_supplier,
-    link_payment_to_bank_movement,
-    register_card_accreditation,
-    register_cheque_payment,
-    register_echeq_payment,
-    register_payable,
     register_transfer_payment,
     toggle_bank_account,
     toggle_payable_category,
     toggle_supplier,
     update_bank_account,
+    update_bank_movement,
     update_payable,
     update_payable_category,
+    update_pos_batch,
     update_supplier,
 )
 
@@ -272,6 +220,19 @@ def _action(url: str, label: str, kind: str = "secondary") -> dict:
     return {"href": url, "label": label, "kind": kind}
 
 
+def _payment_item(payment: PagoTesoreria) -> dict:
+    badge, badge_class = _payment_badge(payment)
+    account_label = payment.cuenta_bancaria.nombre if payment.cuenta_bancaria_id else "Caja central"
+    return {
+        "href": reverse("treasury:pagos_detail", args=[payment.pk]),
+        "title": payment.cuenta_por_pagar.proveedor.razon_social,
+        "subtitle": f"{payment.get_medio_pago_display()} - {payment.cuenta_por_pagar.concepto}",
+        "badge": badge,
+        "badge_class": badge_class,
+        "meta": f"{payment.fecha_pago:%d/%m/%Y} - {_money(payment.monto)} - {account_label}",
+    }
+
+
 @login_required
 def index(request):
     return redirect("treasury:dashboard")
@@ -301,17 +262,16 @@ def dashboard(request):
     # Add bank balances as small cards or sections
     for balance in snapshot["bank_balances"]:
         cards.append({
-            "label": f"Banco {balance['account'].banco}",
+            "label": f"Cuenta {balance['account'].nombre}",
             "value": _money(balance["balance"]),
-            "help": balance["account"].nombre
+            "help": balance["account"].banco
         })
 
     sections = [
         {"label": "Deudas", "description": "Obligaciones pendientes con proveedores.", "href": reverse("treasury:cuentas_por_pagar_list"), "count": snapshot["pending_count"]},
-        {"label": "Pagos", "description": "Egresos bancarios y cheques.", "href": reverse("treasury:pagos_list"), "count": PagoTesoreria.objects.count()},
-        {"label": "Movimientos", "description": "Extracto bancario real.", "href": reverse("treasury:bank_movements_list"), "count": MovimientoBancario.objects.count()},
-        {"label": "Lotes POS", "description": "Cierres de terminales de tarjeta.", "href": reverse("treasury:pos_batches_list"), "count": LotePOS.objects.count()},
-        {"label": "Conciliacion", "description": "Ventas vs Lotes vs Acreditaciones.", "href": reverse("treasury:bank_reconciliation"), "count": "EP-04"},
+        {"label": "Pagos", "description": "Egresos internos por transferencia, cheque o efectivo.", "href": reverse("treasury:pagos_list"), "count": PagoTesoreria.objects.count()},
+        {"label": "Movimientos", "description": "Registro interno de cuentas de control.", "href": reverse("treasury:bank_movements_list"), "count": MovimientoBancario.objects.count()},
+        {"label": "Efectivo", "description": "Libro de caja central y egresos en efectivo.", "href": reverse("treasury:central_cash_list"), "count": MovimientoCajaCentral.objects.count()},
         {"label": "Proveedores", "description": "Maestro de terceros.", "href": reverse("treasury:proveedores_list"), "count": Proveedor.objects.count()},
     ]
     
@@ -758,6 +718,7 @@ def cuentas_por_pagar_detail(request, payable_id: int):
                 _action(reverse("treasury:pagos_transferencia_create") + f"?payable={payable.pk}", "Transferencia", "primary"),
                 _action(reverse("treasury:pagos_cheque_create") + f"?payable={payable.pk}", "Cheque"),
                 _action(reverse("treasury:pagos_echeq_create") + f"?payable={payable.pk}", "ECHEQ"),
+                _action(reverse("treasury:pagos_efectivo_create") + f"?payable={payable.pk}", "Efectivo"),
             ]
         )
         if not payments.filter(estado=PagoTesoreria.Estado.REGISTRADO).exists():
@@ -897,6 +858,7 @@ def pagos_list(request):
         _action(reverse("treasury:pagos_transferencia_create"), "Transferencia", "primary"),
         _action(reverse("treasury:pagos_cheque_create"), "Cheque"),
         _action(reverse("treasury:pagos_echeq_create"), "ECHEQ"),
+        _action(reverse("treasury:pagos_efectivo_create"), "Efectivo"),
     ]
     return render(
         request,
@@ -925,13 +887,15 @@ def _register_payment_view(request, form_class, service_func, title: str, subtit
     if request.method == "POST" and form.is_valid():
         kwargs = {
             "payable": form.cleaned_data["cuenta_por_pagar"],
-            "bank_account": form.cleaned_data["cuenta_bancaria"],
             "fecha_pago": form.cleaned_data["fecha_pago"],
             "monto": form.cleaned_data["monto"],
-            "referencia": form.cleaned_data.get("referencia", ""),
             "observaciones": form.cleaned_data.get("observaciones", ""),
             "actor": request.user,
         }
+        if "cuenta_bancaria" in form.cleaned_data:
+            kwargs["bank_account"] = form.cleaned_data["cuenta_bancaria"]
+        if "referencia" in form.cleaned_data:
+            kwargs["referencia"] = form.cleaned_data.get("referencia", "")
         if form.cleaned_data.get("fecha_diferida"):
             kwargs["fecha_diferida"] = form.cleaned_data["fecha_diferida"]
         try:
@@ -993,6 +957,18 @@ def pagos_echeq_create(request):
 
 
 @login_required
+@require_http_methods(["GET", "POST"])
+def pagos_efectivo_create(request):
+    return _register_payment_view(
+        request,
+        CashPaymentForm,
+        register_cash_payment,
+        "Pago en efectivo",
+        "Registra un egreso interno en caja central y recompone la deuda.",
+    )
+
+
+@login_required
 def pagos_detail(request, payment_id: int):
     _require_treasury_admin(request)
     payment = get_object_or_404(
@@ -1010,7 +986,7 @@ def pagos_detail(request, payment_id: int):
         {"label": "Proveedor", "value": payment.cuenta_por_pagar.proveedor.razon_social},
         {"label": "Obligacion", "value": payment.cuenta_por_pagar.concepto},
         {"label": "Categoria", "value": payment.cuenta_por_pagar.categoria.nombre},
-        {"label": "Cuenta bancaria", "value": payment.cuenta_bancaria.nombre},
+        {"label": "Cuenta de registro", "value": payment.cuenta_bancaria.nombre if payment.cuenta_bancaria_id else "Caja central"},
         {"label": "Medio de pago", "value": payment.get_medio_pago_display()},
         {"label": "Monto", "value": _money(payment.monto)},
         {"label": "Fecha de pago", "value": payment.fecha_pago.strftime("%d/%m/%Y")},
@@ -1316,9 +1292,9 @@ def card_accreditations_list(request):
         if account:
             accreditations = accreditations.filter(movimiento_bancario__cuenta_bancaria=account)
         if df:
-            accreditations = accreditations.filter(fecha_acreditacion__gte=df)
+            accreditations = accreditations.filter(movimiento_bancario__fecha__gte=df)
         if dt:
-            accreditations = accreditations.filter(fecha_acreditacion__lte=dt)
+            accreditations = accreditations.filter(movimiento_bancario__fecha__lte=dt)
         if sucursal:
             accreditations = accreditations.filter(movimiento_bancario__cuenta_bancaria__sucursal=sucursal)
 

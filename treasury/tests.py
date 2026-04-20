@@ -21,7 +21,14 @@ from .admin import (
     PagoTesoreriaAdmin,
     ProveedorAdmin,
 )
-from .models import CategoriaCuentaPagar, CuentaBancaria, CuentaPorPagar, PagoTesoreria, Proveedor
+from .models import (
+    CategoriaCuentaPagar,
+    CuentaBancaria,
+    CuentaPorPagar,
+    MovimientoCajaCentral,
+    PagoTesoreria,
+    Proveedor,
+)
 from .permissions import is_treasury_admin
 from .services import (
     annul_payment,
@@ -30,6 +37,7 @@ from .services import (
     create_payable_category,
     create_supplier,
     register_cheque_payment,
+    register_echeq_payment,
     register_payable,
     register_transfer_payment,
 )
@@ -217,6 +225,28 @@ class TreasuryServiceTests(TreasuryTestCase):
                 referencia="",
                 actor=self.admin,
             )
+
+    def test_echeq_payment_is_registered_with_bank_account(self):
+        payable = register_payable(
+            proveedor=self.supplier,
+            categoria=self.category,
+            concepto="Servicio diferido",
+            fecha_emision=timezone.localdate(),
+            fecha_vencimiento=timezone.localdate(),
+            importe_total=Decimal("1200.00"),
+            actor=self.admin,
+        )
+        payment = register_echeq_payment(
+            payable=payable,
+            bank_account=self.bank_account,
+            fecha_pago=timezone.localdate(),
+            fecha_diferida=timezone.localdate() + timedelta(days=3),
+            monto=Decimal("200.00"),
+            referencia="ECHEQ-200",
+            actor=self.admin,
+        )
+        self.assertEqual(payment.medio_pago, PagoTesoreria.MedioPago.ECHEQ)
+        self.assertEqual(payment.cuenta_bancaria, self.bank_account)
 
     def test_annulling_payment_restores_balance(self):
         payable = register_payable(
@@ -434,6 +464,33 @@ class TreasuryViewTests(TreasuryTestCase):
         payable.refresh_from_db()
         self.assertEqual(payable.estado, CuentaPorPagar.Estado.PARCIAL)
         self.assertEqual(payable.saldo_pendiente, Decimal("250.00"))
+
+    def test_cash_payment_create_reduces_balance_and_creates_central_movement(self):
+        payable = register_payable(
+            proveedor=self.supplier,
+            categoria=self.category,
+            concepto="Factura en efectivo",
+            fecha_emision=timezone.localdate(),
+            fecha_vencimiento=timezone.localdate(),
+            importe_total=Decimal("400.00"),
+            actor=self.admin,
+        )
+        response = self.client.post(
+            reverse("treasury:pagos_efectivo_create"),
+            {
+                "cuenta_por_pagar": payable.pk,
+                "fecha_pago": timezone.localdate(),
+                "monto": "150.00",
+                "observaciones": "Pago interno en caja",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        payable.refresh_from_db()
+        payment = PagoTesoreria.objects.get(cuenta_por_pagar=payable, medio_pago=PagoTesoreria.MedioPago.EFECTIVO)
+        self.assertEqual(payable.estado, CuentaPorPagar.Estado.PARCIAL)
+        self.assertEqual(payable.saldo_pendiente, Decimal("250.00"))
+        self.assertIsNone(payment.cuenta_bancaria)
+        self.assertTrue(MovimientoCajaCentral.objects.filter(pago_tesoreria=payment).exists())
 
     def test_non_admin_is_blocked_from_treasury_dashboard(self):
         self.client.force_login(self.operator)

@@ -29,6 +29,7 @@ urlpatterns = [
     path("pagos/transferencia/nuevo/", views.pagos_transferencia_create, name="pagos_transferencia_create"),
     path("pagos/cheque/nuevo/", views.pagos_cheque_create, name="pagos_cheque_create"),
     path("pagos/echeq/nuevo/", views.pagos_echeq_create, name="pagos_echeq_create"),
+    path("pagos/efectivo/nuevo/", views.pagos_efectivo_create, name="pagos_efectivo_create"),
     path("pagos/<int:pk>/", views.pagos_detail, name="pagos_detail"),
     path("pagos/<int:payment_id>/annul/", views.pagos_annul, name="pagos_annul"),
     

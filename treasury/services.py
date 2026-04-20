@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.db.models import Q
 from django.db.models import Sum
 from django.utils import timezone
 
@@ -62,9 +63,11 @@ def create_supplier(
     *,
     razon_social,
     identificador_fiscal="",
+    direccion="",
     contacto="",
     telefono="",
     email="",
+    sitio_web="",
     alias_bancario="",
     cbu="",
     observaciones="",
@@ -75,9 +78,11 @@ def create_supplier(
     supplier = Proveedor(
         razon_social=razon_social,
         identificador_fiscal=identificador_fiscal,
+        direccion=direccion,
         contacto=contacto,
         telefono=telefono,
         email=email,
+        sitio_web=sitio_web,
         alias_bancario=alias_bancario,
         cbu=cbu,
         observaciones=observaciones,
@@ -92,9 +97,11 @@ def update_supplier(
     supplier: Proveedor,
     razon_social,
     identificador_fiscal="",
+    direccion="",
     contacto="",
     telefono="",
     email="",
+    sitio_web="",
     alias_bancario="",
     cbu="",
     observaciones="",
@@ -104,9 +111,11 @@ def update_supplier(
     _require_actor(actor)
     supplier.razon_social = razon_social
     supplier.identificador_fiscal = identificador_fiscal
+    supplier.direccion = direccion
     supplier.contacto = contacto
     supplier.telefono = telefono
     supplier.email = email
+    supplier.sitio_web = sitio_web
     supplier.alias_bancario = alias_bancario
     supplier.cbu = cbu
     supplier.observaciones = observaciones
@@ -152,6 +161,7 @@ def create_bank_account(
     alias="",
     cbu="",
     sucursal_bancaria="",
+    sucursal=None,
     activa=True,
     actor=None,
 ) -> CuentaBancaria:
@@ -164,6 +174,7 @@ def create_bank_account(
         alias=alias,
         cbu=cbu,
         sucursal_bancaria=sucursal_bancaria,
+        sucursal=sucursal,
         activa=activa,
         creado_por=actor,
     )
@@ -180,6 +191,7 @@ def update_bank_account(
     alias="",
     cbu="",
     sucursal_bancaria="",
+    sucursal=None,
     activa=True,
     actor=None,
 ) -> CuentaBancaria:
@@ -191,6 +203,7 @@ def update_bank_account(
     bank_account.alias = alias
     bank_account.cbu = cbu
     bank_account.sucursal_bancaria = sucursal_bancaria
+    bank_account.sucursal = sucursal
     bank_account.activa = activa
     bank_account.actualizado_por = actor
     return _save_instance(bank_account)
@@ -205,6 +218,7 @@ def toggle_bank_account(*, bank_account: CuentaBancaria, actor=None) -> CuentaBa
 
 def register_payable(
     *,
+    sucursal=None,
     proveedor: Proveedor,
     categoria: CategoriaCuentaPagar,
     concepto: str,
@@ -221,6 +235,7 @@ def register_payable(
     if not categoria.activo:
         raise ValidationError({"categoria": "La categoria esta inactiva."})
     payable = CuentaPorPagar(
+        sucursal=sucursal,
         proveedor=proveedor,
         categoria=categoria,
         concepto=concepto,
@@ -239,6 +254,7 @@ def register_payable(
 def update_payable(
     *,
     payable: CuentaPorPagar,
+    sucursal=None,
     proveedor: Proveedor,
     categoria: CategoriaCuentaPagar,
     concepto: str,
@@ -256,6 +272,7 @@ def update_payable(
         raise ValidationError({"proveedor": "El proveedor esta inactivo."})
     if not categoria.activo:
         raise ValidationError({"categoria": "La categoria esta inactiva."})
+    payable.sucursal = sucursal
     payable.proveedor = proveedor
     payable.categoria = categoria
     payable.concepto = concepto
@@ -399,8 +416,8 @@ def register_echeq_payment(
 ) -> PagoTesoreria:
     return register_payment(
         payable=payable,
-        bank_account=None if medio_pago == PagoTesoreria.MedioPago.EFECTIVO else bank_account,
-        medio_pago=medio_pago,
+        bank_account=bank_account,
+        medio_pago=PagoTesoreria.MedioPago.ECHEQ,
         fecha_pago=fecha_pago,
         monto=monto,
         referencia=referencia,
@@ -626,7 +643,7 @@ def link_payment_to_bank_movement(
 
     # Update payment status if it was REGISTERED to something indicating bank reflection
     # (Actually PagoTesoreria has estado_bancario)
-    payment.estado_bancario = PagoTesoreria.EstadoBancario.ACREDITADO
+    payment.estado_bancario = PagoTesoreria.EstadoBancario.IMPACTADO
     payment.actualizado_por = actor
     payment.save(skip_domain_guard=True)
 
@@ -651,7 +668,7 @@ def build_bank_reconciliation_snapshot(
     total_sales = MovimientoCaja.objects.filter(
         tipo=MovimientoCaja.Tipo.VENTA_TARJETA,
         creado_en__date__gte=date_from,
-        creada_en__date__lte=date_to,
+        creado_en__date__lte=date_to,
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
 
     # 2. Total recorded in POS Batches
@@ -843,9 +860,7 @@ def build_disponibilidades_snapshot(year: int, month: int, sucursal=None) -> dic
         # For now, if no sucursal, we sum all closings of that month.
         pass
 
-    closings_prev = CierreMensualTesoreria.objects.filter(mes__lt=first_day).order_by("-mes")
-    if sucursal:
-        closings_prev = closings_prev.filter(sucursal=sucursal)
+    closings_prev = CierreMensualTesoreria.objects.filter(closing_filter).order_by("-mes")
     
     # We take the most recent closing for the scope
     # Note: If global, we might have multiple branch closings. 
