@@ -6,30 +6,76 @@
     <div class="card">
       <div class="row">
         <div>
-          <h1>Dashboard de tesoreria</h1>
-          <p class="muted">Resumen de deuda, vencimientos y bancos - {% if selected_sucursal %}{{ selected_sucursal.nombre }}{% else %}Vista Consolidada{% endif %}</p>
+          <h1>Dashboard financiero</h1>
+          <p class="muted">
+            Situacion consolidada de caja, tesoreria y banco.
+            {% if selected_sucursal %}Sucursal {{ selected_sucursal.nombre }}.{% else %}Vista general.{% endif %}
+            Corte al {{ snapshot.reference_date|date:"d/m/Y" }}.
+          </p>
         </div>
         <div class="list-actions">
           <a class="button {% if not selected_sucursal %}button-primary{% else %}button-secondary{% endif %}" href="{% url 'treasury:dashboard' %}">Consolidado</a>
           {% for suc in sucursales %}
-            <a class="button {% if selected_sucursal.pk == suc.pk %}button-primary{% else %}button-secondary{% endif %}" href="{% url 'treasury:dashboard' %}?sucursal={{ suc.pk }}">{{ suc.codigo }}</a>
+            <a class="button {% if selected_sucursal.pk == suc.pk %}button-primary{% else %}button-secondary{% endif %}" href="{% url 'treasury:dashboard' %}?sucursal={{ suc.pk }}&fecha_desde={{ snapshot.date_from|date:'Y-m-d' }}&fecha_hasta={{ snapshot.date_to|date:'Y-m-d' }}">{{ suc.codigo }}</a>
           {% endfor %}
           <a class="button-secondary" href="{{ cashops_dashboard_url }}">Operacion de Caja</a>
         </div>
       </div>
-    </div>
-    <div class="summary-grid grid-4">
-      {% for card in cards %}
-        <div class="summary">
-          <span class="muted">{{ card.label }}</span>
-          <strong>{{ card.value }}</strong>
-          <small class="muted">{{ card.help }}</small>
+      <form method="get" class="stack mt-16">
+        <div class="summary-grid">
+          {% for field in filter_form %}
+            <div class="field">
+              <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+              {{ field }}
+            </div>
+          {% endfor %}
         </div>
-      {% endfor %}
+        <div class="row">
+          <span class="muted">Periodo {{ snapshot.date_from|date:"d/m/Y" }} a {{ snapshot.date_to|date:"d/m/Y" }}.</span>
+          <button class="button" type="submit">Aplicar periodo</button>
+        </div>
+      </form>
+    </div>
+    <div class="summary-grid">
       <div class="summary">
-        <span class="muted">Efectivo Central</span>
-        <strong>{{ central_cash_balance|money }}</strong>
-        <small class="muted">Saldo en boveda</small>
+        <span class="muted">Caja fuerte general</span>
+        <strong>{{ snapshot.central_cash_total|money }}</strong>
+        <small class="muted">Saldo de efectivo al cierre del periodo</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Banco</span>
+        <strong>{{ snapshot.total_bank_balance|money }}</strong>
+        <small class="muted">Saldo bancario acumulado al {{ snapshot.reference_date|date:"d/m/Y" }}</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Total consolidado</span>
+        <strong>{{ snapshot.total_consolidated|money }}</strong>
+        <small class="muted">Caja fuerte general + banco</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Pendiente de acreditacion</span>
+        <strong>{{ snapshot.pending_accreditation_total|money }}</strong>
+        <small class="muted">Ventas tarjeta del periodo menos acreditaciones registradas</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Deuda pendiente</span>
+        <strong>{{ snapshot.pending_total|money }}</strong>
+        <small class="muted">{{ snapshot.pending_count }} compromiso{{ snapshot.pending_count|pluralize }}</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Vencido</span>
+        <strong>{{ snapshot.overdue_total|money }}</strong>
+        <small class="muted">{{ snapshot.overdue_count }} fuera de termino</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Vence hoy</span>
+        <strong>{{ snapshot.due_today_total|money }}</strong>
+        <small class="muted">{{ snapshot.due_today_count }} compromiso{{ snapshot.due_today_count|pluralize }}</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Proximos 7 dias</span>
+        <strong>{{ snapshot.upcoming_total|money }}</strong>
+        <small class="muted">{{ snapshot.upcoming_count }} compromiso{{ snapshot.upcoming_count|pluralize }}</small>
       </div>
     </div>
   </section>
@@ -37,27 +83,109 @@
   <section class="card">
     <div class="row">
       <div>
-        <h2>Accesos rapidos</h2>
-        <p class="muted">Gestion de efectivo, bancos y reportes consolidados.</p>
+        <h2>Situacion financiera por periodo</h2>
+        <p class="muted">Ingresos y egresos reales de caja y banco para el alcance seleccionado.</p>
+      </div>
+      <span class="badge badge-info">Referencia {{ snapshot.reference_date|date:"d/m/Y" }}</span>
+    </div>
+    <div class="summary-grid mt-16">
+      <div class="summary">
+        <span class="muted">Caja ingresos</span>
+        <strong>{{ snapshot.cash_income|money }}</strong>
+        <small class="muted">Solo movimientos fisicos de caja</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Caja egresos</span>
+        <strong>{{ snapshot.cash_expense|money }}</strong>
+        <small class="muted">Egresos operativos y movimientos que impactan saldo</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Caja neto</span>
+        <strong>{{ snapshot.cash_net|money }}</strong>
+        <small class="muted">Periodo seleccionado</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Banco creditos</span>
+        <strong>{{ snapshot.bank_credits|money }}</strong>
+        <small class="muted">Ingresos bancarios del periodo</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Banco debitos</span>
+        <strong>{{ snapshot.bank_debits|money }}</strong>
+        <small class="muted">Egresos bancarios del periodo</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Banco neto</span>
+        <strong>{{ snapshot.bank_net|money }}</strong>
+        <small class="muted">Periodo seleccionado</small>
       </div>
     </div>
-    <div class="action-grid grid-4 mt-16">
-      <a class="action-card" href="{% url 'treasury:disponibilidades' %}">
-        <strong>Disponibilidades</strong>
-        <small>Reporte consolidado mensual</small>
-        <small>Efectivo + Bancos</small>
-      </a>
-      <a class="action-card" href="{% url 'treasury:central_cash_list' %}">
-        <span>Efectivo Central</span>
-        <small>Libro de caja boveda</small>
-        <small>Ingresos y egresos</small>
-      </a>
-      {% for section in sections %}
-        <a class="action-card" href="{{ section.href }}">
-          <span>{{ section.label }}</span>
-          <small>{{ section.description }}</small>
-          <small>{{ section.count }} registro{{ section.count|pluralize }}</small>
-        </a>
+  </section>
+
+  <section class="card">
+    <div class="row">
+      <div>
+        <h2>Situacion economica y rentabilidad</h2>
+        <p class="muted">Lectura por ventas, gasto operativo y deuda imputada al periodo economico.</p>
+      </div>
+      <span class="badge badge-info">{{ economic_snapshot.period_from|date:"m/Y" }} a {{ economic_snapshot.period_to|date:"m/Y" }}</span>
+    </div>
+    <div class="summary-grid mt-16">
+      <div class="summary">
+        <span class="muted">Ventas base</span>
+        <strong>{{ economic_snapshot.sales_total|money }}</strong>
+        <small class="muted">Ventas caja y digitales del periodo</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Gasto caja</span>
+        <strong>{{ economic_snapshot.cash_expense_total|money }}</strong>
+        <small class="muted">Egresos operativos cargados por rubro</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Deuda del periodo</span>
+        <strong>{{ economic_snapshot.debt_period_total|money }}</strong>
+        <small class="muted">Obligaciones imputadas al periodo</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Pendiente del periodo</span>
+        <strong>{{ economic_snapshot.debt_pending_total|money }}</strong>
+        <small class="muted">Parte aun no cancelada</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Resultado economico</span>
+        <strong>{{ economic_snapshot.economic_result|money }}</strong>
+        <small class="muted">Ventas menos gasto caja y deuda del periodo</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Margen estimado</span>
+        <strong>{{ economic_snapshot.margin_pct }}%</strong>
+        <small class="muted">Sobre la base de ventas del periodo</small>
+      </div>
+    </div>
+    {% if economic_snapshot.unmapped_payables_count %}
+      <p class="muted mt-16">
+        Hay {{ economic_snapshot.unmapped_payables_count }} deuda{{ economic_snapshot.unmapped_payables_count|pluralize }}
+        sin rubro operativo asociado por {{ economic_snapshot.unmapped_payables_total|money }}.
+      </p>
+    {% endif %}
+    <div class="list mt-16">
+      {% for item in economic_snapshot.items %}
+        <div class="list-item">
+          <div class="row">
+            <div>
+              <strong>{{ item.rubro_nombre }}</strong>
+              <div class="muted mt-16">Ventas {{ item.sales_total|money }} · Gasto caja {{ item.cash_expense_total|money }} · Deuda {{ item.debt_total|money }}</div>
+            </div>
+            <span class="badge badge-info">{{ item.expense_ratio_over_sales }}%</span>
+          </div>
+          <div class="muted mt-16">
+            Total economico {{ item.total_expense|money }}
+            {% if item.payables_count %}· {{ item.payables_count }} deuda{{ item.payables_count|pluralize }} imputada{{ item.payables_count|pluralize }}{% endif %}
+            {% if item.debt_pending %}· Pendiente {{ item.debt_pending|money }}{% endif %}
+          </div>
+        </div>
+      {% empty %}
+        <p class="muted">Todavia no hay rubros con ventas o gasto economico para este periodo.</p>
       {% endfor %}
     </div>
   </section>
@@ -66,51 +194,57 @@
     <div class="card">
       <div class="row">
         <div>
-          <h2>Vencimientos proximos</h2>
-          <p class="muted">Obligaciones para revisar hoy y en los proximos dias.</p>
+          <h2>Acreditaciones y pendientes</h2>
+          <p class="muted">Lectura del periodo para ventas digitales registradas y acreditaciones bancarias.</p>
         </div>
-        <span class="badge badge-warning">{{ upcoming_payables|length }}</span>
+        <span class="badge badge-warning">{{ snapshot.reference_date|date:"d/m/Y" }}</span>
       </div>
-      <div class="list mt-16">
-        {% for payable in upcoming_payables %}
-          <a class="list-item" href="{% url 'treasury:cuentas_por_pagar_detail' payable.pk %}">
-            <div class="row">
-              <div>
-                <strong>{{ payable.proveedor.razon_social }}</strong>
-                <div class="muted mt-8">{{ payable.concepto }} · {{ payable.categoria.nombre }}</div>
-              </div>
-              <span class="badge badge-warning">{{ payable.fecha_vencimiento|date:"d/m/Y" }}</span>
-            </div>
-            <div class="muted mt-8">Pendiente {{ payable.saldo_pendiente|money }}</div>
-          </a>
-        {% empty %}
-          <p class="muted">No hay vencimientos proximos.</p>
-        {% endfor %}
+      <div class="summary-grid mt-16">
+        <div class="summary">
+          <span class="muted">Ventas tarjeta</span>
+          <strong>{{ snapshot.digital_sales_total|money }}</strong>
+          <small class="muted">Fuente actual: movimientos `VENTA_TARJETA`</small>
+        </div>
+        <div class="summary">
+          <span class="muted">Acreditado neto</span>
+          <strong>{{ snapshot.accredited_net|money }}</strong>
+          <small class="muted">Neto recibido en banco</small>
+        </div>
+        <div class="summary">
+          <span class="muted">Descuentos</span>
+          <strong>{{ snapshot.accreditation_discounts|money }}</strong>
+          <small class="muted">Comisiones, IIBB y otros descuentos cargados</small>
+        </div>
+        <div class="summary">
+          <span class="muted">Acreditado bruto</span>
+          <strong>{{ snapshot.accredited_gross|money }}</strong>
+          <small class="muted">Neto mas descuentos informados</small>
+        </div>
       </div>
+      <p class="muted mt-16">Pendiente de acreditacion = ventas tarjeta del periodo menos acreditaciones registradas. Para lectura neta, descontar costos de servicio e impuestos de Payway u operador equivalente cuando corresponda.</p>
     </div>
 
     <div class="card">
       <div class="row">
         <div>
-          <h2>Vencidas</h2>
-          <p class="muted">Deuda vencida que requiere accion inmediata.</p>
+          <h2>Saldos bancarios</h2>
+          <p class="muted">Posicion acumulada por cuenta al cierre del periodo.</p>
         </div>
-        <span class="badge badge-danger">{{ overdue_payables|length }}</span>
+        <span class="badge">{{ snapshot.bank_balances|length }}</span>
       </div>
       <div class="list mt-16">
-        {% for payable in overdue_payables %}
-          <a class="list-item" href="{% url 'treasury:cuentas_por_pagar_detail' payable.pk %}">
+        {% for item in snapshot.bank_balances %}
+          <div class="list-item">
             <div class="row">
               <div>
-                <strong>{{ payable.proveedor.razon_social }}</strong>
-                <div class="muted mt-8">{{ payable.concepto }} · {{ payable.categoria.nombre }}</div>
+                <strong>{{ item.account.nombre }}</strong>
+                <div class="muted mt-16">{{ item.account.banco }}{% if item.account.sucursal %} · {{ item.account.sucursal.nombre }}{% endif %}</div>
               </div>
-              <span class="badge badge-danger">Vencida</span>
+              <span class="badge badge-info">{{ item.balance|money }}</span>
             </div>
-            <div class="muted mt-8">Vencio {{ payable.fecha_vencimiento|date:"d/m/Y" }} · Pendiente {{ payable.saldo_pendiente|money }}</div>
-          </a>
+          </div>
         {% empty %}
-          <p class="muted">No hay deuda vencida.</p>
+          <p class="muted">No hay cuentas bancarias activas para este alcance.</p>
         {% endfor %}
       </div>
     </div>
@@ -120,8 +254,88 @@
     <div class="card">
       <div class="row">
         <div>
-          <h2>Movimientos bancarios</h2>
-          <p class="muted">Ultimos registros en extracto.</p>
+          <h2>Alertas de vencimientos</h2>
+          <p class="muted">Priorizacion de deuda vencida, del dia y de los proximos dias.</p>
+        </div>
+        <span class="badge badge-danger">{{ snapshot.overdue_count|add:snapshot.due_today_count|add:snapshot.upcoming_count }}</span>
+      </div>
+      <div class="list mt-16">
+        {% for payable in overdue_payables %}
+          <a class="list-item" href="{% url 'treasury:cuentas_por_pagar_detail' payable.pk %}">
+            <div class="row">
+              <div>
+                <strong>{{ payable.proveedor.razon_social }}</strong>
+                <div class="muted mt-16">{{ payable.concepto }} · Rubro {{ payable.categoria.rubro_label }} · Periodo {{ payable.periodo_referencia|date:"m/Y" }}</div>
+              </div>
+              <span class="badge badge-danger">Vencido</span>
+            </div>
+            <div class="muted mt-16">Vencio {{ payable.fecha_vencimiento|date:"d/m/Y" }} · Pendiente {{ payable.saldo_pendiente|money }}</div>
+          </a>
+        {% endfor %}
+        {% for payable in due_today_payables %}
+          <a class="list-item" href="{% url 'treasury:cuentas_por_pagar_detail' payable.pk %}">
+            <div class="row">
+              <div>
+                <strong>{{ payable.proveedor.razon_social }}</strong>
+                <div class="muted mt-16">{{ payable.concepto }} · Rubro {{ payable.categoria.rubro_label }} · Periodo {{ payable.periodo_referencia|date:"m/Y" }}</div>
+              </div>
+              <span class="badge badge-warning">Vence hoy</span>
+            </div>
+            <div class="muted mt-16">Hoy {{ payable.fecha_vencimiento|date:"d/m/Y" }} · Pendiente {{ payable.saldo_pendiente|money }}</div>
+          </a>
+        {% endfor %}
+        {% for payable in upcoming_payables %}
+          <a class="list-item" href="{% url 'treasury:cuentas_por_pagar_detail' payable.pk %}">
+            <div class="row">
+              <div>
+                <strong>{{ payable.proveedor.razon_social }}</strong>
+                <div class="muted mt-16">{{ payable.concepto }} · Rubro {{ payable.categoria.rubro_label }} · Periodo {{ payable.periodo_referencia|date:"m/Y" }}</div>
+              </div>
+              <span class="badge badge-info">Proximo</span>
+            </div>
+            <div class="muted mt-16">Vence {{ payable.fecha_vencimiento|date:"d/m/Y" }} · Pendiente {{ payable.saldo_pendiente|money }}</div>
+          </a>
+        {% empty %}
+          <p class="muted">No hay vencimientos ni proximos compromisos para este periodo.</p>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div>
+          <h2>Accesos rapidos</h2>
+          <p class="muted">Gestion de efectivo, bancos y reportes consolidados.</p>
+        </div>
+      </div>
+      <div class="action-grid mt-16">
+        <a class="action-card" href="{% url 'treasury:disponibilidades' %}">
+          <strong>Disponibilidades</strong>
+          <small>Reporte consolidado mensual</small>
+          <small>Efectivo + Bancos</small>
+        </a>
+        <a class="action-card" href="{% url 'treasury:central_cash_list' %}">
+          <span>Efectivo Central</span>
+          <small>Libro de caja boveda</small>
+          <small>Ingresos y egresos</small>
+        </a>
+        {% for section in sections %}
+          <a class="action-card" href="{{ section.href }}">
+            <span>{{ section.label }}</span>
+            <small>{{ section.description }}</small>
+            <small>{{ section.count }} registro{{ section.count|pluralize }}</small>
+          </a>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <section class="grid layout-two">
+    <div class="card">
+      <div class="row">
+        <div>
+          <h2>Movimientos bancarios recientes</h2>
+          <p class="muted">Ultimos registros dentro del periodo filtrado.</p>
         </div>
         <span class="badge">{{ recent_movements|length }}</span>
       </div>
@@ -131,14 +345,14 @@
             <div class="row">
               <div>
                 <strong>{{ m.concepto }}</strong>
-                <div class="muted mt-8">{{ m.cuenta_bancaria.nombre }}</div>
+                <div class="muted mt-16">{{ m.cuenta_bancaria.nombre }}</div>
               </div>
               <span class="badge {% if m.tipo == 'CREDITO' %}badge-success{% else %}badge-danger{% endif %}">{{ m.monto|money }}</span>
             </div>
-            <div class="muted mt-8">{{ m.fecha|date:"d/m/Y" }} · {{ m.get_tipo_display }}</div>
+            <div class="muted mt-16">{{ m.fecha|date:"d/m/Y" }} · {{ m.get_tipo_display }} · {{ m.get_origen_display }}</div>
           </a>
         {% empty %}
-          <p class="muted">No hay movimientos recientes.</p>
+          <p class="muted">No hay movimientos bancarios recientes para este periodo.</p>
         {% endfor %}
       </div>
     </div>
@@ -146,53 +360,38 @@
     <div class="card">
       <div class="row">
         <div>
-          <h2>Lotes POS</h2>
-          <p class="muted">Ultimos cierres de tarjeta informados.</p>
+          <h2>Pagos y lotes recientes</h2>
+          <p class="muted">Ultimos egresos registrados y cierres POS informados dentro del periodo.</p>
         </div>
-        <span class="badge">{{ recent_batches|length }}</span>
       </div>
       <div class="list mt-16">
+        {% for payment in recent_payments %}
+          <a class="list-item" href="{% url 'treasury:pagos_detail' payment.pk %}">
+            <div class="row">
+              <div>
+                <strong>{{ payment.cuenta_por_pagar.proveedor.razon_social }}</strong>
+                <div class="muted mt-16">{{ payment.get_medio_pago_display }} · {{ payment.cuenta_por_pagar.concepto }}</div>
+              </div>
+              <span class="badge badge-success">{{ payment.monto|money }}</span>
+            </div>
+            <div class="muted mt-16">{{ payment.fecha_pago|date:"d/m/Y" }} · {{ payment.cuenta_bancaria.nombre|default:"Efectivo central" }}</div>
+          </a>
+        {% endfor %}
         {% for b in recent_batches %}
           <div class="list-item">
             <div class="row">
               <div>
                 <strong>{{ b.operador|default:"Lote" }} {{ b.terminal }}</strong>
-                <div class="muted mt-8">{{ b.cuenta_bancaria.nombre|default:"Sin cuenta" }}</div>
+                <div class="muted mt-16">{{ b.cuenta_bancaria.nombre|default:"Sin cuenta" }}</div>
               </div>
               <span class="badge badge-info">{{ b.total_lote|money }}</span>
             </div>
-            <div class="muted mt-8">{{ b.fecha_lote|date:"d/m/Y" }}</div>
+            <div class="muted mt-16">{{ b.fecha_lote|date:"d/m/Y" }}</div>
           </div>
         {% empty %}
-          <p class="muted">No hay lotes recientes.</p>
+          <p class="muted">No hay pagos ni lotes recientes para este periodo.</p>
         {% endfor %}
       </div>
-    </div>
-  </section>
-
-  <section class="card">
-    <div class="row">
-      <div>
-        <h2>Pagos recientes</h2>
-        <p class="muted">Ultimos egresos registrados por tesoreria.</p>
-      </div>
-      <span class="badge">{{ recent_payments|length }}</span>
-    </div>
-    <div class="list mt-16">
-      {% for payment in recent_payments %}
-        <a class="list-item" href="{% url 'treasury:pagos_detail' payment.pk %}">
-          <div class="row">
-            <div>
-              <strong>{{ payment.cuenta_por_pagar.proveedor.razon_social }}</strong>
-              <div class="muted mt-8">{{ payment.get_medio_pago_display }} · {{ payment.cuenta_por_pagar.concepto }}</div>
-            </div>
-            <span class="badge badge-success">{{ payment.monto|money }}</span>
-          </div>
-          <div class="muted mt-8">{{ payment.fecha_pago|date:"d/m/Y" }} · {{ payment.cuenta_bancaria.nombre }}</div>
-        </a>
-      {% empty %}
-        <p class="muted">Todavia no hay pagos registrados.</p>
-      {% endfor %}
     </div>
   </section>
 {% endblock %}

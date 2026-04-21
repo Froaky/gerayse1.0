@@ -1,0 +1,4 @@
+interface:
+  display_name: "Usuarios Operativos"
+  short_description: "Simplifica usuarios y admin operativo"
+  default_prompt: "Use $usuarios-operativos-admin para simplificar usuarios, roles, campos operativos y vistas administrativas."

@@ -1,0 +1,45 @@
+{% extends "cashops/layout.html" %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Sucursales</h1>
+        <p class="muted">Maestro operativo con codigo, nombre, razon social y estado.</p>
+      </div>
+      <a class="button" href="{% url 'cashops:sucursal_create' %}">Nueva sucursal</a>
+    </div>
+    <form method="get" class="row mt-16" style="align-items:end;">
+      <div class="field" style="flex:1;">
+        <label for="id_q">Buscar</label>
+        <input id="id_q" class="input" type="text" name="q" value="{{ query }}" placeholder="Codigo, nombre o razon social">
+      </div>
+      <button class="button-secondary" type="submit">Buscar</button>
+    </form>
+    <div class="list mt-16">
+      {% for item in items %}
+        <article class="list-item">
+          <div class="row">
+            <div>
+              <strong>{{ item.codigo }} - {{ item.nombre }}</strong>
+              <div class="muted">Razon social: {{ item.razon_social }}</div>
+            </div>
+            <div class="row">
+              <span class="badge {% if item.activa %}badge-success{% else %}badge-danger{% endif %}">
+                {% if item.activa %}Activa{% else %}Inactiva{% endif %}
+              </span>
+              <a class="button-secondary" href="{% url 'cashops:sucursal_update' item.pk %}">Editar</a>
+              <form method="post" action="{% url 'cashops:sucursal_toggle' item.pk %}">
+                {% csrf_token %}
+                <button class="button-secondary" type="submit">
+                  {% if item.activa %}Desactivar{% else %}Activar{% endif %}
+                </button>
+              </form>
+            </div>
+          </div>
+        </article>
+      {% empty %}
+        <p class="muted">No hay sucursales cargadas.</p>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Control y Rentabilidad"
+  short_description: "Rentabilidad, periodos y control gerencial"
+  default_prompt: "Use $control-gestion-rentabilidad para definir o implementar rentabilidad, rubros, periodos y control de gestion."

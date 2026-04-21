@@ -46,6 +46,7 @@ Last updated: 2026-04-20
 - Stabilize treasury for a same-day internal-control demo.
 - Reduce emphasis on bank integration features that are not part of the real operating model.
 - Convert the user-provided `Fixes y detalles para Gerayse.docx` requirements into executable backlog epics and user stories.
+- Create specialized local skills for the new epic areas and make them directly invocable.
 
 ### Findings Before Fixes
 
@@ -69,15 +70,50 @@ Last updated: 2026-04-20
 - `.agents/skills/analista-funcional-backlog/SKILL.md`
 - `.agents/skills/analista-funcional-backlog/references/gerayse-backlog-format.md`
 - `.agents/skills/analista-funcional-backlog/agents/openai.yaml`
+- `.agents/skills/caja-sucursales-operativa/SKILL.md`
+- `.agents/skills/caja-sucursales-operativa/references/gerayse-caja-scope.md`
+- `.agents/skills/caja-sucursales-operativa/agents/openai.yaml`
+- `.agents/skills/usuarios-operativos-admin/SKILL.md`
+- `.agents/skills/usuarios-operativos-admin/references/gerayse-usuarios-scope.md`
+- `.agents/skills/usuarios-operativos-admin/agents/openai.yaml`
+- `.agents/skills/tesoreria-financiera-consolidada/SKILL.md`
+- `.agents/skills/tesoreria-financiera-consolidada/references/gerayse-tesoreria-scope.md`
+- `.agents/skills/tesoreria-financiera-consolidada/agents/openai.yaml`
+- `.agents/skills/control-gestion-rentabilidad/SKILL.md`
+- `.agents/skills/control-gestion-rentabilidad/references/gerayse-control-scope.md`
+- `.agents/skills/control-gestion-rentabilidad/agents/openai.yaml`
+- `.agents/skills/testing-riguroso-extremo/SKILL.md`
+- `.agents/skills/testing-riguroso-extremo/references/gerayse-testing-playbook.md`
+- `.agents/skills/testing-riguroso-extremo/agents/openai.yaml`
+- `cashops/services.py`
+- `cashops/models.py`
+- `cashops/forms.py`
+- `cashops/views.py`
+- `cashops/tests.py`
+- `cashops/tests_commands.py`
+- `cashops/test_migration_safety.py`
+- `cashops/migrations/0008_sucursal_razon_social.py`
+- `templates/cashops/dashboard.html`
+- `templates/cashops/sucursal_list.html`
+- `core/templates/core/home.html`
+- `users/forms.py`
+- `users/views.py`
+- `users/tests.py`
+- `templates/users/personal_list.html`
 - `docs/epics/README.md`
 - `docs/epics/EP-08-ajustes-operativos-de-caja-y-sucursales.md`
 - `docs/epics/EP-09-usuarios-operativos-y-datos-minimos.md`
 - `docs/epics/EP-10-situacion-financiera-y-alertas-consolidadas.md`
 - `docs/epics/EP-11-rentabilidad-y-situacion-economica.md`
+- `treasury/forms.py`
 - `treasury/services.py`
 - `treasury/views.py`
 - `treasury/urls.py`
 - `treasury/tests.py`
+- `templates/treasury/dashboard.html`
+- `treasury/migrations/0012_acreditaciontarjeta_modo_registro_and_more.py`
+- `treasury/migrations/0013_ep11_rubro_period_foundation.py`
+- `treasury/migrations/0014_ep11_period_reference_required.py`
 
 ### Changes Applied
 
@@ -115,16 +151,150 @@ Last updated: 2026-04-20
   - documented the observed epic format, numbering, and scope rules for this product
 - `.agents/skills/analista-funcional-backlog/agents/openai.yaml`
   - added UI-facing metadata so the skill can appear as a named specialist agent
+- `.agents/skills/analista-funcional-backlog/agents/openai.yaml`
+  - updated the default prompt to use explicit `$analista-funcional-backlog` invocation
+- `.agents/skills/caja-sucursales-operativa/*`
+  - added a dedicated skill for caja, sucursales, traspasos, arrastres, and period totals
+- `.agents/skills/usuarios-operativos-admin/*`
+  - added a dedicated skill for simplifying operational users without breaking auth or role behavior
+- `.agents/skills/tesoreria-financiera-consolidada/*`
+  - added a dedicated skill for treasury, bank movement taxonomy, disponibilidades, and financial alerts
+- `.agents/skills/control-gestion-rentabilidad/*`
+  - added a dedicated skill for period-based control, rubros, profitability, and economic views
+- `.agents/skills/testing-riguroso-extremo/*`
+  - added a dedicated testing specialist skill with strict rules for regression, risk, evidence, permissions, migrations, commands, and financial assertions
+  - added a repo-specific testing playbook with test matrices and useful Django test commands
+- `.agents/skills/analista-funcional-backlog/*`
+  - deepened the skill with backlog-cut rules, story readiness checks, epic hygiene rules, and repo-specific closure criteria
+- `.agents/skills/caja-sucursales-operativa/*`
+  - deepened the skill with source-of-truth rules, stop-ship cases, and decision matrices for transfers, carry-overs, and branch totals
+- `.agents/skills/usuarios-operativos-admin/*`
+  - deepened the skill with hide-vs-keep-vs-remove rules, explicit semantics requirements for `usuario fijo`, and compatibility guardrails
+- `.agents/skills/tesoreria-financiera-consolidada/*`
+  - deepened the skill with financial source matrices, formula discipline, and hard red flags against double counting and bad dashboards
+- `.agents/skills/control-gestion-rentabilidad/*`
+  - deepened the skill with KPI-definition discipline, period-imputation rules, and comparability guardrails for management reporting
+- `.agents/skills/testing-riguroso-extremo/*`
+  - deepened the skill with execution sequencing, anti-false-green rules, stop-ship criteria, and stronger app-specific test matrices
+- `treasury/models.py`
+  - in progress on EP-10 second slice: bank movement taxonomy now being hardened with explicit financial classes plus optional `categoria` and `proveedor`
+- `treasury/services.py`
+  - in progress on EP-10 second slice: grouped accreditations are being added with duplicate guardrails and period-aware financial reading
+- `treasury/forms.py`, `treasury/views.py`, `treasury/tests.py`
+  - in progress on EP-10 second slice: UI and evidence are being aligned to daily-vs-period accreditation input and typed bank movements
+- `cashops/services.py`
+  - blocked new transfers between branches at the domain layer with a clear validation message
+- `cashops/models.py`
+  - added `razon_social` to `Sucursal` and enforced it in model validation
+- `cashops/forms.py`
+  - made `razon_social` explicit and required in the branch admin form
+- `cashops/views.py`
+  - renamed the expense flow copy to `egreso por rubro`
+  - made the branch-transfer screen unavailable to stop new usage from the UI path
+  - added branch search by `codigo`, `nombre` and `razon_social`
+  - used period summaries for global and branch dashboard scopes while keeping box scope daily
+- `templates/cashops/dashboard.html`
+  - renamed `Gasto rapido` to `Egreso por rubro`
+  - removed the action card for branch transfers
+  - exposed `saldo neto` and period inputs in the operational dashboard
+- `templates/cashops/sucursal_list.html`
+  - added a dedicated branch master list with search, edit, and controlled activate/deactivate actions
+- `cashops/tests.py`
+  - added coverage for branch create/update/toggle, business-name search, and dashboard period summaries with visible net balance
+- `cashops/tests_commands.py`
+  - aligned branch fixtures with the new required `razon_social`
+- `cashops/test_migration_safety.py`
+  - fixed the legacy migration test to create the historical user against the current `users` schema safely
+- `cashops/migrations/0008_sucursal_razon_social.py`
+  - added the schema migration for `Sucursal.razon_social`
+- `core/templates/core/home.html`
+  - removed branch-transfer wording from the public landing copy
+  - aligned the cash module copy with `egreso por rubro`
+- `cashops/tests.py`
+  - updated coverage to enforce that branch transfers are disabled
+  - added coverage for the new `egreso por rubro` copy and dashboard visibility
 - `docs/epics/EP-08-ajustes-operativos-de-caja-y-sucursales.md`
   - grouped docx requirements about caja, sucursales, traspasos, and carry-over scenarios into a dedicated operational epic
+  - marked `US-8.2` and `US-8.6` as done after the first implementation slice
+  - marked `US-8.4` and `US-8.5` as done after adding the branch master and range-based totals
+- `docs/epics/README.md`
+  - marked `EP-08` as started in the backlog index
+- `users/forms.py`
+  - removed `legajo` from the operational create/update flow while preserving the model field for historical data
+- `users/views.py`
+  - added search by name, last name, and role in `personal_list`
+  - aligned user-management copy with an operational rather than HR-focused scope
+- `templates/users/personal_list.html`
+  - reduced the list view to name, last name, and role
+  - hid `dni`, `legajo`, `telefono`, and username from the operational list view
+- `users/tests.py`
+  - added view tests for hidden `legajo`, minimal list rendering, search behavior, and editing users with legacy `legajo`
+- `docs/epics/EP-09-usuarios-operativos-y-datos-minimos.md`
+  - marked `US-9.1`, `US-9.3`, and `US-9.4` as done after the first implementation slice
+- `docs/epics/README.md`
+  - marked `EP-09` as started in the backlog index
 - `docs/epics/EP-09-usuarios-operativos-y-datos-minimos.md`
   - separated user/personal simplification from cash and treasury scope to keep backlog slices smaller
 - `docs/epics/EP-10-situacion-financiera-y-alertas-consolidadas.md`
   - grouped dashboard unification, bank movement taxonomy, pending accreditations, and due alerts into one financial-reading epic
+- `treasury/forms.py`
+  - added a dashboard filter form with `sucursal`, `fecha_desde`, and `fecha_hasta`
 - `docs/epics/EP-11-rentabilidad-y-situacion-economica.md`
   - grouped profitability, period-based debt, and economic views into one later-stage management epic
 - `docs/epics/README.md`
   - added the four new proposed epics to the backlog index and implementation order
+  - marked `EP-10` as started after the first financial dashboard slice
+- `treasury/services.py`
+  - added `build_financial_period_snapshot()` to consolidate caja fisica, banco, disponibilidades, deuda, vencimientos, and pending accreditations by period and optional branch
+- `treasury/views.py`
+  - moved the treasury dashboard to a period-based financial reading with branch filtering and reference-date visibility
+- `templates/treasury/dashboard.html`
+  - replaced the old monthly treasury summary with a unified financial dashboard for caja, banco, consolidado, due buckets, and accreditation pending
+- `treasury/tests.py`
+  - added service and view coverage for the new financial dashboard slice, including branch scope, accruals, due buckets, and pending accreditations
+- `docs/epics/EP-10-situacion-financiera-y-alertas-consolidadas.md`
+  - marked `US-10.1`, `US-10.2`, `US-10.5`, `US-10.6`, and `US-10.7` as done after the first implementation slice
+- `treasury/models.py`
+  - added hard financial taxonomy to `MovimientoBancario` with `clase`, plus optional `categoria` and `proveedor` guarded by business rules
+  - added daily-vs-period registration metadata to `AcreditacionTarjeta`
+- `treasury/services.py`
+  - inferred and enforced bank-movement classes for accreditations and payment-linked debits
+  - added duplicate guardrails for card accreditations and period-aware accreditation reading in the financial snapshot
+- `treasury/forms.py`
+  - required typed bank movements in the manual bank form and enabled daily or grouped accreditation input in one form
+- `treasury/views.py`
+  - exposed financial taxonomy in bank movement list/detail and enabled grouped accreditation registration through the existing treasury UI
+- `treasury/migrations/0012_acreditaciontarjeta_modo_registro_and_more.py`
+  - added schema support for bank movement taxonomy and grouped accreditations, plus backfill for legacy movement classes
+- `treasury/tests.py`
+  - added hard coverage for typed bank movements, grouped accreditations, duplicate prevention, payment-link classification, and period-aware accreditation impact on the dashboard
+- `docs/epics/EP-10-situacion-financiera-y-alertas-consolidadas.md`
+  - marked `US-10.3` and `US-10.4` as done after the second implementation slice
+- `docs/epics/README.md`
+  - marked `EP-10` as implemented after closing the remaining stories
+- `treasury/models.py`
+  - mapped `CategoriaCuentaPagar` to optional `RubroOperativo`
+  - added `CuentaPorPagar.periodo_referencia` as the economic imputation period
+- `treasury/services.py`
+  - defaulted `periodo_referencia` from `fecha_emision`
+  - added `build_economic_period_snapshot()` to relate ventas, gasto caja y deuda del periodo by rubro and optional sucursal
+- `treasury/forms.py`
+  - exposed rubro mapping in category maintenance and made `periodo_referencia` visible but backward-compatible in payable forms
+- `treasury/views.py`
+  - added the economic snapshot to the treasury dashboard
+  - exposed rubro operativo and periodo economico in payable detail and payable list helpers
+- `templates/treasury/dashboard.html`
+  - added the `Situacion economica y rentabilidad` section with ventas base, deuda del periodo, resultado economico and breakdown by rubro
+- `treasury/migrations/0013_ep11_rubro_period_foundation.py`
+  - added schema support for rubro mapping and period reference with backfill from `fecha_emision`
+- `treasury/migrations/0014_ep11_period_reference_required.py`
+  - locked `periodo_referencia` as mandatory after backfilling legacy rows
+- `treasury/tests.py`
+  - added coverage for rubro mapping, default economic period, economic snapshot aggregation, and dashboard visibility for EP-11
+- `docs/epics/EP-11-rentabilidad-y-situacion-economica.md`
+  - marked `US-11.3` and `US-11.4` as done after the first implementation slice
+- `docs/epics/README.md`
+  - marked `EP-11` as started
 
 ### Validation Results
 
@@ -133,8 +303,25 @@ Last updated: 2026-04-20
   - `python manage.py test treasury.tests.TreasuryAdminProtectionTests treasury.tests.TreasuryPermissionTests -v 2`
   - `python manage.py test treasury.tests.TreasuryServiceTests treasury.tests.TreasuryViewTests treasury.tests_ep05 -v 1`
   - `python C:\Users\theco\.codex\skills\.system\skill-creator\scripts\quick_validate.py .agents\skills\analista-funcional-backlog`
+  - `python C:\Users\theco\.codex\skills\.system\skill-creator\scripts\quick_validate.py .agents\skills\caja-sucursales-operativa`
+  - `python C:\Users\theco\.codex\skills\.system\skill-creator\scripts\quick_validate.py .agents\skills\usuarios-operativos-admin`
+  - `python C:\Users\theco\.codex\skills\.system\skill-creator\scripts\quick_validate.py .agents\skills\tesoreria-financiera-consolidada`
+  - `python C:\Users\theco\.codex\skills\.system\skill-creator\scripts\quick_validate.py .agents\skills\control-gestion-rentabilidad`
+  - `python C:\Users\theco\.codex\skills\.system\skill-creator\scripts\quick_validate.py .agents\skills\testing-riguroso-extremo`
+  - `python manage.py test cashops.tests.CashopsServiceTests cashops.tests.CashopsViewTests -v 2`
+  - `python manage.py test cashops.tests.CashopsServiceTests cashops.tests.CashopsViewTests cashops.tests_commands cashops.test_migration_safety -v 2`
+  - `python manage.py test users.tests -v 2`
+  - `python manage.py test treasury.tests.TreasuryServiceTests treasury.tests.TreasuryViewTests treasury.tests_ep05 -v 2`
+  - `python manage.py test treasury.tests.TreasuryAdminProtectionTests treasury.tests.TreasuryPermissionTests -v 2`
+  - revalidated the six local specialist skills after deepening workflows, stop-ship rules, and repo references
+  - `python manage.py test treasury.tests.TreasuryServiceTests treasury.tests.TreasuryViewTests -v 2`
+  - `python manage.py test treasury.tests.TreasuryServiceTests treasury.tests.TreasuryViewTests treasury.tests.TreasuryAdminProtectionTests treasury.tests.TreasuryPermissionTests treasury.tests_ep05 -v 2`
+  - `python -m compileall treasury`
+  - `python manage.py test treasury.tests -v 1` after EP-11 first slice
+  - `python -m compileall treasury` after EP-11 first slice
 - Not run:
   - application tests for the new epic docs, because this task only added backlog markdown
+  - application tests for the new skill files, because they only add skill metadata and instructions
 - Treasury status after this session:
   - supplier create/update flow works again
   - payable create/update flow works again
@@ -145,11 +332,33 @@ Last updated: 2026-04-20
 
 ### Known Remaining Risks
 
-- `cashops/test_migration_safety.py` still failed earlier because legacy user creation hit `users_user.dni` on SQLite test migration flow.
 - `treasury/views.py` contains duplicated imports and some mojibake/encoding noise in labels. Not a blocker for behavior, but worth cleanup later.
 - Monthly closing by `sucursal` still deserves a separate design pass if branch-specific treasury closings become mandatory.
 - The source doc mixes immediate UI fixes with larger business capabilities; the backlog split into EP-08..EP-11 is an analytic decision, not an explicit grouping from the user.
 - `P2` was interpreted as the current personal/users screen because the source document does not define that label.
+- EP-08 review snapshot:
+  - done: egreso por rubro, bloqueo de traspasos entre sucursales, maestro de sucursales con `codigo` + `razon_social`, activacion/desactivacion controlada, filtro operativo y totales por sucursal/rango con `saldo_neto`
+  - pending: `US-8.3` sigue sin un corte explicito de simplificacion del detalle de movimientos y `US-8.7` sigue sin flujo auditable de arrastre/unificacion entre turnos o dias
+  - key refs: `cashops/models.py`, `cashops/forms.py`, `cashops/services.py`, `cashops/views.py`, `templates/cashops/dashboard.html`, `templates/cashops/sucursal_list.html`
+- EP-09 review snapshot after first slice:
+  - done: `legajo` fuera del flujo operativo, vista de personal reducida a nombre/apellido/rol, busqueda por esos datos, compatibilidad con usuarios historicos cubierta por tests
+  - pending: `usuario fijo o no fijo` sigue sin modelo, sin UI y sin impacto funcional
+  - key refs: `users/forms.py`, `users/views.py`, `templates/users/personal_list.html`, `users/tests.py`
+- EP-10 review snapshot after first slice:
+  - done: dashboard financiero por periodo y sucursal, visibilidad de caja fuerte general, banco y total consolidado, buckets de vencimientos, lectura de acreditaciones pendientes, taxonomia dura de movimientos bancarios y carga diaria o agrupada de acreditaciones con guardrails de duplicado
+  - residual risk: la taxonomia nueva se apoya en `CategoriaCuentaPagar` como rubro operativo-financiero compartido; si negocio exige un maestro de rubros bancarios separado, eso seria una nueva capa de modelado y no un bug del slice actual
+  - key refs: `treasury/models.py`, `treasury/forms.py`, `treasury/services.py`, `treasury/views.py`, `treasury/migrations/0012_acreditaciontarjeta_modo_registro_and_more.py`, `treasury/tests.py`
+- EP-11 review snapshot after first slice:
+  - done: rentabilidad visible por sucursal y periodo en dashboard de tesoreria, vista economica consolidada por rango, resultado economico, margen, deuda del periodo y detalle por rubro
+  - foundation done: `CuentaPorPagar.periodo_referencia` y mapping `CategoriaCuentaPagar -> RubroOperativo`
+  - pending: objetivo por rubro sobre ventas, desvio contra objetivo, rubro obligatorio para toda deuda economica y migracion UI mas agresiva de `categoria` a `rubro`
+  - key refs: `treasury/models.py`, `treasury/forms.py`, `treasury/services.py`, `treasury/views.py`, `templates/treasury/dashboard.html`, `treasury/migrations/0013_ep11_rubro_period_foundation.py`, `treasury/migrations/0014_ep11_period_reference_required.py`, `treasury/tests.py`
+- EP-11 implementation slice in progress:
+  - implemented in this slice: `US-11.3` y `US-11.4`
+  - foundation added for `US-11.5` y `US-11.6`: deuda ahora tiene `periodo_referencia` y categoria puede mapearse a `RubroOperativo`
+  - current design decision: no reutilizar `LimiteRubroOperativo` para rentabilidad porque hoy controla participacion sobre egresos operativos y `EP-11` pide lectura economica sobre ventas
+  - current implementation path: snapshot economico por periodo/sucursal en `treasury`, usando ventas de caja/digitales, gasto operativo de caja y deuda imputada al periodo
+  - explicit gap left open: todavia no existe parametro objetivo por rubro sobre ventas ni desvio contra objetivo visible
 
 ## Useful Commands
 
@@ -169,3 +378,16 @@ Last updated: 2026-04-20
 - Revisit branch-specific treasury closing if the operation requires separate monthly closure per `sucursal`.
 - If demo scope remains internal-control only, keep bank reconciliation/accreditation out of the presentation path.
 - Use `analista-funcional-backlog` for new backlog work under `docs/epics` so future epics keep the same structure and numbering rules.
+- Use the specialized skills for EP-08..EP-11 instead of relying only on the generic Django implementation skills.
+- Use `testing-riguroso-extremo` when a slice changes business rules, money, permissions, migrations, commands, or when a story should not be marked done without hard test evidence.
+- Next EP-08 candidates in order:
+  - cerrar `US-8.3` con un corte explicito del detalle minimo visible/cargable en movimientos
+  - definir e implementar `US-8.7` como flujo auditable de arrastre/unificacion entre turnos o dias
+- Next EP-09 candidate in order:
+  - add `usuario fijo o no fijo` with explicit behavior in assignment flows and test coverage
+- Next EP-10 candidates in order:
+  - `EP-10` quedo funcionalmente cerrado; el siguiente frente natural pasa a `EP-11`
+- Next EP-11 candidates in order:
+  - crear parametros objetivo por rubro sobre ventas con alcance global o por sucursal para cerrar `US-11.1`
+  - mostrar desvio contra objetivo en el dashboard para terminar de cerrar `US-11.2`
+  - decidir si `rubro_operativo` debe pasar a obligatorio en `CategoriaCuentaPagar` y como migrar legacy sin cortar consultas existentes para cerrar `US-11.5` y `US-11.6`

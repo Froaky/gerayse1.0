@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tesoreria Financiera"
+  short_description: "Tesoreria, bancos y lectura financiera"
+  default_prompt: "Use $tesoreria-financiera-consolidada para modelar movimientos bancarios, disponibilidades y alertas financieras."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Caja y Sucursales"
+  short_description: "Reglas operativas de caja y sucursales"
+  default_prompt: "Use $caja-sucursales-operativa para definir o implementar reglas de caja, sucursales, traspasos y cierres operativos."

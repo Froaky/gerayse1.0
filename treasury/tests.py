@@ -12,6 +12,8 @@ from django.test import RequestFactory, TestCase, TransactionTestCase
 from django.urls import reverse
 from django.utils import timezone
 
+from cashops.models import RubroOperativo, Sucursal, Turno
+from cashops.services import open_box, register_card_sale, register_cash_income, register_expense
 from users.models import Role
 
 from .admin import (
@@ -22,9 +24,13 @@ from .admin import (
     ProveedorAdmin,
 )
 from .models import (
+    AcreditacionTarjeta,
     CategoriaCuentaPagar,
     CuentaBancaria,
     CuentaPorPagar,
+    CajaCentral,
+    DescuentoAcreditacion,
+    MovimientoBancario,
     MovimientoCajaCentral,
     PagoTesoreria,
     Proveedor,
@@ -32,10 +38,16 @@ from .models import (
 from .permissions import is_treasury_admin
 from .services import (
     annul_payment,
+    build_economic_period_snapshot,
+    build_financial_period_snapshot,
     build_supplier_history_snapshot,
     create_bank_account,
+    create_bank_movement,
     create_payable_category,
     create_supplier,
+    link_payment_to_bank_movement,
+    register_card_accreditation,
+    register_central_cash_movement,
     register_cheque_payment,
     register_echeq_payment,
     register_payable,
@@ -144,6 +156,31 @@ class TreasuryServiceTests(TreasuryTestCase):
         )
         self.assertEqual(payable.estado, CuentaPorPagar.Estado.PENDIENTE)
         self.assertEqual(payable.saldo_pendiente, Decimal("1000.00"))
+
+    def test_register_payable_defaults_period_reference_to_issue_month(self):
+        payable = register_payable(
+            proveedor=self.supplier,
+            categoria=self.category,
+            concepto="Factura periodo",
+            fecha_emision=timezone.datetime(2026, 4, 18).date(),
+            fecha_vencimiento=timezone.datetime(2026, 4, 30).date(),
+            importe_total=Decimal("300.00"),
+            actor=self.admin,
+        )
+
+        self.assertEqual(payable.periodo_referencia.isoformat(), "2026-04-01")
+
+    def test_create_payable_category_can_link_operational_rubro(self):
+        rubro = RubroOperativo.objects.create(nombre="Administracion")
+
+        category = create_payable_category(
+            nombre="Servicios administrativos",
+            rubro_operativo=rubro,
+            actor=self.admin,
+        )
+
+        self.assertEqual(category.rubro_operativo, rubro)
+        self.assertEqual(category.rubro_label, "Administracion")
 
     def test_partial_payment_recalculates_balance(self):
         payable = register_payable(
@@ -305,6 +342,94 @@ class TreasuryServiceTests(TreasuryTestCase):
                 creado_por=self.admin,
             )
 
+    def test_bank_movement_requires_category_for_tax_debit(self):
+        with self.assertRaises(ValidationError):
+            create_bank_movement(
+                cuenta_bancaria=self.bank_account,
+                tipo=MovimientoBancario.Tipo.DEBITO,
+                clase=MovimientoBancario.Clase.IMPUESTO,
+                fecha=timezone.localdate(),
+                monto=Decimal("45.00"),
+                concepto="ARCA",
+                actor=self.admin,
+            )
+
+    def test_link_payment_to_bank_movement_sets_financial_class_supplier_and_category(self):
+        payable = register_payable(
+            proveedor=self.supplier,
+            categoria=self.category,
+            concepto="Factura por transferencia",
+            fecha_emision=timezone.localdate(),
+            fecha_vencimiento=timezone.localdate(),
+            importe_total=Decimal("500.00"),
+            actor=self.admin,
+        )
+        payment = register_transfer_payment(
+            payable=payable,
+            bank_account=self.bank_account,
+            fecha_pago=timezone.localdate(),
+            monto=Decimal("120.00"),
+            referencia="TRF-120",
+            actor=self.admin,
+        )
+        movement = create_bank_movement(
+            cuenta_bancaria=self.bank_account,
+            tipo=MovimientoBancario.Tipo.DEBITO,
+            clase=MovimientoBancario.Clase.OTRO_EGRESO,
+            categoria=self.category,
+            fecha=timezone.localdate(),
+            monto=Decimal("120.00"),
+            concepto="Debito banco",
+            referencia="TRF-120",
+            actor=self.admin,
+        )
+
+        link_payment_to_bank_movement(payment=payment, bank_movement=movement, actor=self.admin)
+
+        movement.refresh_from_db()
+        self.assertEqual(movement.origen, MovimientoBancario.Origen.PAGO_TESORERIA)
+        self.assertEqual(movement.clase, MovimientoBancario.Clase.TRANSFERENCIA_TERCEROS)
+        self.assertEqual(movement.proveedor, self.supplier)
+        self.assertEqual(movement.categoria, self.category)
+
+    def test_register_grouped_card_accreditation_persists_period_and_blocks_obvious_duplicate(self):
+        grouped = register_card_accreditation(
+            cuenta_bancaria=self.bank_account,
+            fecha_acreditacion=timezone.localdate(),
+            monto_neto=Decimal("170.00"),
+            canal="Payway",
+            referencia_externa="LIQ-170",
+            modo_registro=AcreditacionTarjeta.ModoRegistro.PERIODO,
+            periodo_desde=timezone.localdate() - timedelta(days=6),
+            periodo_hasta=timezone.localdate(),
+            descuentos=[
+                {
+                    "tipo": DescuentoAcreditacion.Tipo.COMISION,
+                    "monto": Decimal("10.00"),
+                    "descripcion": "Comision de servicio",
+                }
+            ],
+            actor=self.admin,
+        )
+
+        self.assertEqual(grouped.modo_registro, AcreditacionTarjeta.ModoRegistro.PERIODO)
+        self.assertEqual(grouped.periodo_desde, timezone.localdate() - timedelta(days=6))
+        self.assertEqual(grouped.periodo_hasta, timezone.localdate())
+        self.assertEqual(grouped.movimiento_bancario.clase, MovimientoBancario.Clase.ACREDITACION)
+
+        with self.assertRaises(ValidationError):
+            register_card_accreditation(
+                cuenta_bancaria=self.bank_account,
+                fecha_acreditacion=timezone.localdate(),
+                monto_neto=Decimal("170.00"),
+                canal="Payway",
+                referencia_externa="LIQ-170",
+                modo_registro=AcreditacionTarjeta.ModoRegistro.PERIODO,
+                periodo_desde=timezone.localdate() - timedelta(days=6),
+                periodo_hasta=timezone.localdate(),
+                actor=self.admin,
+            )
+
     def test_supplier_history_snapshot_aggregates_payables_and_payments(self):
         payable = register_payable(
             proveedor=self.supplier,
@@ -326,6 +451,283 @@ class TreasuryServiceTests(TreasuryTestCase):
         self.assertEqual(snapshot["historical_total"], Decimal("500.00"))
         self.assertEqual(snapshot["historical_pending"], Decimal("300.00"))
         self.assertEqual(snapshot["historical_paid"], Decimal("200.00"))
+
+    def test_financial_period_snapshot_aggregates_cash_bank_accreditations_and_due_buckets(self):
+        branch = Sucursal.objects.create(codigo="SUC-T", nombre="Sucursal Test", razon_social="Test SRL")
+        branch_account = create_bank_account(
+            nombre="Cuenta Sucursal Test",
+            banco="Banco Test",
+            tipo_cuenta=CuentaBancaria.Tipo.CUENTA_CORRIENTE,
+            numero_cuenta="999-888",
+            sucursal=branch,
+            actor=self.admin,
+        )
+        turno = Turno.objects.create(
+            sucursal=branch,
+            fecha_operativa=timezone.localdate(),
+            tipo=Turno.Tipo.MANANA,
+            estado=Turno.Estado.ABIERTO,
+            creado_por=self.admin,
+        )
+        box = open_box(
+            user=self.operator,
+            turno=turno,
+            sucursal=branch,
+            monto_inicial=Decimal("100.00"),
+            actor=self.admin,
+        )
+        rubro = RubroOperativo.objects.create(nombre="Insumos Tesoreria")
+        register_cash_income(
+            caja=box,
+            monto=Decimal("50.00"),
+            categoria="Cobro manual",
+            observacion="Ingreso del dia",
+            actor=self.operator,
+        )
+        register_expense(
+            caja=box,
+            monto=Decimal("20.00"),
+            rubro_operativo=rubro,
+            categoria="Compra",
+            observacion="Egreso del dia",
+            actor=self.operator,
+        )
+        register_card_sale(
+            caja=box,
+            monto=Decimal("200.00"),
+            observacion="Ventas tarjeta",
+            actor=self.operator,
+        )
+        register_central_cash_movement(
+            tipo=MovimientoCajaCentral.Tipo.APORTE,
+            monto=Decimal("400.00"),
+            concepto="Aporte inicial",
+            fecha=timezone.localdate(),
+            actor=self.admin,
+        )
+        create_bank_movement(
+            cuenta_bancaria=branch_account,
+            tipo=MovimientoBancario.Tipo.CREDITO,
+            fecha=timezone.localdate(),
+            monto=Decimal("300.00"),
+            concepto="Ingreso bancario",
+            actor=self.admin,
+        )
+        create_bank_movement(
+            cuenta_bancaria=branch_account,
+            tipo=MovimientoBancario.Tipo.DEBITO,
+            fecha=timezone.localdate(),
+            monto=Decimal("40.00"),
+            concepto="Debito bancario",
+            actor=self.admin,
+        )
+        register_card_accreditation(
+            cuenta_bancaria=branch_account,
+            fecha_acreditacion=timezone.localdate(),
+            monto_neto=Decimal("170.00"),
+            canal="Payway",
+            referencia_externa="ACC-1",
+            descuentos=[
+                {"tipo": "COMISION", "monto": Decimal("20.00"), "descripcion": "Comision"},
+                {"tipo": "IIBB", "monto": Decimal("10.00"), "descripcion": "IIBB"},
+            ],
+            actor=self.admin,
+        )
+        register_payable(
+            sucursal=branch,
+            proveedor=self.supplier,
+            categoria=self.category,
+            concepto="Factura vencida",
+            fecha_emision=timezone.localdate() - timedelta(days=3),
+            fecha_vencimiento=timezone.localdate() - timedelta(days=1),
+            importe_total=Decimal("100.00"),
+            actor=self.admin,
+        )
+        register_payable(
+            sucursal=branch,
+            proveedor=self.supplier,
+            categoria=self.category,
+            concepto="Factura hoy",
+            fecha_emision=timezone.localdate() - timedelta(days=1),
+            fecha_vencimiento=timezone.localdate(),
+            importe_total=Decimal("80.00"),
+            actor=self.admin,
+        )
+        register_payable(
+            sucursal=branch,
+            proveedor=self.supplier,
+            categoria=self.category,
+            concepto="Factura proxima",
+            fecha_emision=timezone.localdate(),
+            fecha_vencimiento=timezone.localdate() + timedelta(days=3),
+            importe_total=Decimal("60.00"),
+            actor=self.admin,
+        )
+
+        snapshot = build_financial_period_snapshot(
+            date_from=timezone.localdate(),
+            date_to=timezone.localdate(),
+        )
+        branch_snapshot = build_financial_period_snapshot(
+            date_from=timezone.localdate(),
+            date_to=timezone.localdate(),
+            sucursal=branch,
+        )
+
+        self.assertEqual(snapshot["cash_income"], Decimal("50.00"))
+        self.assertEqual(snapshot["cash_expense"], Decimal("20.00"))
+        self.assertEqual(snapshot["cash_net"], Decimal("30.00"))
+        self.assertEqual(snapshot["bank_credits"], Decimal("470.00"))
+        self.assertEqual(snapshot["bank_debits"], Decimal("40.00"))
+        self.assertEqual(snapshot["central_cash_total"], Decimal("400.00"))
+        self.assertEqual(snapshot["total_bank_balance"], Decimal("430.00"))
+        self.assertEqual(snapshot["total_consolidated"], Decimal("830.00"))
+        self.assertEqual(snapshot["digital_sales_total"], Decimal("200.00"))
+        self.assertEqual(snapshot["accredited_net"], Decimal("170.00"))
+        self.assertEqual(snapshot["accredited_gross"], Decimal("200.00"))
+        self.assertEqual(snapshot["pending_accreditation_total"], Decimal("0.00"))
+        self.assertEqual(snapshot["overdue_count"], 1)
+        self.assertEqual(snapshot["due_today_count"], 1)
+        self.assertEqual(snapshot["upcoming_count"], 1)
+        self.assertEqual(branch_snapshot["total_bank_balance"], Decimal("430.00"))
+        self.assertEqual(branch_snapshot["pending_total"], Decimal("240.00"))
+
+    def test_financial_period_snapshot_uses_grouped_accreditation_coverage_period(self):
+        branch = Sucursal.objects.create(codigo="SUC-P", nombre="Sucursal Periodo", razon_social="Periodo SRL")
+        branch_account = create_bank_account(
+            nombre="Cuenta Periodo",
+            banco="Banco Periodo",
+            tipo_cuenta=CuentaBancaria.Tipo.CUENTA_CORRIENTE,
+            numero_cuenta="321-654",
+            sucursal=branch,
+            actor=self.admin,
+        )
+        turno = Turno.objects.create(
+            sucursal=branch,
+            fecha_operativa=timezone.localdate(),
+            tipo=Turno.Tipo.MANANA,
+            estado=Turno.Estado.ABIERTO,
+            creado_por=self.admin,
+        )
+        box = open_box(
+            user=self.operator,
+            turno=turno,
+            sucursal=branch,
+            monto_inicial=Decimal("0.00"),
+            actor=self.admin,
+        )
+        register_card_sale(
+            caja=box,
+            monto=Decimal("100.00"),
+            observacion="Venta con cobertura agrupada",
+            actor=self.operator,
+        )
+        register_card_accreditation(
+            cuenta_bancaria=branch_account,
+            fecha_acreditacion=timezone.localdate() + timedelta(days=2),
+            monto_neto=Decimal("100.00"),
+            canal="Payway",
+            referencia_externa="PER-100",
+            modo_registro=AcreditacionTarjeta.ModoRegistro.PERIODO,
+            periodo_desde=timezone.localdate(),
+            periodo_hasta=timezone.localdate(),
+            actor=self.admin,
+        )
+
+        snapshot = build_financial_period_snapshot(
+            date_from=timezone.localdate(),
+            date_to=timezone.localdate(),
+            sucursal=branch,
+        )
+
+        self.assertEqual(snapshot["digital_sales_total"], Decimal("100.00"))
+        self.assertEqual(snapshot["accredited_net"], Decimal("100.00"))
+        self.assertEqual(snapshot["pending_accreditation_total"], Decimal("0.00"))
+
+    def test_economic_period_snapshot_groups_sales_cash_expense_and_period_debt_by_rubro(self):
+        branch = Sucursal.objects.create(codigo="SUC-E", nombre="Sucursal Economica", razon_social="Economica SRL")
+        rubro_admin = RubroOperativo.objects.create(nombre="Administracion")
+        rubro_ventas = RubroOperativo.objects.create(nombre="Ventas")
+        category_admin = create_payable_category(
+            nombre="Servicios administrativos",
+            rubro_operativo=rubro_admin,
+            actor=self.admin,
+        )
+        turno = Turno.objects.create(
+            sucursal=branch,
+            fecha_operativa=timezone.datetime(2026, 4, 20).date(),
+            tipo=Turno.Tipo.MANANA,
+            estado=Turno.Estado.ABIERTO,
+            creado_por=self.admin,
+        )
+        box = open_box(
+            user=self.operator,
+            turno=turno,
+            sucursal=branch,
+            monto_inicial=Decimal("0.00"),
+            actor=self.admin,
+        )
+        register_cash_income(
+            caja=box,
+            monto=Decimal("500.00"),
+            categoria="Venta mostrador",
+            observacion="Ingreso sin rubro",
+            actor=self.operator,
+        )
+        from cashops.models import MovimientoCaja
+
+        MovimientoCaja.objects.create(
+            caja=box,
+            tipo=MovimientoCaja.Tipo.INGRESO_EFECTIVO,
+            sentido=MovimientoCaja.Sentido.INGRESO,
+            monto=Decimal("500.00"),
+            impacta_saldo_caja=True,
+            categoria="Venta rubro",
+            rubro_operativo=rubro_ventas,
+            creado_por=self.operator,
+        )
+        register_card_sale(
+            caja=box,
+            monto=Decimal("250.00"),
+            observacion="Tarjeta del periodo",
+            actor=self.operator,
+        )
+        register_expense(
+            caja=box,
+            monto=Decimal("80.00"),
+            rubro_operativo=rubro_admin,
+            categoria="Gasto administrativo",
+            observacion="Caja del periodo",
+            actor=self.operator,
+        )
+        register_payable(
+            sucursal=branch,
+            proveedor=self.supplier,
+            categoria=category_admin,
+            concepto="Factura administrativa",
+            fecha_emision=timezone.datetime(2026, 4, 10).date(),
+            fecha_vencimiento=timezone.datetime(2026, 4, 25).date(),
+            periodo_referencia=timezone.datetime(2026, 4, 1).date(),
+            importe_total=Decimal("120.00"),
+            actor=self.admin,
+        )
+
+        snapshot = build_economic_period_snapshot(
+            date_from=timezone.datetime(2026, 4, 1).date(),
+            date_to=timezone.datetime(2026, 4, 30).date(),
+            sucursal=branch,
+        )
+
+        admin_item = next(item for item in snapshot["items"] if item["rubro_nombre"] == "Administracion")
+        ventas_item = next(item for item in snapshot["items"] if item["rubro_nombre"] == "Ventas")
+        self.assertEqual(snapshot["sales_total"], Decimal("750.00"))
+        self.assertEqual(snapshot["cash_expense_total"], Decimal("80.00"))
+        self.assertEqual(snapshot["debt_period_total"], Decimal("120.00"))
+        self.assertEqual(snapshot["economic_result"], Decimal("550.00"))
+        self.assertEqual(snapshot["margin_pct"], Decimal("73.33"))
+        self.assertEqual(admin_item["total_expense"], Decimal("200.00"))
+        self.assertEqual(admin_item["expense_ratio_over_sales"], Decimal("26.67"))
+        self.assertEqual(ventas_item["sales_total"], Decimal("500.00"))
 
 
 @skipUnless(connection.vendor == "postgresql", "La concurrencia con select_for_update requiere PostgreSQL.")
@@ -438,6 +840,7 @@ class TreasuryViewTests(TreasuryTestCase):
         self.assertEqual(response.status_code, 302)
         payable = CuentaPorPagar.objects.get(concepto="Factura mensual")
         self.assertEqual(payable.saldo_pendiente, Decimal("250.00"))
+        self.assertEqual(payable.periodo_referencia, timezone.localdate().replace(day=1))
 
     def test_transfer_payment_create_reduces_balance(self):
         payable = register_payable(
@@ -492,7 +895,155 @@ class TreasuryViewTests(TreasuryTestCase):
         self.assertIsNone(payment.cuenta_bancaria)
         self.assertTrue(MovimientoCajaCentral.objects.filter(pago_tesoreria=payment).exists())
 
+    def test_bank_movement_create_persists_financial_taxonomy(self):
+        response = self.client.post(
+            reverse("treasury:bank_movements_create"),
+            {
+                "cuenta_bancaria": self.bank_account.pk,
+                "tipo": MovimientoBancario.Tipo.DEBITO,
+                "clase": MovimientoBancario.Clase.IMPUESTO,
+                "categoria": self.category.pk,
+                "proveedor": "",
+                "fecha": timezone.localdate(),
+                "monto": "85.00",
+                "concepto": "ARCA abril",
+                "referencia": "IMP-85",
+                "observaciones": "Carga tributaria",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        movement = MovimientoBancario.objects.get(referencia="IMP-85")
+        self.assertEqual(movement.clase, MovimientoBancario.Clase.IMPUESTO)
+        self.assertEqual(movement.categoria, self.category)
+
+    def test_grouped_accreditation_create_persists_period_metadata(self):
+        response = self.client.post(
+            reverse("treasury:card_accreditations_register"),
+            {
+                "modo_registro": AcreditacionTarjeta.ModoRegistro.PERIODO,
+                "cuenta_bancaria": self.bank_account.pk,
+                "fecha_acreditacion": timezone.localdate(),
+                "periodo_desde": (timezone.localdate() - timedelta(days=6)).isoformat(),
+                "periodo_hasta": timezone.localdate().isoformat(),
+                "monto_neto": "210.00",
+                "canal": "Payway",
+                "referencia_externa": "AGR-210",
+                "lote_pos": "",
+                "monto_descuentos": "10.00",
+                "descripcion_descuentos": "Comision agrupada",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        accreditation = AcreditacionTarjeta.objects.get(referencia_externa="AGR-210")
+        self.assertEqual(accreditation.modo_registro, AcreditacionTarjeta.ModoRegistro.PERIODO)
+        self.assertEqual(accreditation.periodo_desde, timezone.localdate() - timedelta(days=6))
+        self.assertEqual(accreditation.periodo_hasta, timezone.localdate())
+
     def test_non_admin_is_blocked_from_treasury_dashboard(self):
         self.client.force_login(self.operator)
         response = self.client.get(reverse("treasury:dashboard"))
         self.assertEqual(response.status_code, 403)
+
+    def test_dashboard_supports_period_and_branch_financial_view(self):
+        branch = Sucursal.objects.create(codigo="SUC-D", nombre="Sucursal Dashboard", razon_social="Dashboard SRL")
+        branch_account = create_bank_account(
+            nombre="Cuenta Dashboard",
+            banco="Banco Dashboard",
+            tipo_cuenta=CuentaBancaria.Tipo.CUENTA_CORRIENTE,
+            numero_cuenta="456-789",
+            sucursal=branch,
+            actor=self.admin,
+        )
+        turno = Turno.objects.create(
+            sucursal=branch,
+            fecha_operativa=timezone.localdate(),
+            tipo=Turno.Tipo.MANANA,
+            estado=Turno.Estado.ABIERTO,
+            creado_por=self.admin,
+        )
+        box = open_box(
+            user=self.operator,
+            turno=turno,
+            sucursal=branch,
+            monto_inicial=Decimal("0.00"),
+            actor=self.admin,
+        )
+        rubro = RubroOperativo.objects.create(nombre="Dashboard Rubro")
+        category = create_payable_category(
+            nombre="Servicios Dashboard",
+            rubro_operativo=rubro,
+            actor=self.admin,
+        )
+        register_cash_income(
+            caja=box,
+            monto=Decimal("120.00"),
+            categoria="Ingreso caja",
+            observacion="Caja del periodo",
+            actor=self.operator,
+        )
+        register_expense(
+            caja=box,
+            monto=Decimal("30.00"),
+            rubro_operativo=rubro,
+            categoria="Compra caja",
+            observacion="Caja del periodo",
+            actor=self.operator,
+        )
+        register_card_sale(
+            caja=box,
+            monto=Decimal("150.00"),
+            observacion="Tarjeta dashboard",
+            actor=self.operator,
+        )
+        create_bank_movement(
+            cuenta_bancaria=branch_account,
+            tipo=MovimientoBancario.Tipo.CREDITO,
+            fecha=timezone.localdate(),
+            monto=Decimal("90.00"),
+            concepto="Credito dashboard",
+            actor=self.admin,
+        )
+        register_card_accreditation(
+            cuenta_bancaria=branch_account,
+            fecha_acreditacion=timezone.localdate(),
+            monto_neto=Decimal("120.00"),
+            canal="Payway",
+            referencia_externa="ACC-DASH",
+            descuentos=[
+                {"tipo": "COMISION", "monto": Decimal("10.00"), "descripcion": "Comision dashboard"},
+            ],
+            actor=self.admin,
+        )
+        register_payable(
+            sucursal=branch,
+            proveedor=self.supplier,
+            categoria=category,
+            concepto="Vence hoy dashboard",
+            fecha_emision=timezone.localdate(),
+            fecha_vencimiento=timezone.localdate(),
+            importe_total=Decimal("70.00"),
+            actor=self.admin,
+        )
+
+        response = self.client.get(
+            reverse("treasury:dashboard"),
+            {
+                "sucursal": branch.pk,
+                "fecha_desde": timezone.localdate().isoformat(),
+                "fecha_hasta": timezone.localdate().isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Situacion financiera por periodo")
+        self.assertContains(response, "Situacion economica y rentabilidad")
+        self.assertContains(response, "Resultado economico")
+        self.assertContains(response, "Dashboard Rubro")
+        self.assertContains(response, "Caja fuerte general")
+        self.assertContains(response, "Pendiente de acreditacion")
+        self.assertContains(response, "Vence hoy")
+        self.assertContains(response, "$ 120,00")
+        self.assertContains(response, "$ 30,00")
+        self.assertContains(response, "$ 150,00")

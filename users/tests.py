@@ -81,3 +81,82 @@ class AuthFlowTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertRedirects(response, reverse("users:login"), fetch_redirect_response=False)
         self.assertNotIn("_auth_user_id", self.client.session)
+
+
+class PersonalViewTests(TestCase):
+    def setUp(self):
+        self.admin_role = Role.objects.create(code="ADMIN", name="Administrador")
+        self.operator_role = Role.objects.create(code="ENCARGADO", name="Encargado")
+        self.admin = User.objects.create_user(
+            username="admin_personal",
+            password="secret12345",
+            first_name="Ana",
+            last_name="Admin",
+            role=self.admin_role,
+        )
+        self.operator = User.objects.create_user(
+            username="operador_personal",
+            password="secret12345",
+            first_name="Juan",
+            last_name="Perez",
+            role=self.operator_role,
+            dni="12345678",
+            legajo="LEG-001",
+            telefono="387-111",
+        )
+
+    def test_personal_form_hides_legajo_field(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("users:personal_create"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "Nro Legajo")
+        self.assertNotContains(response, "LEG-001")
+
+    def test_personal_list_is_minimal_and_hides_extra_fields(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("users:personal_list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Juan")
+        self.assertContains(response, "Perez")
+        self.assertContains(response, "Encargado")
+        self.assertNotContains(response, "LEG-001")
+        self.assertNotContains(response, "12345678")
+        self.assertNotContains(response, "387-111")
+        self.assertNotContains(response, "@operador_personal")
+
+    def test_personal_list_searches_by_name_last_name_and_role(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("users:personal_list"), {"q": "Encargado"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Juan")
+        self.assertNotContains(response, "Apellido: Admin")
+        self.assertNotContains(response, "Rol: Administrador")
+
+    def test_personal_update_supports_existing_users_with_historic_legajo(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.post(
+            reverse("users:personal_update", args=[self.operator.pk]),
+            {
+                "username": self.operator.username,
+                "first_name": "Juan",
+                "last_name": "Perez",
+                "dni": self.operator.dni,
+                "telefono": self.operator.telefono,
+                "email": "",
+                "role": self.operator_role.pk,
+                "is_active": "on",
+                "password": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.operator.refresh_from_db()
+        self.assertEqual(self.operator.legajo, "LEG-001")
+        self.assertTrue(self.operator.check_password("secret12345"))

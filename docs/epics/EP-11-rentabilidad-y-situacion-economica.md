@@ -53,7 +53,7 @@ Criterios:
 - porcentaje real calculado
 - desvio contra objetivo visible
 
-### [ ] US-11.3 Rentabilidad por sucursal y periodo
+### [x] US-11.3 Rentabilidad por sucursal y periodo
 
 Como direccion
 Quiero ver la rentabilidad por sucursal y periodo
@@ -66,7 +66,7 @@ Criterios:
 - filtro por sucursal
 - filtro por quincena, mes o rango mayor
 
-### [ ] US-11.4 Vista de situacion economica
+### [x] US-11.4 Vista de situacion economica
 
 Como direccion
 Quiero una vista economica consolidada

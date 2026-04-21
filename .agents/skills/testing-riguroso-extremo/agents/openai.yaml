@@ -1,0 +1,4 @@
+interface:
+  display_name: "Testing Riguroso"
+  short_description: "Testing extremo, regresion y riesgos"
+  default_prompt: "Use $testing-riguroso-extremo para revisar, disenar y endurecer tests con criterio extremo de regresion y riesgo."

@@ -5,6 +5,7 @@ from django.urls import reverse_lazy, reverse
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.http import HttpResponse
+from django.db.models import Q
 
 from .forms import PersonalForm
 
@@ -58,8 +59,15 @@ def _render_form(request, context: dict, status: int = 200, template: str = "cas
 def personal_list(request):
     if not request.user.is_cashops_admin():
         return redirect("cashops:dashboard")
-    
+
+    q = (request.GET.get("q") or "").strip()
     users = User.objects.select_related("role").all().order_by("last_name", "first_name")
+    if q:
+        users = users.filter(
+            Q(first_name__icontains=q)
+            | Q(last_name__icontains=q)
+            | Q(role__name__icontains=q)
+        )
     return render(
         request,
         "users/personal_list.html",
@@ -67,6 +75,7 @@ def personal_list(request):
             "items": users,
             "title": "Personal",
             "create_url": reverse("users:personal_create"),
+            "query": q,
         }
     )
 
@@ -86,7 +95,7 @@ def personal_create(request):
         request,
         {
             "title": "Nuevo Personal",
-            "subtitle": "Carga los datos base, DNI y rol operativo.",
+            "subtitle": "Carga los datos base, contacto y rol operativo.",
             "form": form,
             "submit_label": "Guardar Personal",
             "back_url": reverse("users:personal_list"),
@@ -112,7 +121,7 @@ def personal_update(request, user_id: int):
         request,
         {
             "title": f"Editar Personal: {user.get_full_name()}",
-            "subtitle": "Actualiza datos de contacto o rol.",
+            "subtitle": "Actualiza datos operativos y rol.",
             "form": form,
             "submit_label": "Actualizar Personal",
             "back_url": reverse("users:personal_list"),

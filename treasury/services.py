@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.db.models import Sum
 from django.utils import timezone
 
@@ -37,6 +37,10 @@ def _save_instance(instance):
     instance.full_clean()
     instance.save()
     return instance
+
+
+def _first_day_of_month(value: date) -> date:
+    return value.replace(day=1)
 
 
 def _recalculate_payable_locked(payable: CuentaPorPagar) -> CuentaPorPagar:
@@ -131,15 +135,28 @@ def toggle_supplier(*, supplier: Proveedor, actor=None) -> Proveedor:
     return supplier
 
 
-def create_payable_category(*, nombre, actor=None, activo=True) -> CategoriaCuentaPagar:
+def create_payable_category(*, nombre, actor=None, activo=True, rubro_operativo=None) -> CategoriaCuentaPagar:
     _require_actor(actor)
-    category = CategoriaCuentaPagar(nombre=nombre, activo=activo, creado_por=actor)
+    category = CategoriaCuentaPagar(
+        nombre=nombre,
+        rubro_operativo=rubro_operativo,
+        activo=activo,
+        creado_por=actor,
+    )
     return _save_instance(category)
 
 
-def update_payable_category(*, category: CategoriaCuentaPagar, nombre, actor=None, activo=True) -> CategoriaCuentaPagar:
+def update_payable_category(
+    *,
+    category: CategoriaCuentaPagar,
+    nombre,
+    actor=None,
+    activo=True,
+    rubro_operativo=None,
+) -> CategoriaCuentaPagar:
     _require_actor(actor)
     category.nombre = nombre
+    category.rubro_operativo = rubro_operativo
     category.activo = activo
     category.actualizado_por = actor
     return _save_instance(category)
@@ -224,6 +241,7 @@ def register_payable(
     concepto: str,
     fecha_emision,
     fecha_vencimiento,
+    periodo_referencia=None,
     importe_total: Decimal,
     referencia_comprobante: str = "",
     observaciones: str = "",
@@ -241,6 +259,7 @@ def register_payable(
         concepto=concepto,
         fecha_emision=fecha_emision,
         fecha_vencimiento=fecha_vencimiento,
+        periodo_referencia=_first_day_of_month(periodo_referencia or fecha_emision),
         importe_total=importe_total,
         saldo_pendiente=importe_total,
         estado=CuentaPorPagar.Estado.PENDIENTE,
@@ -260,6 +279,7 @@ def update_payable(
     concepto: str,
     fecha_emision,
     fecha_vencimiento,
+    periodo_referencia=None,
     importe_total: Decimal,
     referencia_comprobante: str = "",
     observaciones: str = "",
@@ -278,6 +298,7 @@ def update_payable(
     payable.concepto = concepto
     payable.fecha_emision = fecha_emision
     payable.fecha_vencimiento = fecha_vencimiento
+    payable.periodo_referencia = _first_day_of_month(periodo_referencia or fecha_emision)
     payable.importe_total = importe_total
     payable.saldo_pendiente = importe_total
     payable.estado = CuentaPorPagar.Estado.PENDIENTE
@@ -470,6 +491,67 @@ def annul_payment(*, payment: PagoTesoreria, motivo: str, actor=None) -> PagoTes
 
 # --- Bank Movements & Conciliation (EP-04) ---
 
+def _infer_bank_movement_class(*, tipo: str, origen: str, payment: PagoTesoreria | None = None) -> str:
+    if origen == MovimientoBancario.Origen.ACREDITACION_TARJETA:
+        return MovimientoBancario.Clase.ACREDITACION
+    if origen == MovimientoBancario.Origen.PAGO_TESORERIA and payment is not None:
+        return {
+            PagoTesoreria.MedioPago.CHEQUE: MovimientoBancario.Clase.CHEQUE,
+            PagoTesoreria.MedioPago.ECHEQ: MovimientoBancario.Clase.ECHEQ,
+        }.get(payment.medio_pago, MovimientoBancario.Clase.TRANSFERENCIA_TERCEROS)
+    return (
+        MovimientoBancario.Clase.OTRO_INGRESO
+        if tipo == MovimientoBancario.Tipo.CREDITO
+        else MovimientoBancario.Clase.OTRO_EGRESO
+    )
+
+
+def _existing_accreditation_duplicate_qs(
+    *,
+    cuenta_bancaria: CuentaBancaria,
+    fecha_acreditacion: date,
+    canal: str,
+    monto_neto: Decimal,
+    referencia_externa: str,
+    modo_registro: str,
+    periodo_desde=None,
+    periodo_hasta=None,
+):
+    queryset = AcreditacionTarjeta.objects.filter(
+        movimiento_bancario__cuenta_bancaria=cuenta_bancaria,
+        canal__iexact=(canal or "").strip(),
+        modo_registro=modo_registro,
+    )
+    referencia_externa = (referencia_externa or "").strip()
+    if referencia_externa:
+        return queryset.filter(referencia_externa__iexact=referencia_externa)
+    if modo_registro == AcreditacionTarjeta.ModoRegistro.PERIODO:
+        return queryset.filter(
+            movimiento_bancario__fecha=fecha_acreditacion,
+            periodo_desde=periodo_desde,
+            periodo_hasta=periodo_hasta,
+            movimiento_bancario__monto=monto_neto,
+        )
+    return queryset.filter(
+        movimiento_bancario__fecha=fecha_acreditacion,
+        movimiento_bancario__monto=monto_neto,
+    )
+
+
+def _accreditation_scope_query(*, date_from: date, date_to: date) -> Q:
+    return Q(
+        modo_registro=AcreditacionTarjeta.ModoRegistro.DIARIA,
+        movimiento_bancario__fecha__gte=date_from,
+        movimiento_bancario__fecha__lte=date_to,
+    ) | Q(
+        modo_registro=AcreditacionTarjeta.ModoRegistro.PERIODO,
+        periodo_desde__isnull=False,
+        periodo_hasta__isnull=False,
+        periodo_desde__gte=date_from,
+        periodo_hasta__lte=date_to,
+    )
+
+
 def create_bank_movement(
     *,
     cuenta_bancaria: CuentaBancaria,
@@ -477,6 +559,9 @@ def create_bank_movement(
     fecha: date,
     monto: Decimal,
     concepto: str,
+    clase: str | None = None,
+    categoria: CategoriaCuentaPagar = None,
+    proveedor: Proveedor = None,
     referencia: str = "",
     observaciones: str = "",
     origen: str = MovimientoBancario.Origen.MANUAL,
@@ -490,6 +575,9 @@ def create_bank_movement(
         fecha=fecha,
         monto=monto,
         concepto=concepto,
+        clase=clase or _infer_bank_movement_class(tipo=tipo, origen=origen, payment=pago_tesoreria),
+        categoria=categoria,
+        proveedor=proveedor,
         referencia=referencia,
         observaciones=observaciones,
         origen=origen,
@@ -505,6 +593,9 @@ def update_bank_movement(
     fecha: date,
     monto: Decimal,
     concepto: str,
+    clase: str | None = None,
+    categoria: CategoriaCuentaPagar = None,
+    proveedor: Proveedor = None,
     referencia: str = "",
     observaciones: str = "",
     actor=None,
@@ -513,6 +604,10 @@ def update_bank_movement(
     movement.fecha = fecha
     movement.monto = monto
     movement.concepto = concepto
+    if clase:
+        movement.clase = clase
+    movement.categoria = categoria
+    movement.proveedor = proveedor
     movement.referencia = referencia
     movement.observaciones = observaciones
     movement.actualizado_por = actor
@@ -573,6 +668,9 @@ def register_card_accreditation(
     canal: str,
     referencia_externa: str = "",
     lote_pos: LotePOS = None,
+    modo_registro: str = AcreditacionTarjeta.ModoRegistro.DIARIA,
+    periodo_desde=None,
+    periodo_hasta=None,
     descuentos: list[dict] = None,  # list of {'tipo': '...', 'monto': 123, 'descripcion': '...'}
     actor=None,
 ) -> AcreditacionTarjeta:
@@ -582,6 +680,25 @@ def register_card_accreditation(
     """
     _require_actor(actor)
 
+    duplicate_qs = _existing_accreditation_duplicate_qs(
+        cuenta_bancaria=cuenta_bancaria,
+        fecha_acreditacion=fecha_acreditacion,
+        canal=canal,
+        monto_neto=monto_neto,
+        referencia_externa=referencia_externa,
+        modo_registro=modo_registro,
+        periodo_desde=periodo_desde,
+        periodo_hasta=periodo_hasta,
+    )
+    if duplicate_qs.exists():
+        raise ValidationError(
+            {
+                "referencia_externa": (
+                    "Ya existe una acreditacion equivalente para esta cuenta, canal y referencia o periodo."
+                )
+            }
+        )
+
     # 1. Create the bank movement (credit)
     movement = create_bank_movement(
         cuenta_bancaria=cuenta_bancaria,
@@ -589,6 +706,7 @@ def register_card_accreditation(
         fecha=fecha_acreditacion,
         monto=monto_neto,
         concepto=f"Acreditacion Tarjeta {canal}",
+        clase=MovimientoBancario.Clase.ACREDITACION,
         referencia=referencia_externa,
         origen=MovimientoBancario.Origen.ACREDITACION_TARJETA,
         actor=actor,
@@ -597,8 +715,11 @@ def register_card_accreditation(
     # 2. Create the accreditation record
     accreditation = AcreditacionTarjeta(
         movimiento_bancario=movement,
+        modo_registro=modo_registro,
         canal=canal,
         lote_pos=lote_pos,
+        periodo_desde=periodo_desde,
+        periodo_hasta=periodo_hasta,
         referencia_externa=referencia_externa,
         creado_por=actor,
     )
@@ -638,6 +759,13 @@ def link_payment_to_bank_movement(
 
     bank_movement.pago_tesoreria = payment
     bank_movement.origen = MovimientoBancario.Origen.PAGO_TESORERIA
+    bank_movement.clase = _infer_bank_movement_class(
+        tipo=bank_movement.tipo,
+        origen=MovimientoBancario.Origen.PAGO_TESORERIA,
+        payment=payment,
+    )
+    bank_movement.proveedor = payment.cuenta_por_pagar.proveedor
+    bank_movement.categoria = payment.cuenta_por_pagar.categoria
     bank_movement.actualizado_por = actor
     bank_movement.save()
 
@@ -707,6 +835,320 @@ def build_bank_reconciliation_snapshot(
     }
 
 
+def _central_cash_balance_until(*, reference_date: date, sucursal=None) -> Decimal:
+    movements = MovimientoCajaCentral.objects.filter(fecha__lte=reference_date)
+    if sucursal is not None:
+        movements = movements.filter(caja_central__sucursal=sucursal)
+    sums = movements.aggregate(
+        ingresos=Sum(
+            "monto",
+            filter=Q(
+                tipo__in=[
+                    MovimientoCajaCentral.Tipo.INGRESO_CAJA,
+                    MovimientoCajaCentral.Tipo.APORTE,
+                    MovimientoCajaCentral.Tipo.RETIRO_BANCO,
+                    MovimientoCajaCentral.Tipo.AJUSTE_POSITIVO,
+                ]
+            ),
+        ),
+        egresos=Sum(
+            "monto",
+            filter=Q(
+                tipo__in=[
+                    MovimientoCajaCentral.Tipo.EGRESO_PAGO,
+                    MovimientoCajaCentral.Tipo.DEPOSITO_BANCO,
+                    MovimientoCajaCentral.Tipo.AJUSTE_NEGATIVO,
+                ]
+            ),
+        ),
+    )
+    return (sums["ingresos"] or Decimal("0.00")) - (sums["egresos"] or Decimal("0.00"))
+
+
+def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=None) -> dict:
+    if date_to < date_from:
+        raise ValidationError({"fecha_hasta": "La fecha hasta no puede ser anterior a la fecha desde."})
+
+    from cashops.models import MovimientoCaja, RubroOperativo
+
+    sale_query = Q(tipo__in=[
+        MovimientoCaja.Tipo.VENTA_TARJETA,
+        MovimientoCaja.Tipo.VENTA_TRANSFERENCIA,
+        MovimientoCaja.Tipo.VENTA_PEDIDOSYA,
+        MovimientoCaja.Tipo.VENTA_QR,
+    ]) | Q(
+        tipo=MovimientoCaja.Tipo.INGRESO_EFECTIVO,
+        rubro_operativo__isnull=False,
+    )
+    sales = MovimientoCaja.objects.filter(
+        caja__turno__fecha_operativa__gte=date_from,
+        caja__turno__fecha_operativa__lte=date_to,
+    ).filter(sale_query)
+    expenses = MovimientoCaja.objects.filter(
+        caja__turno__fecha_operativa__gte=date_from,
+        caja__turno__fecha_operativa__lte=date_to,
+        tipo=MovimientoCaja.Tipo.GASTO,
+        rubro_operativo__isnull=False,
+    )
+    if sucursal is not None:
+        sales = sales.filter(caja__sucursal=sucursal)
+        expenses = expenses.filter(caja__sucursal=sucursal)
+
+    sales_total = sales.aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
+    cash_expense_total = expenses.aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
+    sales_by_rubro = {
+        row["rubro_operativo"]: row["total"] or Decimal("0.00")
+        for row in sales.values("rubro_operativo").annotate(total=Sum("monto"))
+    }
+    cash_expense_by_rubro = {
+        row["rubro_operativo"]: row["total"] or Decimal("0.00")
+        for row in expenses.values("rubro_operativo").annotate(total=Sum("monto"))
+    }
+
+    period_from = _first_day_of_month(date_from)
+    period_to = _first_day_of_month(date_to)
+    period_payables = CuentaPorPagar.objects.exclude(
+        estado=CuentaPorPagar.Estado.ANULADA
+    ).filter(
+        periodo_referencia__gte=period_from,
+        periodo_referencia__lte=period_to,
+    )
+    if sucursal is not None:
+        period_payables = period_payables.filter(sucursal=sucursal)
+
+    debt_period_total = period_payables.aggregate(total=Sum("importe_total"))["total"] or Decimal("0.00")
+    debt_pending_total = period_payables.aggregate(total=Sum("saldo_pendiente"))["total"] or Decimal("0.00")
+    debt_rows = list(
+        period_payables.values(
+            "categoria__rubro_operativo",
+            "categoria__rubro_operativo__nombre",
+        ).annotate(
+            total_deuda=Sum("importe_total"),
+            pendiente=Sum("saldo_pendiente"),
+            cantidad=Count("id"),
+        )
+    )
+    debt_by_rubro = {}
+    unmapped_payables_total = Decimal("0.00")
+    unmapped_payables_pending = Decimal("0.00")
+    unmapped_payables_count = 0
+    for row in debt_rows:
+        rubro_id = row["categoria__rubro_operativo"]
+        if rubro_id is None:
+            unmapped_payables_total += row["total_deuda"] or Decimal("0.00")
+            unmapped_payables_pending += row["pendiente"] or Decimal("0.00")
+            unmapped_payables_count += row["cantidad"] or 0
+            continue
+        debt_by_rubro[rubro_id] = {
+            "debt_total": row["total_deuda"] or Decimal("0.00"),
+            "debt_pending": row["pendiente"] or Decimal("0.00"),
+            "count": row["cantidad"] or 0,
+            "name": row["categoria__rubro_operativo__nombre"] or "Rubro",
+        }
+
+    rubro_ids = set(sales_by_rubro.keys()) | set(cash_expense_by_rubro.keys()) | set(debt_by_rubro.keys())
+    rubros = {
+        rubro.pk: rubro
+        for rubro in RubroOperativo.objects.filter(pk__in=rubro_ids)
+    }
+    items = []
+    for rubro_id in sorted(rubro_ids, key=lambda current: (rubros.get(current).nombre.lower() if rubros.get(current) else "")):
+        rubro = rubros.get(rubro_id)
+        debt_item = debt_by_rubro.get(rubro_id, {})
+        expense_cash = cash_expense_by_rubro.get(rubro_id, Decimal("0.00"))
+        expense_debt = debt_item.get("debt_total", Decimal("0.00"))
+        total_expense = expense_cash + expense_debt
+        expense_ratio = (
+            ((total_expense * Decimal("100.00")) / sales_total).quantize(Decimal("0.01"))
+            if sales_total > 0
+            else Decimal("0.00")
+        )
+        items.append(
+            {
+                "rubro": rubro,
+                "rubro_nombre": rubro.nombre if rubro is not None else "Sin rubro",
+                "sales_total": sales_by_rubro.get(rubro_id, Decimal("0.00")),
+                "cash_expense_total": expense_cash,
+                "debt_total": expense_debt,
+                "debt_pending": debt_item.get("debt_pending", Decimal("0.00")),
+                "payables_count": debt_item.get("count", 0),
+                "total_expense": total_expense,
+                "expense_ratio_over_sales": expense_ratio,
+            }
+        )
+    items.sort(key=lambda item: (-item["total_expense"], item["rubro_nombre"].lower()))
+
+    economic_result = sales_total - cash_expense_total - debt_period_total
+    margin_pct = (
+        ((economic_result * Decimal("100.00")) / sales_total).quantize(Decimal("0.01"))
+        if sales_total > 0
+        else Decimal("0.00")
+    )
+    return {
+        "date_from": date_from,
+        "date_to": date_to,
+        "period_from": period_from,
+        "period_to": period_to,
+        "sucursal": sucursal,
+        "sales_total": sales_total,
+        "cash_expense_total": cash_expense_total,
+        "debt_period_total": debt_period_total,
+        "debt_pending_total": debt_pending_total,
+        "economic_result": economic_result,
+        "margin_pct": margin_pct,
+        "items": items,
+        "unmapped_payables_total": unmapped_payables_total,
+        "unmapped_payables_pending": unmapped_payables_pending,
+        "unmapped_payables_count": unmapped_payables_count,
+    }
+
+
+def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=None) -> dict:
+    if date_to < date_from:
+        raise ValidationError({"fecha_hasta": "La fecha hasta no puede ser anterior a la fecha desde."})
+
+    from cashops.models import MovimientoCaja
+
+    cash_movements = MovimientoCaja.objects.filter(
+        caja__turno__fecha_operativa__gte=date_from,
+        caja__turno__fecha_operativa__lte=date_to,
+        impacta_saldo_caja=True,
+    ).exclude(tipo=MovimientoCaja.Tipo.APERTURA)
+    if sucursal is not None:
+        cash_movements = cash_movements.filter(caja__sucursal=sucursal)
+
+    cash_totals = cash_movements.aggregate(
+        ingresos=Sum("monto", filter=Q(sentido=MovimientoCaja.Sentido.INGRESO)),
+        egresos=Sum("monto", filter=Q(sentido=MovimientoCaja.Sentido.EGRESO)),
+    )
+    cash_income = cash_totals["ingresos"] or Decimal("0.00")
+    cash_expense = cash_totals["egresos"] or Decimal("0.00")
+
+    bank_movements = MovimientoBancario.objects.filter(fecha__gte=date_from, fecha__lte=date_to)
+    if sucursal is not None:
+        bank_movements = bank_movements.filter(cuenta_bancaria__sucursal=sucursal)
+
+    bank_totals = bank_movements.aggregate(
+        creditos=Sum("monto", filter=Q(tipo=MovimientoBancario.Tipo.CREDITO)),
+        debitos=Sum("monto", filter=Q(tipo=MovimientoBancario.Tipo.DEBITO)),
+    )
+    bank_credits = bank_totals["creditos"] or Decimal("0.00")
+    bank_debits = bank_totals["debitos"] or Decimal("0.00")
+
+    bank_accounts = CuentaBancaria.objects.filter(activa=True)
+    if sucursal is not None:
+        bank_accounts = bank_accounts.filter(sucursal=sucursal)
+
+    bank_balances = []
+    total_bank_balance = Decimal("0.00")
+    for account in bank_accounts.order_by("banco", "nombre"):
+        account_movements = MovimientoBancario.objects.filter(cuenta_bancaria=account, fecha__lte=date_to)
+        credits = (
+            account_movements.filter(tipo=MovimientoBancario.Tipo.CREDITO).aggregate(total=Sum("monto"))["total"]
+            or Decimal("0.00")
+        )
+        debits = (
+            account_movements.filter(tipo=MovimientoBancario.Tipo.DEBITO).aggregate(total=Sum("monto"))["total"]
+            or Decimal("0.00")
+        )
+        balance = credits - debits
+        total_bank_balance += balance
+        bank_balances.append({"account": account, "balance": balance})
+
+    pending_payables = CuentaPorPagar.objects.filter(
+        estado__in=[CuentaPorPagar.Estado.PENDIENTE, CuentaPorPagar.Estado.PARCIAL]
+    )
+    if sucursal is not None:
+        pending_payables = pending_payables.filter(sucursal=sucursal)
+
+    reference_date = date_to
+    overdue_payables = pending_payables.filter(fecha_vencimiento__lt=reference_date)
+    due_today_payables = pending_payables.filter(fecha_vencimiento=reference_date)
+    upcoming_window = reference_date + timedelta(days=7)
+    upcoming_payables = pending_payables.filter(
+        fecha_vencimiento__gt=reference_date,
+        fecha_vencimiento__lte=upcoming_window,
+    )
+
+    digital_sales = MovimientoCaja.objects.filter(
+        caja__turno__fecha_operativa__gte=date_from,
+        caja__turno__fecha_operativa__lte=date_to,
+        tipo=MovimientoCaja.Tipo.VENTA_TARJETA,
+    )
+    if sucursal is not None:
+        digital_sales = digital_sales.filter(caja__sucursal=sucursal)
+    digital_sales_total = digital_sales.aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
+
+    accreditations = AcreditacionTarjeta.objects.filter(_accreditation_scope_query(date_from=date_from, date_to=date_to))
+    if sucursal is not None:
+        accreditations = accreditations.filter(movimiento_bancario__cuenta_bancaria__sucursal=sucursal)
+
+    accredited_net = accreditations.aggregate(total=Sum("movimiento_bancario__monto"))["total"] or Decimal("0.00")
+    accreditation_discounts = (
+        DescuentoAcreditacion.objects.filter(acreditacion__in=accreditations).aggregate(total=Sum("monto"))["total"]
+        or Decimal("0.00")
+    )
+    accredited_gross = accredited_net + accreditation_discounts
+    pending_accreditation_total = digital_sales_total - accredited_gross
+
+    recent_movements = bank_movements.select_related("cuenta_bancaria", "categoria", "proveedor").order_by(
+        "-fecha", "-id"
+    )[:5]
+    recent_batches = LotePOS.objects.filter(fecha_lote__gte=date_from, fecha_lote__lte=date_to)
+    if sucursal is not None:
+        recent_batches = recent_batches.filter(cuenta_bancaria__sucursal=sucursal)
+    recent_batches = recent_batches.select_related("cuenta_bancaria").order_by("-fecha_lote", "-id")[:5]
+
+    recent_payments = PagoTesoreria.objects.filter(
+        estado=PagoTesoreria.Estado.REGISTRADO,
+        fecha_pago__gte=date_from,
+        fecha_pago__lte=date_to,
+    )
+    if sucursal is not None:
+        recent_payments = recent_payments.filter(cuenta_por_pagar__sucursal=sucursal)
+    recent_payments = recent_payments.select_related("cuenta_por_pagar__proveedor", "cuenta_bancaria").order_by(
+        "-fecha_pago", "-id"
+    )[:10]
+
+    central_cash_total = _central_cash_balance_until(reference_date=reference_date, sucursal=sucursal)
+
+    return {
+        "date_from": date_from,
+        "date_to": date_to,
+        "reference_date": reference_date,
+        "sucursal": sucursal,
+        "cash_income": cash_income,
+        "cash_expense": cash_expense,
+        "cash_net": cash_income - cash_expense,
+        "bank_credits": bank_credits,
+        "bank_debits": bank_debits,
+        "bank_net": bank_credits - bank_debits,
+        "bank_balances": bank_balances,
+        "total_bank_balance": total_bank_balance,
+        "central_cash_total": central_cash_total,
+        "total_consolidated": central_cash_total + total_bank_balance,
+        "digital_sales_total": digital_sales_total,
+        "accredited_net": accredited_net,
+        "accredited_gross": accredited_gross,
+        "accreditation_discounts": accreditation_discounts,
+        "pending_accreditation_total": pending_accreditation_total,
+        "pending_count": pending_payables.count(),
+        "pending_total": pending_payables.aggregate(total=Sum("saldo_pendiente"))["total"] or Decimal("0.00"),
+        "overdue_count": overdue_payables.count(),
+        "overdue_total": overdue_payables.aggregate(total=Sum("saldo_pendiente"))["total"] or Decimal("0.00"),
+        "due_today_count": due_today_payables.count(),
+        "due_today_total": due_today_payables.aggregate(total=Sum("saldo_pendiente"))["total"] or Decimal("0.00"),
+        "upcoming_count": upcoming_payables.count(),
+        "upcoming_total": upcoming_payables.aggregate(total=Sum("saldo_pendiente"))["total"] or Decimal("0.00"),
+        "overdue_payables": overdue_payables.select_related("proveedor", "categoria", "categoria__rubro_operativo")[:10],
+        "due_today_payables": due_today_payables.select_related("proveedor", "categoria", "categoria__rubro_operativo")[:10],
+        "upcoming_payables": upcoming_payables.select_related("proveedor", "categoria", "categoria__rubro_operativo")[:10],
+        "recent_payments": recent_payments,
+        "recent_movements": recent_movements,
+        "recent_batches": recent_batches,
+    }
+
+
 def build_treasury_dashboard_snapshot(*, reference_date=None, sucursal_id=None) -> dict:
     reference_date = reference_date or timezone.localdate()
     
@@ -764,8 +1206,8 @@ def build_treasury_dashboard_snapshot(*, reference_date=None, sucursal_id=None) 
         "overdue_total": overdue_payables.aggregate(total=Sum("saldo_pendiente"))["total"] or Decimal("0.00"),
         "overdue_count": overdue_payables.count(),
         "paid_period_total": paid_period_total,
-        "upcoming_payables": upcoming_payables.select_related("proveedor", "categoria")[:10],
-        "overdue_payables": overdue_payables.select_related("proveedor", "categoria")[:10],
+        "upcoming_payables": upcoming_payables.select_related("proveedor", "categoria", "categoria__rubro_operativo")[:10],
+        "overdue_payables": overdue_payables.select_related("proveedor", "categoria", "categoria__rubro_operativo")[:10],
         "recent_payments": recent_payments.order_by("-fecha_pago", "-id")[:10],
         "bank_balances": bank_balances,
         "recent_batches": recent_batches[:5],

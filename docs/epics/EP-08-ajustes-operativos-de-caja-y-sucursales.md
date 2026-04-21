@@ -42,7 +42,7 @@ Criterios:
 - el saldo diario sigue siendo explicable desde movimientos auditados
 - la UI deja claro cuando un movimiento no pertenece a caja operativa
 
-### [ ] US-8.2 Egreso por rubro en reemplazo de gasto rapido
+### [x] US-8.2 Egreso por rubro en reemplazo de gasto rapido
 
 Como administracion
 Quiero registrar egresos por rubro
@@ -65,7 +65,7 @@ Criterios:
 - se elimina el campo de detalle redundante o libre si no se usa para una regla de negocio
 - la informacion minima restante permite auditar el movimiento
 
-### [ ] US-8.4 Maestro de sucursales con codigo y razon social
+### [x] US-8.4 Maestro de sucursales con codigo y razon social
 
 Como administracion
 Quiero mantener sucursales con codigo y razon social
@@ -78,7 +78,7 @@ Criterios:
 - activacion y desactivacion controlada
 - filtros por sucursal y codigo
 
-### [ ] US-8.5 Totales por sucursal y por periodo
+### [x] US-8.5 Totales por sucursal y por periodo
 
 Como administracion
 Quiero ver totales de cajas por sucursal y periodo
@@ -91,7 +91,7 @@ Criterios:
 - total de egresos por rubro visible
 - saldo neto visible
 
-### [ ] US-8.6 Traspasos solo entre cajas
+### [x] US-8.6 Traspasos solo entre cajas
 
 Como administracion
 Quiero mantener traspasos entre cajas y quitar los traspasos entre sucursales

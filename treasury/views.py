@@ -37,6 +37,7 @@ from .forms import (
     SupplierFilterForm,
     SupplierForm,
     SupplierHistoryFilterForm,
+    TreasuryDashboardFilterForm,
     TransferPaymentForm,
 )
 from .models import (
@@ -59,7 +60,9 @@ from .services import (
     annul_payable,
     annul_payment,
     build_bank_reconciliation_snapshot,
+    build_economic_period_snapshot,
     build_disponibilidades_snapshot,
+    build_financial_period_snapshot,
     build_supplier_history_snapshot,
     build_treasury_dashboard_snapshot,
     close_treasury_month,
@@ -174,7 +177,7 @@ def _category_item(category: CategoriaCuentaPagar) -> dict:
     return {
         "href": reverse("treasury:categorias_update", args=[category.pk]),
         "title": category.nombre,
-        "subtitle": "Categoria de deuda",
+        "subtitle": f"Rubro: {category.rubro_label}",
         "badge": "Activa" if category.activo else "Inactiva",
         "badge_class": "badge-success" if category.activo else "badge-muted",
         "meta": "",
@@ -220,6 +223,21 @@ def _action(url: str, label: str, kind: str = "secondary") -> dict:
     return {"href": url, "label": label, "kind": kind}
 
 
+def _payable_item(payable: CuentaPorPagar) -> dict:
+    badge, badge_class = _payable_badge(payable)
+    return {
+        "href": reverse("treasury:cuentas_por_pagar_detail", args=[payable.pk]),
+        "title": payable.proveedor.razon_social,
+        "subtitle": f"{payable.concepto} - Rubro {payable.categoria.rubro_label}",
+        "badge": badge,
+        "badge_class": badge_class,
+        "meta": (
+            f"Periodo {payable.periodo_referencia:%m/%Y} - "
+            f"Vence {payable.fecha_vencimiento:%d/%m/%Y} - Pendiente {_money(payable.saldo_pendiente)}"
+        ),
+    }
+
+
 def _payment_item(payment: PagoTesoreria) -> dict:
     badge, badge_class = _payment_badge(payment)
     account_label = payment.cuenta_bancaria.nombre if payment.cuenta_bancaria_id else "Caja central"
@@ -242,52 +260,74 @@ def index(request):
 def dashboard(request):
     _require_treasury_admin(request)
     from cashops.models import Sucursal
-    
-    sucursal_id = request.GET.get("sucursal")
-    sucursal = None
-    if sucursal_id:
-        sucursal = get_object_or_404(Sucursal, pk=sucursal_id)
 
-    snapshot = build_treasury_dashboard_snapshot(
-        reference_date=timezone.localdate(),
-        sucursal_id=sucursal_id
+    today = timezone.localdate()
+    first_day_of_month = today.replace(day=1)
+    filter_form = TreasuryDashboardFilterForm(
+        request.GET or None,
+        initial={"fecha_desde": first_day_of_month, "fecha_hasta": today},
     )
-    
-    cards = [
-        {"label": "Deuda Pendiente", "value": _money(snapshot["pending_total"]), "help": f"{snapshot['pending_count']} facturas"},
-        {"label": "Vencido", "value": _money(snapshot["overdue_total"]), "help": f"{snapshot['overdue_count']} atrasadas"},
-        {"label": "Pagado (Mes)", "value": _money(snapshot["paid_period_total"]), "help": "Egresos administrativos"},
-    ]
-    
-    # Add bank balances as small cards or sections
-    for balance in snapshot["bank_balances"]:
-        cards.append({
-            "label": f"Cuenta {balance['account'].nombre}",
-            "value": _money(balance["balance"]),
-            "help": balance["account"].banco
-        })
+    if filter_form.is_valid():
+        sucursal = filter_form.cleaned_data.get("sucursal")
+        date_from = filter_form.cleaned_data.get("fecha_desde") or first_day_of_month
+        date_to = filter_form.cleaned_data.get("fecha_hasta") or today
+    else:
+        sucursal = None
+        date_from = first_day_of_month
+        date_to = today
+
+    snapshot = build_financial_period_snapshot(date_from=date_from, date_to=date_to, sucursal=sucursal)
+    economic_snapshot = build_economic_period_snapshot(date_from=date_from, date_to=date_to, sucursal=sucursal)
 
     sections = [
-        {"label": "Deudas", "description": "Obligaciones pendientes con proveedores.", "href": reverse("treasury:cuentas_por_pagar_list"), "count": snapshot["pending_count"]},
-        {"label": "Pagos", "description": "Egresos internos por transferencia, cheque o efectivo.", "href": reverse("treasury:pagos_list"), "count": PagoTesoreria.objects.count()},
-        {"label": "Movimientos", "description": "Registro interno de cuentas de control.", "href": reverse("treasury:bank_movements_list"), "count": MovimientoBancario.objects.count()},
-        {"label": "Efectivo", "description": "Libro de caja central y egresos en efectivo.", "href": reverse("treasury:central_cash_list"), "count": MovimientoCajaCentral.objects.count()},
-        {"label": "Proveedores", "description": "Maestro de terceros.", "href": reverse("treasury:proveedores_list"), "count": Proveedor.objects.count()},
+        {
+            "label": "Deudas",
+            "description": "Obligaciones pendientes con proveedores.",
+            "href": reverse("treasury:cuentas_por_pagar_list"),
+            "count": snapshot["pending_count"],
+        },
+        {
+            "label": "Pagos",
+            "description": "Egresos internos por transferencia, cheque o efectivo.",
+            "href": reverse("treasury:pagos_list"),
+            "count": PagoTesoreria.objects.count(),
+        },
+        {
+            "label": "Movimientos",
+            "description": "Registro interno de cuentas de control.",
+            "href": reverse("treasury:bank_movements_list"),
+            "count": MovimientoBancario.objects.count(),
+        },
+        {
+            "label": "Efectivo",
+            "description": "Libro de caja central y egresos en efectivo.",
+            "href": reverse("treasury:central_cash_list"),
+            "count": MovimientoCajaCentral.objects.count(),
+        },
+        {
+            "label": "Proveedores",
+            "description": "Maestro de terceros.",
+            "href": reverse("treasury:proveedores_list"),
+            "count": Proveedor.objects.count(),
+        },
     ]
-    
+
     sucursales = Sucursal.objects.all()
 
     return render(
         request,
         "treasury/dashboard.html",
         {
-            "cards": cards,
             "sections": sections,
+            "filter_form": filter_form,
+            "snapshot": snapshot,
+            "economic_snapshot": economic_snapshot,
             "sucursales": sucursales,
             "selected_sucursal": sucursal,
             "cashops_dashboard_url": reverse("cashops:dashboard"),
-            "upcoming_payables": snapshot["upcoming_payables"],
+            "due_today_payables": snapshot["due_today_payables"],
             "overdue_payables": snapshot["overdue_payables"],
+            "upcoming_payables": snapshot["upcoming_payables"],
             "recent_payments": snapshot["recent_payments"],
             "recent_batches": snapshot["recent_batches"],
             "recent_movements": snapshot["recent_movements"],
@@ -683,7 +723,13 @@ def cuentas_por_pagar_list(request):
 def cuentas_por_pagar_detail(request, payable_id: int):
     _require_treasury_admin(request)
     payable = get_object_or_404(
-        CuentaPorPagar.objects.select_related("proveedor", "categoria", "creado_por", "anulada_por"),
+        CuentaPorPagar.objects.select_related(
+            "proveedor",
+            "categoria",
+            "categoria__rubro_operativo",
+            "creado_por",
+            "anulada_por",
+        ),
         pk=payable_id,
     )
     payments = payable.pagos.select_related("cuenta_bancaria", "creado_por", "anulado_por").order_by("-fecha_pago", "-id")
@@ -691,8 +737,10 @@ def cuentas_por_pagar_detail(request, payable_id: int):
     fields = [
         {"label": "Proveedor", "value": payable.proveedor.razon_social},
         {"label": "Categoria", "value": payable.categoria.nombre},
+        {"label": "Rubro operativo", "value": payable.categoria.rubro_label},
         {"label": "Concepto", "value": payable.concepto},
         {"label": "Referencia", "value": payable.referencia_comprobante or "Sin referencia"},
+        {"label": "Periodo economico", "value": payable.periodo_referencia.strftime("%m/%Y")},
         {"label": "Vencimiento", "value": payable.fecha_vencimiento.strftime("%d/%m/%Y")},
         {"label": "Importe total", "value": _money(payable.importe_total)},
         {"label": "Pagado", "value": _money(payable.total_pagado)},
@@ -1058,12 +1106,19 @@ def pagos_annul(request, payment_id: int):
 def bank_movements_list(request):
     _require_treasury_admin(request)
     filter_form = BankMovementFilterForm(request.GET)
-    movements = MovimientoBancario.objects.all().select_related("cuenta_bancaria", "pago_tesoreria", "creado_por")
+    movements = MovimientoBancario.objects.all().select_related(
+        "cuenta_bancaria",
+        "pago_tesoreria",
+        "creado_por",
+        "categoria",
+        "proveedor",
+    )
     
     if filter_form.is_valid():
         q = filter_form.cleaned_data.get("q")
         account = filter_form.cleaned_data.get("cuenta_bancaria")
         tipo = filter_form.cleaned_data.get("tipo")
+        clase = filter_form.cleaned_data.get("clase")
         df = filter_form.cleaned_data.get("fecha_desde")
         dt = filter_form.cleaned_data.get("fecha_hasta")
         sucursal = filter_form.cleaned_data.get("sucursal")
@@ -1074,6 +1129,8 @@ def bank_movements_list(request):
             movements = movements.filter(cuenta_bancaria=account)
         if tipo:
             movements = movements.filter(tipo=tipo)
+        if clase:
+            movements = movements.filter(clase=clase)
         if df:
             movements = movements.filter(fecha__gte=df)
         if dt:
@@ -1084,12 +1141,15 @@ def bank_movements_list(request):
     items = []
     for m in movements[:50]:
         items.append({
-            "title": f"{m.get_tipo_display()} - {m.concepto}",
+            "title": f"{m.get_clase_display()} - {m.concepto}",
             "subtitle": f"{m.fecha.strftime('%d/%m/%Y')} | {m.cuenta_bancaria}",
             "badge": _money(m.monto),
             "badge_class": "badge-success" if m.tipo == MovimientoBancario.Tipo.CREDITO else "badge-danger",
             "href": reverse("treasury:bank_movements_detail", args=[m.pk]),
-            "meta": f"Origen: {m.get_origen_display()} | Ref: {m.referencia or '-'}"
+            "meta": (
+                f"Origen: {m.get_origen_display()} | Ref: {m.referencia or '-'}"
+                f" | Rubro: {m.categoria.nombre if m.categoria_id else '-'}"
+            ),
         })
 
     return render(request, "treasury/list_page.html", {
@@ -1111,13 +1171,13 @@ def bank_movements_create(request):
                 create_bank_movement(**form.cleaned_data, actor=request.user)
                 messages.success(request, "Movimiento registrado correctamente.")
                 return redirect("treasury:bank_movements_list")
-            except ValidationError as e:
-                form.add_error(None, e)
+            except ValidationError as error:
+                _handle_operation_error(form, error, "No se pudo registrar el movimiento bancario.")
     else:
         form = BankMovementForm()
 
     return render(request, "treasury/form_page.html", {
-        "title": "Registrar Movimiento",
+        "title": "Registrar Movimiento Bancario",
         "form": form,
         "back_url": reverse("treasury:bank_movements_list")
     })
@@ -1125,13 +1185,26 @@ def bank_movements_create(request):
 @login_required
 def bank_movements_detail(request, pk):
     _require_treasury_admin(request)
-    movement = get_object_or_404(MovimientoBancario.objects.select_related("cuenta_bancaria", "pago_tesoreria", "creado_por", "actualizado_por"), pk=pk)
+    movement = get_object_or_404(
+        MovimientoBancario.objects.select_related(
+            "cuenta_bancaria",
+            "pago_tesoreria",
+            "creado_por",
+            "actualizado_por",
+            "categoria",
+            "proveedor",
+        ),
+        pk=pk,
+    )
     
     fields = [
         {"label": "Fecha", "value": movement.fecha.strftime("%d/%m/%Y")},
         {"label": "Cuenta", "value": str(movement.cuenta_bancaria)},
         {"label": "Tipo", "value": movement.get_tipo_display()},
+        {"label": "Tipo financiero", "value": movement.get_clase_display()},
         {"label": "Monto", "value": _money(movement.monto)},
+        {"label": "Rubro / categoria", "value": movement.categoria.nombre if movement.categoria_id else "No aplica"},
+        {"label": "Proveedor", "value": movement.proveedor.razon_social if movement.proveedor_id else "No aplica"},
         {"label": "Concepto", "value": movement.concepto},
         {"label": "Referencia", "value": movement.referencia or "Sin referencia"},
         {"label": "Origen", "value": movement.get_origen_display()},
@@ -1300,18 +1373,22 @@ def card_accreditations_list(request):
 
     items = []
     for a in accreditations[:50]:
+        if a.modo_registro == AcreditacionTarjeta.ModoRegistro.PERIODO and a.periodo_desde and a.periodo_hasta:
+            alcance = f"Periodo {a.periodo_desde:%d/%m/%Y} a {a.periodo_hasta:%d/%m/%Y}"
+        else:
+            alcance = f"Dia {a.fecha_acreditacion:%d/%m/%Y}"
         items.append({
             "title": f"Acreditacion {a.canal}",
             "subtitle": f"Fecha: {a.fecha_acreditacion.strftime('%d/%m/%Y')} | {a.cuenta_bancaria}",
             "badge": _money(a.monto_acreditado),
             "badge_class": "badge-success",
             "href": "#",
-            "meta": f"Neto: {_money(a.monto_acreditado)} | Descuentos: {_money(a.total_descuentos)}"
+            "meta": f"{alcance} | Neto: {_money(a.monto_acreditado)} | Descuentos: {_money(a.total_descuentos)}"
         })
 
     return render(request, "treasury/list_page.html", {
         "title": "Acreditaciones de Tarjeta",
-        "subtitle": "Ingresos bancarios por ventas con tarjeta",
+        "subtitle": "Ingresos bancarios por ventas con tarjeta, con carga diaria o agrupada por periodo",
         "filter_form": filter_form,
         "items": items,
         "create_url": reverse("treasury:card_accreditations_register"),
@@ -1341,18 +1418,21 @@ def card_accreditations_register(request):
                     canal=data["canal"],
                     referencia_externa=data["referencia_externa"],
                     lote_pos=data["lote_pos"],
+                    modo_registro=data["modo_registro"],
+                    periodo_desde=data.get("periodo_desde"),
+                    periodo_hasta=data.get("periodo_hasta"),
                     descuentos=descuentos,
                     actor=request.user
                 )
                 messages.success(request, "Acreditacion registrada correctamente.")
                 return redirect("treasury:card_accreditations_list")
-            except ValidationError as e:
-                form.add_error(None, e)
+            except ValidationError as error:
+                _handle_operation_error(form, error, "No se pudo registrar la acreditacion.")
     else:
         form = CardAccreditationForm()
 
     return render(request, "treasury/form_page.html", {
-        "title": "Registrar Acreditacion",
+        "title": "Registrar Acreditacion Diaria o por Periodo",
         "form": form,
         "back_url": reverse("treasury:card_accreditations_list")
     })

@@ -69,6 +69,13 @@ class Proveedor(models.Model):
 
 class CategoriaCuentaPagar(models.Model):
     nombre = models.CharField(max_length=120)
+    rubro_operativo = models.ForeignKey(
+        "cashops.RubroOperativo",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="categorias_cuenta_pagar",
+    )
     activo = models.BooleanField(default=True)
     creado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -98,8 +105,21 @@ class CategoriaCuentaPagar(models.Model):
 
     def clean(self) -> None:
         self.nombre = (self.nombre or "").strip()
+        errors = {}
         if not self.nombre:
-            raise ValidationError({"nombre": "El nombre de la categoria es obligatorio."})
+            errors["nombre"] = "El nombre de la categoria es obligatorio."
+        if self.rubro_operativo_id and (
+            not self.rubro_operativo.activo or self.rubro_operativo.es_sistema
+        ):
+            errors["rubro_operativo"] = "El rubro operativo debe estar activo y no puede ser de sistema."
+        if errors:
+            raise ValidationError(errors)
+
+    @property
+    def rubro_label(self) -> str:
+        if self.rubro_operativo_id:
+            return self.rubro_operativo.nombre
+        return self.nombre
 
     def __str__(self) -> str:
         return self.nombre
@@ -206,6 +226,7 @@ class CuentaPorPagar(models.Model):
     referencia_comprobante = models.CharField(max_length=60, blank=True)
     fecha_emision = models.DateField()
     fecha_vencimiento = models.DateField()
+    periodo_referencia = models.DateField()
     importe_total = models.DecimalField(max_digits=14, decimal_places=2)
     saldo_pendiente = models.DecimalField(max_digits=14, decimal_places=2)
     estado = models.CharField(max_length=12, choices=Estado.choices, default=Estado.PENDIENTE)
@@ -259,6 +280,8 @@ class CuentaPorPagar(models.Model):
             models.Index(fields=["estado", "fecha_vencimiento"]),
             models.Index(fields=["proveedor", "fecha_vencimiento"]),
             models.Index(fields=["categoria", "fecha_vencimiento"]),
+            models.Index(fields=["periodo_referencia", "sucursal"]),
+            models.Index(fields=["periodo_referencia", "categoria"]),
         ]
 
     @property
@@ -285,6 +308,9 @@ class CuentaPorPagar(models.Model):
             raise ValidationError({"concepto": "El concepto es obligatorio."})
         if not self.categoria_id:
             raise ValidationError({"categoria": "La categoria es obligatoria."})
+        if not self.periodo_referencia:
+            raise ValidationError({"periodo_referencia": "El periodo de referencia es obligatorio."})
+        self.periodo_referencia = self.periodo_referencia.replace(day=1)
         if self.importe_total is not None and self.importe_total <= 0:
             raise ValidationError({"importe_total": "El importe total debe ser mayor que cero."})
         if self.saldo_pendiente is not None and self.saldo_pendiente < 0:
@@ -534,6 +560,17 @@ class MovimientoBancario(models.Model):
         DEBITO = "DEBITO", "Debito"
         CREDITO = "CREDITO", "Credito"
 
+    class Clase(models.TextChoices):
+        ACREDITACION = "ACREDITACION", "Ingreso por acreditacion"
+        OTRO_INGRESO = "OTRO_INGRESO", "Otro ingreso"
+        CHEQUE = "CHEQUE", "Egreso por cheque"
+        ECHEQ = "ECHEQ", "Egreso por ECHEQ"
+        IMPUESTO = "IMPUESTO", "Egreso por impuestos"
+        COMISION_BANCARIA = "COMISION_BANCARIA", "Egreso por comision bancaria"
+        RETIRO = "RETIRO", "Egreso por retiro"
+        TRANSFERENCIA_TERCEROS = "TRANSFERENCIA_TERCEROS", "Egreso por transferencia a terceros"
+        OTRO_EGRESO = "OTRO_EGRESO", "Otro egreso"
+
     class Origen(models.TextChoices):
         MANUAL = "MANUAL", "Manual"
         ACREDITACION_TARJETA = "ACREDITACION_TARJETA", "Acreditacion tarjeta"
@@ -545,12 +582,27 @@ class MovimientoBancario(models.Model):
         related_name="movimientos_bancarios",
     )
     tipo = models.CharField(max_length=10, choices=Tipo.choices)
+    clase = models.CharField(max_length=32, choices=Clase.choices, default=Clase.OTRO_INGRESO)
     origen = models.CharField(max_length=24, choices=Origen.choices, default=Origen.MANUAL)
     fecha = models.DateField()
     monto = models.DecimalField(max_digits=14, decimal_places=2)
     concepto = models.CharField(max_length=160)
     referencia = models.CharField(max_length=80, blank=True)
     observaciones = models.CharField(max_length=255, blank=True)
+    categoria = models.ForeignKey(
+        CategoriaCuentaPagar,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="movimientos_bancarios",
+    )
+    proveedor = models.ForeignKey(
+        Proveedor,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="movimientos_bancarios",
+    )
     pago_tesoreria = models.OneToOneField(
         PagoTesoreria,
         on_delete=models.PROTECT,
@@ -584,6 +636,7 @@ class MovimientoBancario(models.Model):
         indexes = [
             models.Index(fields=["cuenta_bancaria", "fecha"]),
             models.Index(fields=["tipo", "fecha"]),
+            models.Index(fields=["clase", "fecha"]),
             models.Index(fields=["origen", "fecha"]),
         ]
 
@@ -596,6 +649,34 @@ class MovimientoBancario(models.Model):
             errors["monto"] = "El monto debe ser mayor que cero."
         if not self.concepto:
             errors["concepto"] = "El concepto es obligatorio."
+        credit_classes = {self.Clase.ACREDITACION, self.Clase.OTRO_INGRESO}
+        debit_classes = {
+            self.Clase.CHEQUE,
+            self.Clase.ECHEQ,
+            self.Clase.IMPUESTO,
+            self.Clase.COMISION_BANCARIA,
+            self.Clase.RETIRO,
+            self.Clase.TRANSFERENCIA_TERCEROS,
+            self.Clase.OTRO_EGRESO,
+        }
+        if self.tipo == self.Tipo.CREDITO and self.clase not in credit_classes:
+            errors["clase"] = "La clase elegida no corresponde a un credito bancario."
+        if self.tipo == self.Tipo.DEBITO and self.clase not in debit_classes:
+            errors["clase"] = "La clase elegida no corresponde a un debito bancario."
+        if self.clase in {
+            self.Clase.CHEQUE,
+            self.Clase.ECHEQ,
+            self.Clase.IMPUESTO,
+            self.Clase.COMISION_BANCARIA,
+            self.Clase.TRANSFERENCIA_TERCEROS,
+        } and not self.categoria_id:
+            errors["categoria"] = "El rubro o categoria es obligatorio para este tipo de movimiento."
+        if self.clase in {
+            self.Clase.CHEQUE,
+            self.Clase.ECHEQ,
+            self.Clase.TRANSFERENCIA_TERCEROS,
+        } and not self.proveedor_id:
+            errors["proveedor"] = "El proveedor es obligatorio para este tipo de movimiento."
         if self.cuenta_bancaria_id and not self.cuenta_bancaria.activa:
             errors["cuenta_bancaria"] = "La cuenta bancaria esta inactiva."
         if self.pago_tesoreria_id:
@@ -603,12 +684,25 @@ class MovimientoBancario(models.Model):
                 errors["tipo"] = "Un pago de tesoreria solo puede vincularse a un debito bancario."
             if self.origen != self.Origen.PAGO_TESORERIA:
                 errors["origen"] = "El origen debe ser pago de tesoreria cuando existe un pago vinculado."
+            expected_class = {
+                PagoTesoreria.MedioPago.CHEQUE: self.Clase.CHEQUE,
+                PagoTesoreria.MedioPago.ECHEQ: self.Clase.ECHEQ,
+            }.get(self.pago_tesoreria.medio_pago, self.Clase.TRANSFERENCIA_TERCEROS)
+            if self.clase != expected_class:
+                errors["clase"] = "La clase no coincide con el medio de pago vinculado."
             if self.cuenta_bancaria_id and self.cuenta_bancaria_id != self.pago_tesoreria.cuenta_bancaria_id:
                 errors["cuenta_bancaria"] = "El movimiento debe usar la misma cuenta bancaria del pago."
             if self.pago_tesoreria.estado != PagoTesoreria.Estado.REGISTRADO:
                 errors["pago_tesoreria"] = "Solo podes vincular pagos registrados."
+            payable = self.pago_tesoreria.cuenta_por_pagar
+            if self.proveedor_id and self.proveedor_id != payable.proveedor_id:
+                errors["proveedor"] = "El proveedor debe coincidir con la obligacion pagada."
+            if self.categoria_id and self.categoria_id != payable.categoria_id:
+                errors["categoria"] = "La categoria debe coincidir con la obligacion pagada."
         elif self.origen == self.Origen.PAGO_TESORERIA:
             errors["pago_tesoreria"] = "El origen pago de tesoreria requiere un pago vinculado."
+        if self.origen == self.Origen.ACREDITACION_TARJETA and self.clase != self.Clase.ACREDITACION:
+            errors["clase"] = "Las acreditaciones de tarjeta deben quedar tipificadas como acreditacion."
         if errors:
             raise ValidationError(errors)
 
@@ -617,11 +711,16 @@ class MovimientoBancario(models.Model):
 
 
 class AcreditacionTarjeta(models.Model):
+    class ModoRegistro(models.TextChoices):
+        DIARIA = "DIARIA", "Carga diaria"
+        PERIODO = "PERIODO", "Carga agrupada por periodo"
+
     movimiento_bancario = models.OneToOneField(
         MovimientoBancario,
         on_delete=models.PROTECT,
         related_name="acreditacion_tarjeta",
     )
+    modo_registro = models.CharField(max_length=10, choices=ModoRegistro.choices, default=ModoRegistro.DIARIA)
     canal = models.CharField(max_length=80)
     lote_pos = models.ForeignKey(
         LotePOS,
@@ -630,6 +729,8 @@ class AcreditacionTarjeta(models.Model):
         blank=True,
         related_name="acreditaciones",
     )
+    periodo_desde = models.DateField(null=True, blank=True)
+    periodo_hasta = models.DateField(null=True, blank=True)
     referencia_externa = models.CharField(max_length=80, blank=True)
     observaciones = models.CharField(max_length=255, blank=True)
     creado_por = models.ForeignKey(
@@ -654,6 +755,7 @@ class AcreditacionTarjeta(models.Model):
         ordering = ["-movimiento_bancario__fecha", "-id"]
         indexes = [
             models.Index(fields=["canal", "creado_en"]),
+            models.Index(fields=["modo_registro", "periodo_desde", "periodo_hasta"]),
         ]
 
     @property
@@ -688,9 +790,19 @@ class AcreditacionTarjeta(models.Model):
         self.canal = (self.canal or "").strip()
         self.referencia_externa = (self.referencia_externa or "").strip()
         self.observaciones = (self.observaciones or "").strip()
+        self.modo_registro = self.modo_registro or self.ModoRegistro.DIARIA
         errors = {}
         if not self.canal:
             errors["canal"] = "El canal u operador es obligatorio."
+        if self.modo_registro == self.ModoRegistro.PERIODO:
+            if not self.periodo_desde:
+                errors["periodo_desde"] = "La fecha desde es obligatoria para cargas agrupadas."
+            if not self.periodo_hasta:
+                errors["periodo_hasta"] = "La fecha hasta es obligatoria para cargas agrupadas."
+            if self.periodo_desde and self.periodo_hasta and self.periodo_hasta < self.periodo_desde:
+                errors["periodo_hasta"] = "La fecha hasta no puede ser anterior a la fecha desde."
+        elif self.periodo_desde or self.periodo_hasta:
+            errors["modo_registro"] = "Las fechas de periodo solo aplican a cargas agrupadas."
         if not self.lote_pos_id and not self.referencia_externa:
             errors["referencia_externa"] = "Informá un lote POS o una referencia de liquidacion."
         if self.movimiento_bancario_id:
@@ -698,6 +810,8 @@ class AcreditacionTarjeta(models.Model):
                 errors["movimiento_bancario"] = "La acreditacion debe vincularse a un credito bancario."
             if self.movimiento_bancario.origen != MovimientoBancario.Origen.ACREDITACION_TARJETA:
                 errors["movimiento_bancario"] = "El movimiento debe estar marcado como acreditacion de tarjeta."
+            if self.movimiento_bancario.clase != MovimientoBancario.Clase.ACREDITACION:
+                errors["movimiento_bancario"] = "El movimiento debe quedar tipificado como acreditacion."
         if errors:
             raise ValidationError(errors)
 

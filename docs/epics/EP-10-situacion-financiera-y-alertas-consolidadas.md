@@ -31,7 +31,7 @@ Unificar la lectura financiera diaria entre cajas, tesoreria y bancos para tener
 
 ## User Stories
 
-### [ ] US-10.1 Dashboard unificado de cajas y tesoreria
+### [x] US-10.1 Dashboard unificado de cajas y tesoreria
 
 Como administracion
 Quiero un dashboard consolidado de cajas y tesoreria
@@ -44,7 +44,7 @@ Criterios:
 - acreditaciones y pendientes visibles
 - no quedan botones vacios o acciones sin destino
 
-### [ ] US-10.2 Situacion financiera por periodo
+### [x] US-10.2 Situacion financiera por periodo
 
 Como administracion
 Quiero ver movimientos reales de caja y banco por periodo
@@ -56,7 +56,7 @@ Criterios:
 - vista filtrable por sucursal
 - ingresos y egresos diferenciados
 
-### [ ] US-10.3 Tipificacion de movimientos bancarios
+### [x] US-10.3 Tipificacion de movimientos bancarios
 
 Como tesoreria
 Quiero registrar movimientos bancarios con tipos claros
@@ -71,7 +71,7 @@ Criterios:
 - egresos por transferencias a terceros
 - rubro y proveedor obligatorios cuando aplique
 
-### [ ] US-10.4 Carga de acreditaciones por dia o por periodo
+### [x] US-10.4 Carga de acreditaciones por dia o por periodo
 
 Como tesoreria
 Quiero registrar acreditaciones por dia o por periodo
@@ -83,7 +83,7 @@ Criterios:
 - cuenta bancaria y fecha obligatorias
 - el sistema evita duplicados evidentes
 
-### [ ] US-10.5 Alerta de acreditaciones pendientes
+### [x] US-10.5 Alerta de acreditaciones pendientes
 
 Como administracion
 Quiero ver alertas de acreditaciones pendientes
@@ -95,7 +95,7 @@ Criterios:
 - posibilidad de vista por sucursal
 - mensaje aclaratorio sobre deducir costos de servicio e impuestos de Payway u operador equivalente
 
-### [ ] US-10.6 Disponibilidades totales
+### [x] US-10.6 Disponibilidades totales
 
 Como administracion
 Quiero ver el total de caja fuerte general y el total existente en banco
@@ -107,7 +107,7 @@ Criterios:
 - total consolidado
 - fecha de referencia visible
 
-### [ ] US-10.7 Alertas de vencimientos
+### [x] US-10.7 Alertas de vencimientos
 
 Como administracion
 Quiero recibir alertas sobre vencimientos y proximos compromisos

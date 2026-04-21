@@ -11,12 +11,27 @@ from django.utils import timezone
 class Sucursal(models.Model):
     nombre = models.CharField(max_length=120, unique=True)
     codigo = models.CharField(max_length=20, unique=True)
+    razon_social = models.CharField(max_length=160, default="")
     activa = models.BooleanField(default=True)
     creada_en = models.DateTimeField(auto_now_add=True)
     actualizada_en = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["nombre"]
+
+    def clean(self) -> None:
+        self.nombre = (self.nombre or "").strip()
+        self.codigo = (self.codigo or "").strip().upper()
+        self.razon_social = (self.razon_social or "").strip()
+        errors = {}
+        if not self.nombre:
+            errors["nombre"] = "El nombre de la sucursal es obligatorio."
+        if not self.codigo:
+            errors["codigo"] = "El codigo de la sucursal es obligatorio."
+        if not self.razon_social:
+            errors["razon_social"] = "La razon social es obligatoria."
+        if errors:
+            raise ValidationError(errors)
 
     def __str__(self) -> str:
         return f"{self.codigo} - {self.nombre}"

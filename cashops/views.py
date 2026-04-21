@@ -6,7 +6,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError
 from django.db.models import Count, Q
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -28,6 +28,7 @@ from .forms import (
 )
 from .models import Caja, CierreCaja, LimiteRubroOperativo, Producto, RubroOperativo, Sucursal, Turno
 from .services import (
+    BRANCH_TRANSFER_DISABLED_REASON,
     CLOSING_DIFF_THRESHOLD,
     OPERATIONAL_ALERT_SCOPE_POLICY,
     OPERATIONAL_ALERT_SCOPE_POLICY_RULES,
@@ -36,6 +37,7 @@ from .services import (
     build_branch_control_scope,
     build_global_control_scope,
     build_operational_control_snapshot,
+    build_operational_period_summary,
     close_box,
     open_box,
     register_cash_income,
@@ -144,6 +146,15 @@ def _parse_dashboard_date(request):
     return parsed or timezone.localdate()
 
 
+def _parse_dashboard_period(request):
+    default_date = _parse_dashboard_date(request)
+    period_from = parse_date(request.GET.get("fecha_desde") or "") or default_date
+    period_to = parse_date(request.GET.get("fecha_hasta") or "") or period_from
+    if period_to < period_from:
+        period_from, period_to = period_to, period_from
+    return period_from, period_to
+
+
 def _resolve_dashboard_scope(request):
     is_admin = request.user.is_authenticated and request.user.is_cashops_admin()
     requested_scope = (request.GET.get("scope") or ("global" if is_admin else "")).lower()
@@ -151,6 +162,7 @@ def _resolve_dashboard_scope(request):
     selected_branch = None
     snapshot = None
     scope_date = _parse_dashboard_date(request)
+    period_from, period_to = _parse_dashboard_period(request)
 
     if requested_scope == "box":
         box_id = request.GET.get("box")
@@ -177,14 +189,15 @@ def _resolve_dashboard_scope(request):
         if selected_branch is None:
             requested_scope = "global"
         else:
-            snapshot = build_operational_control_snapshot(
-                build_branch_control_scope(fecha_operativa=scope_date, sucursal=selected_branch),
-                sync_alerts=True,
+            snapshot = build_operational_period_summary(
+                date_from=period_from,
+                date_to=period_to,
+                sucursal=selected_branch,
             )
     elif requested_scope == "global" and is_admin:
-        snapshot = build_operational_control_snapshot(
-            build_global_control_scope(fecha_operativa=scope_date),
-            sync_alerts=True,
+        snapshot = build_operational_period_summary(
+            date_from=period_from,
+            date_to=period_to,
         )
     else:
         requested_scope = "global" if is_admin else ""
@@ -196,6 +209,8 @@ def _resolve_dashboard_scope(request):
         "selected_branch": selected_branch,
         "snapshot": snapshot,
         "is_admin": is_admin,
+        "period_from": period_from,
+        "period_to": period_to,
     }
 
 
@@ -226,6 +241,8 @@ def dashboard(request):
         else [],
         "dashboard_scope": scope_context["scope_name"],
         "dashboard_scope_date": scope_context["scope_date"],
+        "dashboard_period_from": scope_context["period_from"],
+        "dashboard_period_to": scope_context["period_to"],
         "dashboard_snapshot": dashboard_snapshot,
         "alertas": dashboard_snapshot["active_alerts"][:4] if dashboard_snapshot else [],
         "is_cashops_admin": scope_context["is_admin"],
@@ -482,7 +499,7 @@ def sucursal_create(request):
         "cashops/partials/form_card.html",
         {
             "title": "Nueva sucursal",
-            "subtitle": "Alta rapida para operar con cajas y turnos.",
+            "subtitle": "Alta operativa con codigo, nombre y razon social.",
             "form": form,
             "submit_label": "Guardar sucursal",
             "back_url": reverse("cashops:sucursal_list"),
@@ -495,15 +512,65 @@ def sucursal_create(request):
 @login_required
 def sucursal_list(request):
     _require_cashops_admin(request)
+    q = (request.GET.get("q") or "").strip()
+    items = Sucursal.objects.all().order_by("nombre")
+    if q:
+        items = items.filter(
+            Q(nombre__icontains=q) | Q(codigo__icontains=q) | Q(razon_social__icontains=q)
+        )
     return render(
         request,
-        "cashops/list_page.html",
+        "cashops/sucursal_list.html",
         {
             "title": "Sucursales",
             "create_url": reverse("cashops:sucursal_create"),
-            "items": Sucursal.objects.all(),
+            "items": items,
+            "query": q,
         },
     )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def sucursal_update(request, sucursal_id: int):
+    _require_cashops_admin(request)
+    sucursal = get_object_or_404(Sucursal, pk=sucursal_id)
+    form = SucursalForm(request.POST or None, instance=sucursal)
+    if request.method == "POST" and form.is_valid():
+        sucursal = form.save()
+        messages.success(request, f"Sucursal {sucursal.nombre} actualizada.")
+        url = reverse("cashops:sucursal_list")
+        return _hx_redirect(url) if _is_htmx(request) else redirect(url)
+
+    return _render_form(
+        request,
+        "cashops/form_page.html",
+        "cashops/partials/form_card.html",
+        {
+            "title": f"Editar sucursal: {sucursal.nombre}",
+            "subtitle": "Ajusta codigo, nombre, razon social y estado.",
+            "form": form,
+            "submit_label": "Guardar cambios",
+            "back_url": reverse("cashops:sucursal_list"),
+            "form_action": reverse("cashops:sucursal_update", args=[sucursal.pk]),
+        },
+        status=400 if request.method == "POST" and not form.is_valid() else 200,
+    )
+
+
+@login_required
+@require_http_methods(["POST"])
+def sucursal_toggle(request, sucursal_id: int):
+    _require_cashops_admin(request)
+    sucursal = get_object_or_404(Sucursal, pk=sucursal_id)
+    sucursal.activa = not sucursal.activa
+    sucursal.save(update_fields=["activa", "actualizada_en"])
+    messages.success(
+        request,
+        f"Sucursal {sucursal.nombre} {'activada' if sucursal.activa else 'desactivada'}.",
+    )
+    url = reverse("cashops:sucursal_list")
+    return _hx_redirect(url) if _is_htmx(request) else redirect(url)
 
 
 @login_required
@@ -612,9 +679,9 @@ def register_expense_view(request, box_id: int):
                 actor=request.user,
             )
         except (ValidationError, IntegrityError) as error:
-            _handle_operation_error(form, error, "No se pudo registrar el gasto.")
+            _handle_operation_error(form, error, "No se pudo registrar el egreso por rubro.")
         else:
-            messages.success(request, "Gasto registrado.")
+            messages.success(request, "Egreso por rubro registrado.")
             url = f"{reverse('cashops:dashboard')}?scope=box&box={box.pk}"
             return _hx_redirect(url) if _is_htmx(request) else redirect(url)
 
@@ -623,10 +690,10 @@ def register_expense_view(request, box_id: int):
         "cashops/form_page.html",
         "cashops/partials/form_card.html",
         {
-            "title": "Nuevo gasto",
-            "subtitle": f"Caja activa: {box.id}",
+            "title": "Egreso por rubro",
+            "subtitle": f"Caja activa: {box.id}. Registro operativo con rubro obligatorio.",
             "form": form,
-            "submit_label": "Guardar gasto",
+            "submit_label": "Guardar egreso",
             "back_url": f"{reverse('cashops:dashboard')}?scope=box&box={box.pk}",
             "form_action": reverse("cashops:box_expense", args=[box.pk]),
         },
@@ -783,6 +850,7 @@ def transfer_between_boxes_view(request):
 @login_required
 @require_http_methods(["GET", "POST"])
 def transfer_between_branches_view(request):
+    raise Http404(BRANCH_TRANSFER_DISABLED_REASON)
     _require_cashops_admin(request)
     form = TransferenciaEntreSucursalesForm(request.POST or None)
     form.fields["sucursal_origen"].queryset = Sucursal.objects.filter(activa=True)

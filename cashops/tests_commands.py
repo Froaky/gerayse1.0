@@ -23,7 +23,11 @@ class ResyncOperationalEngineCommandTests(TestCase):
         self.admin = User.objects.create_user(username="admin", password="test", role=admin_role)
         self.operator = User.objects.create_user(username="operador", password="test", role=operator_role)
 
-        self.branch = Sucursal.objects.create(codigo="SUC-01", nombre="Sucursal 01")
+        self.branch = Sucursal.objects.create(
+            codigo="SUC-01",
+            nombre="Sucursal 01",
+            razon_social="Sucursal 01 SRL",
+        )
         self.turno = Turno.objects.create(
             sucursal=self.branch,
             fecha_operativa="2026-03-27",
@@ -226,7 +230,11 @@ class SanitizeLegacyAlertsCommandTests(TestCase):
         self.admin = User.objects.create_user(username="admin_sanitize", password="test", role=admin_role)
         self.operator = User.objects.create_user(username="operador_sanitize", password="test", role=operator_role)
 
-        self.branch = Sucursal.objects.create(codigo="SUC-02", nombre="Sucursal 02")
+        self.branch = Sucursal.objects.create(
+            codigo="SUC-02",
+            nombre="Sucursal 02",
+            razon_social="Sucursal 02 SRL",
+        )
         self.turno = Turno.objects.create(
             sucursal=self.branch,
             fecha_operativa="2026-03-27",

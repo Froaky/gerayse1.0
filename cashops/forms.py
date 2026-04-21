@@ -17,14 +17,16 @@ User = get_user_model()
 class SucursalForm(forms.ModelForm):
     class Meta:
         model = Sucursal
-        fields = ["codigo", "nombre", "activa"]
+        fields = ["codigo", "nombre", "razon_social", "activa"]
         widgets = {
             "codigo": forms.TextInput(attrs={"placeholder": "SUC-01"}),
             "nombre": forms.TextInput(attrs={"placeholder": "Sucursal Centro"}),
+            "razon_social": forms.TextInput(attrs={"placeholder": "ARMADI SRL"}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["razon_social"].required = True
         for field in self.fields.values():
             if isinstance(field.widget, forms.Select):
                 field.widget.attrs.setdefault("class", "input select")

@@ -18,7 +18,6 @@ class PersonalForm(forms.ModelForm):
             "first_name",
             "last_name",
             "dni",
-            "legajo",
             "telefono",
             "email",
             "role",
@@ -29,7 +28,6 @@ class PersonalForm(forms.ModelForm):
             "first_name": "Nombre",
             "last_name": "Apellido",
             "dni": "DNI",
-            "legajo": "Nro Legajo",
             "role": "Rol / Permisos",
         }
         widgets = {
@@ -37,7 +35,6 @@ class PersonalForm(forms.ModelForm):
             "first_name": forms.TextInput(attrs={"placeholder": "Juan"}),
             "last_name": forms.TextInput(attrs={"placeholder": "Perez"}),
             "dni": forms.TextInput(attrs={"placeholder": "12.345.678"}),
-            "legajo": forms.TextInput(attrs={"placeholder": "LEG-001"}),
             "telefono": forms.TextInput(attrs={"placeholder": "387-..."}),
             "email": forms.EmailInput(attrs={"placeholder": "juan@example.com"}),
         }

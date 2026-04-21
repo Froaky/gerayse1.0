@@ -1,5 +1,5 @@
 from decimal import Decimal
-from datetime import datetime
+from datetime import date, datetime
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -14,11 +14,13 @@ from .forms import CajaAperturaForm
 from .models import AlertaOperativa, Caja, CierreCaja, LimiteRubroOperativo, MovimientoCaja, RubroOperativo, Sucursal, Turno
 from .permissions import can_operate_box, ensure_can_operate_box, is_cashops_admin
 from .services import (
+    BRANCH_TRANSFER_DISABLED_REASON,
     build_box_control_scope,
     build_branch_control_scope,
     build_operational_category_overview,
     build_global_control_scope,
     build_operational_control_snapshot,
+    build_operational_period_summary,
     close_box,
     get_uncategorized_operational_category,
     open_box,
@@ -43,8 +45,8 @@ class CashopsTestCase(TestCase):
         self.operator_2 = User.objects.create_user(username="operador2", password="test", role=self.operator_role)
         self.other = User.objects.create_user(username="ajeno", password="test", role=self.operator_role)
 
-        self.branch_a = Sucursal.objects.create(codigo="SUC-A", nombre="Sucursal A")
-        self.branch_b = Sucursal.objects.create(codigo="SUC-B", nombre="Sucursal B")
+        self.branch_a = Sucursal.objects.create(codigo="SUC-A", nombre="Sucursal A", razon_social="ARMADI SRL")
+        self.branch_b = Sucursal.objects.create(codigo="SUC-B", nombre="Sucursal B", razon_social="MAPOGO SRL")
         self.rubro_insumos = RubroOperativo.objects.create(nombre="Insumos")
         self.rubro_viaticos = RubroOperativo.objects.create(nombre="Viaticos")
 
@@ -353,6 +355,75 @@ class CashopsServiceTests(CashopsTestCase):
         self.assertEqual(snapshot["base_calculo_total"], Decimal("60.00"))
         self.assertEqual(snapshot["total_ingresos"], Decimal("200.00"))
 
+    def test_period_summary_aggregates_range_by_branch(self):
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            monto_inicial=Decimal("500.00"),
+            actor=self.operator,
+        )
+        register_cash_income(
+            caja=caja,
+            monto=Decimal("100.00"),
+            categoria="Ingreso A",
+            observacion="Dia 1",
+            creado_por=self.operator,
+            actor=self.operator,
+        )
+        register_expense(
+            caja=caja,
+            monto=Decimal("40.00"),
+            rubro_operativo=self.rubro_insumos,
+            categoria="Compra A",
+            observacion="Dia 1",
+            creado_por=self.operator,
+            actor=self.operator,
+        )
+        turno_siguiente = Turno.objects.create(
+            sucursal=self.branch_a,
+            fecha_operativa="2026-03-28",
+            tipo=Turno.Tipo.TARDE,
+            estado=Turno.Estado.ABIERTO,
+            creado_por=self.admin,
+        )
+        caja_siguiente = open_box(
+            user=self.operator_2,
+            turno=turno_siguiente,
+            sucursal=self.branch_a,
+            monto_inicial=Decimal("0.00"),
+            actor=self.admin,
+        )
+        register_cash_income(
+            caja=caja_siguiente,
+            monto=Decimal("70.00"),
+            categoria="Ingreso B",
+            observacion="Dia 2",
+            creado_por=self.admin,
+            actor=self.admin,
+        )
+        register_expense(
+            caja=caja_siguiente,
+            monto=Decimal("10.00"),
+            rubro_operativo=self.rubro_viaticos,
+            categoria="Compra B",
+            observacion="Dia 2",
+            creado_por=self.admin,
+            actor=self.admin,
+        )
+
+        summary = build_operational_period_summary(
+            date_from=date(2026, 3, 27),
+            date_to=date(2026, 3, 28),
+            sucursal=self.branch_a,
+        )
+
+        self.assertTrue(summary["is_period_summary"])
+        self.assertEqual(summary["total_ingresos"], Decimal("170.00"))
+        self.assertEqual(summary["total_egresos"], Decimal("50.00"))
+        self.assertEqual(summary["saldo_neto"], Decimal("120.00"))
+        self.assertEqual(summary["scope_label"], self.branch_a.nombre)
+
     def test_operational_overview_prefers_branch_limit_and_marks_exceeded_category(self):
         LimiteRubroOperativo.objects.create(
             rubro=self.rubro_insumos,
@@ -574,7 +645,7 @@ class CashopsServiceTests(CashopsTestCase):
                 actor=self.operator,
             )
 
-    def test_transfer_between_branches_rejects_insufficient_funds(self):
+    def test_transfer_between_branches_is_disabled(self):
         caja_origen = open_box(
             user=self.operator,
             turno=self.turno_a,
@@ -602,6 +673,10 @@ class CashopsServiceTests(CashopsTestCase):
                 creado_por=self.admin,
                 actor=self.admin,
             )
+        self.assertEqual(
+            str(ValidationError({"__all__": BRANCH_TRANSFER_DISABLED_REASON}).message_dict["__all__"][0]),
+            BRANCH_TRANSFER_DISABLED_REASON,
+        )
 
     def test_close_box_still_works_with_income_and_small_difference(self):
         caja = open_box(
@@ -815,14 +890,14 @@ class CashopsViewTests(CashopsTestCase):
 
         response = self.client.get(reverse("cashops:transfer_branches"))
 
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 404)
 
-    def test_admin_can_access_branch_transfer_view(self):
+    def test_admin_cannot_access_branch_transfer_view_when_disabled(self):
         self.client.force_login(self.admin)
 
         response = self.client.get(reverse("cashops:transfer_branches"))
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 404)
 
     def test_expense_view_lists_only_active_operational_categories(self):
         RubroOperativo.objects.create(nombre="Mantenimiento", activo=False)
@@ -834,6 +909,15 @@ class CashopsViewTests(CashopsTestCase):
         self.assertContains(response, self.rubro_insumos.nombre)
         self.assertNotContains(response, "Mantenimiento")
 
+    def test_expense_view_uses_egreso_por_rubro_copy(self):
+        self.client.force_login(self.operator)
+
+        response = self.client.get(reverse("cashops:box_expense", args=[self.owned_box.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Egreso por rubro")
+        self.assertContains(response, "Guardar egreso")
+
     def test_admin_can_manage_operational_category_list(self):
         self.client.force_login(self.admin)
 
@@ -841,6 +925,132 @@ class CashopsViewTests(CashopsTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, self.rubro_insumos.nombre)
+
+    def test_admin_can_manage_branch_list_with_search_and_business_name(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("cashops:sucursal_list"), {"q": "SUC-A"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.branch_a.razon_social)
+        self.assertNotContains(response, self.branch_b.nombre)
+
+    def test_admin_can_filter_branch_list_by_business_name(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("cashops:sucursal_list"), {"q": "MAPOGO"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.branch_b.razon_social)
+        self.assertNotContains(response, self.branch_a.nombre)
+
+    def test_admin_can_create_branch_with_business_name(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.post(
+            reverse("cashops:sucursal_create"),
+            {
+                "codigo": "EC2",
+                "nombre": "Estacion Central 2",
+                "razon_social": "ARMADI SRL",
+                "activa": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Sucursal.objects.filter(codigo="EC2", razon_social="ARMADI SRL").exists())
+
+    def test_admin_can_update_and_toggle_branch_status(self):
+        self.client.force_login(self.admin)
+
+        update_response = self.client.post(
+            reverse("cashops:sucursal_update", args=[self.branch_a.pk]),
+            {
+                "codigo": "SUC-A",
+                "nombre": "Sucursal A Renovada",
+                "razon_social": "ARMADI OPERATIVA SRL",
+            },
+        )
+        self.branch_a.refresh_from_db()
+
+        self.assertEqual(update_response.status_code, 302)
+        self.assertEqual(self.branch_a.nombre, "Sucursal A Renovada")
+        self.assertEqual(self.branch_a.razon_social, "ARMADI OPERATIVA SRL")
+        self.assertFalse(self.branch_a.activa)
+
+        toggle_response = self.client.post(reverse("cashops:sucursal_toggle", args=[self.branch_a.pk]))
+        self.branch_a.refresh_from_db()
+
+        self.assertEqual(toggle_response.status_code, 302)
+        self.assertTrue(self.branch_a.activa)
+
+    def test_dashboard_branch_scope_supports_period_range(self):
+        register_cash_income(
+            caja=self.owned_box,
+            monto=Decimal("120.00"),
+            categoria="Ingreso A",
+            observacion="Dia 1",
+            creado_por=self.operator,
+            actor=self.operator,
+        )
+        register_expense(
+            caja=self.owned_box,
+            monto=Decimal("20.00"),
+            rubro_operativo=self.rubro_insumos,
+            categoria="Compra A",
+            observacion="Dia 1",
+            creado_por=self.operator,
+            actor=self.operator,
+        )
+        turno_siguiente = Turno.objects.create(
+            sucursal=self.branch_a,
+            fecha_operativa="2026-03-28",
+            tipo=Turno.Tipo.TARDE,
+            estado=Turno.Estado.ABIERTO,
+            creado_por=self.admin,
+        )
+        box_siguiente = open_box(
+            user=self.operator_2,
+            turno=turno_siguiente,
+            sucursal=self.branch_a,
+            monto_inicial=Decimal("0.00"),
+            actor=self.admin,
+        )
+        register_cash_income(
+            caja=box_siguiente,
+            monto=Decimal("80.00"),
+            categoria="Ingreso B",
+            observacion="Dia 2",
+            creado_por=self.admin,
+            actor=self.admin,
+        )
+        register_expense(
+            caja=box_siguiente,
+            monto=Decimal("30.00"),
+            rubro_operativo=self.rubro_viaticos,
+            categoria="Compra B",
+            observacion="Dia 2",
+            creado_por=self.admin,
+            actor=self.admin,
+        )
+        self.client.force_login(self.admin)
+
+        response = self.client.get(
+            reverse("cashops:dashboard"),
+            {
+                "scope": "branch",
+                "sucursal": self.branch_a.pk,
+                "fecha_desde": "2026-03-27",
+                "fecha_hasta": "2026-03-28",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "27 Marzo 2026 a 28 Marzo 2026")
+        self.assertContains(response, "$200")
+        self.assertContains(response, "$50")
+        self.assertContains(response, "Saldo neto")
+        self.assertContains(response, "$150")
 
     def test_dashboard_does_not_auto_select_box_for_admin_scope(self):
         self.client.force_login(self.admin)
@@ -850,6 +1060,15 @@ class CashopsViewTests(CashopsTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "No hay caja seleccionada", html=False)
         self.assertNotContains(response, f"Caja #{self.owned_box.id}</h2>", html=False)
+
+    def test_dashboard_uses_egreso_por_rubro_and_hides_branch_transfer(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("cashops:dashboard") + f"?scope=box&box={self.owned_box.pk}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Egreso por rubro")
+        self.assertNotContains(response, "Traspaso sucursal")
 
     def test_dashboard_box_scope_uses_explicit_scope_querystring(self):
         LimiteRubroOperativo.objects.create(

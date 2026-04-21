@@ -58,14 +58,30 @@
       <input type="hidden" name="scope" value="{{ dashboard_scope }}">
       {% if selected_branch %}<input type="hidden" name="sucursal" value="{{ selected_branch.id }}">{% endif %}
       {% if selected_box %}<input type="hidden" name="box" value="{{ selected_box.id }}">{% endif %}
-      <div class="field">
-        <label for="id_fecha">Fecha operativa</label>
-        <input id="id_fecha" class="input" type="date" name="fecha" value="{{ dashboard_scope_date|date:'Y-m-d' }}">
-      </div>
+      {% if selected_box %}
+        <div class="field">
+          <label for="id_fecha">Fecha operativa</label>
+          <input id="id_fecha" class="input" type="date" name="fecha" value="{{ dashboard_scope_date|date:'Y-m-d' }}">
+        </div>
+      {% else %}
+        <div class="summary-grid">
+          <div class="field">
+            <label for="id_fecha_desde">Fecha desde</label>
+            <input id="id_fecha_desde" class="input" type="date" name="fecha_desde" value="{{ dashboard_period_from|date:'Y-m-d' }}">
+          </div>
+          <div class="field">
+            <label for="id_fecha_hasta">Fecha hasta</label>
+            <input id="id_fecha_hasta" class="input" type="date" name="fecha_hasta" value="{{ dashboard_period_to|date:'Y-m-d' }}">
+          </div>
+        </div>
+      {% endif %}
       <div class="row">
         <span class="muted">
           {% if dashboard_snapshot %}
             Scope actual: {{ dashboard_snapshot.scope_kind_label }} | {{ dashboard_snapshot.scope_label }}
+            {% if dashboard_snapshot.is_period_summary %}
+              | {{ dashboard_snapshot.period_from }} a {{ dashboard_snapshot.period_to }}
+            {% endif %}
           {% else %}
             Elegi un alcance para ver control operativo.
           {% endif %}
@@ -80,7 +96,14 @@
       <div class="row">
         <div>
           <h2>{{ dashboard_snapshot.scope_kind_label }} | {{ dashboard_snapshot.scope_label }}</h2>
-          <p class="muted">Periodo {{ dashboard_snapshot.fecha_operativa }}. Base de calculo: {{ dashboard_snapshot.base_calculo_label }}.</p>
+          <p class="muted">
+            {% if dashboard_snapshot.is_period_summary %}
+              Periodo {{ dashboard_snapshot.period_from }} a {{ dashboard_snapshot.period_to }}.
+            {% else %}
+              Periodo {{ dashboard_snapshot.fecha_operativa }}.
+            {% endif %}
+            Base de calculo: {{ dashboard_snapshot.base_calculo_label }}.
+          </p>
         </div>
         <span class="badge-muted">{{ dashboard_snapshot.base_calculo_codigo }}</span>
       </div>
@@ -96,6 +119,10 @@
         <div class="summary">
           <span class="muted">Total operativo</span>
           <strong>${{ dashboard_snapshot.total_operativo }}</strong>
+        </div>
+        <div class="summary">
+          <span class="muted">Saldo neto</span>
+          <strong>${{ dashboard_snapshot.saldo_neto }}</strong>
         </div>
         <div class="summary">
           <span class="muted">Alertas activas</span>
@@ -131,8 +158,8 @@
           {% if selected_box.estado == 'ABIERTA' %}
             <div class="action-grid" style="margin-top:16px;">
               <a class="action-card" href="{% url 'cashops:box_expense' selected_box.id %}">
-                <span>Gasto rapido</span>
-                <small>monto, rubro y detalle</small>
+                <span>Egreso por rubro</span>
+                <small>monto, rubro y observacion</small>
               </a>
               <a class="action-card" href="{% url 'cashops:register_sale' selected_box.id %}">
                 <span>Registrar venta</span>
@@ -150,12 +177,6 @@
                 <span>Traspaso entre cajas</span>
                 <small>origen, destino y monto</small>
               </a>
-              {% if is_cashops_admin %}
-                <a class="action-card" href="{% url 'cashops:transfer_branches' %}">
-                  <span>Traspaso sucursal</span>
-                  <small>dinero o mercaderia</small>
-                </a>
-              {% endif %}
             </div>
           {% endif %}
         </div>

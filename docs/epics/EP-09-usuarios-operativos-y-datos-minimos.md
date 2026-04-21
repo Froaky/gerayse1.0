@@ -26,7 +26,7 @@ Reducir la administracion de usuarios y personal a los datos realmente necesario
 
 ## User Stories
 
-### [ ] US-9.1 Baja funcional del legajo
+### [x] US-9.1 Baja funcional del legajo
 
 Como administracion
 Quiero dejar de usar legajo en la gestion de usuarios
@@ -49,7 +49,7 @@ Criterios:
 - impacto claro en los flujos donde la asignacion de usuario importa
 - cambio auditado
 
-### [ ] US-9.3 Vista minima de personal/P2
+### [x] US-9.3 Vista minima de personal/P2
 
 Como administracion
 Quiero ver solo nombre, apellido y rol en la vista actual de personal
@@ -60,7 +60,7 @@ Criterios:
 - se ocultan campos no usados en la operatoria actual
 - la busqueda sigue funcionando con esos datos base
 
-### [ ] US-9.4 Compatibilidad con usuarios existentes
+### [x] US-9.4 Compatibilidad con usuarios existentes
 
 Como administracion
 Quiero que la simplificacion no rompa usuarios ya cargados

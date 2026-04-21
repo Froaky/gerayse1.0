@@ -18,7 +18,7 @@ from .models import (
     PagoTesoreria,
     Proveedor,
 )
-from cashops.models import Sucursal
+from cashops.models import RubroOperativo, Sucursal
 
 
 class TreasuryStyledFormMixin:
@@ -83,11 +83,19 @@ class SupplierFilterForm(TreasuryStyledFormMixin, forms.Form):
 class PayableCategoryForm(TreasuryStyledFormMixin, forms.ModelForm):
     class Meta:
         model = CategoriaCuentaPagar
-        fields = ["nombre", "activo"]
-        widgets = {"nombre": forms.TextInput(attrs={"placeholder": "Servicios, impuestos, mercaderia..."})}
+        fields = ["nombre", "rubro_operativo", "activo"]
+        widgets = {
+            "nombre": forms.TextInput(attrs={"placeholder": "Servicios, impuestos, mercaderia..."}),
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        rubros = RubroOperativo.objects.filter(activo=True, es_sistema=False).order_by("nombre")
+        if self.instance.pk and self.instance.rubro_operativo_id:
+            rubros = (RubroOperativo.objects.filter(pk=self.instance.rubro_operativo_id) | rubros).distinct()
+        self.fields["rubro_operativo"].queryset = rubros
+        self.fields["rubro_operativo"].required = False
+        self.fields["rubro_operativo"].label = "Rubro operativo asociado"
         self._apply_input_classes()
 
 
@@ -147,6 +155,7 @@ class PayableForm(TreasuryStyledFormMixin, forms.ModelForm):
             "referencia_comprobante",
             "fecha_emision",
             "fecha_vencimiento",
+            "periodo_referencia",
             "importe_total",
             "sucursal",
             "observaciones",
@@ -156,6 +165,7 @@ class PayableForm(TreasuryStyledFormMixin, forms.ModelForm):
             "referencia_comprobante": forms.TextInput(attrs={"placeholder": "Factura / VEP / referencia"}),
             "fecha_emision": forms.DateInput(attrs={"type": "date"}),
             "fecha_vencimiento": forms.DateInput(attrs={"type": "date"}),
+            "periodo_referencia": forms.DateInput(attrs={"type": "date"}),
             "importe_total": forms.NumberInput(attrs={"step": "0.01", "placeholder": "0.00"}),
             "observaciones": forms.Textarea(attrs={"placeholder": "Notas internas"}),
         }
@@ -169,11 +179,19 @@ class PayableForm(TreasuryStyledFormMixin, forms.ModelForm):
             categories = (CategoriaCuentaPagar.objects.filter(pk=self.instance.categoria_id) | categories).distinct()
         self.fields["proveedor"].queryset = suppliers
         self.fields["categoria"].queryset = categories
+        self.fields["periodo_referencia"].label = "Periodo economico"
+        self.fields["periodo_referencia"].required = False
+        if not self.is_bound and not self.instance.pk:
+            today = timezone.localdate()
+            self.initial.setdefault("periodo_referencia", today.replace(day=1))
         self._apply_input_classes()
 
     def clean(self):
         cleaned_data = super().clean()
         amount = cleaned_data.get("importe_total")
+        issue_date = cleaned_data.get("fecha_emision")
+        if issue_date and not cleaned_data.get("periodo_referencia"):
+            cleaned_data["periodo_referencia"] = issue_date.replace(day=1)
         if amount is not None:
             self.instance.saldo_pendiente = amount
             self.instance.estado = CuentaPorPagar.Estado.PENDIENTE
@@ -219,6 +237,24 @@ class SupplierHistoryFilterForm(TreasuryStyledFormMixin, forms.Form):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._apply_input_classes()
+
+
+class TreasuryDashboardFilterForm(TreasuryStyledFormMixin, forms.Form):
+    sucursal = forms.ModelChoiceField(queryset=Sucursal.objects.all(), required=False, empty_label="Vista consolidada")
+    fecha_desde = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
+    fecha_hasta = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._apply_input_classes()
+
+    def clean(self):
+        cleaned_data = super().clean()
+        fecha_desde = cleaned_data.get("fecha_desde")
+        fecha_hasta = cleaned_data.get("fecha_hasta")
+        if fecha_desde and fecha_hasta and fecha_hasta < fecha_desde:
+            cleaned_data["fecha_desde"], cleaned_data["fecha_hasta"] = fecha_hasta, fecha_desde
+        return cleaned_data
 
 
 class PaymentBaseForm(TreasuryStyledFormMixin, forms.Form):
@@ -301,7 +337,18 @@ class PaymentAnnulForm(TreasuryStyledFormMixin, forms.Form):
 class BankMovementForm(TreasuryStyledFormMixin, forms.ModelForm):
     class Meta:
         model = MovimientoBancario
-        fields = ["cuenta_bancaria", "tipo", "fecha", "monto", "concepto", "referencia", "observaciones"]
+        fields = [
+            "cuenta_bancaria",
+            "tipo",
+            "clase",
+            "categoria",
+            "proveedor",
+            "fecha",
+            "monto",
+            "concepto",
+            "referencia",
+            "observaciones",
+        ]
         widgets = {
             "fecha": forms.DateInput(attrs={"type": "date"}),
             "monto": forms.NumberInput(attrs={"step": "0.01", "placeholder": "0.00"}),
@@ -313,6 +360,12 @@ class BankMovementForm(TreasuryStyledFormMixin, forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["cuenta_bancaria"].queryset = CuentaBancaria.objects.filter(activa=True).order_by("banco", "nombre")
+        self.fields["categoria"].queryset = CategoriaCuentaPagar.objects.filter(activo=True).order_by("nombre")
+        self.fields["proveedor"].queryset = Proveedor.objects.filter(activo=True).order_by("razon_social")
+        self.fields["categoria"].required = False
+        self.fields["proveedor"].required = False
+        self.fields["clase"].label = "Tipo financiero"
+        self.fields["categoria"].label = "Rubro / categoria"
         self._apply_input_classes()
 
 
@@ -320,6 +373,7 @@ class BankMovementFilterForm(TreasuryStyledFormMixin, forms.Form):
     q = forms.CharField(required=False, label="Buscar", widget=forms.TextInput(attrs={"placeholder": "Concepto o referencia"}))
     cuenta_bancaria = forms.ModelChoiceField(queryset=CuentaBancaria.objects.none(), required=False, empty_label="Todas las cuentas")
     tipo = forms.ChoiceField(required=False, choices=(("", "Todos los tipos"),) + tuple(MovimientoBancario.Tipo.choices))
+    clase = forms.ChoiceField(required=False, choices=(("", "Todos los tipos financieros"),) + tuple(MovimientoBancario.Clase.choices))
     fecha_desde = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
     fecha_hasta = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
     sucursal = forms.ModelChoiceField(queryset=Sucursal.objects.all(), required=False, empty_label="Todas las sucursales")
@@ -362,8 +416,14 @@ class PosBatchFilterForm(TreasuryStyledFormMixin, forms.Form):
 
 
 class CardAccreditationForm(TreasuryStyledFormMixin, forms.Form):
+    modo_registro = forms.ChoiceField(
+        choices=AcreditacionTarjeta.ModoRegistro.choices,
+        label="Modo de carga",
+    )
     cuenta_bancaria = forms.ModelChoiceField(queryset=CuentaBancaria.objects.none())
     fecha_acreditacion = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
+    periodo_desde = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
+    periodo_hasta = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
     monto_neto = forms.DecimalField(max_digits=14, decimal_places=2, widget=forms.NumberInput(attrs={"step": "0.01"}))
     canal = forms.CharField(max_length=80, widget=forms.TextInput(attrs={"placeholder": "Visa / Prisma / etc."}))
     referencia_externa = forms.CharField(required=False, max_length=80)
@@ -376,8 +436,25 @@ class CardAccreditationForm(TreasuryStyledFormMixin, forms.Form):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["cuenta_bancaria"].queryset = CuentaBancaria.objects.filter(activa=True).order_by("banco", "nombre")
-        self.fields["lote_pos"].queryset = LotePOS.objects.all()[:50] # Simplified
+        self.fields["lote_pos"].queryset = LotePOS.objects.all().order_by("-fecha_lote", "-id")[:50]
         self._apply_input_classes()
+
+    def clean(self):
+        cleaned_data = super().clean()
+        modo_registro = cleaned_data.get("modo_registro")
+        periodo_desde = cleaned_data.get("periodo_desde")
+        periodo_hasta = cleaned_data.get("periodo_hasta")
+        if modo_registro == AcreditacionTarjeta.ModoRegistro.PERIODO:
+            if not periodo_desde:
+                self.add_error("periodo_desde", "La fecha desde es obligatoria para carga agrupada.")
+            if not periodo_hasta:
+                self.add_error("periodo_hasta", "La fecha hasta es obligatoria para carga agrupada.")
+            if periodo_desde and periodo_hasta and periodo_hasta < periodo_desde:
+                self.add_error("periodo_hasta", "La fecha hasta no puede ser anterior a la fecha desde.")
+        else:
+            cleaned_data["periodo_desde"] = None
+            cleaned_data["periodo_hasta"] = None
+        return cleaned_data
 
 
 class CardAccreditationFilterForm(TreasuryStyledFormMixin, forms.Form):

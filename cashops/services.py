@@ -30,6 +30,10 @@ MAX_OPERATIONAL_LIMIT_PERCENTAGE = Decimal("100.00")
 OPERATIONAL_CONTROL_BASE_CODE = "EGRESOS_OPERATIVOS_DEL_PERIODO"
 OPERATIONAL_CONTROL_BASE_LABEL = "Egresos operativos del periodo"
 UNCATEGORIZED_OPERATIONAL_CATEGORY_NAME = "Sin clasificar"
+BRANCH_TRANSFER_DISABLED_REASON = (
+    "La transferencia entre sucursales ya no esta habilitada en la operatoria actual. "
+    "Mantene solo traspasos entre cajas."
+)
 OPERATIONAL_ALERT_SCOPE_POLICY = (
     "Las alertas equivalentes se muestran todas y se ordenan de la mas especifica a la mas general: "
     "Caja, Sucursal y Global."
@@ -440,6 +444,117 @@ def build_operational_control_snapshot(
     snapshot["active_alerts"] = active_alerts
     snapshot["active_alert_count"] = len(active_alerts)
     return snapshot
+
+
+def build_operational_period_summary(*, date_from: date, date_to: date, sucursal: Sucursal | None = None) -> dict:
+    if date_to < date_from:
+        raise ValidationError({"fecha_hasta": "La fecha hasta no puede ser anterior a la fecha desde."})
+
+    movement_qs = MovimientoCaja.objects.filter(
+        caja__turno__fecha_operativa__gte=date_from,
+        caja__turno__fecha_operativa__lte=date_to,
+    ).exclude(tipo=MovimientoCaja.Tipo.APERTURA)
+    if sucursal is not None:
+        movement_qs = movement_qs.filter(caja__sucursal=sucursal)
+
+    totals = movement_qs.aggregate(
+        total_ingresos=Sum("monto", filter=Q(sentido=MovimientoCaja.Sentido.INGRESO)),
+        total_egresos=Sum("monto", filter=Q(sentido=MovimientoCaja.Sentido.EGRESO)),
+    )
+    expense_qs = movement_qs.filter(tipo=MovimientoCaja.Tipo.GASTO)
+    totals_by_category = {
+        row["rubro_operativo"]: row["total_gastado"] or Decimal("0.00")
+        for row in expense_qs.values("rubro_operativo").annotate(total_gastado=Sum("monto"))
+    }
+    base_calculo_total = sum(totals_by_category.values(), Decimal("0.00"))
+    rubro_ids = set(totals_by_category.keys())
+    rubro_ids.update(
+        RubroOperativo.objects.filter(activo=True, es_sistema=False).values_list("id", flat=True)
+    )
+    rubro_ids.update(
+        LimiteRubroOperativo.objects.filter(_limit_scope_filter(
+            build_branch_control_scope(fecha_operativa=date_from, sucursal=sucursal)
+            if sucursal is not None
+            else build_global_control_scope(fecha_operativa=date_from)
+        )).values_list("rubro_id", flat=True)
+    )
+    rubros = list(RubroOperativo.objects.filter(pk__in=rubro_ids).order_by("nombre"))
+    scope = (
+        build_branch_control_scope(fecha_operativa=date_from, sucursal=sucursal)
+        if sucursal is not None
+        else build_global_control_scope(fecha_operativa=date_from)
+    )
+    effective_limits = _effective_limits_by_category(rubro_ids=list(rubro_ids), scope=scope)
+
+    items = []
+    for rubro in rubros:
+        total_gastado = totals_by_category.get(rubro.id, Decimal("0.00"))
+        porcentaje_consumido = (
+            _quantize_percentage((total_gastado * Decimal("100.00")) / base_calculo_total)
+            if base_calculo_total > 0
+            else Decimal("0.00")
+        )
+        limit_config = effective_limits.get(rubro.id)
+        if limit_config is None:
+            estado_item = "SIN_LIMITE"
+            estado_label = "Sin limite"
+            badge_class = "badge-muted"
+            warning_threshold = None
+        elif porcentaje_consumido > limit_config.porcentaje_maximo:
+            estado_item = "ROJO"
+            estado_label = "Excedido"
+            badge_class = "badge-danger"
+            warning_threshold = _warning_threshold(limit_config.porcentaje_maximo)
+        elif porcentaje_consumido >= _warning_threshold(limit_config.porcentaje_maximo):
+            estado_item = "AMARILLO"
+            estado_label = "Cerca del limite"
+            badge_class = "badge-warning"
+            warning_threshold = _warning_threshold(limit_config.porcentaje_maximo)
+        else:
+            estado_item = "VERDE"
+            estado_label = "Controlado"
+            badge_class = "badge-success"
+            warning_threshold = _warning_threshold(limit_config.porcentaje_maximo)
+
+        items.append(
+            {
+                "rubro": rubro,
+                "total_gastado": total_gastado,
+                "porcentaje_consumido": porcentaje_consumido,
+                "porcentaje_maximo": limit_config.porcentaje_maximo if limit_config else None,
+                "warning_threshold": warning_threshold,
+                "estado": estado_item,
+                "estado_label": estado_label,
+                "badge_class": badge_class,
+                "limit_scope_label": (
+                    limit_config.sucursal.nombre if limit_config and limit_config.sucursal_id else "Global"
+                ),
+                "has_limit": limit_config is not None,
+                "alert_should_exist": False,
+            }
+        )
+
+    status_order = {"ROJO": 0, "AMARILLO": 1, "VERDE": 2, "SIN_LIMITE": 3}
+    items.sort(key=lambda item: (status_order[item["estado"]], item["rubro"].nombre.lower()))
+
+    return {
+        "scope_kind": "SUCURSAL" if sucursal is not None else "GLOBAL",
+        "scope_kind_label": "Sucursal" if sucursal is not None else "Global",
+        "scope_label": sucursal.nombre if sucursal is not None else "Global",
+        "period_from": date_from,
+        "period_to": date_to,
+        "is_period_summary": True,
+        "base_calculo_codigo": OPERATIONAL_CONTROL_BASE_CODE,
+        "base_calculo_label": OPERATIONAL_CONTROL_BASE_LABEL,
+        "base_calculo_total": base_calculo_total,
+        "total_operativo": base_calculo_total,
+        "total_ingresos": totals["total_ingresos"] or Decimal("0.00"),
+        "total_egresos": totals["total_egresos"] or Decimal("0.00"),
+        "saldo_neto": (totals["total_ingresos"] or Decimal("0.00")) - (totals["total_egresos"] or Decimal("0.00")),
+        "items": items,
+        "active_alerts": [],
+        "active_alert_count": 0,
+    }
 
 
 def build_operational_category_overview(*, fecha_operativa, sucursal: Sucursal | None = None) -> dict:
@@ -880,6 +995,7 @@ def transfer_between_branches(
 ) -> Transferencia:
     actor = actor or creado_por
     _require_actor(actor)
+    raise ValidationError({"__all__": BRANCH_TRANSFER_DISABLED_REASON})
     if sucursal_origen.pk == sucursal_destino.pk:
         raise ValidationError({"sucursal_destino": "El origen y el destino no pueden ser la misma sucursal."})
 

@@ -11,10 +11,10 @@ Estado actual:
 - `EP-01`: caja operativa, movimientos y cierres. Implementada.
 - `EP-02`: alertas y semaforos operativos. Implementada.
 - `EP-03`: tesoreria central base. Iniciada.
-- `EP-08`: ajustes operativos de caja y sucursales. Propuesta.
-- `EP-09`: usuarios operativos y datos minimos. Propuesta.
-- `EP-10`: situacion financiera y alertas consolidadas. Propuesta.
-- `EP-11`: rentabilidad y situacion economica. Propuesta.
+- `EP-08`: ajustes operativos de caja y sucursales. Iniciada.
+- `EP-09`: usuarios operativos y datos minimos. Iniciada.
+- `EP-10`: situacion financiera y alertas consolidadas. Implementada.
+- `EP-11`: rentabilidad y situacion economica. Iniciada.
 
 Archivos de referencia de negocio:
 - [matriz-sistema-vs-relevo.md](/C:/code/gerayse1.0/docs/epics/matriz-sistema-vs-relevo.md)
