@@ -4,9 +4,7 @@ from django import forms
 from django.contrib.auth import get_user_model
 from django.db.models import Q
 
-from django.urls import reverse_lazy
-
-from .models import Caja, LimiteRubroOperativo, MovimientoCaja, Producto, RubroOperativo, Sucursal, Transferencia, Turno
+from .models import Caja, LimiteRubroOperativo, MovimientoCaja, RubroOperativo, Sucursal, Transferencia, Turno
 from .permissions import can_assign_box_to_user, is_cashops_admin
 from .services import CLOSING_DIFF_THRESHOLD, MAX_OPERATIONAL_LIMIT_PERCENTAGE
 
@@ -66,8 +64,22 @@ class CajaAperturaForm(forms.Form):
     def __init__(self, *args, **kwargs):
         self.actor = kwargs.pop("actor", None)
         super().__init__(*args, **kwargs)
-        if self.actor and not is_cashops_admin(self.actor):
-            self.fields["usuario"].help_text = "La caja se abre a tu nombre."
+        if self.actor:
+            self.fields["usuario"].initial = self.actor.pk
+            self.fields["usuario"].queryset = (
+                User.objects.filter(is_active=True)
+                if is_cashops_admin(self.actor)
+                else User.objects.filter(pk=self.actor.pk, is_active=True)
+            )
+            self.fields["turno"].queryset = Turno.objects.select_related("sucursal").filter(estado=Turno.Estado.ABIERTO)
+            self.fields["sucursal"].queryset = Sucursal.objects.filter(activa=True)
+            if not is_cashops_admin(self.actor):
+                self.fields["usuario"].help_text = "La caja se abre a tu nombre."
+            if getattr(self.actor, "usuario_fijo", False) and getattr(self.actor, "sucursal_base_id", None):
+                self.fields["sucursal"].initial = self.actor.sucursal_base_id
+                self.fields["turno"].queryset = self.fields["turno"].queryset.filter(
+                    sucursal_id=self.actor.sucursal_base_id
+                )
         for field in self.fields.values():
             if isinstance(field.widget, forms.Select):
                 field.widget.attrs.setdefault("class", "input select")
@@ -83,6 +95,15 @@ class CajaAperturaForm(forms.Form):
             self.add_error("turno", "El turno seleccionado no pertenece a la sucursal elegida.")
         if self.actor and usuario and not can_assign_box_to_user(self.actor, usuario):
             self.add_error("usuario", "No podes asignar una caja a otro usuario.")
+        if (
+            self.actor
+            and not is_cashops_admin(self.actor)
+            and usuario
+            and getattr(usuario, "usuario_fijo", False)
+        ):
+            base_sucursal_id = getattr(usuario, "sucursal_base_id", None)
+            if base_sucursal_id and sucursal and sucursal.id != base_sucursal_id:
+                self.add_error("sucursal", "El usuario fijo solo puede abrir cajas en su sucursal base.")
         return cleaned_data
 
 
@@ -155,18 +176,12 @@ class VentaGeneralForm(forms.Form):
             (MovimientoCaja.Tipo.VENTA_PEDIDOSYA, "PedidosYa"),
             (MovimientoCaja.Tipo.VENTA_QR, "QR / MercadoPago"),
         ],
-        label="Medio de Pago",
+        label="Medio de ingreso",
     )
     rubro = forms.ModelChoiceField(
         queryset=RubroOperativo.objects.filter(activo=True, es_sistema=False),
-        label="Rubro / Categoria",
+        label="Rubro",
         required=True,
-    )
-    producto = forms.ModelChoiceField(
-        queryset=Producto.objects.filter(activo=True),
-        label="Objeto / Producto",
-        required=False,
-        empty_label="Seleccionar producto (opcional)",
     )
     monto = forms.DecimalField(
         max_digits=14,
@@ -182,34 +197,11 @@ class VentaGeneralForm(forms.Form):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
-        # Atributos HTMX para interactividad
-        self.fields["rubro"].widget.attrs.update({
-            "hx-get": reverse_lazy("cashops:filter_products_by_rubro"),
-            "hx-target": "#id_producto",
-            "hx-trigger": "change",
-        })
-        self.fields["producto"].widget.attrs.update({
-            "hx-get": reverse_lazy("cashops:get_rubro_by_product"),
-            "hx-target": "#id_rubro",
-            "hx-trigger": "change",
-        })
-
         for field in self.fields.values():
             if isinstance(field.widget, forms.Select):
                 field.widget.attrs.setdefault("class", "input select")
             else:
                 field.widget.attrs.setdefault("class", "input")
-
-    def clean(self):
-        cleaned_data = super().clean()
-        producto = cleaned_data.get("producto")
-        rubro = cleaned_data.get("rubro")
-        
-        if producto and rubro and producto.rubro_id != rubro.id:
-            cleaned_data["rubro"] = producto.rubro
-            
-        return cleaned_data
 
 
 class TransferenciaEntreCajasForm(forms.Form):

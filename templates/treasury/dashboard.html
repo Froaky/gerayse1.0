@@ -161,11 +161,33 @@
         <strong>{{ economic_snapshot.margin_pct }}%</strong>
         <small class="muted">Sobre la base de ventas del periodo</small>
       </div>
+      <div class="summary">
+        <span class="muted">Objetivo parametrizado</span>
+        <strong>{{ economic_snapshot.objective_total|money }}</strong>
+        <small class="muted">{{ economic_snapshot.objective_items_count }} rubro{{ economic_snapshot.objective_items_count|pluralize }} con objetivo vigente</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Real comparado</span>
+        <strong>{{ economic_snapshot.objective_scope_real_total|money }}</strong>
+        <small class="muted">{{ economic_snapshot.real_scope_ratio }}% sobre ventas con objetivo</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Desvio vs objetivo</span>
+        <strong>{{ economic_snapshot.deviation_total|money }}</strong>
+        <small class="muted">{{ economic_snapshot.objective_scope_ratio }}% objetivo sobre ventas cubiertas</small>
+      </div>
     </div>
+    {% if not economic_snapshot.branch_objectives_enabled %}
+      <p class="muted mt-16">En la vista consolidada solo se comparan objetivos globales. Los objetivos por sucursal se aplican al entrar a cada sucursal.</p>
+    {% endif %}
+    {% if economic_snapshot.rubros_without_objective %}
+      <p class="muted mt-16">Hay {{ economic_snapshot.rubros_without_objective }} rubro{{ economic_snapshot.rubros_without_objective|pluralize }} con actividad economica pero sin objetivo vigente.</p>
+    {% endif %}
     {% if economic_snapshot.unmapped_payables_count %}
       <p class="muted mt-16">
         Hay {{ economic_snapshot.unmapped_payables_count }} deuda{{ economic_snapshot.unmapped_payables_count|pluralize }}
         sin rubro operativo asociado por {{ economic_snapshot.unmapped_payables_total|money }}.
+        Se mantiene visible por compatibilidad legacy, pero queda fuera de la comparacion contra objetivo por rubro.
       </p>
     {% endif %}
     <div class="list mt-16">
@@ -176,10 +198,14 @@
               <strong>{{ item.rubro_nombre }}</strong>
               <div class="muted mt-16">Ventas {{ item.sales_total|money }} · Gasto caja {{ item.cash_expense_total|money }} · Deuda {{ item.debt_total|money }}</div>
             </div>
-            <span class="badge badge-info">{{ item.expense_ratio_over_sales }}%</span>
+            {% if item.has_objective %}
+              <span class="badge {% if item.deviation_amount <= 0 %}badge-success{% else %}badge-danger{% endif %}">{{ item.deviation_amount|money }}</span>
+            {% else %}
+              <span class="badge badge-muted">Sin objetivo</span>
+            {% endif %}
           </div>
           <div class="muted mt-16">
-            Total economico {{ item.total_expense|money }}
+            Real {{ item.total_expense|money }} ({{ item.expense_ratio_over_sales }}%)
             {% if item.payables_count %}· {{ item.payables_count }} deuda{{ item.payables_count|pluralize }} imputada{{ item.payables_count|pluralize }}{% endif %}
             {% if item.debt_pending %}· Pendiente {{ item.debt_pending|money }}{% endif %}
           </div>

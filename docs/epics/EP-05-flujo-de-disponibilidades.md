@@ -13,6 +13,13 @@ Replicar el libro mensual de `efectivo` y `banco` que hoy se administra en `FLUJ
 - retiros, aportes y unificaciones
 - arqueo de disponibilidades
 
+## No incluye todavia
+
+- proyeccion de caja futura
+- conciliacion bancaria avanzada
+- cierre contable formal
+- cierre mensual separado por sucursal para tesoreria
+
 ## Reglas de negocio
 
 - caja operativa y tesoreria central siguen separadas
@@ -22,7 +29,7 @@ Replicar el libro mensual de `efectivo` y `banco` que hoy se administra en `FLUJ
 
 ## User Stories
 
-### US-5.1 Libro de efectivo central [DONE]
+### [x] US-5.1 Libro de efectivo central
 
 Como administracion
 Quiero ver un libro de efectivo consolidado
@@ -34,7 +41,7 @@ Criterios:
 - [x] egresos administrativos en efectivo
 - [x] saldo final
 
-### US-5.2 Libro bancario central [DONE]
+### [x] US-5.2 Libro bancario central
 
 Como administracion
 Quiero ver un libro bancario consolidado
@@ -45,7 +52,7 @@ Criterios:
 - [x] ingresos y egresos por cuenta
 - [x] saldo final
 
-### US-5.3 Arrastre mensual [DONE]
+### [x] US-5.3 Arrastre mensual
 
 Como administracion
 Quiero que el sistema arrastre el saldo inicial del mes
@@ -56,7 +63,7 @@ Criterios:
 - [x] arranque automatico del nuevo mes
 - [x] posibilidad de ajuste auditado
 
-### US-5.4 Consolidado efectivo + banco [DONE]
+### [x] US-5.4 Consolidado efectivo + banco
 
 Como administracion
 Quiero ver la disponibilidad total
@@ -68,7 +75,7 @@ Criterios:
 - [x] total consolidado
 - [x] filtros por fecha
 
-### US-5.5 Retiros, aportes y unificacion de cajas [DONE]
+### [x] US-5.5 Retiros, aportes y unificacion de cajas
 
 Como administracion
 Quiero registrar movimientos de retiro/aporte/unificacion
@@ -81,7 +88,7 @@ Criterios:
 - [x] motivo
 - [x] aprobacion si aplica
 
-### US-5.6 Arqueo de disponibilidades [DONE]
+### [x] US-5.6 Arqueo de disponibilidades
 
 Como administracion
 Quiero comparar saldo teorico vs saldo contado
@@ -96,6 +103,15 @@ Criterios:
 ## Dependencias
 
 - EP-03 y EP-04 cerradas
+
+## Orden tecnico sugerido
+
+1. consolidar libro de efectivo central
+2. consolidar libro bancario central
+3. resolver arrastre mensual de saldos
+4. mostrar total efectivo, banco y consolidado
+5. registrar retiros, aportes y unificaciones auditadas
+6. cerrar arqueo y diferencias de disponibilidades
 
 ## Criterio de cierre
 

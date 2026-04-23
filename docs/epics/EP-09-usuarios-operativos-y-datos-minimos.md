@@ -22,6 +22,7 @@ Reducir la administracion de usuarios y personal a los datos realmente necesario
 - el usuario operativo no debe exigir datos que no se usan en la operatoria diaria
 - el rol sigue siendo el dato principal de permisos y responsabilidad
 - la condicion de usuario fijo o no debe quedar explicita y administrable
+- en este backlog, `usuario fijo` se interpreta como asignacion operativa preferida a una sucursal o puesto base, no como bloqueo absoluto a una excepcion manual de administracion
 - ocultar datos en UI no debe borrar historial previo ni romper compatibilidad
 
 ## User Stories
@@ -37,7 +38,7 @@ Criterios:
 - el listado de usuarios no depende de legajo
 - los datos historicos existentes no se pierden
 
-### [ ] US-9.2 Usuario fijo o no fijo
+### [x] US-9.2 Usuario fijo o no fijo
 
 Como administracion
 Quiero definir con un checkbox si un usuario queda fijo o no
@@ -46,7 +47,8 @@ Para controlar asignaciones operativas sin texto libre
 Criterios:
 - checkbox visible y editable
 - valor por defecto definido
-- impacto claro en los flujos donde la asignacion de usuario importa
+- si el usuario es fijo, el sistema propone su asignacion operativa base en los flujos compatibles
+- administracion puede forzar una excepcion puntual sin perder la condicion de fijo
 - cambio auditado
 
 ### [x] US-9.3 Vista minima de personal/P2

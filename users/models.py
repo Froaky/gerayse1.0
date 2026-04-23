@@ -1,4 +1,5 @@
 from django.contrib.auth.models import AbstractUser
+from django.core.exceptions import ValidationError
 from django.db import models
 
 
@@ -29,11 +30,24 @@ class User(AbstractUser):
     dni = models.CharField(max_length=20, blank=True, verbose_name="DNI")
     legajo = models.CharField(max_length=20, blank=True, verbose_name="Nro Legajo")
     telefono = models.CharField(max_length=40, blank=True, verbose_name="Telefono")
+    usuario_fijo = models.BooleanField(default=False, verbose_name="Usuario fijo")
+    sucursal_base = models.ForeignKey(
+        "cashops.Sucursal",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="usuarios_base",
+    )
 
 
     class Meta:
         verbose_name = "user"
         verbose_name_plural = "users"
+
+    def clean(self) -> None:
+        super().clean()
+        if self.usuario_fijo and not self.sucursal_base_id:
+            raise ValidationError({"sucursal_base": "La sucursal base es obligatoria para un usuario fijo."})
 
     @property
     def normalized_role_code(self) -> str:

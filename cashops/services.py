@@ -14,13 +14,12 @@ from .models import (
     Justificacion,
     LimiteRubroOperativo,
     MovimientoCaja,
-    Producto,
     RubroOperativo,
     Sucursal,
     Transferencia,
     Turno,
 )
-from .permissions import can_assign_box_to_user, ensure_can_operate_box
+from .permissions import can_assign_box_to_user, ensure_can_operate_box, is_cashops_admin
 
 
 CLOSING_DIFF_THRESHOLD = Decimal("10000.00")
@@ -745,6 +744,12 @@ def open_box(*, user, turno: Turno, sucursal: Sucursal, monto_inicial: Decimal, 
         raise PermissionDenied("No tenes permiso para asignar una caja a otro usuario.")
     if monto_inicial < 0:
         raise ValidationError({"monto_inicial": "El monto inicial no puede ser negativo."})
+    if not is_cashops_admin(actor) and getattr(user, "usuario_fijo", False):
+        base_sucursal_id = getattr(user, "sucursal_base_id", None)
+        if base_sucursal_id is None:
+            raise ValidationError({"sucursal": "El usuario fijo necesita sucursal base."})
+        if sucursal.id != base_sucursal_id:
+            raise ValidationError({"sucursal": "El usuario fijo solo puede abrir cajas en su sucursal base."})
 
     turno = Turno.objects.select_for_update().select_related("sucursal").get(pk=turno.pk)
     if turno.estado != Turno.Estado.ABIERTO:
@@ -887,7 +892,6 @@ def register_general_sale(
     monto: Decimal,
     tipo_venta: str,
     rubro: RubroOperativo,
-    producto: Producto | None = None,
     observacion: str = "",
     creado_por=None,
     actor=None,
@@ -900,8 +904,6 @@ def register_general_sale(
         raise ValidationError({"monto": "El monto debe ser mayor que cero."})
     if rubro is None:
         raise ValidationError({"rubro": "El rubro es obligatorio para registrar la venta."})
-    if producto and producto.rubro_id != rubro.id:
-        raise ValidationError({"producto": "El producto no pertenece al rubro seleccionado."})
 
     # Solo las ventas en efectivo impactan el saldo fisico de la caja
     impacta_saldo = tipo_venta == MovimientoCaja.Tipo.INGRESO_EFECTIVO
@@ -915,7 +917,6 @@ def register_general_sale(
         categoria=rubro.nombre,
         observacion=observacion,
         rubro_operativo=rubro,
-        producto=producto,
         creado_por=actor,
     )
     return movement
@@ -944,6 +945,10 @@ def transfer_between_boxes(
     locked = {box.pk: box for box in cajas}
     caja_origen = _validate_open_box(locked[caja_origen.pk], actor=actor, lock=False)
     caja_destino = _validate_open_box(locked[caja_destino.pk], actor=actor, lock=False)
+    if caja_origen.sucursal_id != caja_destino.sucursal_id:
+        raise ValidationError(
+            {"caja_destino": "El arrastre o traspaso entre cajas solo se permite dentro de la misma sucursal."}
+        )
     _validate_available_funds(caja_origen, monto)
 
     transferencia = Transferencia.objects.create(

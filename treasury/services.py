@@ -5,8 +5,8 @@ from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
-from django.db.models import Count, Q
-from django.db.models import Sum
+from django.db.models import Count, DateField, Q, Sum
+from django.db.models.functions import TruncMonth
 from django.utils import timezone
 
 from .models import (
@@ -21,6 +21,7 @@ from .models import (
     LotePOS,
     MovimientoBancario,
     MovimientoCajaCentral,
+    ObjetivoRubroEconomico,
     PagoTesoreria,
     Proveedor,
 )
@@ -41,6 +42,60 @@ def _save_instance(instance):
 
 def _first_day_of_month(value: date) -> date:
     return value.replace(day=1)
+
+
+def _month_starts_between(date_from: date, date_to: date) -> list[date]:
+    current = _first_day_of_month(date_from)
+    end = _first_day_of_month(date_to)
+    months = []
+    while current <= end:
+        months.append(current)
+        if current.month == 12:
+            current = date(current.year + 1, 1, 1)
+        else:
+            current = date(current.year, current.month + 1, 1)
+    return months
+
+
+def _resolve_economic_targets(*, period_from: date, period_to: date, sucursal=None) -> dict[tuple[int, date], ObjetivoRubroEconomico]:
+    objectives = (
+        ObjetivoRubroEconomico.objects.filter(
+            activo=True,
+            vigencia_desde__lte=period_to,
+        )
+        .filter(Q(vigencia_hasta__isnull=True) | Q(vigencia_hasta__gte=period_from))
+        .select_related("rubro_operativo", "sucursal")
+    )
+    if sucursal is None:
+        objectives = objectives.filter(sucursal__isnull=True)
+    else:
+        objectives = objectives.filter(Q(sucursal=sucursal) | Q(sucursal__isnull=True))
+
+    resolved: dict[tuple[int, date], ObjetivoRubroEconomico] = {}
+    month_starts = _month_starts_between(period_from, period_to)
+    branch_id = getattr(sucursal, "pk", None)
+
+    for objective in objectives.order_by("rubro_operativo_id", "vigencia_desde", "pk"):
+        for month_start in month_starts:
+            if objective.vigencia_desde > month_start:
+                continue
+            if objective.vigencia_hasta and objective.vigencia_hasta < month_start:
+                continue
+            key = (objective.rubro_operativo_id, month_start)
+            current = resolved.get(key)
+            objective_priority = (
+                1 if branch_id is not None and objective.sucursal_id == branch_id else 0,
+                objective.vigencia_desde,
+                objective.pk,
+            )
+            current_priority = (
+                1 if current and branch_id is not None and current.sucursal_id == branch_id else 0,
+                current.vigencia_desde if current else date.min,
+                current.pk if current else 0,
+            )
+            if current is None or objective_priority > current_priority:
+                resolved[key] = objective
+    return resolved
 
 
 def _recalculate_payable_locked(payable: CuentaPorPagar) -> CuentaPorPagar:
@@ -871,6 +926,9 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
 
     from cashops.models import MovimientoCaja, RubroOperativo
 
+    period_from = _first_day_of_month(date_from)
+    period_to = _first_day_of_month(date_to)
+    month_starts = _month_starts_between(period_from, period_to)
     sale_query = Q(tipo__in=[
         MovimientoCaja.Tipo.VENTA_TARJETA,
         MovimientoCaja.Tipo.VENTA_TRANSFERENCIA,
@@ -894,19 +952,30 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
         sales = sales.filter(caja__sucursal=sucursal)
         expenses = expenses.filter(caja__sucursal=sucursal)
 
-    sales_total = sales.aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
+    sales_rows = list(
+        sales.annotate(
+            period_month=TruncMonth("caja__turno__fecha_operativa", output_field=DateField())
+        )
+        .values("rubro_operativo", "period_month")
+        .annotate(total=Sum("monto"))
+    )
+    sales_total = Decimal("0.00")
+    sales_by_rubro = {}
+    sales_by_rubro_month = {}
+    for row in sales_rows:
+        rubro_id = row["rubro_operativo"]
+        period_month = row["period_month"]
+        total = row["total"] or Decimal("0.00")
+        sales_total += total
+        sales_by_rubro[rubro_id] = sales_by_rubro.get(rubro_id, Decimal("0.00")) + total
+        sales_by_rubro_month[(rubro_id, period_month)] = total
+
     cash_expense_total = expenses.aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
-    sales_by_rubro = {
-        row["rubro_operativo"]: row["total"] or Decimal("0.00")
-        for row in sales.values("rubro_operativo").annotate(total=Sum("monto"))
-    }
     cash_expense_by_rubro = {
         row["rubro_operativo"]: row["total"] or Decimal("0.00")
         for row in expenses.values("rubro_operativo").annotate(total=Sum("monto"))
     }
 
-    period_from = _first_day_of_month(date_from)
-    period_to = _first_day_of_month(date_to)
     period_payables = CuentaPorPagar.objects.exclude(
         estado=CuentaPorPagar.Estado.ANULADA
     ).filter(
@@ -951,29 +1020,76 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
         rubro.pk: rubro
         for rubro in RubroOperativo.objects.filter(pk__in=rubro_ids)
     }
+    objective_lookup = _resolve_economic_targets(
+        period_from=period_from,
+        period_to=period_to,
+        sucursal=sucursal,
+    )
     items = []
+    objective_total = Decimal("0.00")
+    objective_scope_real_total = Decimal("0.00")
+    objective_scope_sales_total = Decimal("0.00")
+    deviation_total = Decimal("0.00")
+    rubros_without_objective = 0
     for rubro_id in sorted(rubro_ids, key=lambda current: (rubros.get(current).nombre.lower() if rubros.get(current) else "")):
         rubro = rubros.get(rubro_id)
         debt_item = debt_by_rubro.get(rubro_id, {})
         expense_cash = cash_expense_by_rubro.get(rubro_id, Decimal("0.00"))
         expense_debt = debt_item.get("debt_total", Decimal("0.00"))
         total_expense = expense_cash + expense_debt
+        sales_total_rubro = sales_by_rubro.get(rubro_id, Decimal("0.00"))
         expense_ratio = (
             ((total_expense * Decimal("100.00")) / sales_total).quantize(Decimal("0.01"))
             if sales_total > 0
             else Decimal("0.00")
         )
+        objective_amount = Decimal("0.00")
+        objective_sources = set()
+        objective_months = 0
+        for month_start in month_starts:
+            objective = objective_lookup.get((rubro_id, month_start))
+            month_sales = sales_by_rubro_month.get((rubro_id, month_start), Decimal("0.00"))
+            if objective is None or month_sales <= 0:
+                continue
+            objective_amount += (month_sales * objective.porcentaje_objetivo) / Decimal("100.00")
+            objective_months += 1
+            objective_sources.add("Sucursal" if objective.sucursal_id else "Global")
+        objective_amount = objective_amount.quantize(Decimal("0.01"))
+        has_objective = objective_months > 0
+        objective_ratio = (
+            ((objective_amount * Decimal("100.00")) / sales_total_rubro).quantize(Decimal("0.01"))
+            if has_objective and sales_total_rubro > 0
+            else Decimal("0.00")
+        )
+        deviation_amount = None
+        deviation_ratio = None
+        if has_objective:
+            deviation_amount = (total_expense - objective_amount).quantize(Decimal("0.01"))
+            deviation_ratio = (expense_ratio - objective_ratio).quantize(Decimal("0.01"))
+            objective_total += objective_amount
+            objective_scope_real_total += total_expense
+            objective_scope_sales_total += sales_total_rubro
+            deviation_total += deviation_amount
+        elif rubro is not None and (sales_total_rubro > 0 or total_expense > 0):
+            rubros_without_objective += 1
         items.append(
             {
                 "rubro": rubro,
                 "rubro_nombre": rubro.nombre if rubro is not None else "Sin rubro",
-                "sales_total": sales_by_rubro.get(rubro_id, Decimal("0.00")),
+                "sales_total": sales_total_rubro,
                 "cash_expense_total": expense_cash,
                 "debt_total": expense_debt,
                 "debt_pending": debt_item.get("debt_pending", Decimal("0.00")),
                 "payables_count": debt_item.get("count", 0),
                 "total_expense": total_expense,
                 "expense_ratio_over_sales": expense_ratio,
+                "has_objective": has_objective,
+                "objective_amount": objective_amount,
+                "objective_ratio_over_sales": objective_ratio,
+                "deviation_amount": deviation_amount,
+                "deviation_ratio_over_sales": deviation_ratio,
+                "objective_months": objective_months,
+                "objective_scope_label": " / ".join(sorted(objective_sources)) if objective_sources else "",
             }
         )
     items.sort(key=lambda item: (-item["total_expense"], item["rubro_nombre"].lower()))
@@ -982,6 +1098,20 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
     margin_pct = (
         ((economic_result * Decimal("100.00")) / sales_total).quantize(Decimal("0.01"))
         if sales_total > 0
+        else Decimal("0.00")
+    )
+    objective_total = objective_total.quantize(Decimal("0.01"))
+    objective_scope_real_total = objective_scope_real_total.quantize(Decimal("0.01"))
+    objective_scope_sales_total = objective_scope_sales_total.quantize(Decimal("0.01"))
+    deviation_total = deviation_total.quantize(Decimal("0.01"))
+    objective_scope_ratio = (
+        ((objective_total * Decimal("100.00")) / objective_scope_sales_total).quantize(Decimal("0.01"))
+        if objective_scope_sales_total > 0
+        else Decimal("0.00")
+    )
+    real_scope_ratio = (
+        ((objective_scope_real_total * Decimal("100.00")) / objective_scope_sales_total).quantize(Decimal("0.01"))
+        if objective_scope_sales_total > 0
         else Decimal("0.00")
     )
     return {
@@ -997,6 +1127,15 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
         "economic_result": economic_result,
         "margin_pct": margin_pct,
         "items": items,
+        "objective_total": objective_total,
+        "objective_scope_real_total": objective_scope_real_total,
+        "objective_scope_sales_total": objective_scope_sales_total,
+        "objective_scope_ratio": objective_scope_ratio,
+        "real_scope_ratio": real_scope_ratio,
+        "deviation_total": deviation_total,
+        "objective_items_count": sum(1 for item in items if item["has_objective"]),
+        "rubros_without_objective": rubros_without_objective,
+        "branch_objectives_enabled": sucursal is not None,
         "unmapped_payables_total": unmapped_payables_total,
         "unmapped_payables_pending": unmapped_payables_pending,
         "unmapped_payables_count": unmapped_payables_count,

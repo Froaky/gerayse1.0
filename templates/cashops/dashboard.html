@@ -157,13 +157,9 @@
           </div>
           {% if selected_box.estado == 'ABIERTA' %}
             <div class="action-grid" style="margin-top:16px;">
-              <a class="action-card" href="{% url 'cashops:box_expense' selected_box.id %}">
-                <span>Egreso por rubro</span>
-                <small>monto, rubro y observacion</small>
-              </a>
               <a class="action-card" href="{% url 'cashops:register_sale' selected_box.id %}">
-                <span>Registrar venta</span>
-                <small>efectivo, pos, depo, etc.</small>
+                <span>Registrar ingreso</span>
+                <small>venta, cobro, pos, qr o transferencia</small>
               </a>
               <a class="action-card" href="{% url 'cashops:box_income' selected_box.id %}">
                 <span>Ingreso efectivo</span>
@@ -174,9 +170,12 @@
                 <small>saldo fisico y validacion</small>
               </a>
               <a class="action-card" href="{% url 'cashops:transfer_boxes' %}">
-                <span>Traspaso entre cajas</span>
-                <small>origen, destino y monto</small>
+                <span>Arrastre entre cajas</span>
+                <small>misma sucursal, turnos o dias</small>
               </a>
+            </div>
+            <div style="margin-top:12px;">
+              <a class="button-secondary" href="{% url 'cashops:box_expense' selected_box.id %}">Registrar egreso</a>
             </div>
           {% endif %}
         </div>

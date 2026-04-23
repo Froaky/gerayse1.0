@@ -29,19 +29,19 @@ Construir una vista economica del negocio por periodo y sucursal que relacione v
 
 ## User Stories
 
-### [ ] US-11.1 Parametros de porcentaje por rubro sobre ventas
+### [x] US-11.1 Parametros de porcentaje por rubro sobre ventas
 
 Como administracion
 Quiero registrar porcentajes objetivo de gasto por rubro sobre ventas
 Para medir si cada sucursal se mantiene dentro del rango esperado
 
 Criterios:
-- porcentaje por rubro
-- alcance por sucursal
-- alcance por periodo cuando aplique
-- activacion y desactivacion
+- porcentaje objetivo por rubro
+- alcance global o por sucursal
+- vigencia por periodo cuando aplique
+- activacion y desactivacion sin perder historial de objetivos
 
-### [ ] US-11.2 Calculo de gasto real contra ventas
+### [x] US-11.2 Calculo de gasto real contra ventas
 
 Como administracion
 Quiero comparar el gasto real por rubro contra las ventas
@@ -49,9 +49,10 @@ Para detectar desvio economico por sucursal y periodo
 
 Criterios:
 - ventas del periodo como base de calculo
-- gastos del periodo por rubro
+- gastos y deuda imputable del periodo por rubro
 - porcentaje real calculado
 - desvio contra objetivo visible
+- filtros por sucursal, periodo y rubro
 
 ### [x] US-11.3 Rentabilidad por sucursal y periodo
 
@@ -89,6 +90,7 @@ Criterios:
 - rubro obligatorio
 - fecha o periodo obligatorio
 - filtros por rubro, periodo y estado
+- una deuda sin rubro o periodo no entra a la lectura economica consolidada
 
 ### [ ] US-11.6 Reemplazo funcional de categoria por rubro
 
@@ -100,6 +102,7 @@ Criterios:
 - rubro reemplaza o complementa categoria segun el flujo
 - la UI usa el termino coherente para el usuario
 - la migracion funcional no rompe consultas existentes
+- la compatibilidad legacy queda explicita mientras existan categorias historicas sin migrar
 
 ## Dependencias
 

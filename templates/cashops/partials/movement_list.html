@@ -13,9 +13,8 @@
       </div>
       {% if movement.rubro_operativo %}
         <div class="muted" style="margin-top:6px;">Rubro: {{ movement.rubro_operativo.nombre }}</div>
-      {% endif %}
-      {% if movement.categoria %}
-        <div class="muted" style="margin-top:6px;">Categoria: {{ movement.categoria }}</div>
+      {% elif movement.categoria %}
+        <div class="muted" style="margin-top:6px;">Detalle: {{ movement.categoria }}</div>
       {% endif %}
       {% if movement.observacion %}
         <div class="muted" style="margin-top:6px;">{{ movement.observacion }}</div>

@@ -1,7 +1,6 @@
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
-from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError
@@ -26,7 +25,7 @@ from .forms import (
     TransferenciaEntreSucursalesForm,
     VentaGeneralForm,
 )
-from .models import Caja, CierreCaja, LimiteRubroOperativo, Producto, RubroOperativo, Sucursal, Turno
+from .models import Caja, CierreCaja, LimiteRubroOperativo, RubroOperativo, Sucursal, Turno
 from .services import (
     BRANCH_TRANSFER_DISABLED_REASON,
     CLOSING_DIFF_THRESHOLD,
@@ -47,11 +46,6 @@ from .services import (
     transfer_between_boxes,
     transfer_between_branches,
 )
-
-
-User = get_user_model()
-
-
 def _boxes_for_request(request):
     queryset = Caja.objects.select_related("sucursal", "turno", "usuario")
     if request.user.is_authenticated and request.user.is_cashops_admin():
@@ -623,13 +617,6 @@ def turno_list(request):
 @require_http_methods(["GET", "POST"])
 def open_box_view(request):
     form = CajaAperturaForm(request.POST or None, actor=request.user)
-    form.fields["usuario"].queryset = (
-        User.objects.filter(is_active=True)
-        if request.user.is_cashops_admin()
-        else User.objects.filter(pk=request.user.pk, is_active=True)
-    )
-    form.fields["sucursal"].queryset = Sucursal.objects.filter(activa=True)
-    form.fields["turno"].queryset = Turno.objects.select_related("sucursal").filter(estado=Turno.Estado.ABIERTO)
     if request.method == "POST" and form.is_valid():
         try:
             box = open_box(
@@ -713,14 +700,13 @@ def register_sale_view(request, box_id: int):
                 monto=form.cleaned_data["monto"],
                 tipo_venta=form.cleaned_data["tipo_venta"],
                 rubro=form.cleaned_data["rubro"],
-                producto=form.cleaned_data["producto"],
                 observacion=form.cleaned_data["observacion"],
                 actor=request.user,
             )
         except (ValidationError, IntegrityError) as error:
             _handle_operation_error(form, error, "No se pudo registrar la venta.")
         else:
-            messages.success(request, "Venta registrada con exito.")
+            messages.success(request, "Ingreso operativo registrado con exito.")
             url = f"{reverse('cashops:dashboard')}?scope=box&box={box.pk}"
             return _hx_redirect(url) if _is_htmx(request) else redirect(url)
 
@@ -729,44 +715,15 @@ def register_sale_view(request, box_id: int):
         "cashops/form_page.html",
         "cashops/partials/form_card.html",
         {
-            "title": "Registrar Venta",
-            "subtitle": "Efectivo, Tarjeta, Transferencia o PedidosYa.",
+            "title": "Registrar ingreso operativo",
+            "subtitle": "Cobros y ventas operativas con rubro explicito.",
             "form": form,
-            "submit_label": "Registrar Venta",
+            "submit_label": "Registrar ingreso",
             "back_url": f"{reverse('cashops:dashboard')}?scope=box&box={box.pk}",
             "form_action": reverse("cashops:register_sale", args=[box.pk]),
         },
         status=400 if request.method == "POST" and not form.is_valid() else 200,
     )
-
-
-@login_required
-def filter_products_by_rubro(request):
-    rubro_id = request.GET.get("rubro")
-    if not rubro_id:
-        return HttpResponse('<option value="">Seleccionar producto (opcional)</option>')
-    
-    productos = Producto.objects.filter(rubro_id=rubro_id, activo=True)
-    options = ['<option value="">Seleccionar producto (opcional)</option>']
-    for p in productos:
-        options.append(f'<option value="{p.id}">{p.nombre}</option>')
-    return HttpResponse("".join(options))
-
-
-@login_required
-def get_rubro_by_product(request):
-    producto_id = request.GET.get("producto")
-    if not producto_id:
-        return HttpResponse("") # No cambiar rubro si se limpia
-    
-    producto = get_object_or_404(Producto, pk=producto_id)
-    # Devolver el fragmento de HTML que HTMX usara para el rubro
-    rubros = RubroOperativo.objects.filter(activo=True, es_sistema=False)
-    options = []
-    for r in rubros:
-        selected = "selected" if r.id == producto.rubro_id else ""
-        options.append(f'<option value="{r.id}" {selected}>{r.nombre}</option>')
-    return HttpResponse("".join(options))
 
 
 @login_required
@@ -836,10 +793,10 @@ def transfer_between_boxes_view(request):
         "cashops/form_page.html",
         "cashops/partials/form_card.html",
         {
-            "title": "Traspaso entre cajas",
-            "subtitle": "Moviendo efectivo entre cajas activas.",
+            "title": "Arrastre entre cajas",
+            "subtitle": "Unificacion o traspaso auditable dentro de la misma sucursal, incluso entre turnos o dias.",
             "form": form,
-            "submit_label": "Guardar traspaso",
+            "submit_label": "Guardar arrastre",
             "back_url": reverse("cashops:dashboard"),
             "form_action": reverse("cashops:transfer_boxes"),
         },

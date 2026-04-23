@@ -9,6 +9,7 @@ from .models import (
     DescuentoAcreditacion,
     LotePOS,
     MovimientoBancario,
+    ObjetivoRubroEconomico,
     PagoTesoreria,
     Proveedor,
 )
@@ -47,6 +48,14 @@ class CategoriaCuentaPagarAdmin(TreasuryNoDeleteAdminMixin, admin.ModelAdmin):
     list_filter = ("activo",)
     search_fields = ("nombre",)
     autocomplete_fields = ("creado_por",)
+
+
+@admin.register(ObjetivoRubroEconomico)
+class ObjetivoRubroEconomicoAdmin(TreasuryNoDeleteAdminMixin, admin.ModelAdmin):
+    list_display = ("rubro_operativo", "sucursal", "porcentaje_objetivo", "vigencia_desde", "vigencia_hasta", "activo")
+    list_filter = ("activo", "sucursal", "vigencia_desde")
+    search_fields = ("rubro_operativo__nombre", "sucursal__nombre", "sucursal__codigo")
+    autocomplete_fields = ("rubro_operativo", "sucursal", "creado_por", "actualizado_por")
 
 
 @admin.register(CuentaBancaria)

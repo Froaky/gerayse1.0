@@ -10,8 +10,18 @@ from django.utils import timezone
 
 from users.models import Role
 
-from .forms import CajaAperturaForm
-from .models import AlertaOperativa, Caja, CierreCaja, LimiteRubroOperativo, MovimientoCaja, RubroOperativo, Sucursal, Turno
+from .forms import CajaAperturaForm, VentaGeneralForm
+from .models import (
+    AlertaOperativa,
+    Caja,
+    CierreCaja,
+    LimiteRubroOperativo,
+    MovimientoCaja,
+    RubroOperativo,
+    Sucursal,
+    Transferencia,
+    Turno,
+)
 from .permissions import can_operate_box, ensure_can_operate_box, is_cashops_admin
 from .services import (
     BRANCH_TRANSFER_DISABLED_REASON,
@@ -29,6 +39,7 @@ from .services import (
     register_expense,
     transfer_between_boxes,
     transfer_between_branches,
+    register_general_sale,
 )
 
 
@@ -121,6 +132,26 @@ class CashopsPermissionUnitTests(CashopsTestCase):
 
         self.assertTrue(form.is_valid())
 
+    def test_open_form_prefills_fixed_user_branch(self):
+        fixed_user = User.objects.create_user(
+            username="fijo",
+            password="test",
+            role=self.operator_role,
+            usuario_fijo=True,
+            sucursal_base=self.branch_a,
+        )
+
+        form = CajaAperturaForm(actor=fixed_user)
+
+        self.assertEqual(form.fields["usuario"].initial, fixed_user.pk)
+        self.assertEqual(form.fields["sucursal"].initial, self.branch_a.pk)
+        self.assertIn(self.turno_a, list(form.fields["turno"].queryset))
+
+    def test_sale_form_no_longer_exposes_product_field(self):
+        form = VentaGeneralForm()
+
+        self.assertNotIn("producto", form.fields)
+
 
 class CashopsServiceTests(CashopsTestCase):
     def test_admin_can_assign_box_to_another_user(self):
@@ -145,6 +176,47 @@ class CashopsServiceTests(CashopsTestCase):
                 monto_inicial=Decimal("100.00"),
                 actor=self.operator,
             )
+
+    def test_fixed_user_cannot_open_box_outside_base_branch(self):
+        fixed_user = User.objects.create_user(
+            username="fijo-op",
+            password="test",
+            role=self.operator_role,
+            usuario_fijo=True,
+            sucursal_base=self.branch_a,
+        )
+
+        with self.assertRaises(ValidationError) as ctx:
+            open_box(
+                user=fixed_user,
+                turno=self.turno_b,
+                sucursal=self.branch_b,
+                monto_inicial=Decimal("100.00"),
+                actor=fixed_user,
+            )
+
+        self.assertIn("sucursal", ctx.exception.message_dict)
+        self.assertIn("sucursal base", ctx.exception.message_dict["sucursal"][0])
+
+    def test_fixed_user_can_open_box_in_base_branch(self):
+        fixed_user = User.objects.create_user(
+            username="fijo-ok",
+            password="test",
+            role=self.operator_role,
+            usuario_fijo=True,
+            sucursal_base=self.branch_a,
+        )
+
+        caja = open_box(
+            user=fixed_user,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            monto_inicial=Decimal("100.00"),
+            actor=fixed_user,
+        )
+
+        self.assertEqual(caja.usuario, fixed_user)
+        self.assertEqual(caja.sucursal, self.branch_a)
 
     def test_open_box_with_zero_initial_amount_is_valid_and_creates_no_movement(self):
         caja = open_box(
@@ -219,6 +291,30 @@ class CashopsServiceTests(CashopsTestCase):
         self.assertEqual(movimiento.tipo, MovimientoCaja.Tipo.VENTA_TARJETA)
         self.assertFalse(movimiento.impacta_saldo_caja)
         self.assertEqual(caja.saldo_esperado, Decimal("1000.00"))
+
+    def test_general_sale_uses_rubro_without_product(self):
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            monto_inicial=Decimal("1000.00"),
+            actor=self.operator,
+        )
+
+        movimiento = register_general_sale(
+            caja=caja,
+            monto=Decimal("275.00"),
+            tipo_venta=MovimientoCaja.Tipo.VENTA_QR,
+            rubro=self.rubro_insumos,
+            observacion="Ingreso por QR",
+            creado_por=self.operator,
+            actor=self.operator,
+        )
+
+        self.assertEqual(movimiento.tipo, MovimientoCaja.Tipo.VENTA_QR)
+        self.assertEqual(movimiento.rubro_operativo, self.rubro_insumos)
+        self.assertEqual(movimiento.categoria, self.rubro_insumos.nombre)
+        self.assertIsNone(movimiento.producto)
 
     def test_close_box_ignores_card_sale_in_expected_balance(self):
         caja = open_box(
@@ -628,11 +724,11 @@ class CashopsServiceTests(CashopsTestCase):
             actor=self.operator,
         )
         caja_destino = open_box(
-            user=self.operator,
-            turno=self.turno_b,
-            sucursal=self.branch_b,
+            user=self.operator_2,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
             monto_inicial=Decimal("0.00"),
-            actor=self.operator,
+            actor=self.admin,
         )
 
         with self.assertRaises(ValidationError):
@@ -641,9 +737,92 @@ class CashopsServiceTests(CashopsTestCase):
                 caja_destino=caja_destino,
                 monto=Decimal("150.00"),
                 observacion="Sin fondos",
-                creado_por=self.operator,
-                actor=self.operator,
+                creado_por=self.admin,
+                actor=self.admin,
             )
+
+    def test_transfer_between_boxes_rejects_different_branch(self):
+        caja_origen = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            monto_inicial=Decimal("200.00"),
+            actor=self.operator,
+        )
+        caja_destino = open_box(
+            user=self.operator_2,
+            turno=self.turno_b,
+            sucursal=self.branch_b,
+            monto_inicial=Decimal("50.00"),
+            actor=self.admin,
+        )
+
+        with self.assertRaises(ValidationError) as ctx:
+            transfer_between_boxes(
+                caja_origen=caja_origen,
+                caja_destino=caja_destino,
+                monto=Decimal("50.00"),
+                observacion="Arrastre invalido",
+                creado_por=self.admin,
+                actor=self.admin,
+            )
+
+        self.assertIn("caja_destino", ctx.exception.message_dict)
+        self.assertIn("misma sucursal", ctx.exception.message_dict["caja_destino"][0])
+
+    def test_transfer_between_boxes_allows_same_branch_across_turns_and_days(self):
+        caja_origen = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            monto_inicial=Decimal("500.00"),
+            actor=self.operator,
+        )
+        turno_siguiente = Turno.objects.create(
+            sucursal=self.branch_a,
+            fecha_operativa="2026-03-28",
+            tipo=Turno.Tipo.TARDE,
+            estado=Turno.Estado.ABIERTO,
+            creado_por=self.admin,
+        )
+        caja_destino = open_box(
+            user=self.operator_2,
+            turno=turno_siguiente,
+            sucursal=self.branch_a,
+            monto_inicial=Decimal("0.00"),
+            actor=self.admin,
+        )
+
+        transferencia = transfer_between_boxes(
+            caja_origen=caja_origen,
+            caja_destino=caja_destino,
+            monto=Decimal("150.00"),
+            observacion="Arrastre de turno",
+            creado_por=self.admin,
+            actor=self.admin,
+        )
+
+        caja_origen.refresh_from_db()
+        caja_destino.refresh_from_db()
+
+        self.assertEqual(transferencia.sucursal_origen, self.branch_a)
+        self.assertEqual(transferencia.sucursal_destino, self.branch_a)
+        self.assertEqual(transferencia.caja_origen.turno.fecha_operativa, date(2026, 3, 27))
+        self.assertEqual(transferencia.caja_destino.turno.fecha_operativa, date(2026, 3, 28))
+        self.assertEqual(caja_origen.saldo_esperado, Decimal("350.00"))
+        self.assertEqual(caja_destino.saldo_esperado, Decimal("150.00"))
+        self.assertEqual(
+            Transferencia.objects.filter(caja_origen=caja_origen, caja_destino=caja_destino).count(),
+            1,
+        )
+        self.assertEqual(
+            caja_origen.movimientos.filter(transferencia=transferencia, tipo=MovimientoCaja.Tipo.TRANSFERENCIA_SALIDA).count(),
+            1,
+        )
+        self.assertEqual(
+            caja_destino.movimientos.filter(transferencia=transferencia, tipo=MovimientoCaja.Tipo.TRANSFERENCIA_ENTRADA).count(),
+            1,
+        )
 
     def test_transfer_between_branches_is_disabled(self):
         caja_origen = open_box(
@@ -862,11 +1041,28 @@ class CashopsViewTests(CashopsTestCase):
         self.owned_box.refresh_from_db()
         self.assertEqual(self.owned_box.saldo_esperado, Decimal("1250.00"))
 
+    def test_sale_view_hides_product_field(self):
+        self.client.force_login(self.operator)
+
+        response = self.client.get(reverse("cashops:register_sale", args=[self.owned_box.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Registrar ingreso operativo")
+        self.assertContains(response, "Registrar ingreso")
+        self.assertNotContains(response, "Objeto / Producto")
+
     def test_transfer_between_boxes_without_funds_returns_error_message(self):
+        turno_siguiente = Turno.objects.create(
+            sucursal=self.branch_a,
+            fecha_operativa="2026-03-28",
+            tipo=Turno.Tipo.TARDE,
+            estado=Turno.Estado.ABIERTO,
+            creado_por=self.admin,
+        )
         second_box = open_box(
             user=self.operator,
-            turno=self.turno_b,
-            sucursal=self.branch_b,
+            turno=turno_siguiente,
+            sucursal=self.branch_a,
             monto_inicial=Decimal("0.00"),
             actor=self.operator,
         )
@@ -1061,14 +1257,16 @@ class CashopsViewTests(CashopsTestCase):
         self.assertContains(response, "No hay caja seleccionada", html=False)
         self.assertNotContains(response, f"Caja #{self.owned_box.id}</h2>", html=False)
 
-    def test_dashboard_uses_egreso_por_rubro_and_hides_branch_transfer(self):
+    def test_dashboard_promotes_income_and_secondary_expense_access(self):
         self.client.force_login(self.admin)
 
         response = self.client.get(reverse("cashops:dashboard") + f"?scope=box&box={self.owned_box.pk}")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Egreso por rubro")
-        self.assertNotContains(response, "Traspaso sucursal")
+        self.assertContains(response, "Registrar ingreso")
+        self.assertContains(response, "Registrar egreso")
+        self.assertContains(response, "Arrastre entre cajas")
+        self.assertNotContains(response, "Egreso por rubro")
 
     def test_dashboard_box_scope_uses_explicit_scope_querystring(self):
         LimiteRubroOperativo.objects.create(

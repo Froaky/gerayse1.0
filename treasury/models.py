@@ -125,6 +125,89 @@ class CategoriaCuentaPagar(models.Model):
         return self.nombre
 
 
+class ObjetivoRubroEconomico(models.Model):
+    rubro_operativo = models.ForeignKey(
+        "cashops.RubroOperativo",
+        on_delete=models.PROTECT,
+        related_name="objetivos_economicos",
+    )
+    sucursal = models.ForeignKey(
+        "cashops.Sucursal",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="objetivos_rubro_economico",
+    )
+    porcentaje_objetivo = models.DecimalField(max_digits=5, decimal_places=2)
+    vigencia_desde = models.DateField()
+    vigencia_hasta = models.DateField(null=True, blank=True)
+    activo = models.BooleanField(default=True)
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="objetivos_rubro_economico_creados",
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+    actualizado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="objetivos_rubro_economico_actualizados",
+    )
+
+    class Meta:
+        ordering = ["rubro_operativo__nombre", "sucursal__nombre", "-vigencia_desde", "id"]
+        constraints = [
+            models.CheckConstraint(
+                check=Q(porcentaje_objetivo__gt=0),
+                name="economic_target_percentage_positive",
+            ),
+            models.CheckConstraint(
+                check=Q(vigencia_hasta__isnull=True) | Q(vigencia_hasta__gte=F("vigencia_desde")),
+                name="economic_target_end_after_start",
+            ),
+            models.UniqueConstraint(
+                fields=["rubro_operativo", "sucursal", "vigencia_desde"],
+                name="unique_economic_target_start_per_scope",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["activo", "vigencia_desde", "vigencia_hasta"]),
+            models.Index(fields=["rubro_operativo", "sucursal", "vigencia_desde"]),
+        ]
+
+    @property
+    def alcance_label(self) -> str:
+        return self.sucursal.nombre if self.sucursal_id else "Global"
+
+    def clean(self) -> None:
+        errors = {}
+        if self.rubro_operativo_id and (
+            not self.rubro_operativo.activo or self.rubro_operativo.es_sistema
+        ):
+            errors["rubro_operativo"] = "El rubro operativo debe estar activo y no puede ser de sistema."
+        if not self.vigencia_desde:
+            errors["vigencia_desde"] = "La vigencia desde es obligatoria."
+        if self.vigencia_desde:
+            self.vigencia_desde = self.vigencia_desde.replace(day=1)
+        if self.vigencia_hasta:
+            self.vigencia_hasta = self.vigencia_hasta.replace(day=1)
+            if self.vigencia_desde and self.vigencia_hasta < self.vigencia_desde:
+                errors["vigencia_hasta"] = "La vigencia hasta no puede ser anterior a la vigencia desde."
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self) -> str:
+        return (
+            f"{self.rubro_operativo.nombre} - {self.alcance_label} - "
+            f"{self.porcentaje_objetivo}% desde {self.vigencia_desde:%m/%Y}"
+        )
+
+
 class CuentaBancaria(models.Model):
     class Tipo(models.TextChoices):
         CAJA_AHORRO = "CA", "Caja de ahorro"

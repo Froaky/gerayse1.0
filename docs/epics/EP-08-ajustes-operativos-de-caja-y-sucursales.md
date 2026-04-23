@@ -26,11 +26,12 @@ Simplificar la operatoria diaria de cajas para que registren solo lo que realmen
 - todo egreso operativo debe quedar asociado a un rubro
 - toda sucursal debe tener un codigo unico y una razon social asociada
 - no debe existir transferencia entre sucursales si la operatoria real ya no la usa
+- un arrastre o unificacion entre turnos o dias solo aplica dentro de la misma sucursal salvo nueva regla explicita
 - un arrastre o unificacion entre turnos o dias no puede duplicar ni perder saldo
 
 ## User Stories
 
-### [ ] US-8.1 Caja operativa solo para ingresos
+### [x] US-8.1 Caja operativa solo para ingresos
 
 Como encargado
 Quiero que la caja diaria registre solo ingresos operativos
@@ -54,7 +55,7 @@ Criterios:
 - observacion opcional pero visible
 - no existe un flujo de "gasto rapido" sin clasificacion
 
-### [ ] US-8.3 Simplificacion del detalle de movimientos
+### [x] US-8.3 Simplificacion del detalle de movimientos
 
 Como operador
 Quiero ver y cargar solo el detalle minimo necesario
@@ -63,6 +64,7 @@ Para reducir ruido en la operacion diaria
 Criterios:
 - se elimina el detalle de producto cuando no aporta al control de caja
 - se elimina el campo de detalle redundante o libre si no se usa para una regla de negocio
+- el operador no necesita cargar el mismo concepto en dos campos distintos
 - la informacion minima restante permite auditar el movimiento
 
 ### [x] US-8.4 Maestro de sucursales con codigo y razon social
@@ -103,7 +105,7 @@ Criterios:
 - la historia existente queda auditada
 - no se pierde trazabilidad de traspasos ya registrados
 
-### [ ] US-8.7 Unificacion o arrastre entre turnos y dias
+### [x] US-8.7 Unificacion o arrastre entre turnos y dias
 
 Como administracion
 Quiero registrar unificaciones controladas entre cajas de distintos turnos o dias
@@ -112,6 +114,8 @@ Para cubrir escenarios reales como TT dia 1 hacia TM dia 2 sin ajustes manuales
 Criterios:
 - se informa origen y destino
 - se informa fecha operativa y turno de ambos lados
+- la unificacion o arrastre no cruza sucursales
+- motivo u observacion obligatoria
 - el movimiento queda auditado como una sola operacion explicable
 - los saldos de origen y destino quedan consistentes
 - el flujo permite ampliar a otros escenarios similares sin duplicar reglas

@@ -1,5 +1,6 @@
 from django import forms
 from django.contrib.auth import get_user_model
+from cashops.models import Sucursal
 from .models import Role
 
 User = get_user_model()
@@ -21,6 +22,8 @@ class PersonalForm(forms.ModelForm):
             "telefono",
             "email",
             "role",
+            "usuario_fijo",
+            "sucursal_base",
             "is_active",
         ]
         labels = {
@@ -29,6 +32,8 @@ class PersonalForm(forms.ModelForm):
             "last_name": "Apellido",
             "dni": "DNI",
             "role": "Rol / Permisos",
+            "usuario_fijo": "Usuario fijo",
+            "sucursal_base": "Sucursal base",
         }
         widgets = {
             "username": forms.TextInput(attrs={"placeholder": "juan.perez"}),
@@ -41,11 +46,18 @@ class PersonalForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["sucursal_base"].queryset = Sucursal.objects.filter(activa=True).order_by("nombre")
         for field in self.fields.values():
             if isinstance(field.widget, forms.Select):
                 field.widget.attrs.setdefault("class", "input select")
             else:
                 field.widget.attrs.setdefault("class", "input")
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if cleaned_data.get("usuario_fijo") and not cleaned_data.get("sucursal_base"):
+            self.add_error("sucursal_base", "La sucursal base es obligatoria para un usuario fijo.")
+        return cleaned_data
 
     def save(self, commit=True):
         user = super().save(commit=False)

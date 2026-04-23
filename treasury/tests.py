@@ -20,6 +20,7 @@ from .admin import (
     CategoriaCuentaPagarAdmin,
     CuentaBancariaAdmin,
     CuentaPorPagarAdmin,
+    ObjetivoRubroEconomicoAdmin,
     PagoTesoreriaAdmin,
     ProveedorAdmin,
 )
@@ -32,6 +33,7 @@ from .models import (
     DescuentoAcreditacion,
     MovimientoBancario,
     MovimientoCajaCentral,
+    ObjetivoRubroEconomico,
     PagoTesoreria,
     Proveedor,
 )
@@ -115,11 +117,18 @@ class TreasuryAdminProtectionTests(TreasuryTestCase):
             monto=Decimal("50.00"),
             actor=self.admin,
         )
+        objective = ObjetivoRubroEconomico.objects.create(
+            rubro_operativo=RubroOperativo.objects.create(nombre="Objetivo admin"),
+            porcentaje_objetivo=Decimal("12.50"),
+            vigencia_desde=timezone.localdate().replace(day=1),
+            creado_por=self.admin,
+        )
         admins = (
             ProveedorAdmin(Proveedor, django_admin.site),
             CategoriaCuentaPagarAdmin(CategoriaCuentaPagar, django_admin.site),
             CuentaBancariaAdmin(CuentaBancaria, django_admin.site),
             CuentaPorPagarAdmin(CuentaPorPagar, django_admin.site),
+            ObjetivoRubroEconomicoAdmin(ObjetivoRubroEconomico, django_admin.site),
             PagoTesoreriaAdmin(PagoTesoreria, django_admin.site),
         )
         sample_objects = {
@@ -127,6 +136,7 @@ class TreasuryAdminProtectionTests(TreasuryTestCase):
             CategoriaCuentaPagarAdmin: self.category,
             CuentaBancariaAdmin: self.bank_account,
             CuentaPorPagarAdmin: payable,
+            ObjetivoRubroEconomicoAdmin: objective,
             PagoTesoreriaAdmin: payment,
         }
         for model_admin in admins:
@@ -181,6 +191,21 @@ class TreasuryServiceTests(TreasuryTestCase):
 
         self.assertEqual(category.rubro_operativo, rubro)
         self.assertEqual(category.rubro_label, "Administracion")
+
+    def test_economic_target_normalizes_month_boundaries(self):
+        rubro = RubroOperativo.objects.create(nombre="Objetivo mensual")
+        objective = ObjetivoRubroEconomico(
+            rubro_operativo=rubro,
+            porcentaje_objetivo=Decimal("18.00"),
+            vigencia_desde=timezone.datetime(2026, 4, 17).date(),
+            vigencia_hasta=timezone.datetime(2026, 6, 28).date(),
+            creado_por=self.admin,
+        )
+
+        objective.full_clean()
+
+        self.assertEqual(objective.vigencia_desde.isoformat(), "2026-04-01")
+        self.assertEqual(objective.vigencia_hasta.isoformat(), "2026-06-01")
 
     def test_partial_payment_recalculates_balance(self):
         payable = register_payable(
@@ -729,6 +754,76 @@ class TreasuryServiceTests(TreasuryTestCase):
         self.assertEqual(admin_item["expense_ratio_over_sales"], Decimal("26.67"))
         self.assertEqual(ventas_item["sales_total"], Decimal("500.00"))
 
+    def test_economic_period_snapshot_applies_branch_objective_over_global(self):
+        branch = Sucursal.objects.create(codigo="SUC-O", nombre="Sucursal Objetivos", razon_social="Objetivos SRL")
+        rubro_ventas = RubroOperativo.objects.create(nombre="Ventas objetivo")
+        turno = Turno.objects.create(
+            sucursal=branch,
+            fecha_operativa=timezone.datetime(2026, 4, 20).date(),
+            tipo=Turno.Tipo.MANANA,
+            estado=Turno.Estado.ABIERTO,
+            creado_por=self.admin,
+        )
+        box = open_box(
+            user=self.operator,
+            turno=turno,
+            sucursal=branch,
+            monto_inicial=Decimal("0.00"),
+            actor=self.admin,
+        )
+
+        from cashops.models import MovimientoCaja
+
+        MovimientoCaja.objects.create(
+            caja=box,
+            tipo=MovimientoCaja.Tipo.INGRESO_EFECTIVO,
+            sentido=MovimientoCaja.Sentido.INGRESO,
+            monto=Decimal("500.00"),
+            impacta_saldo_caja=True,
+            categoria="Venta rubro objetivo",
+            rubro_operativo=rubro_ventas,
+            creado_por=self.operator,
+        )
+        register_expense(
+            caja=box,
+            monto=Decimal("60.00"),
+            rubro_operativo=rubro_ventas,
+            categoria="Costo operativo",
+            observacion="Mismo rubro para comparacion",
+            actor=self.operator,
+        )
+        ObjetivoRubroEconomico.objects.create(
+            rubro_operativo=rubro_ventas,
+            porcentaje_objetivo=Decimal("10.00"),
+            vigencia_desde=timezone.datetime(2026, 4, 1).date(),
+            creado_por=self.admin,
+        )
+        ObjetivoRubroEconomico.objects.create(
+            rubro_operativo=rubro_ventas,
+            sucursal=branch,
+            porcentaje_objetivo=Decimal("15.00"),
+            vigencia_desde=timezone.datetime(2026, 4, 1).date(),
+            creado_por=self.admin,
+        )
+
+        branch_snapshot = build_economic_period_snapshot(
+            date_from=timezone.datetime(2026, 4, 1).date(),
+            date_to=timezone.datetime(2026, 4, 30).date(),
+            sucursal=branch,
+        )
+        global_snapshot = build_economic_period_snapshot(
+            date_from=timezone.datetime(2026, 4, 1).date(),
+            date_to=timezone.datetime(2026, 4, 30).date(),
+        )
+
+        branch_item = next(item for item in branch_snapshot["items"] if item["rubro_nombre"] == "Ventas objetivo")
+        global_item = next(item for item in global_snapshot["items"] if item["rubro_nombre"] == "Ventas objetivo")
+        self.assertEqual(branch_item["objective_amount"], Decimal("75.00"))
+        self.assertEqual(branch_item["deviation_amount"], Decimal("-15.00"))
+        self.assertEqual(branch_snapshot["objective_total"], Decimal("75.00"))
+        self.assertEqual(global_item["objective_amount"], Decimal("50.00"))
+        self.assertEqual(global_snapshot["objective_total"], Decimal("50.00"))
+
 
 @skipUnless(connection.vendor == "postgresql", "La concurrencia con select_for_update requiere PostgreSQL.")
 class TreasuryConcurrencyTests(TransactionTestCase):
@@ -1026,6 +1121,13 @@ class TreasuryViewTests(TreasuryTestCase):
             importe_total=Decimal("70.00"),
             actor=self.admin,
         )
+        ObjetivoRubroEconomico.objects.create(
+            rubro_operativo=rubro,
+            sucursal=branch,
+            porcentaje_objetivo=Decimal("15.00"),
+            vigencia_desde=timezone.localdate().replace(day=1),
+            creado_por=self.admin,
+        )
 
         response = self.client.get(
             reverse("treasury:dashboard"),
@@ -1040,6 +1142,8 @@ class TreasuryViewTests(TreasuryTestCase):
         self.assertContains(response, "Situacion financiera por periodo")
         self.assertContains(response, "Situacion economica y rentabilidad")
         self.assertContains(response, "Resultado economico")
+        self.assertContains(response, "Objetivo parametrizado")
+        self.assertContains(response, "Desvio vs objetivo")
         self.assertContains(response, "Dashboard Rubro")
         self.assertContains(response, "Caja fuerte general")
         self.assertContains(response, "Pendiente de acreditacion")
