@@ -25,6 +25,10 @@ urlpatterns = [
     path("cuentas-por-pagar/<int:payable_id>/", views.cuentas_por_pagar_detail, name="cuentas_por_pagar_detail"),
     path("cuentas-por-pagar/<int:payable_id>/editar/", views.cuentas_por_pagar_update, name="cuentas_por_pagar_update"),
     path("cuentas-por-pagar/<int:payable_id>/anular/", views.cuentas_por_pagar_annul, name="cuentas_por_pagar_annul"),
+    path("compromisos-especiales/", views.compromisos_especiales_list, name="compromisos_especiales_list"),
+    path("compromisos-especiales/nuevo/", views.compromisos_especiales_create, name="compromisos_especiales_create"),
+    path("compromisos-especiales/<int:commitment_id>/", views.compromisos_especiales_detail, name="compromisos_especiales_detail"),
+    path("compromisos-especiales/<int:commitment_id>/autorizar/", views.compromisos_especiales_decide, name="compromisos_especiales_decide"),
     path("pagos/", views.pagos_list, name="pagos_list"),
     path("pagos/transferencia/nuevo/", views.pagos_transferencia_create, name="pagos_transferencia_create"),
     path("pagos/cheque/nuevo/", views.pagos_cheque_create, name="pagos_cheque_create"),
@@ -32,9 +36,8 @@ urlpatterns = [
     path("pagos/efectivo/nuevo/", views.pagos_efectivo_create, name="pagos_efectivo_create"),
     path("pagos/<int:pk>/", views.pagos_detail, name="pagos_detail"),
     path("pagos/<int:payment_id>/annul/", views.pagos_annul, name="pagos_annul"),
-    
     # --- Bank Movements & Conciliation (EP-04) ---
-    # EP-04: Bancos y Conciliación
+    # EP-04: Bancos y Conciliacion
     path("bancos/", views.bank_movements_list, name="bank_movements_list"),
     path("bancos/nuevo/", views.bank_movements_create, name="bank_movements_create"),
     path("bancos/<int:pk>/", views.bank_movements_detail, name="bank_movements_detail"),
@@ -44,7 +47,6 @@ urlpatterns = [
     path("acreditaciones/", views.card_accreditations_list, name="card_accreditations_list"),
     path("acreditaciones/registrar/", views.card_accreditations_register, name="card_accreditations_register"),
     path("conciliacion/", views.bank_reconciliation, name="bank_reconciliation"),
-    
     # EP-05: Flujo de Disponibilidades
     path("disponibilidades/", views.disponibilidades_report, name="disponibilidades"),
     path("disponibilidades/cerrar/", views.close_month_action, name="close_month"),

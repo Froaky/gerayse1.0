@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from datetime import date
+from collections import defaultdict
+from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -42,6 +43,13 @@ OPERATIONAL_ALERT_SCOPE_POLICY_RULES = (
     "Diferencia grave se registra solo a nivel caja porque nace de un cierre concreto.",
     "El filtro de alcance es de lectura: no altera el motor ni consolida registros persistidos.",
 )
+MANAGEMENT_INCOME_TYPES = {
+    MovimientoCaja.Tipo.INGRESO_EFECTIVO: "Efectivo",
+    MovimientoCaja.Tipo.VENTA_TARJETA: "Tarjeta",
+    MovimientoCaja.Tipo.VENTA_TRANSFERENCIA: "Transferencia",
+    MovimientoCaja.Tipo.VENTA_PEDIDOSYA: "PedidosYa",
+    MovimientoCaja.Tipo.VENTA_QR: "QR / MercadoPago",
+}
 
 
 @dataclass(frozen=True)
@@ -553,6 +561,96 @@ def build_operational_period_summary(*, date_from: date, date_to: date, sucursal
         "items": items,
         "active_alerts": [],
         "active_alert_count": 0,
+    }
+
+
+def build_management_daily_matrix(*, date_from: date, date_to: date, sucursal: Sucursal | None = None) -> dict:
+    if date_to < date_from:
+        raise ValidationError({"fecha_hasta": "La fecha hasta no puede ser anterior a la fecha desde."})
+
+    movement_qs = MovimientoCaja.objects.select_related(
+        "caja",
+        "caja__sucursal",
+        "caja__turno",
+        "rubro_operativo",
+        "creado_por",
+    ).filter(
+        caja__turno__fecha_operativa__gte=date_from,
+        caja__turno__fecha_operativa__lte=date_to,
+    ).exclude(tipo=MovimientoCaja.Tipo.APERTURA)
+    if sucursal is not None:
+        movement_qs = movement_qs.filter(caja__sucursal=sucursal)
+
+    income_rows = (
+        movement_qs.filter(tipo__in=MANAGEMENT_INCOME_TYPES.keys())
+        .values("caja__turno__fecha_operativa", "tipo")
+        .annotate(total=Sum("monto"))
+    )
+    expense_rows = (
+        movement_qs.filter(tipo=MovimientoCaja.Tipo.GASTO)
+        .values("caja__turno__fecha_operativa", "rubro_operativo", "rubro_operativo__nombre")
+        .annotate(total=Sum("monto"))
+    )
+
+    channel_keys = list(MANAGEMENT_INCOME_TYPES.keys())
+    channel_labels = [{"key": key, "label": MANAGEMENT_INCOME_TYPES[key]} for key in channel_keys]
+    rubro_ids = set()
+    rubro_names = {}
+    for row in expense_rows:
+        rubro_id = row["rubro_operativo"]
+        if rubro_id is None:
+            continue
+        rubro_ids.add(rubro_id)
+        rubro_names[rubro_id] = row["rubro_operativo__nombre"] or "Sin rubro"
+    rubros = [{"id": rubro_id, "nombre": rubro_names[rubro_id]} for rubro_id in sorted(rubro_ids, key=lambda pk: rubro_names[pk].lower())]
+
+    incomes_by_day = defaultdict(lambda: defaultdict(lambda: Decimal("0.00")))
+    expenses_by_day = defaultdict(lambda: defaultdict(lambda: Decimal("0.00")))
+    for row in income_rows:
+        incomes_by_day[row["caja__turno__fecha_operativa"]][row["tipo"]] += row["total"] or Decimal("0.00")
+    for row in expense_rows:
+        rubro_id = row["rubro_operativo"]
+        if rubro_id is not None:
+            expenses_by_day[row["caja__turno__fecha_operativa"]][rubro_id] += row["total"] or Decimal("0.00")
+
+    days = []
+    current = date_from
+    total_income = Decimal("0.00")
+    total_expense = Decimal("0.00")
+    while current <= date_to:
+        income_by_channel = {key: incomes_by_day[current][key] for key in channel_keys}
+        expense_by_rubro = {item["id"]: expenses_by_day[current][item["id"]] for item in rubros}
+        day_income = sum(income_by_channel.values(), Decimal("0.00"))
+        day_expense = sum(expense_by_rubro.values(), Decimal("0.00"))
+        total_income += day_income
+        total_expense += day_expense
+        days.append(
+            {
+                "date": current,
+                "income_by_channel": income_by_channel,
+                "expense_by_rubro": expense_by_rubro,
+                "income_values": [income_by_channel[key] for key in channel_keys],
+                "expense_values": [expense_by_rubro[item["id"]] for item in rubros],
+                "total_income": day_income,
+                "total_expense": day_expense,
+                "net_result": day_income - day_expense,
+            }
+        )
+        current += timedelta(days=1)
+
+    detail_movements = movement_qs.order_by("caja__turno__fecha_operativa", "caja_id", "id")
+
+    return {
+        "date_from": date_from,
+        "date_to": date_to,
+        "sucursal": sucursal,
+        "channels": channel_labels,
+        "rubros": rubros,
+        "days": days,
+        "detail_movements": detail_movements,
+        "total_income": total_income,
+        "total_expense": total_expense,
+        "net_result": total_income - total_expense,
     }
 
 

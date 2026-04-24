@@ -4,6 +4,7 @@ from django.core.exceptions import PermissionDenied
 from .models import (
     AcreditacionTarjeta,
     CategoriaCuentaPagar,
+    CompromisoEspecial,
     CuentaBancaria,
     CuentaPorPagar,
     DescuentoAcreditacion,
@@ -44,10 +45,10 @@ class ProveedorAdmin(TreasuryNoDeleteAdminMixin, admin.ModelAdmin):
 
 @admin.register(CategoriaCuentaPagar)
 class CategoriaCuentaPagarAdmin(TreasuryNoDeleteAdminMixin, admin.ModelAdmin):
-    list_display = ("nombre", "activo", "creado_en")
-    list_filter = ("activo",)
-    search_fields = ("nombre",)
-    autocomplete_fields = ("creado_por",)
+    list_display = ("nombre", "rubro_operativo", "activo", "creado_en")
+    list_filter = ("activo", "rubro_operativo")
+    search_fields = ("nombre", "rubro_operativo__nombre")
+    autocomplete_fields = ("rubro_operativo", "creado_por")
 
 
 @admin.register(ObjetivoRubroEconomico)
@@ -71,14 +72,21 @@ class CuentaPorPagarAdmin(TreasuryReadOnlyAdminMixin, admin.ModelAdmin):
     list_display = (
         "proveedor",
         "categoria",
+        "rubro_operativo",
         "concepto",
+        "periodo_referencia",
         "fecha_vencimiento",
         "importe_total",
         "saldo_pendiente",
         "estado",
     )
-    list_filter = ("estado", "categoria", "fecha_vencimiento")
-    search_fields = ("proveedor__razon_social", "concepto", "referencia_comprobante")
+    list_filter = ("estado", "categoria__rubro_operativo", "categoria", "periodo_referencia", "fecha_vencimiento")
+    search_fields = (
+        "proveedor__razon_social",
+        "concepto",
+        "referencia_comprobante",
+        "categoria__rubro_operativo__nombre",
+    )
     autocomplete_fields = ("proveedor", "categoria", "creado_por", "anulada_por")
     readonly_fields = (
         "proveedor",
@@ -87,6 +95,7 @@ class CuentaPorPagarAdmin(TreasuryReadOnlyAdminMixin, admin.ModelAdmin):
         "referencia_comprobante",
         "fecha_emision",
         "fecha_vencimiento",
+        "periodo_referencia",
         "importe_total",
         "saldo_pendiente",
         "estado",
@@ -97,6 +106,24 @@ class CuentaPorPagarAdmin(TreasuryReadOnlyAdminMixin, admin.ModelAdmin):
         "anulada_por",
         "anulada_en",
         "motivo_anulacion",
+    )
+
+    @admin.display(description="Rubro")
+    def rubro_operativo(self, obj):
+        return obj.categoria.rubro_label
+
+
+@admin.register(CompromisoEspecial)
+class CompromisoEspecialAdmin(TreasuryNoDeleteAdminMixin, admin.ModelAdmin):
+    list_display = ("tipo", "concepto", "estado", "monto_estimado", "vencimiento", "sucursal", "requiere_autorizacion")
+    list_filter = ("tipo", "estado", "requiere_autorizacion", "sucursal")
+    search_fields = ("concepto", "organismo", "beneficiario", "expediente", "sustento_referencia")
+    autocomplete_fields = (
+        "cuenta_por_pagar",
+        "sucursal",
+        "autorizado_por",
+        "creado_por",
+        "actualizado_por",
     )
 
 

@@ -27,6 +27,7 @@ from .admin import (
 from .models import (
     AcreditacionTarjeta,
     CategoriaCuentaPagar,
+    CompromisoEspecial,
     CuentaBancaria,
     CuentaPorPagar,
     CajaCentral,
@@ -42,18 +43,22 @@ from .services import (
     annul_payment,
     build_economic_period_snapshot,
     build_financial_period_snapshot,
+    build_special_commitments_snapshot,
     build_supplier_history_snapshot,
     create_bank_account,
     create_bank_movement,
     create_payable_category,
     create_supplier,
+    decide_special_commitment,
     link_payment_to_bank_movement,
     register_card_accreditation,
     register_central_cash_movement,
     register_cheque_payment,
     register_echeq_payment,
     register_payable,
+    register_special_commitment,
     register_transfer_payment,
+    toggle_payable_category,
 )
 
 
@@ -71,7 +76,12 @@ class TreasuryTestCase(TestCase):
         self.superadmin.is_superuser = True
         self.superadmin.save(update_fields=["is_staff", "is_superuser"])
         self.operator = User.objects.create_user(username="operador-treasury", password="test", role=self.operator_role)
-        self.category = create_payable_category(nombre="Servicios", actor=self.admin)
+        self.rubro_servicios = RubroOperativo.objects.create(nombre="Servicios")
+        self.category = create_payable_category(
+            nombre="Servicios",
+            rubro_operativo=self.rubro_servicios,
+            actor=self.admin,
+        )
         self.supplier = create_supplier(razon_social="Proveedor Uno SA", identificador_fiscal="30-12345678-9", actor=self.admin)
         self.bank_account = create_bank_account(
             nombre="Cuenta principal",
@@ -192,6 +202,46 @@ class TreasuryServiceTests(TreasuryTestCase):
         self.assertEqual(category.rubro_operativo, rubro)
         self.assertEqual(category.rubro_label, "Administracion")
 
+    def test_active_payable_category_requires_operational_rubro(self):
+        with self.assertRaises(ValidationError) as context:
+            create_payable_category(nombre="Categoria sin rubro", actor=self.admin)
+
+        self.assertIn("rubro_operativo", context.exception.message_dict)
+
+    def test_register_payable_rejects_unmapped_legacy_category(self):
+        legacy_category = CategoriaCuentaPagar.objects.create(
+            nombre="Legacy sin rubro",
+            activo=True,
+            creado_por=self.admin,
+        )
+
+        with self.assertRaises(ValidationError) as context:
+            register_payable(
+                proveedor=self.supplier,
+                categoria=legacy_category,
+                concepto="Factura legacy nueva",
+                fecha_emision=timezone.localdate(),
+                fecha_vencimiento=timezone.localdate(),
+                importe_total=Decimal("100.00"),
+                actor=self.admin,
+            )
+
+        self.assertIn("categoria", context.exception.message_dict)
+
+    def test_toggle_payable_category_cannot_activate_unmapped_legacy_category(self):
+        legacy_category = CategoriaCuentaPagar.objects.create(
+            nombre="Legacy inactiva sin rubro",
+            activo=False,
+            creado_por=self.admin,
+        )
+
+        with self.assertRaises(ValidationError) as context:
+            toggle_payable_category(category=legacy_category, actor=self.admin)
+
+        legacy_category.refresh_from_db()
+        self.assertFalse(legacy_category.activo)
+        self.assertIn("rubro_operativo", context.exception.message_dict)
+
     def test_economic_target_normalizes_month_boundaries(self):
         rubro = RubroOperativo.objects.create(nombre="Objetivo mensual")
         objective = ObjetivoRubroEconomico(
@@ -206,6 +256,120 @@ class TreasuryServiceTests(TreasuryTestCase):
 
         self.assertEqual(objective.vigencia_desde.isoformat(), "2026-04-01")
         self.assertEqual(objective.vigencia_hasta.isoformat(), "2026-06-01")
+
+    def test_special_tax_commitment_requires_fiscal_period_and_due_date(self):
+        payable = register_payable(
+            proveedor=self.supplier,
+            categoria=self.category,
+            concepto="IVA abril",
+            referencia_comprobante="VEP-IVA",
+            fecha_emision=timezone.datetime(2026, 4, 1).date(),
+            fecha_vencimiento=timezone.datetime(2026, 4, 20).date(),
+            importe_total=Decimal("1000.00"),
+            actor=self.admin,
+        )
+
+        with self.assertRaises(ValidationError) as context:
+            register_special_commitment(
+                tipo=CompromisoEspecial.Tipo.IMPUESTO,
+                cuenta_por_pagar=payable,
+                concepto="IVA abril",
+                sustento_referencia="VEP-IVA",
+                monto_estimado=Decimal("1000.00"),
+                organismo="ARCA",
+                actor=self.admin,
+            )
+
+        self.assertIn("periodo_fiscal", context.exception.message_dict)
+
+    def test_plan_commitment_tracks_quota_components_and_snapshot_balance(self):
+        payable = register_payable(
+            proveedor=self.supplier,
+            categoria=self.category,
+            concepto="Plan AFIP cuota 1",
+            referencia_comprobante="PLAN-1",
+            fecha_emision=timezone.datetime(2026, 4, 1).date(),
+            fecha_vencimiento=timezone.datetime(2026, 4, 15).date(),
+            importe_total=Decimal("130.00"),
+            actor=self.admin,
+        )
+        commitment = register_special_commitment(
+            tipo=CompromisoEspecial.Tipo.PLAN_PAGO,
+            cuenta_por_pagar=payable,
+            concepto="Plan AFIP cuota 1",
+            sustento_referencia="PLAN-1",
+            monto_estimado=Decimal("130.00"),
+            plan_nombre="AFIP 2026",
+            numero_cuota=1,
+            total_cuotas=3,
+            capital=Decimal("100.00"),
+            interes_financiero=Decimal("20.00"),
+            interes_resarcitorio=Decimal("10.00"),
+            vencimiento=timezone.datetime(2026, 4, 15).date(),
+            actor=self.admin,
+        )
+
+        snapshot = build_special_commitments_snapshot(
+            date_from=timezone.datetime(2026, 4, 1).date(),
+            date_to=timezone.datetime(2026, 4, 30).date(),
+        )
+        plan_row = list(snapshot["plan_rows"])[0]
+
+        self.assertEqual(commitment.estado, CompromisoEspecial.Estado.PENDIENTE)
+        self.assertEqual(plan_row["plan_nombre"], "AFIP 2026")
+        self.assertEqual(plan_row["total"], Decimal("130.00"))
+        self.assertEqual(plan_row["pendiente"], Decimal("130.00"))
+
+    def test_unapproved_advance_blocks_payment_until_authorized_and_marks_executed(self):
+        payable = register_payable(
+            proveedor=self.supplier,
+            categoria=self.category,
+            concepto="Adelanto excepcional",
+            referencia_comprobante="SOL-AD-1",
+            fecha_emision=timezone.localdate(),
+            fecha_vencimiento=timezone.localdate(),
+            importe_total=Decimal("300.00"),
+            actor=self.admin,
+        )
+        commitment = register_special_commitment(
+            tipo=CompromisoEspecial.Tipo.ADELANTO,
+            cuenta_por_pagar=payable,
+            concepto="Adelanto excepcional",
+            sustento_referencia="SOL-AD-1",
+            monto_estimado=Decimal("300.00"),
+            beneficiario="Empleado Uno",
+            actor=self.admin,
+        )
+
+        self.assertTrue(commitment.requiere_autorizacion)
+        self.assertEqual(commitment.estado, CompromisoEspecial.Estado.APROBACION_PENDIENTE)
+        with self.assertRaises(ValidationError):
+            register_transfer_payment(
+                payable=payable,
+                bank_account=self.bank_account,
+                fecha_pago=timezone.localdate(),
+                monto=Decimal("300.00"),
+                referencia="TRF-AD-1",
+                actor=self.admin,
+            )
+
+        decide_special_commitment(
+            commitment=commitment,
+            aprobado=True,
+            comentario="Autorizado por direccion",
+            actor=self.admin,
+        )
+        register_transfer_payment(
+            payable=payable,
+            bank_account=self.bank_account,
+            fecha_pago=timezone.localdate(),
+            monto=Decimal("300.00"),
+            referencia="TRF-AD-1",
+            actor=self.admin,
+        )
+
+        commitment.refresh_from_db()
+        self.assertEqual(commitment.estado, CompromisoEspecial.Estado.EJECUTADO)
 
     def test_partial_payment_recalculates_balance(self):
         payable = register_payable(
@@ -824,6 +988,45 @@ class TreasuryServiceTests(TreasuryTestCase):
         self.assertEqual(global_item["objective_amount"], Decimal("50.00"))
         self.assertEqual(global_snapshot["objective_total"], Decimal("50.00"))
 
+    def test_economic_snapshot_excludes_legacy_unmapped_payables_from_consolidated_debt(self):
+        legacy_category = CategoriaCuentaPagar.objects.create(
+            nombre="Legacy economico sin rubro",
+            activo=True,
+            creado_por=self.admin,
+        )
+        CuentaPorPagar.objects.create(
+            proveedor=self.supplier,
+            categoria=legacy_category,
+            concepto="Deuda legacy sin rubro",
+            fecha_emision=timezone.datetime(2026, 4, 5).date(),
+            fecha_vencimiento=timezone.datetime(2026, 4, 20).date(),
+            periodo_referencia=timezone.datetime(2026, 4, 1).date(),
+            importe_total=Decimal("250.00"),
+            saldo_pendiente=Decimal("250.00"),
+            creado_por=self.admin,
+        )
+        register_payable(
+            proveedor=self.supplier,
+            categoria=self.category,
+            concepto="Deuda mapeada",
+            fecha_emision=timezone.datetime(2026, 4, 6).date(),
+            fecha_vencimiento=timezone.datetime(2026, 4, 21).date(),
+            periodo_referencia=timezone.datetime(2026, 4, 1).date(),
+            importe_total=Decimal("100.00"),
+            actor=self.admin,
+        )
+
+        snapshot = build_economic_period_snapshot(
+            date_from=timezone.datetime(2026, 4, 1).date(),
+            date_to=timezone.datetime(2026, 4, 30).date(),
+        )
+
+        self.assertEqual(snapshot["debt_period_total"], Decimal("100.00"))
+        self.assertEqual(snapshot["debt_pending_total"], Decimal("100.00"))
+        self.assertEqual(snapshot["unmapped_payables_total"], Decimal("250.00"))
+        self.assertEqual(snapshot["unmapped_payables_count"], 1)
+        self.assertEqual(snapshot["economic_result"], Decimal("-100.00"))
+
 
 @skipUnless(connection.vendor == "postgresql", "La concurrencia con select_for_update requiere PostgreSQL.")
 class TreasuryConcurrencyTests(TransactionTestCase):
@@ -832,7 +1035,12 @@ class TreasuryConcurrencyTests(TransactionTestCase):
     def setUp(self):
         self.admin_role = Role.objects.create(code="ADMIN", name="Administrador")
         self.admin = User.objects.create_user(username="admin-treasury-concurrency", password="test", role=self.admin_role)
-        self.category = create_payable_category(nombre="Mercaderia", actor=self.admin)
+        self.rubro_mercaderia = RubroOperativo.objects.create(nombre="Mercaderia")
+        self.category = create_payable_category(
+            nombre="Mercaderia",
+            rubro_operativo=self.rubro_mercaderia,
+            actor=self.admin,
+        )
         self.supplier = create_supplier(razon_social="Proveedor Concurrencia SA", identificador_fiscal="30-99999999-9", actor=self.admin)
         self.bank_account = create_bank_account(
             nombre="Cuenta concurrencia",
@@ -936,6 +1144,118 @@ class TreasuryViewTests(TreasuryTestCase):
         payable = CuentaPorPagar.objects.get(concepto="Factura mensual")
         self.assertEqual(payable.saldo_pendiente, Decimal("250.00"))
         self.assertEqual(payable.periodo_referencia, timezone.localdate().replace(day=1))
+
+    def test_payable_create_rejects_legacy_category_without_rubro(self):
+        legacy_category = CategoriaCuentaPagar.objects.create(
+            nombre="Legacy vista sin rubro",
+            activo=True,
+            creado_por=self.admin,
+        )
+
+        response = self.client.post(
+            reverse("treasury:cuentas_por_pagar_create"),
+            {
+                "proveedor": self.supplier.pk,
+                "categoria": legacy_category.pk,
+                "concepto": "Factura rechazada por rubro",
+                "referencia_comprobante": "LEG-001",
+                "fecha_emision": timezone.localdate(),
+                "fecha_vencimiento": timezone.localdate(),
+                "importe_total": "250.00",
+                "observaciones": "Carga manual",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(CuentaPorPagar.objects.filter(concepto="Factura rechazada por rubro").exists())
+
+    def test_payable_list_filters_by_operational_rubro(self):
+        other_rubro = RubroOperativo.objects.create(nombre="Alquileres")
+        other_category = create_payable_category(
+            nombre="Alquileres",
+            rubro_operativo=other_rubro,
+            actor=self.admin,
+        )
+        register_payable(
+            proveedor=self.supplier,
+            categoria=self.category,
+            concepto="Incluida por rubro",
+            fecha_emision=timezone.localdate(),
+            fecha_vencimiento=timezone.localdate(),
+            importe_total=Decimal("120.00"),
+            actor=self.admin,
+        )
+        register_payable(
+            proveedor=self.supplier,
+            categoria=other_category,
+            concepto="Oculta por rubro",
+            fecha_emision=timezone.localdate(),
+            fecha_vencimiento=timezone.localdate(),
+            importe_total=Decimal("220.00"),
+            actor=self.admin,
+        )
+
+        response = self.client.get(reverse("treasury:cuentas_por_pagar_list"), {"rubro": self.rubro_servicios.pk})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Incluida por rubro")
+        self.assertNotContains(response, "Oculta por rubro")
+
+    def test_special_commitment_create_list_and_authorize_flow(self):
+        payable = register_payable(
+            proveedor=self.supplier,
+            categoria=self.category,
+            concepto="Sueldo extraordinario abril",
+            referencia_comprobante="SUE-EXT-1",
+            fecha_emision=timezone.localdate(),
+            fecha_vencimiento=timezone.localdate(),
+            importe_total=Decimal("450.00"),
+            actor=self.admin,
+        )
+
+        response = self.client.post(
+            reverse("treasury:compromisos_especiales_create"),
+            {
+                "tipo": CompromisoEspecial.Tipo.SUELDO_EXTRAORDINARIO,
+                "cuenta_por_pagar": payable.pk,
+                "sucursal": "",
+                "concepto": "Sueldo extraordinario abril",
+                "organismo": "",
+                "beneficiario": "Empleado Dos",
+                "expediente": "",
+                "sustento_referencia": "SUE-EXT-1",
+                "periodo_fiscal": "",
+                "fecha_compromiso": timezone.localdate().isoformat(),
+                "vencimiento": timezone.localdate().isoformat(),
+                "monto_estimado": "450.00",
+                "prioridad": CompromisoEspecial.Prioridad.ALTA,
+                "plan_nombre": "",
+                "numero_cuota": "",
+                "total_cuotas": "",
+                "capital": "",
+                "interes_financiero": "",
+                "interes_resarcitorio": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        commitment = CompromisoEspecial.objects.get(concepto="Sueldo extraordinario abril")
+        self.assertEqual(commitment.estado, CompromisoEspecial.Estado.APROBACION_PENDIENTE)
+
+        listing = self.client.get(reverse("treasury:compromisos_especiales_list"), {"estado": commitment.estado})
+        self.assertEqual(listing.status_code, 200)
+        self.assertContains(listing, "Sueldo extraordinario abril")
+        self.assertContains(listing, "Requiere aprobacion")
+
+        decision = self.client.post(
+            reverse("treasury:compromisos_especiales_decide", args=[commitment.pk]),
+            {"decision": "approve", "comentario": "Aprobado desde vista"},
+        )
+
+        self.assertEqual(decision.status_code, 302)
+        commitment.refresh_from_db()
+        self.assertEqual(commitment.estado, CompromisoEspecial.Estado.APROBADO)
+        self.assertEqual(commitment.autorizado_por, self.admin)
 
     def test_transfer_payment_create_reduces_balance(self):
         payable = register_payable(

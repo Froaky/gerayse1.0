@@ -187,7 +187,7 @@
       <p class="muted mt-16">
         Hay {{ economic_snapshot.unmapped_payables_count }} deuda{{ economic_snapshot.unmapped_payables_count|pluralize }}
         sin rubro operativo asociado por {{ economic_snapshot.unmapped_payables_total|money }}.
-        Se mantiene visible por compatibilidad legacy, pero queda fuera de la comparacion contra objetivo por rubro.
+        Se mantiene visible por compatibilidad legacy, pero queda fuera de la lectura economica consolidada y de la comparacion contra objetivo por rubro.
       </p>
     {% endif %}
     <div class="list mt-16">
@@ -196,7 +196,7 @@
           <div class="row">
             <div>
               <strong>{{ item.rubro_nombre }}</strong>
-              <div class="muted mt-16">Ventas {{ item.sales_total|money }} · Gasto caja {{ item.cash_expense_total|money }} · Deuda {{ item.debt_total|money }}</div>
+              <div class="muted mt-16">Ventas {{ item.sales_total|money }} - Gasto caja {{ item.cash_expense_total|money }} - Deuda {{ item.debt_total|money }}</div>
             </div>
             {% if item.has_objective %}
               <span class="badge {% if item.deviation_amount <= 0 %}badge-success{% else %}badge-danger{% endif %}">{{ item.deviation_amount|money }}</span>
@@ -206,8 +206,8 @@
           </div>
           <div class="muted mt-16">
             Real {{ item.total_expense|money }} ({{ item.expense_ratio_over_sales }}%)
-            {% if item.payables_count %}· {{ item.payables_count }} deuda{{ item.payables_count|pluralize }} imputada{{ item.payables_count|pluralize }}{% endif %}
-            {% if item.debt_pending %}· Pendiente {{ item.debt_pending|money }}{% endif %}
+            {% if item.payables_count %} - {{ item.payables_count }} deuda{{ item.payables_count|pluralize }} imputada{{ item.payables_count|pluralize }}{% endif %}
+            {% if item.debt_pending %} - Pendiente {{ item.debt_pending|money }}{% endif %}
           </div>
         </div>
       {% empty %}
@@ -264,7 +264,7 @@
             <div class="row">
               <div>
                 <strong>{{ item.account.nombre }}</strong>
-                <div class="muted mt-16">{{ item.account.banco }}{% if item.account.sucursal %} · {{ item.account.sucursal.nombre }}{% endif %}</div>
+                <div class="muted mt-16">{{ item.account.banco }}{% if item.account.sucursal %} - {{ item.account.sucursal.nombre }}{% endif %}</div>
               </div>
               <span class="badge badge-info">{{ item.balance|money }}</span>
             </div>
@@ -291,11 +291,11 @@
             <div class="row">
               <div>
                 <strong>{{ payable.proveedor.razon_social }}</strong>
-                <div class="muted mt-16">{{ payable.concepto }} · Rubro {{ payable.categoria.rubro_label }} · Periodo {{ payable.periodo_referencia|date:"m/Y" }}</div>
+                <div class="muted mt-16">{{ payable.concepto }} - Rubro {{ payable.categoria.rubro_label }} - Periodo {{ payable.periodo_referencia|date:"m/Y" }}</div>
               </div>
               <span class="badge badge-danger">Vencido</span>
             </div>
-            <div class="muted mt-16">Vencio {{ payable.fecha_vencimiento|date:"d/m/Y" }} · Pendiente {{ payable.saldo_pendiente|money }}</div>
+            <div class="muted mt-16">Vencio {{ payable.fecha_vencimiento|date:"d/m/Y" }} - Pendiente {{ payable.saldo_pendiente|money }}</div>
           </a>
         {% endfor %}
         {% for payable in due_today_payables %}
@@ -303,11 +303,11 @@
             <div class="row">
               <div>
                 <strong>{{ payable.proveedor.razon_social }}</strong>
-                <div class="muted mt-16">{{ payable.concepto }} · Rubro {{ payable.categoria.rubro_label }} · Periodo {{ payable.periodo_referencia|date:"m/Y" }}</div>
+                <div class="muted mt-16">{{ payable.concepto }} - Rubro {{ payable.categoria.rubro_label }} - Periodo {{ payable.periodo_referencia|date:"m/Y" }}</div>
               </div>
               <span class="badge badge-warning">Vence hoy</span>
             </div>
-            <div class="muted mt-16">Hoy {{ payable.fecha_vencimiento|date:"d/m/Y" }} · Pendiente {{ payable.saldo_pendiente|money }}</div>
+            <div class="muted mt-16">Hoy {{ payable.fecha_vencimiento|date:"d/m/Y" }} - Pendiente {{ payable.saldo_pendiente|money }}</div>
           </a>
         {% endfor %}
         {% for payable in upcoming_payables %}
@@ -315,11 +315,11 @@
             <div class="row">
               <div>
                 <strong>{{ payable.proveedor.razon_social }}</strong>
-                <div class="muted mt-16">{{ payable.concepto }} · Rubro {{ payable.categoria.rubro_label }} · Periodo {{ payable.periodo_referencia|date:"m/Y" }}</div>
+                <div class="muted mt-16">{{ payable.concepto }} - Rubro {{ payable.categoria.rubro_label }} - Periodo {{ payable.periodo_referencia|date:"m/Y" }}</div>
               </div>
               <span class="badge badge-info">Proximo</span>
             </div>
-            <div class="muted mt-16">Vence {{ payable.fecha_vencimiento|date:"d/m/Y" }} · Pendiente {{ payable.saldo_pendiente|money }}</div>
+            <div class="muted mt-16">Vence {{ payable.fecha_vencimiento|date:"d/m/Y" }} - Pendiente {{ payable.saldo_pendiente|money }}</div>
           </a>
         {% empty %}
           <p class="muted">No hay vencimientos ni proximos compromisos para este periodo.</p>
@@ -375,7 +375,7 @@
               </div>
               <span class="badge {% if m.tipo == 'CREDITO' %}badge-success{% else %}badge-danger{% endif %}">{{ m.monto|money }}</span>
             </div>
-            <div class="muted mt-16">{{ m.fecha|date:"d/m/Y" }} · {{ m.get_tipo_display }} · {{ m.get_origen_display }}</div>
+            <div class="muted mt-16">{{ m.fecha|date:"d/m/Y" }} - {{ m.get_tipo_display }} - {{ m.get_origen_display }}</div>
           </a>
         {% empty %}
           <p class="muted">No hay movimientos bancarios recientes para este periodo.</p>
@@ -396,11 +396,11 @@
             <div class="row">
               <div>
                 <strong>{{ payment.cuenta_por_pagar.proveedor.razon_social }}</strong>
-                <div class="muted mt-16">{{ payment.get_medio_pago_display }} · {{ payment.cuenta_por_pagar.concepto }}</div>
+                <div class="muted mt-16">{{ payment.get_medio_pago_display }} - {{ payment.cuenta_por_pagar.concepto }}</div>
               </div>
               <span class="badge badge-success">{{ payment.monto|money }}</span>
             </div>
-            <div class="muted mt-16">{{ payment.fecha_pago|date:"d/m/Y" }} · {{ payment.cuenta_bancaria.nombre|default:"Efectivo central" }}</div>
+            <div class="muted mt-16">{{ payment.fecha_pago|date:"d/m/Y" }} - {{ payment.cuenta_bancaria.nombre|default:"Efectivo central" }}</div>
           </a>
         {% endfor %}
         {% for b in recent_batches %}

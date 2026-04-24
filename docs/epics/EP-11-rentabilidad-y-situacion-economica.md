@@ -79,7 +79,7 @@ Criterios:
 - rubros principales visibles
 - deudas del periodo incorporadas a la lectura
 
-### [ ] US-11.5 Deudas asociadas a rubro y periodo
+### [x] US-11.5 Deudas asociadas a rubro y periodo
 
 Como administracion
 Quiero asignar tipo de deuda, rubro y periodo
@@ -92,7 +92,7 @@ Criterios:
 - filtros por rubro, periodo y estado
 - una deuda sin rubro o periodo no entra a la lectura economica consolidada
 
-### [ ] US-11.6 Reemplazo funcional de categoria por rubro
+### [x] US-11.6 Reemplazo funcional de categoria por rubro
 
 Como administracion
 Quiero usar rubro donde hoy la categoria no alcanza

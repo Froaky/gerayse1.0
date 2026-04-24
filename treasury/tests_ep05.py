@@ -46,6 +46,7 @@ class EP05DisponibilidadesTests(TestCase):
             concepto="Compra",
             fecha_emision=timezone.localdate(),
             fecha_vencimiento=timezone.localdate(),
+            periodo_referencia=timezone.localdate().replace(day=1),
             importe_total=Decimal("500.00"),
             saldo_pendiente=Decimal("500.00"),
             creado_por=self.user

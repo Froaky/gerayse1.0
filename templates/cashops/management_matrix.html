@@ -1,0 +1,97 @@
+{% extends "cashops/layout.html" %}
+{% block title %}Matriz de control | Gerayse{% endblock %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Matriz diaria de control</h1>
+        <p class="muted">Ingresos por canal, egresos por rubro y resultado diario desde movimientos persistidos.</p>
+      </div>
+      <div class="list-actions">
+        <a class="button-secondary" href="{% url 'cashops:dashboard' %}?scope=global">Dashboard</a>
+        <a class="button" href="{% url 'cashops:management_matrix_export' %}?fecha_desde={{ fecha_desde }}&fecha_hasta={{ fecha_hasta }}{% if selected_sucursal %}&sucursal={{ selected_sucursal.pk }}{% endif %}">Exportar CSV</a>
+      </div>
+    </div>
+    <form method="get" class="stack" style="margin-top:16px;">
+      <div class="summary-grid">
+        <div class="field">
+          <label for="id_fecha_desde">Fecha desde</label>
+          <input id="id_fecha_desde" class="input" type="date" name="fecha_desde" value="{{ fecha_desde }}">
+        </div>
+        <div class="field">
+          <label for="id_fecha_hasta">Fecha hasta</label>
+          <input id="id_fecha_hasta" class="input" type="date" name="fecha_hasta" value="{{ fecha_hasta }}">
+        </div>
+        <div class="field">
+          <label for="id_sucursal">Sucursal</label>
+          <select id="id_sucursal" class="input select" name="sucursal">
+            <option value="">Global</option>
+            {% for sucursal in sucursales %}
+              <option value="{{ sucursal.pk }}" {% if selected_sucursal.pk == sucursal.pk %}selected{% endif %}>{{ sucursal.nombre }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <span class="muted">Periodo {{ matrix.date_from }} a {{ matrix.date_to }}{% if selected_sucursal %} - {{ selected_sucursal.nombre }}{% endif %}.</span>
+        <button class="button" type="submit">Aplicar</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card" style="margin-top:16px;">
+    <div class="summary-grid">
+      <div class="summary">
+        <span class="muted">Ingresos</span>
+        <strong>${{ matrix.total_income }}</strong>
+      </div>
+      <div class="summary">
+        <span class="muted">Egresos</span>
+        <strong>${{ matrix.total_expense }}</strong>
+      </div>
+      <div class="summary">
+        <span class="muted">Resultado</span>
+        <strong>${{ matrix.net_result }}</strong>
+      </div>
+      <div class="summary">
+        <span class="muted">Dias</span>
+        <strong>{{ matrix.days|length }}</strong>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" style="margin-top:16px; overflow:auto;">
+    <table style="width:100%; border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left; padding:8px;">Fecha</th>
+          {% for channel in matrix.channels %}
+            <th style="text-align:right; padding:8px;">{{ channel.label }}</th>
+          {% endfor %}
+          {% for rubro in matrix.rubros %}
+            <th style="text-align:right; padding:8px;">{{ rubro.nombre }}</th>
+          {% endfor %}
+          <th style="text-align:right; padding:8px;">Ingresos</th>
+          <th style="text-align:right; padding:8px;">Egresos</th>
+          <th style="text-align:right; padding:8px;">Resultado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for day in matrix.days %}
+          <tr>
+            <td style="padding:8px;">{{ day.date }}</td>
+            {% for value in day.income_values %}
+              <td style="text-align:right; padding:8px;">${{ value }}</td>
+            {% endfor %}
+            {% for value in day.expense_values %}
+              <td style="text-align:right; padding:8px;">${{ value }}</td>
+            {% endfor %}
+            <td style="text-align:right; padding:8px;">${{ day.total_income }}</td>
+            <td style="text-align:right; padding:8px;">${{ day.total_expense }}</td>
+            <td style="text-align:right; padding:8px;">${{ day.net_result }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endblock %}

@@ -29,6 +29,7 @@ from .services import (
     build_branch_control_scope,
     build_operational_category_overview,
     build_global_control_scope,
+    build_management_daily_matrix,
     build_operational_control_snapshot,
     build_operational_period_summary,
     close_box,
@@ -519,6 +520,75 @@ class CashopsServiceTests(CashopsTestCase):
         self.assertEqual(summary["total_egresos"], Decimal("50.00"))
         self.assertEqual(summary["saldo_neto"], Decimal("120.00"))
         self.assertEqual(summary["scope_label"], self.branch_a.nombre)
+
+    def test_management_daily_matrix_aggregates_channels_rubros_and_days(self):
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            monto_inicial=Decimal("0.00"),
+            actor=self.operator,
+        )
+        register_general_sale(
+            caja=caja,
+            monto=Decimal("120.00"),
+            tipo_venta=MovimientoCaja.Tipo.INGRESO_EFECTIVO,
+            rubro=self.rubro_insumos,
+            observacion="Venta efectivo",
+            actor=self.operator,
+        )
+        register_card_sale(
+            caja=caja,
+            monto=Decimal("80.00"),
+            observacion="Venta tarjeta",
+            actor=self.operator,
+        )
+        register_expense(
+            caja=caja,
+            monto=Decimal("50.00"),
+            rubro_operativo=self.rubro_viaticos,
+            categoria="Viatico",
+            observacion="Egreso del dia",
+            actor=self.operator,
+        )
+        turno_next = Turno.objects.create(
+            sucursal=self.branch_a,
+            fecha_operativa="2026-03-28",
+            tipo=Turno.Tipo.TARDE,
+            estado=Turno.Estado.ABIERTO,
+            creado_por=self.admin,
+        )
+        caja_next = open_box(
+            user=self.operator_2,
+            turno=turno_next,
+            sucursal=self.branch_a,
+            monto_inicial=Decimal("0.00"),
+            actor=self.admin,
+        )
+        register_general_sale(
+            caja=caja_next,
+            monto=Decimal("40.00"),
+            tipo_venta=MovimientoCaja.Tipo.VENTA_TRANSFERENCIA,
+            rubro=self.rubro_insumos,
+            observacion="Venta transferencia",
+            actor=self.admin,
+        )
+
+        matrix = build_management_daily_matrix(
+            date_from=date(2026, 3, 27),
+            date_to=date(2026, 3, 28),
+            sucursal=self.branch_a,
+        )
+
+        first_day = matrix["days"][0]
+        second_day = matrix["days"][1]
+        self.assertEqual(first_day["total_income"], Decimal("200.00"))
+        self.assertEqual(first_day["total_expense"], Decimal("50.00"))
+        self.assertEqual(first_day["net_result"], Decimal("150.00"))
+        self.assertEqual(second_day["total_income"], Decimal("40.00"))
+        self.assertEqual(matrix["total_income"], Decimal("240.00"))
+        self.assertEqual(matrix["total_expense"], Decimal("50.00"))
+        self.assertEqual(len(list(matrix["detail_movements"])), 4)
 
     def test_operational_overview_prefers_branch_limit_and_marks_exceeded_category(self):
         LimiteRubroOperativo.objects.create(
@@ -1247,6 +1317,61 @@ class CashopsViewTests(CashopsTestCase):
         self.assertContains(response, "$50")
         self.assertContains(response, "Saldo neto")
         self.assertContains(response, "$150")
+
+    def test_management_matrix_view_and_export_are_admin_only_and_traceable(self):
+        register_general_sale(
+            caja=self.owned_box,
+            monto=Decimal("90.00"),
+            tipo_venta=MovimientoCaja.Tipo.INGRESO_EFECTIVO,
+            rubro=self.rubro_insumos,
+            observacion="Venta matriz",
+            actor=self.operator,
+        )
+        register_expense(
+            caja=self.owned_box,
+            monto=Decimal("35.00"),
+            rubro_operativo=self.rubro_viaticos,
+            categoria="Gasto matriz",
+            observacion="Egreso matriz",
+            actor=self.operator,
+        )
+
+        self.client.force_login(self.operator)
+        forbidden = self.client.get(reverse("cashops:management_matrix"))
+        self.assertEqual(forbidden.status_code, 403)
+
+        self.client.force_login(self.admin)
+        response = self.client.get(
+            reverse("cashops:management_matrix"),
+            {
+                "fecha_desde": "2026-03-27",
+                "fecha_hasta": "2026-03-27",
+                "sucursal": self.branch_a.pk,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Matriz diaria de control")
+        self.assertContains(response, "Efectivo")
+        self.assertContains(response, self.rubro_viaticos.nombre)
+        self.assertContains(response, "$90")
+        self.assertContains(response, "$35")
+
+        export = self.client.get(
+            reverse("cashops:management_matrix_export"),
+            {
+                "fecha_desde": "2026-03-27",
+                "fecha_hasta": "2026-03-27",
+                "sucursal": self.branch_a.pk,
+            },
+        )
+
+        self.assertEqual(export.status_code, 200)
+        self.assertEqual(export["Content-Type"], "text/csv")
+        content = export.content.decode()
+        self.assertIn("Detalle trazable", content)
+        self.assertIn("Venta matriz", content)
+        self.assertIn("Gasto matriz", content)
 
     def test_dashboard_does_not_auto_select_box_for_admin_scope(self):
         self.client.force_login(self.admin)

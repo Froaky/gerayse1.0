@@ -9,6 +9,7 @@ from .models import (
     CajaCentral,
     CategoriaCuentaPagar,
     CierreMensualTesoreria,
+    CompromisoEspecial,
     CuentaBancaria,
     CuentaPorPagar,
     DescuentoAcreditacion,
@@ -96,7 +97,16 @@ class PayableCategoryForm(TreasuryStyledFormMixin, forms.ModelForm):
         self.fields["rubro_operativo"].queryset = rubros
         self.fields["rubro_operativo"].required = False
         self.fields["rubro_operativo"].label = "Rubro operativo asociado"
+        self.fields["rubro_operativo"].help_text = "Obligatorio para categorias activas y nuevas deudas comparables."
         self._apply_input_classes()
+
+    def clean(self):
+        cleaned_data = super().clean()
+        activo = cleaned_data.get("activo")
+        rubro_operativo = cleaned_data.get("rubro_operativo")
+        if activo and rubro_operativo is None:
+            self.add_error("rubro_operativo", "El rubro operativo es obligatorio para categorias activas.")
+        return cleaned_data
 
 
 class PayableCategoryFilterForm(TreasuryStyledFormMixin, forms.Form):
@@ -173,12 +183,17 @@ class PayableForm(TreasuryStyledFormMixin, forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         suppliers = Proveedor.objects.filter(activo=True).order_by("razon_social")
-        categories = CategoriaCuentaPagar.objects.filter(activo=True).order_by("nombre")
+        categories = CategoriaCuentaPagar.objects.filter(
+            activo=True,
+            rubro_operativo__isnull=False,
+        ).order_by("nombre")
         if self.instance.pk:
             suppliers = (Proveedor.objects.filter(pk=self.instance.proveedor_id) | suppliers).distinct()
             categories = (CategoriaCuentaPagar.objects.filter(pk=self.instance.categoria_id) | categories).distinct()
         self.fields["proveedor"].queryset = suppliers
         self.fields["categoria"].queryset = categories
+        self.fields["categoria"].label = "Rubro / categoria"
+        self.fields["categoria"].help_text = "Solo se pueden registrar deudas nuevas con categorias ya asociadas a rubro."
         self.fields["periodo_referencia"].label = "Periodo economico"
         self.fields["periodo_referencia"].required = False
         if not self.is_bound and not self.instance.pk:
@@ -190,6 +205,9 @@ class PayableForm(TreasuryStyledFormMixin, forms.ModelForm):
         cleaned_data = super().clean()
         amount = cleaned_data.get("importe_total")
         issue_date = cleaned_data.get("fecha_emision")
+        category = cleaned_data.get("categoria")
+        if category and not category.rubro_operativo_id:
+            self.add_error("categoria", "La categoria debe tener un rubro operativo asociado.")
         if issue_date and not cleaned_data.get("periodo_referencia"):
             cleaned_data["periodo_referencia"] = issue_date.replace(day=1)
         if amount is not None:
@@ -202,6 +220,7 @@ class PayableFilterForm(TreasuryStyledFormMixin, forms.Form):
     q = forms.CharField(required=False, label="Buscar", widget=forms.TextInput(attrs={"placeholder": "Proveedor o concepto"}))
     proveedor = forms.ModelChoiceField(queryset=Proveedor.objects.none(), required=False, empty_label="Todos los proveedores")
     categoria = forms.ModelChoiceField(queryset=CategoriaCuentaPagar.objects.none(), required=False, empty_label="Todas las categorias")
+    rubro = forms.ModelChoiceField(queryset=RubroOperativo.objects.none(), required=False, empty_label="Todos los rubros")
     estado = forms.ChoiceField(
         required=False,
         choices=[
@@ -219,6 +238,7 @@ class PayableFilterForm(TreasuryStyledFormMixin, forms.Form):
         super().__init__(*args, **kwargs)
         self.fields["proveedor"].queryset = Proveedor.objects.order_by("razon_social")
         self.fields["categoria"].queryset = CategoriaCuentaPagar.objects.order_by("nombre")
+        self.fields["rubro"].queryset = RubroOperativo.objects.filter(activo=True, es_sistema=False).order_by("nombre")
         self._apply_input_classes()
 
 
@@ -254,6 +274,119 @@ class TreasuryDashboardFilterForm(TreasuryStyledFormMixin, forms.Form):
         fecha_hasta = cleaned_data.get("fecha_hasta")
         if fecha_desde and fecha_hasta and fecha_hasta < fecha_desde:
             cleaned_data["fecha_desde"], cleaned_data["fecha_hasta"] = fecha_hasta, fecha_desde
+        return cleaned_data
+
+
+class SpecialCommitmentForm(TreasuryStyledFormMixin, forms.ModelForm):
+    class Meta:
+        model = CompromisoEspecial
+        fields = [
+            "tipo",
+            "cuenta_por_pagar",
+            "sucursal",
+            "concepto",
+            "organismo",
+            "beneficiario",
+            "expediente",
+            "sustento_referencia",
+            "periodo_fiscal",
+            "fecha_compromiso",
+            "vencimiento",
+            "monto_estimado",
+            "prioridad",
+            "requiere_autorizacion",
+            "plan_nombre",
+            "numero_cuota",
+            "total_cuotas",
+            "capital",
+            "interes_financiero",
+            "interes_resarcitorio",
+        ]
+        widgets = {
+            "periodo_fiscal": forms.DateInput(attrs={"type": "date"}),
+            "fecha_compromiso": forms.DateInput(attrs={"type": "date"}),
+            "vencimiento": forms.DateInput(attrs={"type": "date"}),
+            "monto_estimado": forms.NumberInput(attrs={"step": "0.01", "placeholder": "0.00"}),
+            "capital": forms.NumberInput(attrs={"step": "0.01", "placeholder": "0.00"}),
+            "interes_financiero": forms.NumberInput(attrs={"step": "0.01", "placeholder": "0.00"}),
+            "interes_resarcitorio": forms.NumberInput(attrs={"step": "0.01", "placeholder": "0.00"}),
+            "concepto": forms.TextInput(attrs={"placeholder": "AFIP 931 / Embargo / Adelanto autorizado"}),
+            "sustento_referencia": forms.TextInput(attrs={"placeholder": "VEP, expediente, acta o autorizacion"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["cuenta_por_pagar"].queryset = (
+            CuentaPorPagar.objects.filter(
+                estado__in=[CuentaPorPagar.Estado.PENDIENTE, CuentaPorPagar.Estado.PARCIAL],
+                compromiso_especial__isnull=True,
+            )
+            .select_related("proveedor", "categoria")
+            .order_by("fecha_vencimiento", "proveedor__razon_social")
+        )
+        self.fields["cuenta_por_pagar"].required = False
+        self.fields["cuenta_por_pagar"].empty_label = "Sin deuda vinculada"
+        self.fields["sucursal"].queryset = Sucursal.objects.filter(activa=True).order_by("nombre")
+        self.fields["sucursal"].required = False
+        self.fields["sucursal"].empty_label = "Sin sucursal"
+        for field_name in (
+            "organismo",
+            "beneficiario",
+            "expediente",
+            "periodo_fiscal",
+            "vencimiento",
+            "plan_nombre",
+            "numero_cuota",
+            "total_cuotas",
+            "capital",
+            "interes_financiero",
+            "interes_resarcitorio",
+        ):
+            self.fields[field_name].required = False
+        for field_name in ("capital", "interes_financiero", "interes_resarcitorio"):
+            self.fields[field_name].initial = Decimal("0.00")
+        self._apply_input_classes()
+
+    def clean(self):
+        cleaned_data = super().clean()
+        tipo = cleaned_data.get("tipo")
+        payable = cleaned_data.get("cuenta_por_pagar")
+        if tipo != CompromisoEspecial.Tipo.REQUERIMIENTO and payable is None:
+            self.add_error("cuenta_por_pagar", "El compromiso debe vincular una cuenta por pagar.")
+        if payable is not None:
+            amount = cleaned_data.get("monto_estimado")
+            if amount is not None and amount != payable.importe_total:
+                self.add_error("monto_estimado", "El monto debe coincidir con la cuenta por pagar vinculada.")
+        for field_name in ("capital", "interes_financiero", "interes_resarcitorio"):
+            if cleaned_data.get(field_name) is None:
+                cleaned_data[field_name] = Decimal("0.00")
+        return cleaned_data
+
+
+class SpecialCommitmentFilterForm(TreasuryStyledFormMixin, forms.Form):
+    tipo = forms.ChoiceField(required=False, choices=(("", "Todos los tipos"),) + tuple(CompromisoEspecial.Tipo.choices))
+    estado = forms.ChoiceField(required=False, choices=(("", "Todos los estados"),) + tuple(CompromisoEspecial.Estado.choices))
+    sucursal = forms.ModelChoiceField(queryset=Sucursal.objects.all(), required=False, empty_label="Todas las sucursales")
+    fecha_desde = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
+    fecha_hasta = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._apply_input_classes()
+
+
+class SpecialCommitmentDecisionForm(TreasuryStyledFormMixin, forms.Form):
+    decision = forms.ChoiceField(choices=(("approve", "Aprobar"), ("reject", "Rechazar")))
+    comentario = forms.CharField(required=False, max_length=255, widget=forms.Textarea(attrs={"placeholder": "Comentario de auditoria"}))
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._apply_input_classes()
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if cleaned_data.get("decision") == "reject" and not (cleaned_data.get("comentario") or "").strip():
+            self.add_error("comentario", "El comentario es obligatorio para rechazar.")
         return cleaned_data
 
 

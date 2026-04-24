@@ -26,7 +26,7 @@ Replicar la matriz mensual de resultado operativo y transformar el control "a fi
 
 ## User Stories
 
-### [ ] US-6.1 Matriz diaria de ingresos y egresos
+### [x] US-6.1 Matriz diaria de ingresos y egresos
 
 Como administracion
 Quiero una vista mensual por dia
@@ -39,7 +39,7 @@ Criterios:
 - filtro por periodo y por sucursal cuando aplique
 - la matriz se deriva de movimientos persistidos, no de celdas editables
 
-### [ ] US-6.2 Parametros de porcentaje por rubro
+### [x] US-6.2 Parametros de porcentaje por rubro
 
 Como administracion
 Quiero definir porcentajes objetivo
@@ -51,7 +51,7 @@ Criterios:
 - vigencia por periodo cuando aplique
 - activacion y desactivacion con historial minimo
 
-### [ ] US-6.3 Alertas por desvio de rubro
+### [x] US-6.3 Alertas por desvio de rubro
 
 Como administracion
 Quiero alertas automaticas
@@ -63,7 +63,7 @@ Criterios:
 - fecha, periodo y alcance visibles
 - el desvio se calcula contra el objetivo vigente del mismo rubro y base temporal
 
-### [ ] US-6.4 Alertas por deuda y vencimientos
+### [x] US-6.4 Alertas por deuda y vencimientos
 
 Como administracion
 Quiero ver lo que vence hoy, en breve o ya vencio
@@ -75,7 +75,7 @@ Criterios:
 - vencida
 - filtro general y por sucursal cuando el dato exista
 
-### [ ] US-6.5 Dashboard gerencial
+### [x] US-6.5 Dashboard gerencial
 
 Como administracion
 Quiero un panel rapido
@@ -90,7 +90,7 @@ Criterios:
 - banco disponible
 - lectura resumida por periodo y opcionalmente por sucursal
 
-### [ ] US-6.6 Exportacion y cierre mensual
+### [x] US-6.6 Exportacion y cierre mensual
 
 Como administracion
 Quiero exportar el consolidado mensual
@@ -101,7 +101,7 @@ Criterios:
 - resumen por rubro y por canal
 - detalle trazable que explique cada total
 
-### [ ] US-6.7 Seguimiento de diferencias y faltantes
+### [x] US-6.7 Seguimiento de diferencias y faltantes
 
 Como administracion
 Quiero registrar y seguir diferencias operativas o faltantes

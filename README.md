@@ -9,6 +9,11 @@ Sistema web para gestion de cajas, turnos y movimientos financieros pensado para
 - Django ORM
 - Django Templates + HTMX
 
+## Criterios de ingenieria
+
+- La guia de buenas practicas y diseno del repo vive en [docs/engineering-guidelines.md](/C:/Users/MateoCoca/Documents/REPOS/gerayse/docs/engineering-guidelines.md).
+- Esa guia explicita como aplicar separacion por capas, reglas de dominio, crecimiento seguro, testing y compatibilidad legacy en este monolito Django.
+
 ## MVP EP-01
 
 - Apertura de cajas multiples por turno
@@ -27,4 +32,3 @@ Sistema web para gestion de cajas, turnos y movimientos financieros pensado para
 4. Ejecutar `python manage.py migrate`
 5. Crear superusuario con `python manage.py createsuperuser`
 6. Levantar el servidor con `python manage.py runserver`
-

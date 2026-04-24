@@ -1,6 +1,6 @@
 # Context
 
-Last updated: 2026-04-23
+Last updated: 2026-04-24
 
 ## Product Snapshot
 
@@ -39,6 +39,20 @@ Last updated: 2026-04-23
   - useful commands
 - Keep notes actionable and compact.
 
+## Engineering Rules
+
+- Repo-level engineering guidance now lives in `docs/engineering-guidelines.md`.
+- Architecture expectation:
+  - models own invariants
+  - services own money/debt/closing/payment workflows and shared formulas
+  - forms validate input and adapt to services
+  - views stay thin
+  - templates do not hold business rules
+- Compatibility expectation:
+  - harden legacy data in steps: compatible schema, backfill, then required constraint
+- Testing expectation:
+  - changes touching money, debt, permissions, migrations, dashboards or operational controls require proportional tests
+
 ## Current Session
 
 ### Objective
@@ -64,8 +78,11 @@ Last updated: 2026-04-23
 
 - `AGENTS.md`
 - `context.md`
+- `README.md`
+- `docs/engineering-guidelines.md`
 - `docs/manual-demo-camino-feliz.md`
 - `docs/manual-demo-camino-feliz.pdf`
+- `docs/portfolio-gerayse.md`
 - `docs/generate_demo_manual_pdf.py`
 - `.agents/skills/analista-funcional-backlog/SKILL.md`
 - `.agents/skills/analista-funcional-backlog/references/gerayse-backlog-format.md`
@@ -89,11 +106,13 @@ Last updated: 2026-04-23
 - `cashops/models.py`
 - `cashops/forms.py`
 - `cashops/views.py`
+- `cashops/urls.py`
 - `cashops/tests.py`
 - `cashops/tests_commands.py`
 - `cashops/test_migration_safety.py`
 - `cashops/migrations/0008_sucursal_razon_social.py`
 - `templates/cashops/dashboard.html`
+- `templates/cashops/management_matrix.html`
 - `templates/cashops/sucursal_list.html`
 - `core/templates/core/home.html`
 - `users/forms.py`
@@ -109,17 +128,47 @@ Last updated: 2026-04-23
 - `docs/epics/EP-09-usuarios-operativos-y-datos-minimos.md`
 - `docs/epics/EP-10-situacion-financiera-y-alertas-consolidadas.md`
 - `docs/epics/EP-11-rentabilidad-y-situacion-economica.md`
+- `treasury/admin.py`
+- `treasury/models.py`
 - `treasury/forms.py`
 - `treasury/services.py`
 - `treasury/views.py`
 - `treasury/urls.py`
 - `treasury/tests.py`
+- `treasury/tests_ep05.py`
 - `templates/treasury/dashboard.html`
 - `treasury/migrations/0012_acreditaciontarjeta_modo_registro_and_more.py`
 - `treasury/migrations/0013_ep11_rubro_period_foundation.py`
 - `treasury/migrations/0014_ep11_period_reference_required.py`
+- `treasury/migrations/0016_ep07_special_commitments.py`
 
 ### Changes Applied
+
+- `cashops/*` and `treasury/*` EP-06/EP-07 closure slice
+  - EP-06 closed: added admin-only daily management matrix and CSV export from persisted cash movements, grouped by operational date, income channel and expense rubro
+  - EP-06 uses existing `LimiteRubroOperativo`, `AlertaOperativa`, `CierreCaja` and `Justificacion` for rubro targets, deviation alerts, dashboard follow-up and difference tracking
+  - EP-07 closed: added `CompromisoEspecial` with fiscal, plan, embargo, advance and extraordinary salary metadata around `CuentaPorPagar`
+  - EP-07 payment guardrail: special commitments that require approval block payment until approved, rejected/cancelled commitments cannot be paid, and fully paid commitments are marked executed
+  - docs now mark `EP-06` and `EP-07` implemented in the backlog index
+
+- `treasury/*` EP-11 third slice
+  - closed `US-11.5` and `US-11.6`
+  - active payable categories now require an associated operational rubro through services/forms, including activation toggles
+  - new or edited payables now reject categories without `rubro_operativo`; new payable forms only offer mapped categories
+  - legacy payables whose category has no `rubro_operativo` remain visible and payable, but are reported as pending migration and excluded from consolidated economic totals by rubro
+  - payable list and admin now expose/filter by operational rubro
+  - dashboard copy now states that unmapped legacy debt is outside economic consolidation and objective comparison
+  - `treasury/tests_ep05.py` legacy fixture was corrected to include mandatory `periodo_referencia` while still preserving the unmapped-category case
+  - `docs/epics/EP-11-rentabilidad-y-situacion-economica.md` marked `US-11.5` and `US-11.6` done; `docs/epics/README.md` marks `EP-11` implemented
+
+- `treasury/views.py`
+  - normalized corrupted middle-dot separators to ` - ` in treasury list/detail helper labels to avoid mojibake in UI text
+- `docs/engineering-guidelines.md`
+  - added a repo-level engineering guide with explicit architecture rules, SOLID translated to Django conventions, migration hardening policy, testing expectations, and review checklist
+- `README.md`
+  - linked the new engineering guide from the main repo entry point
+- `context.md`
+  - recorded the new engineering baseline so future agents continue under the same rules
 
 - `treasury/*` EP-11 second slice in progress
   - target cut: `US-11.1` objetivos economicos por rubro sobre ventas con vigencia mensual y alcance global/sucursal, mas `US-11.2` comparacion objetivo vs real vs desvio en dashboard
@@ -153,6 +202,8 @@ Last updated: 2026-04-23
   - added a reproducible PDF generator for the demo manual
 - `docs/manual-demo-camino-feliz.pdf`
   - generated the final shareable PDF output
+- `docs/portfolio-gerayse.md`
+  - added a portfolio-ready project description with product summary, stack, architecture, implemented scope, backlog status and agent-ready context
 - `.agents/skills/analista-funcional-backlog/SKILL.md`
   - added a local functional-analyst skill to draft and refine epics and user stories
   - aligned the workflow with the repo's existing `docs/epics` structure
@@ -366,10 +417,27 @@ Last updated: 2026-04-23
   - `.venv\Scripts\python.exe manage.py test treasury.tests -v 1` after adding `ObjetivoRubroEconomico`
   - `.venv\Scripts\python.exe manage.py makemigrations --check`
   - `.venv\Scripts\python.exe -m compileall cashops treasury users`
+  - `.venv\Scripts\python.exe manage.py test treasury.tests -v 1` after EP-11 third slice
+  - `.venv\Scripts\python.exe manage.py test treasury.tests treasury.tests_ep05 -v 1` after EP-11 third slice
+  - `.venv\Scripts\python.exe manage.py makemigrations --check` after EP-11 third slice
+  - `.venv\Scripts\python.exe -m compileall treasury` after EP-11 third slice
+  - `.venv\Scripts\python.exe manage.py test cashops.tests.CashopsServiceTests cashops.tests.CashopsViewTests -v 1` after EP-06 matrix/export slice
+  - `.venv\Scripts\python.exe manage.py test treasury.tests treasury.tests_ep05 -v 1` after EP-07 commitments slice
+  - `.venv\Scripts\python.exe manage.py test cashops.tests.CashopsServiceTests cashops.tests.CashopsViewTests treasury.tests treasury.tests_ep05 -v 1` after EP-06/EP-07 closure slice: 111 tests OK, 1 skipped
+  - `.venv\Scripts\python.exe manage.py test treasury.tests.TreasuryViewTests -v 1` after removing duplicate treasury view helpers
+  - `.venv\Scripts\python.exe manage.py makemigrations --check` after EP-06/EP-07 closure slice
+  - `.venv\Scripts\python.exe -m compileall cashops treasury` after EP-06/EP-07 closure slice
+  - `.venv\Scripts\python.exe -m compileall treasury` after treasury view cleanup
+  - `git diff --check` after EP-06/EP-07 closure slice and view cleanup
 - Not run:
+  - first `.venv\Scripts\python.exe manage.py test treasury.tests_ep05 -v 1` run failed because a legacy fixture missed mandatory `periodo_referencia`; fixture was fixed and the combined treasury suite passed
+  - full non-treasury regression was not run after EP-11 third slice because the behavior changed only in treasury category/payable/economic reporting surfaces
+  - application tests after the `treasury/views.py` text-normalization pass, because this slice only adjusted UI labels/separators and did not change business behavior
+  - application tests for `docs/engineering-guidelines.md` and `README.md`, because this task only added repository documentation and no runtime behavior changed
   - application tests for the new epic docs, because this task only added backlog markdown
   - application tests for the new skill files, because they only add skill metadata and instructions
   - application tests for the backlog-normalization pass on `docs/epics`, because no runtime code changed in this slice
+  - application tests for `docs/portfolio-gerayse.md`, because this task only added descriptive documentation
 - Treasury status after this session:
   - supplier create/update flow works again
   - payable create/update flow works again
@@ -380,7 +448,6 @@ Last updated: 2026-04-23
 
 ### Known Remaining Risks
 
-- `treasury/views.py` contains duplicated imports and some mojibake/encoding noise in labels. Not a blocker for behavior, but worth cleanup later.
 - Monthly closing by `sucursal` still deserves a separate design pass if branch-specific treasury closings become mandatory.
 - The source doc mixes immediate UI fixes with larger business capabilities; the backlog split into EP-08..EP-11 is an analytic decision, not an explicit grouping from the user.
 - `P2` was interpreted as the current personal/users screen because the source document does not define that label.
@@ -392,22 +459,25 @@ Last updated: 2026-04-23
   - implemented: `legajo` fuera del flujo operativo, vista minima de personal, busqueda operativa y `usuario fijo` con modelo, validacion, admin, persistencia y efecto en apertura de caja
   - key refs: `users/forms.py`, `users/views.py`, `templates/users/personal_list.html`, `users/tests.py`
   - admin evidence now also covers that `role` sigue visible y usable en Django admin para alta, busqueda y filtro
-- EP-06 backlog snapshot after normalization:
-  - explicit gap closed: faltaba una historia para `seguimiento de diferencias y faltantes`; ahora existe `US-6.7`
-  - pending: la epica sigue completamente sin implementacion y ahora queda mas claramente separada de la lectura financiera ya resuelta en `EP-10`
-- EP-07 backlog snapshot after normalization:
-  - explicit gaps closed: el objetivo mencionaba `embargos` y `sueldos extraordinarios`, pero no existian historias; ahora quedaron como `US-7.7` y `US-7.8`
-  - pending: toda la epica sigue en backlog; no hay aun modelo, UI ni servicios para autorizaciones o compromisos especiales
+- EP-06 review snapshot:
+  - done: matriz diaria de gestion, export CSV trazable, objetivos/alertas por rubro con vigencia, dashboard de seguimiento y diferencias/faltantes auditables
+  - residual risk: el export es CSV operativo; no replica formato visual de Excel ni genera XLSX
+  - key refs: `cashops/services.py`, `cashops/views.py`, `cashops/urls.py`, `templates/cashops/management_matrix.html`, `cashops/tests.py`
+- EP-07 review snapshot:
+  - done: compromisos especiales para impuestos, planes, requerimientos, adelantos, embargos y sueldos extraordinarios; autorizacion con efecto real sobre pagos; registro de capital/intereses y trazabilidad de sustento
+  - residual risk: no hay integracion externa fiscal/contable ni liquidacion formal de sueldos; el alcance queda como control operativo interno sobre `CuentaPorPagar`
+  - key refs: `treasury/models.py`, `treasury/forms.py`, `treasury/services.py`, `treasury/views.py`, `treasury/admin.py`, `treasury/migrations/0016_ep07_special_commitments.py`, `treasury/tests.py`
 - EP-10 review snapshot after first slice:
   - done: dashboard financiero por periodo y sucursal, visibilidad de caja fuerte general, banco y total consolidado, buckets de vencimientos, lectura de acreditaciones pendientes, taxonomia dura de movimientos bancarios y carga diaria o agrupada de acreditaciones con guardrails de duplicado
   - residual risk: la taxonomia nueva se apoya en `CategoriaCuentaPagar` como rubro operativo-financiero compartido; si negocio exige un maestro de rubros bancarios separado, eso seria una nueva capa de modelado y no un bug del slice actual
   - key refs: `treasury/models.py`, `treasury/forms.py`, `treasury/services.py`, `treasury/views.py`, `treasury/migrations/0012_acreditaciontarjeta_modo_registro_and_more.py`, `treasury/tests.py`
-- EP-11 review snapshot after first slice:
+- EP-11 review snapshot after third slice:
   - done: rentabilidad visible por sucursal y periodo en dashboard de tesoreria, vista economica consolidada por rango, resultado economico, margen, deuda del periodo, detalle por rubro y comparacion objetivo vs real
   - foundation done: `CuentaPorPagar.periodo_referencia` y mapping `CategoriaCuentaPagar -> RubroOperativo`
   - second slice done: `ObjetivoRubroEconomico` agrega objetivos vigentes por rubro con alcance global o por sucursal, y el dashboard muestra objetivo parametrizado, real comparado y desvio
-  - pending: `US-11.5` y `US-11.6` siguen abiertos; la deuda legacy sin rubro sigue visible pero fuera de la comparacion contra objetivo
-  - key refs: `treasury/models.py`, `treasury/services.py`, `treasury/admin.py`, `templates/treasury/dashboard.html`, `treasury/migrations/0013_ep11_rubro_period_foundation.py`, `treasury/migrations/0014_ep11_period_reference_required.py`, `treasury/migrations/0015_objetivorubroeconomico.py`, `treasury/tests.py`
+  - third slice done: deuda nueva/editada exige categoria con rubro operativo, categorias activas exigen rubro, filtros/listados/admin muestran rubro, y deuda legacy sin rubro queda visible como pendiente de migracion pero fuera de la lectura economica consolidada
+  - residual risk: no se hizo constraint DB `NOT NULL` sobre `CategoriaCuentaPagar.rubro_operativo`; fue intencional para no cortar deuda legacy ni pagos historicos
+  - key refs: `treasury/models.py`, `treasury/forms.py`, `treasury/services.py`, `treasury/views.py`, `treasury/admin.py`, `templates/treasury/dashboard.html`, `treasury/tests.py`, `treasury/tests_ep05.py`
 
 ## Useful Commands
 
@@ -434,14 +504,10 @@ Last updated: 2026-04-23
   - `usuarios-operativos-admin` for `EP-09`
 - Use `testing-riguroso-extremo` when a slice changes business rules, money, permissions, migrations, commands, or when a story should not be marked done without hard test evidence.
 - Next EP-06 candidates in order:
-  - construir `US-6.1` matriz diaria desde datos ya persistidos
-  - parametrizar `US-6.2` objetivos por rubro con vigencia y luego activar `US-6.3`
-  - cerrar `US-6.7` para que diferencias/faltantes no sigan fuera del sistema
+  - `EP-06` quedo funcionalmente cerrado; posible mejora futura: export XLSX con formato similar a la matriz original si negocio lo pide
 - Next EP-07 candidates in order:
-  - modelar `US-7.1` obligaciones impositivas recurrentes sobre la base actual de `CuentaPorPagar`
-  - definir `US-7.4` con un flujo de autorizacion que tenga efecto real, no checkbox decorativo
-  - decidir prioridad operativa entre `US-7.7` embargos y `US-7.8` pagos excepcionales
+  - `EP-07` quedo funcionalmente cerrado; posibles mejoras futuras: integracion fiscal externa, documentos adjuntos formales y circuito especifico de liquidacion de sueldos
 - Next EP-10 candidates in order:
-  - `EP-10` quedo funcionalmente cerrado; el siguiente frente natural pasa a `EP-11`
+  - `EP-10` quedo funcionalmente cerrado; sostenerlo con regresion si se toca tesoreria
 - Next EP-11 candidates in order:
-  - decidir si `rubro_operativo` debe pasar a obligatorio en `CategoriaCuentaPagar` y como migrar legacy sin cortar consultas existentes para cerrar `US-11.5` y `US-11.6`
+  - `EP-11` quedo funcionalmente cerrado; solo queda como posible mejora futura un comando de migracion asistida para categorias legacy sin rubro si negocio quiere limpiar historicos

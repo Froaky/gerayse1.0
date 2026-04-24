@@ -13,12 +13,12 @@ Estado actual:
 - `EP-03`: tesoreria central base. Implementada.
 - `EP-04`: bancos y conciliacion. Implementada.
 - `EP-05`: flujo de disponibilidades. Implementada.
-- `EP-06`: control de gestion y alertas. Pendiente.
-- `EP-07`: impuestos, planes y autorizaciones. Pendiente.
+- `EP-06`: control de gestion y alertas. Implementada.
+- `EP-07`: impuestos, planes y autorizaciones. Implementada.
 - `EP-08`: ajustes operativos de caja y sucursales. Implementada.
 - `EP-09`: usuarios operativos y datos minimos. Implementada.
 - `EP-10`: situacion financiera y alertas consolidadas. Implementada.
-- `EP-11`: rentabilidad y situacion economica. Iniciada.
+- `EP-11`: rentabilidad y situacion economica. Implementada.
 
 Especialista sugerido por epica:
 - `analista-funcional-backlog` para crear, partir o completar backlog en cualquier epic.

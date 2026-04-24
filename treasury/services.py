@@ -15,6 +15,7 @@ from .models import (
     CajaCentral,
     CategoriaCuentaPagar,
     CierreMensualTesoreria,
+    CompromisoEspecial,
     CuentaBancaria,
     CuentaPorPagar,
     DescuentoAcreditacion,
@@ -42,6 +43,24 @@ def _save_instance(instance):
 
 def _first_day_of_month(value: date) -> date:
     return value.replace(day=1)
+
+
+def _validate_payable_category_mapping(*, activo: bool, rubro_operativo) -> None:
+    if activo and rubro_operativo is None:
+        raise ValidationError({"rubro_operativo": "El rubro operativo es obligatorio para categorias activas."})
+    if rubro_operativo is not None and (not rubro_operativo.activo or rubro_operativo.es_sistema):
+        raise ValidationError({"rubro_operativo": "El rubro operativo debe estar activo y no puede ser de sistema."})
+
+
+def _ensure_payable_category_is_economic(category: CategoriaCuentaPagar) -> None:
+    if not category.rubro_operativo_id:
+        raise ValidationError(
+            {"categoria": "La categoria debe tener un rubro operativo asociado para registrar deuda economica."}
+        )
+    if not category.rubro_operativo.activo or category.rubro_operativo.es_sistema:
+        raise ValidationError(
+            {"categoria": "La categoria esta asociada a un rubro operativo inactivo o de sistema."}
+        )
 
 
 def _month_starts_between(date_from: date, date_to: date) -> list[date]:
@@ -192,6 +211,7 @@ def toggle_supplier(*, supplier: Proveedor, actor=None) -> Proveedor:
 
 def create_payable_category(*, nombre, actor=None, activo=True, rubro_operativo=None) -> CategoriaCuentaPagar:
     _require_actor(actor)
+    _validate_payable_category_mapping(activo=activo, rubro_operativo=rubro_operativo)
     category = CategoriaCuentaPagar(
         nombre=nombre,
         rubro_operativo=rubro_operativo,
@@ -210,6 +230,7 @@ def update_payable_category(
     rubro_operativo=None,
 ) -> CategoriaCuentaPagar:
     _require_actor(actor)
+    _validate_payable_category_mapping(activo=activo, rubro_operativo=rubro_operativo)
     category.nombre = nombre
     category.rubro_operativo = rubro_operativo
     category.activo = activo
@@ -219,7 +240,9 @@ def update_payable_category(
 
 def toggle_payable_category(*, category: CategoriaCuentaPagar, actor=None) -> CategoriaCuentaPagar:
     _require_actor(actor)
-    category.activo = not category.activo
+    target_active = not category.activo
+    _validate_payable_category_mapping(activo=target_active, rubro_operativo=category.rubro_operativo)
+    category.activo = target_active
     category.save(update_fields=["activo", "actualizado_en"])
     return category
 
@@ -307,6 +330,7 @@ def register_payable(
         raise ValidationError({"proveedor": "El proveedor esta inactivo."})
     if not categoria.activo:
         raise ValidationError({"categoria": "La categoria esta inactiva."})
+    _ensure_payable_category_is_economic(categoria)
     payable = CuentaPorPagar(
         sucursal=sucursal,
         proveedor=proveedor,
@@ -347,6 +371,7 @@ def update_payable(
         raise ValidationError({"proveedor": "El proveedor esta inactivo."})
     if not categoria.activo:
         raise ValidationError({"categoria": "La categoria esta inactiva."})
+    _ensure_payable_category_is_economic(categoria)
     payable.sucursal = sucursal
     payable.proveedor = proveedor
     payable.categoria = categoria
@@ -379,6 +404,162 @@ def annul_payable(*, payable: CuentaPorPagar, motivo: str, actor=None) -> Cuenta
     return _save_instance(payable)
 
 
+def _ensure_special_commitment_can_be_paid(payable: CuentaPorPagar) -> None:
+    commitment = getattr(payable, "compromiso_especial", None)
+    if commitment is None:
+        return
+    if commitment.estado in {CompromisoEspecial.Estado.RECHAZADO, CompromisoEspecial.Estado.CANCELADO}:
+        raise ValidationError({"cuenta_por_pagar": "El compromiso especial esta rechazado o cancelado."})
+    if commitment.requiere_autorizacion and not commitment.aprobado:
+        raise ValidationError({"cuenta_por_pagar": "El compromiso especial requiere aprobacion previa."})
+    if not commitment.sustento_referencia and not payable.referencia_comprobante:
+        raise ValidationError({"cuenta_por_pagar": "El compromiso especial requiere comprobante o sustento."})
+
+
+def _mark_special_commitment_if_paid(payable: CuentaPorPagar, actor=None) -> None:
+    commitment = getattr(payable, "compromiso_especial", None)
+    if commitment is None or payable.estado != CuentaPorPagar.Estado.PAGADA:
+        return
+    if commitment.estado == CompromisoEspecial.Estado.EJECUTADO:
+        return
+    commitment.estado = CompromisoEspecial.Estado.EJECUTADO
+    commitment.actualizado_por = actor
+    commitment.full_clean()
+    commitment.save(update_fields=["estado", "actualizado_por", "actualizado_en"])
+
+
+def register_special_commitment(
+    *,
+    tipo: str,
+    concepto: str,
+    sustento_referencia: str,
+    monto_estimado: Decimal,
+    cuenta_por_pagar: CuentaPorPagar = None,
+    sucursal=None,
+    organismo: str = "",
+    beneficiario: str = "",
+    expediente: str = "",
+    periodo_fiscal=None,
+    fecha_compromiso=None,
+    vencimiento=None,
+    prioridad: str = CompromisoEspecial.Prioridad.MEDIA,
+    requiere_autorizacion: bool = False,
+    plan_nombre: str = "",
+    numero_cuota=None,
+    total_cuotas=None,
+    capital: Decimal = Decimal("0.00"),
+    interes_financiero: Decimal = Decimal("0.00"),
+    interes_resarcitorio: Decimal = Decimal("0.00"),
+    actor=None,
+) -> CompromisoEspecial:
+    _require_actor(actor)
+    if tipo != CompromisoEspecial.Tipo.REQUERIMIENTO and cuenta_por_pagar is None:
+        raise ValidationError({"cuenta_por_pagar": "El compromiso debe vincular una cuenta por pagar."})
+    if cuenta_por_pagar is not None and cuenta_por_pagar.estado == CuentaPorPagar.Estado.ANULADA:
+        raise ValidationError({"cuenta_por_pagar": "No se puede vincular una deuda anulada."})
+    auto_requires_approval = tipo in {
+        CompromisoEspecial.Tipo.ADELANTO,
+        CompromisoEspecial.Tipo.SUELDO_EXTRAORDINARIO,
+    }
+    commitment = CompromisoEspecial(
+        tipo=tipo,
+        concepto=concepto,
+        sustento_referencia=sustento_referencia,
+        monto_estimado=monto_estimado,
+        cuenta_por_pagar=cuenta_por_pagar,
+        sucursal=sucursal or (cuenta_por_pagar.sucursal if cuenta_por_pagar else None),
+        organismo=organismo,
+        beneficiario=beneficiario,
+        expediente=expediente,
+        periodo_fiscal=periodo_fiscal,
+        fecha_compromiso=fecha_compromiso or timezone.localdate(),
+        vencimiento=vencimiento or (cuenta_por_pagar.fecha_vencimiento if cuenta_por_pagar else None),
+        prioridad=prioridad,
+        requiere_autorizacion=requiere_autorizacion or auto_requires_approval,
+        estado=(
+            CompromisoEspecial.Estado.APROBACION_PENDIENTE
+            if (requiere_autorizacion or auto_requires_approval)
+            else CompromisoEspecial.Estado.PENDIENTE
+        ),
+        plan_nombre=plan_nombre,
+        numero_cuota=numero_cuota,
+        total_cuotas=total_cuotas,
+        capital=capital or Decimal("0.00"),
+        interes_financiero=interes_financiero or Decimal("0.00"),
+        interes_resarcitorio=interes_resarcitorio or Decimal("0.00"),
+        creado_por=actor,
+    )
+    return _save_instance(commitment)
+
+
+def decide_special_commitment(
+    *,
+    commitment: CompromisoEspecial,
+    aprobado: bool,
+    comentario: str = "",
+    actor=None,
+) -> CompromisoEspecial:
+    _require_actor(actor)
+    if not commitment.requiere_autorizacion:
+        raise ValidationError({"compromiso": "Este compromiso no requiere autorizacion."})
+    comentario = (comentario or "").strip()
+    if not aprobado and not comentario:
+        raise ValidationError({"comentario": "El comentario es obligatorio para rechazar."})
+    commitment.estado = CompromisoEspecial.Estado.APROBADO if aprobado else CompromisoEspecial.Estado.RECHAZADO
+    commitment.autorizado_por = actor
+    commitment.autorizado_en = timezone.now()
+    commitment.comentario_autorizacion = comentario
+    commitment.actualizado_por = actor
+    return _save_instance(commitment)
+
+
+def build_special_commitments_snapshot(*, date_from: date, date_to: date, sucursal=None) -> dict:
+    if date_to < date_from:
+        raise ValidationError({"fecha_hasta": "La fecha hasta no puede ser anterior a la fecha desde."})
+
+    commitments = CompromisoEspecial.objects.select_related(
+        "cuenta_por_pagar",
+        "sucursal",
+        "autorizado_por",
+    ).filter(
+        Q(vencimiento__gte=date_from, vencimiento__lte=date_to)
+        | Q(vencimiento__isnull=True, fecha_compromiso__gte=date_from, fecha_compromiso__lte=date_to)
+    )
+    if sucursal is not None:
+        commitments = commitments.filter(sucursal=sucursal)
+
+    totals = commitments.aggregate(total=Sum("monto_estimado"), count=Count("id"))
+    by_type = list(commitments.values("tipo").annotate(total=Sum("monto_estimado"), count=Count("id")).order_by("tipo"))
+    pending_approval = commitments.filter(
+        requiere_autorizacion=True,
+        estado=CompromisoEspecial.Estado.APROBACION_PENDIENTE,
+    )
+    due_commitments = commitments.filter(
+        estado__in=[
+            CompromisoEspecial.Estado.PENDIENTE,
+            CompromisoEspecial.Estado.APROBACION_PENDIENTE,
+            CompromisoEspecial.Estado.APROBADO,
+        ]
+    ).order_by("vencimiento", "fecha_compromiso", "id")
+    plan_rows = commitments.filter(tipo=CompromisoEspecial.Tipo.PLAN_PAGO).values("plan_nombre").annotate(
+        total=Sum("monto_estimado"),
+        cuotas=Count("id"),
+        pendiente=Sum("cuenta_por_pagar__saldo_pendiente"),
+    ).order_by("plan_nombre")
+    return {
+        "date_from": date_from,
+        "date_to": date_to,
+        "sucursal": sucursal,
+        "total": totals["total"] or Decimal("0.00"),
+        "count": totals["count"] or 0,
+        "by_type": by_type,
+        "pending_approval_count": pending_approval.count(),
+        "pending_approval_total": pending_approval.aggregate(total=Sum("monto_estimado"))["total"] or Decimal("0.00"),
+        "due_commitments": due_commitments,
+        "plan_rows": plan_rows,
+    }
+
+
 @transaction.atomic
 def register_payment(
     *,
@@ -402,6 +583,7 @@ def register_payment(
         raise ValidationError({"cuenta_por_pagar": "La cuenta por pagar esta anulada."})
     if locked_payable.estado == CuentaPorPagar.Estado.PAGADA:
         raise ValidationError({"cuenta_por_pagar": "La cuenta por pagar ya esta cancelada."})
+    _ensure_special_commitment_can_be_paid(locked_payable)
     if medio_pago == PagoTesoreria.MedioPago.TRANSFERENCIA and fecha_diferida is not None:
         raise ValidationError({"fecha_diferida": "La transferencia no admite fecha diferida."})
     if medio_pago in {PagoTesoreria.MedioPago.CHEQUE, PagoTesoreria.MedioPago.ECHEQ} and not referencia:
@@ -430,6 +612,8 @@ def register_payment(
         )
         
     _recalculate_payable_locked(locked_payable)
+    locked_payable.refresh_from_db()
+    _mark_special_commitment_if_paid(locked_payable, actor=actor)
     return payment
 
 
@@ -985,8 +1169,9 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
     if sucursal is not None:
         period_payables = period_payables.filter(sucursal=sucursal)
 
-    debt_period_total = period_payables.aggregate(total=Sum("importe_total"))["total"] or Decimal("0.00")
-    debt_pending_total = period_payables.aggregate(total=Sum("saldo_pendiente"))["total"] or Decimal("0.00")
+    mapped_period_payables = period_payables.filter(categoria__rubro_operativo__isnull=False)
+    debt_period_total = mapped_period_payables.aggregate(total=Sum("importe_total"))["total"] or Decimal("0.00")
+    debt_pending_total = mapped_period_payables.aggregate(total=Sum("saldo_pendiente"))["total"] or Decimal("0.00")
     debt_rows = list(
         period_payables.values(
             "categoria__rubro_operativo",

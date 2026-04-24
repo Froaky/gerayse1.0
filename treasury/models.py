@@ -119,7 +119,7 @@ class CategoriaCuentaPagar(models.Model):
     def rubro_label(self) -> str:
         if self.rubro_operativo_id:
             return self.rubro_operativo.nombre
-        return self.nombre
+        return "Pendiente de migracion"
 
     def __str__(self) -> str:
         return self.nombre
@@ -427,6 +427,170 @@ class CuentaPorPagar(models.Model):
 
     def __str__(self) -> str:
         return f"{self.proveedor} - {self.concepto}"
+
+
+class CompromisoEspecial(models.Model):
+    class Tipo(models.TextChoices):
+        IMPUESTO = "IMPUESTO", "Impuesto u obligacion fiscal"
+        PLAN_PAGO = "PLAN_PAGO", "Plan de pago / cuota"
+        REQUERIMIENTO = "REQUERIMIENTO", "Requerimiento pendiente"
+        ADELANTO = "ADELANTO", "Adelanto autorizado"
+        EMBARGO = "EMBARGO", "Embargo o retencion judicial"
+        SUELDO_EXTRAORDINARIO = "SUELDO_EXTRAORDINARIO", "Sueldo extraordinario"
+
+    class Prioridad(models.TextChoices):
+        BAJA = "BAJA", "Baja"
+        MEDIA = "MEDIA", "Media"
+        ALTA = "ALTA", "Alta"
+
+    class Estado(models.TextChoices):
+        PENDIENTE = "PENDIENTE", "Pendiente"
+        APROBACION_PENDIENTE = "APROBACION_PENDIENTE", "Aprobacion pendiente"
+        APROBADO = "APROBADO", "Aprobado"
+        RECHAZADO = "RECHAZADO", "Rechazado"
+        EJECUTADO = "EJECUTADO", "Ejecutado"
+        CANCELADO = "CANCELADO", "Cancelado"
+
+    cuenta_por_pagar = models.OneToOneField(
+        CuentaPorPagar,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="compromiso_especial",
+    )
+    sucursal = models.ForeignKey(
+        "cashops.Sucursal",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="compromisos_especiales",
+    )
+    tipo = models.CharField(max_length=32, choices=Tipo.choices)
+    concepto = models.CharField(max_length=160)
+    organismo = models.CharField(max_length=120, blank=True)
+    beneficiario = models.CharField(max_length=160, blank=True)
+    expediente = models.CharField(max_length=80, blank=True)
+    sustento_referencia = models.CharField(max_length=120)
+    periodo_fiscal = models.DateField(null=True, blank=True)
+    fecha_compromiso = models.DateField(default=timezone.localdate)
+    vencimiento = models.DateField(null=True, blank=True)
+    monto_estimado = models.DecimalField(max_digits=14, decimal_places=2)
+    prioridad = models.CharField(max_length=10, choices=Prioridad.choices, default=Prioridad.MEDIA)
+    estado = models.CharField(max_length=24, choices=Estado.choices, default=Estado.PENDIENTE)
+    requiere_autorizacion = models.BooleanField(default=False)
+    plan_nombre = models.CharField(max_length=120, blank=True)
+    numero_cuota = models.PositiveIntegerField(null=True, blank=True)
+    total_cuotas = models.PositiveIntegerField(null=True, blank=True)
+    capital = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    interes_financiero = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    interes_resarcitorio = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    comentario_autorizacion = models.CharField(max_length=255, blank=True)
+    autorizado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="compromisos_especiales_autorizados",
+    )
+    autorizado_en = models.DateTimeField(null=True, blank=True)
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="compromisos_especiales_creados",
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+    actualizado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="compromisos_especiales_actualizados",
+    )
+
+    class Meta:
+        ordering = ["vencimiento", "fecha_compromiso", "id"]
+        constraints = [
+            models.CheckConstraint(check=Q(monto_estimado__gt=0), name="special_commitment_amount_positive"),
+            models.CheckConstraint(check=Q(capital__gte=0), name="special_commitment_capital_non_negative"),
+            models.CheckConstraint(
+                check=Q(interes_financiero__gte=0),
+                name="special_commitment_financial_interest_non_negative",
+            ),
+            models.CheckConstraint(
+                check=Q(interes_resarcitorio__gte=0),
+                name="special_commitment_resarcitory_interest_non_negative",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["tipo", "estado", "vencimiento"]),
+            models.Index(fields=["sucursal", "vencimiento"]),
+            models.Index(fields=["plan_nombre", "numero_cuota"]),
+        ]
+
+    def clean(self) -> None:
+        self.concepto = (self.concepto or "").strip()
+        self.organismo = (self.organismo or "").strip()
+        self.beneficiario = (self.beneficiario or "").strip()
+        self.expediente = (self.expediente or "").strip()
+        self.sustento_referencia = (self.sustento_referencia or "").strip()
+        self.plan_nombre = (self.plan_nombre or "").strip()
+        self.comentario_autorizacion = (self.comentario_autorizacion or "").strip()
+        errors = {}
+        if not self.concepto:
+            errors["concepto"] = "El concepto es obligatorio."
+        if not self.sustento_referencia:
+            errors["sustento_referencia"] = "El comprobante, expediente o sustento es obligatorio."
+        if self.monto_estimado is not None and self.monto_estimado <= 0:
+            errors["monto_estimado"] = "El monto debe ser mayor que cero."
+
+        if self.tipo == self.Tipo.IMPUESTO:
+            if not self.organismo:
+                errors["organismo"] = "El organismo es obligatorio para impuestos."
+            if not self.periodo_fiscal:
+                errors["periodo_fiscal"] = "El periodo fiscal es obligatorio."
+            if not self.vencimiento:
+                errors["vencimiento"] = "El vencimiento es obligatorio."
+        if self.tipo == self.Tipo.PLAN_PAGO:
+            if not self.plan_nombre:
+                errors["plan_nombre"] = "El plan es obligatorio."
+            if not self.numero_cuota:
+                errors["numero_cuota"] = "El numero de cuota es obligatorio."
+            if not self.total_cuotas:
+                errors["total_cuotas"] = "La cantidad total de cuotas es obligatoria."
+            if self.numero_cuota and self.total_cuotas and self.numero_cuota > self.total_cuotas:
+                errors["numero_cuota"] = "La cuota no puede superar el total de cuotas."
+            if not self.vencimiento:
+                errors["vencimiento"] = "El vencimiento de la cuota es obligatorio."
+            component_total = (self.capital or Decimal("0.00")) + (self.interes_financiero or Decimal("0.00")) + (
+                self.interes_resarcitorio or Decimal("0.00")
+            )
+            if self.monto_estimado is not None and component_total != self.monto_estimado:
+                errors["monto_estimado"] = "El monto debe coincidir con capital e intereses."
+        if self.tipo == self.Tipo.EMBARGO:
+            if not self.expediente:
+                errors["expediente"] = "El expediente o referencia judicial es obligatorio."
+            if not self.vencimiento:
+                errors["vencimiento"] = "La fecha de vigencia o vencimiento es obligatoria."
+        if self.tipo in {self.Tipo.ADELANTO, self.Tipo.SUELDO_EXTRAORDINARIO}:
+            self.requiere_autorizacion = True
+            if not self.beneficiario:
+                errors["beneficiario"] = "El beneficiario es obligatorio."
+        if self.requiere_autorizacion and self.estado == self.Estado.EJECUTADO and not self.autorizado_por_id:
+            errors["estado"] = "No se puede ejecutar un compromiso sin autorizacion."
+        if self.cuenta_por_pagar_id and self.monto_estimado != self.cuenta_por_pagar.importe_total:
+            errors["cuenta_por_pagar"] = "El monto debe coincidir con la cuenta por pagar vinculada."
+        if errors:
+            raise ValidationError(errors)
+
+    @property
+    def aprobado(self) -> bool:
+        return self.estado in {self.Estado.APROBADO, self.Estado.EJECUTADO}
+
+    def __str__(self) -> str:
+        return f"{self.get_tipo_display()} - {self.concepto}"
 
 
 class PagoTesoreria(models.Model):

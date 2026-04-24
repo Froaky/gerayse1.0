@@ -29,7 +29,7 @@ Cubrir las obligaciones especiales que en los Excel aparecen como impuestos, emb
 
 ## User Stories
 
-### [ ] US-7.1 Obligaciones impositivas recurrentes
+### [x] US-7.1 Obligaciones impositivas recurrentes
 
 Como administracion
 Quiero registrar obligaciones fiscales periodicas
@@ -42,7 +42,7 @@ Criterios:
 - importe
 - estado visible y filtrable
 
-### [ ] US-7.2 Planes de pago
+### [x] US-7.2 Planes de pago
 
 Como administracion
 Quiero registrar planes con cuotas
@@ -57,7 +57,7 @@ Criterios:
 - vencimiento
 - estado por cuota y lectura del saldo pendiente del plan
 
-### [ ] US-7.3 Requerimientos pendientes
+### [x] US-7.3 Requerimientos pendientes
 
 Como administracion
 Quiero registrar compromisos no standard
@@ -71,7 +71,7 @@ Criterios:
 - estado
 - responsable o sector cuando aplique
 
-### [ ] US-7.4 Adelantos con autorizacion
+### [x] US-7.4 Adelantos con autorizacion
 
 Como administracion
 Quiero exigir autorizacion previa en adelantos
@@ -85,7 +85,7 @@ Criterios:
 - estado de aprobacion
 - el adelanto no puede ejecutarse sin aprobacion cuando la regla lo exige
 
-### [ ] US-7.5 Auditoria de aprobaciones
+### [x] US-7.5 Auditoria de aprobaciones
 
 Como administracion
 Quiero ver quien autorizo y cuando
@@ -97,7 +97,7 @@ Criterios:
 - motivo o comentario
 - visibilidad desde el detalle del compromiso o aprobacion
 
-### [ ] US-7.6 Bloqueos de control
+### [x] US-7.6 Bloqueos de control
 
 Como negocio
 Quiero que ciertas cosas no pasen nunca
@@ -109,7 +109,7 @@ Criterios:
 - no diferencia sin justificar
 - no deuda pagada sin trazabilidad
 
-### [ ] US-7.7 Embargos y retenciones judiciales
+### [x] US-7.7 Embargos y retenciones judiciales
 
 Como administracion
 Quiero registrar embargos o retenciones judiciales
@@ -122,7 +122,7 @@ Criterios:
 - fecha de vigencia o vencimiento
 - estado visible y trazable
 
-### [ ] US-7.8 Sueldos extraordinarios y pagos excepcionales
+### [x] US-7.8 Sueldos extraordinarios y pagos excepcionales
 
 Como administracion
 Quiero registrar sueldos extraordinarios u otros pagos excepcionales

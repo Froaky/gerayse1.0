@@ -34,6 +34,9 @@ from .forms import (
     PaymentFilterForm,
     PosBatchFilterForm,
     PosBatchForm,
+    SpecialCommitmentDecisionForm,
+    SpecialCommitmentFilterForm,
+    SpecialCommitmentForm,
     SupplierFilterForm,
     SupplierForm,
     SupplierHistoryFilterForm,
@@ -46,6 +49,7 @@ from .models import (
     CajaCentral,
     CategoriaCuentaPagar,
     CierreMensualTesoreria,
+    CompromisoEspecial,
     CuentaBancaria,
     CuentaPorPagar,
     DescuentoAcreditacion,
@@ -63,6 +67,7 @@ from .services import (
     build_economic_period_snapshot,
     build_disponibilidades_snapshot,
     build_financial_period_snapshot,
+    build_special_commitments_snapshot,
     build_supplier_history_snapshot,
     build_treasury_dashboard_snapshot,
     close_treasury_month,
@@ -71,6 +76,7 @@ from .services import (
     create_payable_category,
     create_pos_batch,
     create_supplier,
+    decide_special_commitment,
     get_or_create_default_caja_central,
     link_payment_to_bank_movement,
     register_arqueo,
@@ -80,6 +86,7 @@ from .services import (
     register_cheque_payment,
     register_echeq_payment,
     register_payable,
+    register_special_commitment,
     register_transfer_payment,
     toggle_bank_account,
     toggle_payable_category,
@@ -161,6 +168,20 @@ def _payment_badge(payment: PagoTesoreria) -> tuple[str, str]:
     return payment.get_medio_pago_display(), "badge"
 
 
+def _special_commitment_badge(commitment: CompromisoEspecial) -> tuple[str, str]:
+    if commitment.estado == CompromisoEspecial.Estado.APROBADO:
+        return "Aprobado", "badge-success"
+    if commitment.estado == CompromisoEspecial.Estado.EJECUTADO:
+        return "Ejecutado", "badge-success"
+    if commitment.estado == CompromisoEspecial.Estado.RECHAZADO:
+        return "Rechazado", "badge-danger"
+    if commitment.estado == CompromisoEspecial.Estado.APROBACION_PENDIENTE:
+        return "Requiere aprobacion", "badge-warning"
+    if commitment.estado == CompromisoEspecial.Estado.CANCELADO:
+        return "Cancelado", "badge-muted"
+    return "Pendiente", "badge"
+
+
 def _supplier_item(supplier: Proveedor) -> dict:
     meta_bits = [supplier.contacto or "", supplier.telefono or "", supplier.email or ""]
     return {
@@ -169,17 +190,23 @@ def _supplier_item(supplier: Proveedor) -> dict:
         "subtitle": supplier.identificador_fiscal or "Sin identificador fiscal",
         "badge": "Activo" if supplier.activo else "Inactivo",
         "badge_class": "badge-success" if supplier.activo else "badge-muted",
-        "meta": " · ".join(bit for bit in meta_bits if bit),
+        "meta": " - ".join(bit for bit in meta_bits if bit),
     }
 
 
 def _category_item(category: CategoriaCuentaPagar) -> dict:
+    if not category.rubro_operativo_id:
+        badge = "Pendiente rubro"
+        badge_class = "badge-warning"
+    else:
+        badge = "Activa" if category.activo else "Inactiva"
+        badge_class = "badge-success" if category.activo else "badge-muted"
     return {
         "href": reverse("treasury:categorias_update", args=[category.pk]),
         "title": category.nombre,
         "subtitle": f"Rubro: {category.rubro_label}",
-        "badge": "Activa" if category.activo else "Inactiva",
-        "badge_class": "badge-success" if category.activo else "badge-muted",
+        "badge": badge,
+        "badge_class": badge_class,
         "meta": "",
     }
 
@@ -188,34 +215,25 @@ def _bank_account_item(bank_account: CuentaBancaria) -> dict:
     return {
         "href": reverse("treasury:cuentas_bancarias_update", args=[bank_account.pk]),
         "title": bank_account.nombre,
-        "subtitle": f"{bank_account.banco} · {bank_account.get_tipo_cuenta_display()}",
+        "subtitle": f"{bank_account.banco} - {bank_account.get_tipo_cuenta_display()}",
         "badge": "Activa" if bank_account.activa else "Inactiva",
         "badge_class": "badge-success" if bank_account.activa else "badge-muted",
         "meta": bank_account.alias or bank_account.cbu or bank_account.numero_cuenta,
     }
 
 
-def _payable_item(payable: CuentaPorPagar) -> dict:
-    badge, badge_class = _payable_badge(payable)
+def _special_commitment_item(commitment: CompromisoEspecial) -> dict:
+    badge, badge_class = _special_commitment_badge(commitment)
     return {
-        "href": reverse("treasury:cuentas_por_pagar_detail", args=[payable.pk]),
-        "title": payable.proveedor.razon_social,
-        "subtitle": f"{payable.concepto} · {payable.categoria.nombre}",
+        "href": reverse("treasury:compromisos_especiales_detail", args=[commitment.pk]),
+        "title": commitment.concepto,
+        "subtitle": f"{commitment.get_tipo_display()} - {commitment.sustento_referencia}",
         "badge": badge,
         "badge_class": badge_class,
-        "meta": f"Vence {payable.fecha_vencimiento:%d/%m/%Y} · Pendiente {_money(payable.saldo_pendiente)}",
-    }
-
-
-def _payment_item(payment: PagoTesoreria) -> dict:
-    badge, badge_class = _payment_badge(payment)
-    return {
-        "href": reverse("treasury:pagos_detail", args=[payment.pk]),
-        "title": payment.cuenta_por_pagar.proveedor.razon_social,
-        "subtitle": f"{payment.get_medio_pago_display()} · {payment.cuenta_por_pagar.concepto}",
-        "badge": badge,
-        "badge_class": badge_class,
-        "meta": f"{payment.fecha_pago:%d/%m/%Y} · {_money(payment.monto)} · {payment.cuenta_bancaria.nombre}",
+        "meta": (
+            f"Vence {commitment.vencimiento:%d/%m/%Y}" if commitment.vencimiento else f"Fecha {commitment.fecha_compromiso:%d/%m/%Y}"
+        )
+        + f" - {_money(commitment.monto_estimado)}",
     }
 
 
@@ -297,6 +315,12 @@ def dashboard(request):
             "description": "Registro interno de cuentas de control.",
             "href": reverse("treasury:bank_movements_list"),
             "count": MovimientoBancario.objects.count(),
+        },
+        {
+            "label": "Compromisos especiales",
+            "description": "Impuestos, planes, embargos y autorizaciones.",
+            "href": reverse("treasury:compromisos_especiales_list"),
+            "count": CompromisoEspecial.objects.count(),
         },
         {
             "label": "Efectivo",
@@ -481,7 +505,7 @@ def proveedores_toggle(request, supplier_id: int):
 def categorias_list(request):
     _require_treasury_admin(request)
     form = PayableCategoryFilterForm(request.GET or None)
-    queryset = CategoriaCuentaPagar.objects.order_by("nombre")
+    queryset = CategoriaCuentaPagar.objects.select_related("rubro_operativo").order_by("nombre")
     if form.is_valid():
         q = (form.cleaned_data.get("q") or "").strip()
         active = form.cleaned_data.get("activo")
@@ -566,8 +590,12 @@ def categorias_update(request, category_id: int):
 def categorias_toggle(request, category_id: int):
     _require_treasury_admin(request)
     category = get_object_or_404(CategoriaCuentaPagar, pk=category_id)
-    category = toggle_payable_category(category=category, actor=request.user)
-    messages.success(request, f"Categoria {category.nombre} {'activada' if category.activo else 'desactivada'}.")
+    try:
+        category = toggle_payable_category(category=category, actor=request.user)
+    except ValidationError as error:
+        messages.error(request, " ".join(error.messages))
+    else:
+        messages.success(request, f"Categoria {category.nombre} {'activada' if category.activo else 'desactivada'}.")
     return redirect("treasury:categorias_list")
 
 
@@ -678,13 +706,14 @@ def cuentas_bancarias_toggle(request, bank_account_id: int):
 def cuentas_por_pagar_list(request):
     _require_treasury_admin(request)
     form = PayableFilterForm(request.GET or None)
-    queryset = CuentaPorPagar.objects.select_related("proveedor", "categoria").order_by(
+    queryset = CuentaPorPagar.objects.select_related("proveedor", "categoria", "categoria__rubro_operativo").order_by(
         "fecha_vencimiento", "proveedor__razon_social"
     )
     if form.is_valid():
         q = (form.cleaned_data.get("q") or "").strip()
         proveedor = form.cleaned_data.get("proveedor")
         categoria = form.cleaned_data.get("categoria")
+        rubro = form.cleaned_data.get("rubro")
         estado = form.cleaned_data.get("estado")
         sucursal = form.cleaned_data.get("sucursal")
         if q:
@@ -692,11 +721,14 @@ def cuentas_por_pagar_list(request):
                 Q(proveedor__razon_social__icontains=q)
                 | Q(concepto__icontains=q)
                 | Q(referencia_comprobante__icontains=q)
+                | Q(categoria__rubro_operativo__nombre__icontains=q)
             )
         if proveedor:
             queryset = queryset.filter(proveedor=proveedor)
         if categoria:
             queryset = queryset.filter(categoria=categoria)
+        if rubro:
+            queryset = queryset.filter(categoria__rubro_operativo=rubro)
         if estado == "VENCIDA":
             queryset = queryset.filter(
                 estado__in=[CuentaPorPagar.Estado.PENDIENTE, CuentaPorPagar.Estado.PARCIAL],
@@ -711,7 +743,7 @@ def cuentas_por_pagar_list(request):
         "treasury/list_page.html",
         {
             "title": "Cuentas por pagar",
-            "subtitle": "Deuda abierta, parcial, vencida o cerrada con historial.",
+            "subtitle": "Deuda abierta, parcial, vencida o cerrada, trazable por periodo y rubro.",
             "items": [_payable_item(item) for item in queryset],
             "create_url": reverse("treasury:cuentas_por_pagar_create"),
             "filter_form": form,
@@ -779,7 +811,7 @@ def cuentas_por_pagar_detail(request, payable_id: int):
         "treasury/detail_page.html",
         {
             "title": payable.concepto,
-            "subtitle": f"{payable.proveedor.razon_social} · {payable.categoria.nombre}",
+            "subtitle": f"{payable.proveedor.razon_social} - {payable.categoria.nombre}",
             "back_url": reverse("treasury:cuentas_por_pagar_list"),
             "section_label": badge,
             "section_label_class": badge_class,
@@ -870,6 +902,160 @@ def cuentas_por_pagar_annul(request, payable_id: int):
             "submit_label": "Confirmar anulacion",
             "back_url": reverse("treasury:cuentas_por_pagar_detail", args=[payable.pk]),
             "form_action": reverse("treasury:cuentas_por_pagar_annul", args=[payable.pk]),
+        },
+        status=400 if request.method == "POST" and not form.is_valid() else 200,
+    )
+
+
+@login_required
+def compromisos_especiales_list(request):
+    _require_treasury_admin(request)
+    form = SpecialCommitmentFilterForm(request.GET or None)
+    queryset = CompromisoEspecial.objects.select_related("cuenta_por_pagar", "sucursal").order_by(
+        "vencimiento",
+        "fecha_compromiso",
+        "id",
+    )
+    if form.is_valid():
+        tipo = form.cleaned_data.get("tipo")
+        estado = form.cleaned_data.get("estado")
+        sucursal = form.cleaned_data.get("sucursal")
+        fecha_desde = form.cleaned_data.get("fecha_desde")
+        fecha_hasta = form.cleaned_data.get("fecha_hasta")
+        if tipo:
+            queryset = queryset.filter(tipo=tipo)
+        if estado:
+            queryset = queryset.filter(estado=estado)
+        if sucursal:
+            queryset = queryset.filter(sucursal=sucursal)
+        if fecha_desde:
+            queryset = queryset.filter(Q(vencimiento__gte=fecha_desde) | Q(vencimiento__isnull=True, fecha_compromiso__gte=fecha_desde))
+        if fecha_hasta:
+            queryset = queryset.filter(Q(vencimiento__lte=fecha_hasta) | Q(vencimiento__isnull=True, fecha_compromiso__lte=fecha_hasta))
+    return render(
+        request,
+        "treasury/list_page.html",
+        {
+            "title": "Compromisos especiales",
+            "subtitle": "Impuestos, planes, embargos, adelantos y pagos excepcionales con sustento y autorizacion.",
+            "items": [_special_commitment_item(item) for item in queryset],
+            "create_url": reverse("treasury:compromisos_especiales_create"),
+            "filter_form": form,
+        },
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def compromisos_especiales_create(request):
+    _require_treasury_admin(request)
+    form = SpecialCommitmentForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        try:
+            commitment = register_special_commitment(actor=request.user, **form.cleaned_data)
+        except (ValidationError, IntegrityError) as error:
+            _handle_operation_error(form, error, "No se pudo guardar el compromiso especial.")
+        else:
+            messages.success(request, "Compromiso especial guardado.")
+            url = reverse("treasury:compromisos_especiales_detail", args=[commitment.pk])
+            return _hx_redirect(url) if _is_htmx(request) else redirect(url)
+    return _render_form(
+        request,
+        {
+            "title": "Nuevo compromiso especial",
+            "subtitle": "Clasifica impuestos, planes, embargos y autorizaciones sobre la deuda.",
+            "form": form,
+            "submit_label": "Guardar compromiso",
+            "back_url": reverse("treasury:compromisos_especiales_list"),
+            "form_action": reverse("treasury:compromisos_especiales_create"),
+        },
+        status=400 if request.method == "POST" and not form.is_valid() else 200,
+    )
+
+
+@login_required
+def compromisos_especiales_detail(request, commitment_id: int):
+    _require_treasury_admin(request)
+    commitment = get_object_or_404(
+        CompromisoEspecial.objects.select_related(
+            "cuenta_por_pagar",
+            "cuenta_por_pagar__proveedor",
+            "sucursal",
+            "autorizado_por",
+            "creado_por",
+        ),
+        pk=commitment_id,
+    )
+    badge, badge_class = _special_commitment_badge(commitment)
+    fields = [
+        {"label": "Tipo", "value": commitment.get_tipo_display()},
+        {"label": "Concepto", "value": commitment.concepto},
+        {"label": "Sustento", "value": commitment.sustento_referencia},
+        {"label": "Monto", "value": _money(commitment.monto_estimado)},
+        {"label": "Estado", "value": badge},
+        {"label": "Prioridad", "value": commitment.get_prioridad_display()},
+        {"label": "Sucursal", "value": commitment.sucursal.nombre if commitment.sucursal_id else "Sin sucursal"},
+        {"label": "Vencimiento", "value": commitment.vencimiento.strftime("%d/%m/%Y") if commitment.vencimiento else "Sin vencimiento"},
+        {"label": "Organismo", "value": commitment.organismo or "No aplica"},
+        {"label": "Beneficiario", "value": commitment.beneficiario or "No aplica"},
+        {"label": "Expediente", "value": commitment.expediente or "No aplica"},
+        {"label": "Periodo fiscal", "value": commitment.periodo_fiscal.strftime("%m/%Y") if commitment.periodo_fiscal else "No aplica"},
+        {"label": "Plan", "value": commitment.plan_nombre or "No aplica"},
+        {"label": "Cuota", "value": f"{commitment.numero_cuota}/{commitment.total_cuotas}" if commitment.numero_cuota else "No aplica"},
+        {"label": "Capital", "value": _money(commitment.capital)},
+        {"label": "Interes financiero", "value": _money(commitment.interes_financiero)},
+        {"label": "Interes resarcitorio", "value": _money(commitment.interes_resarcitorio)},
+        {"label": "Autorizado por", "value": str(commitment.autorizado_por) if commitment.autorizado_por else "Sin autorizacion"},
+        {"label": "Comentario autorizacion", "value": commitment.comentario_autorizacion or "Sin comentario"},
+    ]
+    actions = []
+    if commitment.cuenta_por_pagar_id:
+        actions.append(_action(reverse("treasury:cuentas_por_pagar_detail", args=[commitment.cuenta_por_pagar_id]), "Ver deuda"))
+    if commitment.requiere_autorizacion and commitment.estado == CompromisoEspecial.Estado.APROBACION_PENDIENTE:
+        actions.append(_action(reverse("treasury:compromisos_especiales_decide", args=[commitment.pk]), "Autorizar", "primary"))
+    return render(
+        request,
+        "treasury/detail_page.html",
+        {
+            "title": commitment.concepto,
+            "subtitle": commitment.get_tipo_display(),
+            "back_url": reverse("treasury:compromisos_especiales_list"),
+            "section_label": badge,
+            "section_label_class": badge_class,
+            "fields": fields,
+            "actions": actions,
+        },
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def compromisos_especiales_decide(request, commitment_id: int):
+    _require_treasury_admin(request)
+    commitment = get_object_or_404(CompromisoEspecial, pk=commitment_id)
+    form = SpecialCommitmentDecisionForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        try:
+            commitment = decide_special_commitment(
+                commitment=commitment,
+                aprobado=form.cleaned_data["decision"] == "approve",
+                comentario=form.cleaned_data["comentario"],
+                actor=request.user,
+            )
+        except ValidationError as error:
+            _handle_operation_error(form, error, "No se pudo registrar la decision.")
+        else:
+            messages.success(request, "Decision registrada.")
+            return redirect("treasury:compromisos_especiales_detail", commitment.pk)
+    return _render_form(
+        request,
+        {
+            "title": f"Autorizar compromiso: {commitment.concepto}",
+            "subtitle": "La decision queda auditada con usuario, fecha y comentario.",
+            "form": form,
+            "submit_label": "Registrar decision",
+            "back_url": reverse("treasury:compromisos_especiales_detail", args=[commitment.pk]),
+            "form_action": reverse("treasury:compromisos_especiales_decide", args=[commitment.pk]),
         },
         status=400 if request.method == "POST" and not form.is_valid() else 200,
     )

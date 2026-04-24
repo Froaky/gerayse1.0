@@ -1,3 +1,4 @@
+import csv
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
@@ -35,6 +36,7 @@ from .services import (
     build_box_control_scope,
     build_branch_control_scope,
     build_global_control_scope,
+    build_management_daily_matrix,
     build_operational_control_snapshot,
     build_operational_period_summary,
     close_box,
@@ -147,6 +149,33 @@ def _parse_dashboard_period(request):
     if period_to < period_from:
         period_from, period_to = period_to, period_from
     return period_from, period_to
+
+
+def _default_month_range():
+    today = timezone.localdate()
+    first_day = today.replace(day=1)
+    if today.month == 12:
+        next_month = today.replace(year=today.year + 1, month=1, day=1)
+    else:
+        next_month = today.replace(month=today.month + 1, day=1)
+    return first_day, next_month - timezone.timedelta(days=1)
+
+
+def _parse_management_matrix_filters(request):
+    default_from, default_to = _default_month_range()
+    date_from = parse_date(request.GET.get("fecha_desde") or "") or default_from
+    date_to = parse_date(request.GET.get("fecha_hasta") or "") or default_to
+    if date_to < date_from:
+        date_from, date_to = date_to, date_from
+
+    sucursal = None
+    sucursal_id = request.GET.get("sucursal")
+    if sucursal_id:
+        try:
+            sucursal = Sucursal.objects.get(pk=int(sucursal_id), activa=True)
+        except (Sucursal.DoesNotExist, TypeError, ValueError):
+            sucursal = None
+    return date_from, date_to, sucursal
 
 
 def _resolve_dashboard_scope(request):
@@ -292,6 +321,74 @@ def alert_panel(request):
             "scope_policy_rules": OPERATIONAL_ALERT_SCOPE_POLICY_RULES,
         },
     )
+
+
+@login_required
+def management_matrix(request):
+    _require_cashops_admin(request)
+    date_from, date_to, sucursal = _parse_management_matrix_filters(request)
+    matrix = build_management_daily_matrix(date_from=date_from, date_to=date_to, sucursal=sucursal)
+    return render(
+        request,
+        "cashops/management_matrix.html",
+        {
+            "matrix": matrix,
+            "sucursales": Sucursal.objects.filter(activa=True).order_by("nombre"),
+            "selected_sucursal": sucursal,
+            "fecha_desde": date_from.isoformat(),
+            "fecha_hasta": date_to.isoformat(),
+        },
+    )
+
+
+@login_required
+def management_matrix_export(request):
+    _require_cashops_admin(request)
+    date_from, date_to, sucursal = _parse_management_matrix_filters(request)
+    matrix = build_management_daily_matrix(date_from=date_from, date_to=date_to, sucursal=sucursal)
+    filename_scope = sucursal.codigo if sucursal else "global"
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = (
+        f'attachment; filename="matriz-control-{filename_scope}-{date_from:%Y%m%d}-{date_to:%Y%m%d}.csv"'
+    )
+    writer = csv.writer(response)
+    writer.writerow(["Matriz diaria de control"])
+    writer.writerow(["Desde", date_from.isoformat(), "Hasta", date_to.isoformat(), "Sucursal", sucursal.nombre if sucursal else "Global"])
+    writer.writerow([])
+    writer.writerow(["Resumen diario"])
+    writer.writerow(
+        ["Fecha"]
+        + [channel["label"] for channel in matrix["channels"]]
+        + [f"Egreso {rubro['nombre']}" for rubro in matrix["rubros"]]
+        + ["Ingresos", "Egresos", "Resultado"]
+    )
+    for day in matrix["days"]:
+        writer.writerow(
+            [day["date"].isoformat()]
+            + [day["income_by_channel"][channel["key"]] for channel in matrix["channels"]]
+            + [day["expense_by_rubro"][rubro["id"]] for rubro in matrix["rubros"]]
+            + [day["total_income"], day["total_expense"], day["net_result"]]
+        )
+    writer.writerow([])
+    writer.writerow(["Detalle trazable"])
+    writer.writerow(["ID", "Fecha operativa", "Sucursal", "Caja", "Tipo", "Sentido", "Rubro", "Monto", "Categoria", "Observacion", "Usuario"])
+    for movement in matrix["detail_movements"]:
+        writer.writerow(
+            [
+                movement.pk,
+                movement.caja.turno.fecha_operativa.isoformat(),
+                movement.caja.sucursal.nombre,
+                movement.caja_id,
+                movement.get_tipo_display(),
+                movement.get_sentido_display(),
+                movement.rubro_operativo.nombre if movement.rubro_operativo_id else "",
+                movement.monto,
+                movement.categoria,
+                movement.observacion,
+                str(movement.creado_por) if movement.creado_por else "",
+            ]
+        )
+    return response
 
 
 @login_required
