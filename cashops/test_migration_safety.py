@@ -6,12 +6,6 @@ from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 from django.test import TransactionTestCase
 
-from users.models import Role
-from django.contrib.auth import get_user_model
-
-
-User = get_user_model()
-
 
 class Cashops0006MigrationSafetyTests(TransactionTestCase):
     reset_sequences = True
@@ -30,27 +24,36 @@ class Cashops0006MigrationSafetyTests(TransactionTestCase):
         Caja = old_apps.get_model("cashops", "Caja")
         MovimientoCaja = old_apps.get_model("cashops", "MovimientoCaja")
 
-        role = Role.objects.create(code="ADMIN", name="Administrador")
-        user = User.objects.create(
-            username="legacy-admin",
-            password="test",
-            role=role,
-            is_active=True,
-            is_staff=True,
-            dni="",
-        )
+        # Use raw SQL to insert Role and User — the ORM historical model at cashops.0005
+        # doesn't include fields added by users.0003 (dni, legajo, telefono), but the DB
+        # has those columns as NOT NULL. Raw SQL lets us supply them explicitly.
+        with connection.cursor() as cur:
+            cur.execute(
+                "INSERT INTO users_role (code, name, is_active) VALUES (?, ?, ?)",
+                ["ADMIN", "Administrador", 1],
+            )
+            role_id = cur.lastrowid
+            cur.execute(
+                "INSERT INTO users_user "
+                "(password, is_superuser, username, first_name, last_name, email, "
+                "is_staff, is_active, date_joined, role_id, dni, legajo, telefono) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?)",
+                ["test", 0, "legacy-admin", "", "", "", 1, 1, role_id, "", "", ""],
+            )
+            user_id = cur.lastrowid
+
         sucursal = Sucursal.objects.create(codigo="LEG-01", nombre="Legacy 01")
         turno = Turno.objects.create(
             sucursal=sucursal,
             fecha_operativa=date(2026, 3, 27),
             tipo="TM",
             estado="ABIERTO",
-            creado_por_id=user.pk,
+            creado_por_id=user_id,
         )
         caja = Caja.objects.create(
             sucursal=sucursal,
             turno=turno,
-            usuario_id=user.pk,
+            usuario_id=user_id,
             monto_inicial=Decimal("1000.00"),
             estado="ABIERTA",
         )
@@ -61,7 +64,7 @@ class Cashops0006MigrationSafetyTests(TransactionTestCase):
             monto=Decimal("125.00"),
             categoria="POS legado",
             observacion="Venta por tarjeta previa a 0006",
-            creado_por_id=user.pk,
+            creado_por_id=user_id,
         )
 
         executor = MigrationExecutor(connection)

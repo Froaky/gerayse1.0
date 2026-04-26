@@ -4,7 +4,7 @@
       <div class="row">
         <strong>{{ movement.get_tipo_display }}</strong>
         <span class="badge {% if movement.sentido == 'EGRESO' %}badge-danger{% endif %}">
-          {{ movement.sentido }}
+          {{ movement.get_sentido_display }}
         </span>
       </div>
       <div class="row" style="margin-top:8px;">
@@ -19,7 +19,7 @@
       {% if movement.observacion %}
         <div class="muted" style="margin-top:6px;">{{ movement.observacion }}</div>
       {% endif %}
-      <div class="muted" style="margin-top:6px;">{{ movement.creado_en }}</div>
+      <div class="muted" style="margin-top:6px;">{{ movement.creado_en|date:"d/m/Y H:i" }}</div>
     </article>
   {% empty %}
     <p class="muted">No hay movimientos para mostrar.</p>

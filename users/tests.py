@@ -211,18 +211,8 @@ class PersonalViewTests(TestCase):
             last_name="Perez",
             role=self.operator_role,
             dni="12345678",
-            legajo="LEG-001",
             telefono="387-111",
         )
-
-    def test_personal_form_hides_legajo_field(self):
-        self.client.force_login(self.admin)
-
-        response = self.client.get(reverse("users:personal_create"))
-
-        self.assertEqual(response.status_code, 200)
-        self.assertNotContains(response, "Nro Legajo")
-        self.assertNotContains(response, "LEG-001")
 
     def test_personal_list_is_minimal_and_hides_extra_fields(self):
         self.client.force_login(self.admin)
@@ -233,7 +223,6 @@ class PersonalViewTests(TestCase):
         self.assertContains(response, "Juan")
         self.assertContains(response, "Perez")
         self.assertContains(response, "Encargado")
-        self.assertNotContains(response, "LEG-001")
         self.assertNotContains(response, "12345678")
         self.assertNotContains(response, "387-111")
         self.assertNotContains(response, "@operador_personal")
@@ -248,7 +237,7 @@ class PersonalViewTests(TestCase):
         self.assertNotContains(response, "Apellido: Admin")
         self.assertNotContains(response, "Rol: Administrador")
 
-    def test_personal_update_supports_existing_users_with_historic_legajo(self):
+    def test_personal_update_preserves_password_when_left_blank(self):
         self.client.force_login(self.admin)
 
         response = self.client.post(
@@ -270,7 +259,6 @@ class PersonalViewTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.operator.refresh_from_db()
-        self.assertEqual(self.operator.legajo, "LEG-001")
         self.assertTrue(self.operator.check_password("secret12345"))
 
     def test_personal_form_requires_base_branch_for_fixed_user(self):

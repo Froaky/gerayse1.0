@@ -239,6 +239,13 @@ def _resolve_dashboard_scope(request):
 
 @login_required
 def dashboard(request):
+    is_admin = request.user.is_authenticated and request.user.is_cashops_admin()
+    if not request.GET.get("scope") and not is_admin:
+        open_boxes = Caja.objects.filter(usuario=request.user, estado=Caja.Estado.ABIERTA)
+        if open_boxes.count() == 1:
+            box = open_boxes.first()
+            return redirect(f"{reverse('cashops:dashboard')}?scope=box&box={box.pk}")
+
     boxes = _boxes_for_request(request).order_by("-abierta_en")
     scope_context = _resolve_dashboard_scope(request)
     selected_box = scope_context["selected_box"]
@@ -686,7 +693,7 @@ def turno_create(request):
         "cashops/partials/form_card.html",
         {
             "title": "Nuevo turno",
-            "subtitle": "Defini T.M. o T.T. para la sucursal.",
+            "subtitle": "Defini Turno Mañana o Turno Tarde para la sucursal.",
             "form": form,
             "submit_label": "Guardar turno",
             "back_url": reverse("cashops:turno_list"),

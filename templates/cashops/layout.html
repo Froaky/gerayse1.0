@@ -188,6 +188,15 @@
       .badge-warning { background: rgba(212, 125, 44, 0.14); color: #9b5a18; }
       .badge-danger { background: rgba(155, 45, 48, 0.1); color: var(--danger); }
       .badge-muted { background: rgba(108, 100, 89, 0.1); color: var(--muted); }
+      .nav-divider {
+        display: block;
+        width: 1px;
+        height: 24px;
+        background: var(--line);
+        border-radius: 1px;
+        align-self: center;
+        flex-shrink: 0;
+      }
       .footer-space { height: 24px; }
       @media (min-width: 880px) {
         .topbar {
@@ -233,6 +242,7 @@
             {% if request.user.is_authenticated and request.user.is_cashops_admin %}
               <a class="chip" href="{% url 'cashops:alert_panel' %}">Alertas</a>
               <a class="chip" href="{% url 'treasury:dashboard' %}">Tesoreria</a>
+              <span class="nav-divider"></span>
               <a class="chip" href="{% url 'cashops:operational_category_list' %}">Rubros</a>
               <a class="chip" href="{% url 'cashops:operational_limit_list' %}">Limites</a>
               <a class="chip" href="{% url 'cashops:sucursal_list' %}">Sucursales</a>

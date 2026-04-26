@@ -39,8 +39,8 @@ class Sucursal(models.Model):
 
 class Turno(models.Model):
     class Tipo(models.TextChoices):
-        MANANA = "TM", "T.M."
-        TARDE = "TT", "T.T."
+        MANANA = "TM", "Turno Mañana"
+        TARDE = "TT", "Turno Tarde"
 
     class Estado(models.TextChoices):
         ABIERTO = "ABIERTO", "Abierto"

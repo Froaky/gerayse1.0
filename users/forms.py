@@ -57,6 +57,8 @@ class PersonalForm(forms.ModelForm):
         cleaned_data = super().clean()
         if cleaned_data.get("usuario_fijo") and not cleaned_data.get("sucursal_base"):
             self.add_error("sucursal_base", "La sucursal base es obligatoria para un usuario fijo.")
+        if not self.instance.pk and not cleaned_data.get("password"):
+            self.add_error("password", "La contrasena es obligatoria para nuevos usuarios.")
         return cleaned_data
 
     def save(self, commit=True):

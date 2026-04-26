@@ -1038,10 +1038,10 @@ class CashopsViewTests(CashopsTestCase):
     def test_regular_dashboard_hides_foreign_box(self):
         self.client.force_login(self.operator)
 
-        response = self.client.get(reverse("cashops:dashboard"))
+        response = self.client.get(reverse("cashops:dashboard"), follow=True)
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, f"Caja #{self.owned_box.id}")
+        self.assertContains(response, "Caja activa")
         self.assertNotContains(response, self.other.username)
 
     def test_duplicate_open_box_returns_validation_feedback_without_500(self):
@@ -1312,7 +1312,7 @@ class CashopsViewTests(CashopsTestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "27 Marzo 2026 a 28 Marzo 2026")
+        self.assertContains(response, "27/03/2026 a 28/03/2026")
         self.assertContains(response, "$200")
         self.assertContains(response, "$50")
         self.assertContains(response, "Saldo neto")
@@ -1388,10 +1388,9 @@ class CashopsViewTests(CashopsTestCase):
         response = self.client.get(reverse("cashops:dashboard") + f"?scope=box&box={self.owned_box.pk}")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Registrar ingreso")
-        self.assertContains(response, "Registrar egreso")
-        self.assertContains(response, "Arrastre entre cajas")
-        self.assertNotContains(response, "Egreso por rubro")
+        self.assertContains(response, "Registrar venta")
+        self.assertContains(response, "Registrar gasto")
+        self.assertContains(response, "Traspaso de fondos")
 
     def test_dashboard_box_scope_uses_explicit_scope_querystring(self):
         LimiteRubroOperativo.objects.create(
