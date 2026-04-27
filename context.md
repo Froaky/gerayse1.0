@@ -1,6 +1,6 @@
 # Context
 
-Last updated: 2026-04-24
+Last updated: 2026-04-25
 
 ## Product Snapshot
 
@@ -14,6 +14,7 @@ Last updated: 2026-04-24
   - internal control first
   - no real bank integration required for the current demo
   - account/bank concepts are being used as internal registry structures
+  - bank reconciliation is manual-assisted by the system and must not be automated unless the user explicitly requests that later
 
 ## Important Domain Notes
 
@@ -76,6 +77,8 @@ Last updated: 2026-04-24
 
 ### Files Touched In This Session
 
+- `docs/epics/README.md`
+- `docs/epics/EP-04-bancos-y-conciliacion.md`
 - `AGENTS.md`
 - `context.md`
 - `README.md`
@@ -144,6 +147,12 @@ Last updated: 2026-04-24
 
 ### Changes Applied
 
+- `docs/epics/EP-04-bancos-y-conciliacion.md`
+  - made explicit that bank reconciliation remains manual-assisted and that automatic reconciliation is out of scope until a later explicit decision
+- `docs/epics/README.md`
+  - added a backlog-wide implementation principle forbidding automatic bank reconciliation or import-based matching until the user requests it
+- `context.md`
+  - recorded the product decision that bank reconciliation stays manual for now so future agents do not assume automation
 - `cashops/*` and `treasury/*` EP-06/EP-07 closure slice
   - EP-06 closed: added admin-only daily management matrix and CSV export from persisted cash movements, grouped by operational date, income channel and expense rubro
   - EP-06 uses existing `LimiteRubroOperativo`, `AlertaOperativa`, `CierreCaja` and `Justificacion` for rubro targets, deviation alerts, dashboard follow-up and difference tracking

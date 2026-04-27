@@ -49,6 +49,7 @@ Principios de implementacion:
 - no mezclar caja fisica con banco ni con ventas a acreditar
 - no permitir pagos sin comprobante, referencia o trazabilidad minima
 - no depender de campos libres para estados como `pagado`, `ok`, `NO`
+- la conciliacion bancaria se considera manual asistida por el sistema; no automatizar matching ni importaciones hasta decision explicita del usuario
 - toda excepcion debe quedar auditada
 - el sistema debe reconstruir cierres, deuda, pagos, flujo y dashboard sin retoques manuales
 

@@ -18,6 +18,7 @@ Llevar al sistema lo que hoy se controla en el lado `MAPOGO - BANCO` y en los ci
 - integracion bancaria real en linea
 - importacion masiva de extractos
 - conciliacion automatica contra todos los operadores y marcas
+- conciliacion bancaria automatica de cualquier tipo sin decision explicita posterior
 - cierre contable formal
 
 ## Reglas de negocio
@@ -26,6 +27,7 @@ Llevar al sistema lo que hoy se controla en el lado `MAPOGO - BANCO` y en los ci
 - toda acreditacion debe poder vincularse al menos a un canal u operador
 - los descuentos bancarios deben quedar separados del neto acreditado
 - un pago de tesoreria con impacto bancario debe tener reflejo bancario trazable
+- hasta nueva decision de negocio, la conciliacion bancaria se opera de forma manual asistida por el sistema y no por matching automatico
 
 ## User Stories
 
