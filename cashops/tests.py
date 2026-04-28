@@ -81,7 +81,6 @@ class CashopsTestCase(TestCase):
         form = CajaAperturaForm(data=data, actor=actor)
         form.fields["usuario"].queryset = User.objects.all()
         form.fields["sucursal"].queryset = Sucursal.objects.all()
-        form.fields["turno"].queryset = Turno.objects.all()
         return form
 
 
@@ -112,8 +111,9 @@ class CashopsPermissionUnitTests(CashopsTestCase):
             data={
                 "usuario": self.other.pk,
                 "sucursal": self.branch_a.pk,
-                "turno": self.turno_a.pk,
-                "monto_inicial": "100.00",
+                "tipo_turno": Turno.Tipo.MANANA,
+                "fecha_operativa": "2026-03-27",
+                "efectivo_inicial": "100.00",
             },
         )
 
@@ -126,8 +126,9 @@ class CashopsPermissionUnitTests(CashopsTestCase):
             data={
                 "usuario": self.other.pk,
                 "sucursal": self.branch_a.pk,
-                "turno": self.turno_a.pk,
-                "monto_inicial": "100.00",
+                "tipo_turno": Turno.Tipo.MANANA,
+                "fecha_operativa": "2026-03-27",
+                "efectivo_inicial": "100.00",
             },
         )
 
@@ -146,7 +147,11 @@ class CashopsPermissionUnitTests(CashopsTestCase):
 
         self.assertEqual(form.fields["usuario"].initial, fixed_user.pk)
         self.assertEqual(form.fields["sucursal"].initial, self.branch_a.pk)
-        self.assertIn(self.turno_a, list(form.fields["turno"].queryset))
+        self.assertNotIn("turno", form.fields)
+        self.assertQuerySetEqual(
+            form.fields["sucursal"].queryset,
+            Sucursal.objects.filter(pk=self.branch_a.pk, activa=True),
+        )
 
     def test_sale_form_no_longer_exposes_product_field(self):
         form = VentaGeneralForm()
@@ -1052,8 +1057,9 @@ class CashopsViewTests(CashopsTestCase):
             {
                 "usuario": self.operator.pk,
                 "sucursal": self.branch_a.pk,
-                "turno": self.turno_a.pk,
-                "monto_inicial": "10.00",
+                "tipo_turno": Turno.Tipo.MANANA,
+                "fecha_operativa": "2026-03-27",
+                "efectivo_inicial": "10.00",
             },
         )
 
@@ -1389,7 +1395,7 @@ class CashopsViewTests(CashopsTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Registrar venta")
-        self.assertContains(response, "Registrar gasto")
+        self.assertContains(response, "Egreso operativo")
         self.assertContains(response, "Traspaso de fondos")
 
     def test_dashboard_box_scope_uses_explicit_scope_querystring(self):

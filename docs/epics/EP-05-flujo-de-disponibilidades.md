@@ -12,6 +12,8 @@ Replicar el libro mensual de `efectivo` y `banco` que hoy se administra en `FLUJ
 - arrastre mensual
 - retiros, aportes y unificaciones
 - arqueo de disponibilidades
+- carga inicial visible de caja fuerte central
+- egresos administrativos de tesoreria separados de caja operativa
 
 ## No incluye todavia
 
@@ -19,6 +21,7 @@ Replicar el libro mensual de `efectivo` y `banco` que hoy se administra en `FLUJ
 - conciliacion bancaria avanzada
 - cierre contable formal
 - cierre mensual separado por sucursal para tesoreria
+- egresos operativos de sucursal, cubiertos por `EP-08`
 
 ## Reglas de negocio
 
@@ -26,6 +29,9 @@ Replicar el libro mensual de `efectivo` y `banco` que hoy se administra en `FLUJ
 - el flujo central toma datos de caja y banco, no se carga duplicado
 - el saldo inicial del mes debe derivar del cierre del mes anterior
 - toda diferencia manual debe quedar auditada
+- el saldo inicial de caja fuerte central no se carga desde la apertura de caja de una sucursal
+- un egreso administrativo de tesoreria no debe impactar una caja operativa abierta
+- si se permite una carga inicial manual por puesta en marcha, debe quedar auditada con fecha, usuario y motivo
 
 ## User Stories
 
@@ -100,9 +106,38 @@ Criterios:
 - [x] diferencia
 - [x] justificacion
 
+### [x] US-5.7 Carga inicial de caja fuerte central
+
+Como administracion
+Quiero registrar el saldo inicial de caja fuerte central desde tesoreria
+Para arrancar el control de disponibilidades sin mezclarlo con la apertura de caja de una sucursal
+
+Criterios:
+- existe un flujo visible para cargar o ajustar el saldo inicial de caja fuerte central
+- la carga inicial exige fecha, importe, usuario y motivo
+- la carga inicial o ajuste queda auditado y visible en el libro de efectivo central
+- despues de inicializado el saldo, el saldo final se deriva de movimientos reales y cierres previos
+- la carga no requiere una caja operativa abierta
+- la carga no impacta ventas, egresos ni saldo de ninguna sucursal
+
+### [x] US-5.8 Egresos administrativos desde tesoreria
+
+Como administracion
+Quiero registrar egresos que salen netamente de tesoreria
+Para no cargarlos como gastos de una caja operativa de sucursal
+
+Criterios:
+- existe un flujo separado de caja operativa para egresos de tesoreria
+- el egreso exige fecha, importe, concepto, usuario y clasificacion minima
+- si el egreso sale de caja fuerte central, reduce el libro de efectivo central
+- si el egreso sale de banco, impacta el libro bancario correspondiente
+- el egreso queda visible en disponibilidades y no en movimientos operativos de una caja de sucursal
+- la UI diferencia con claridad `egreso operativo de caja` y `egreso de tesoreria`
+
 ## Dependencias
 
 - EP-03 y EP-04 cerradas
+- EP-08 para caja operativa, ventas por canal y egresos por rubro de sucursal
 
 ## Orden tecnico sugerido
 
@@ -112,8 +147,12 @@ Criterios:
 4. mostrar total efectivo, banco y consolidado
 5. registrar retiros, aportes y unificaciones auditadas
 6. cerrar arqueo y diferencias de disponibilidades
+7. reforzar carga inicial visible de caja fuerte central
+8. separar egresos administrativos de tesoreria respecto de caja operativa
 
 ## Criterio de cierre
 
 - la hoja mensual de flujo debe salir del sistema
 - el saldo inicial del mes siguiente ya no se toma manualmente del Excel anterior
+- administracion sabe donde cargar o ajustar el saldo inicial de caja fuerte central
+- los egresos de tesoreria no se confunden con egresos operativos de sucursal

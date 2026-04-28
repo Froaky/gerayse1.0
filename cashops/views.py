@@ -40,6 +40,7 @@ from .services import (
     build_operational_control_snapshot,
     build_operational_period_summary,
     close_box,
+    get_or_create_turno,
     open_box,
     register_cash_income,
     register_general_sale,
@@ -723,17 +724,23 @@ def open_box_view(request):
     form = CajaAperturaForm(request.POST or None, actor=request.user)
     if request.method == "POST" and form.is_valid():
         try:
+            turno = get_or_create_turno(
+                sucursal=form.cleaned_data["sucursal"],
+                fecha_operativa=form.cleaned_data["fecha_operativa"],
+                tipo=form.cleaned_data["tipo_turno"],
+                creado_por=request.user,
+            )
             box = open_box(
                 user=form.cleaned_data["usuario"],
-                turno=form.cleaned_data["turno"],
+                turno=turno,
                 sucursal=form.cleaned_data["sucursal"],
-                monto_inicial=form.cleaned_data["monto_inicial"],
+                monto_inicial=form.cleaned_data["efectivo_inicial"],
                 actor=request.user,
             )
         except (ValidationError, IntegrityError) as error:
             _handle_operation_error(form, error, "No se pudo abrir la caja.")
         else:
-            messages.success(request, "Caja abierta.")
+            messages.success(request, f"Caja abierta — {turno.get_tipo_display()} {turno.fecha_operativa:%d/%m/%Y} en {turno.sucursal.nombre}.")
             url = f"{reverse('cashops:dashboard')}?scope=box&box={box.pk}"
             return _hx_redirect(url) if _is_htmx(request) else redirect(url)
 
@@ -743,7 +750,7 @@ def open_box_view(request):
         "cashops/partials/form_card.html",
         {
             "title": "Abrir caja",
-            "subtitle": "Una caja individual por usuario, turno y sucursal.",
+            "subtitle": "El turno se crea o reutiliza automaticamente para la fecha y sucursal elegidas.",
             "form": form,
             "submit_label": "Abrir caja",
             "back_url": reverse("cashops:dashboard"),

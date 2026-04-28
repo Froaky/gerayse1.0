@@ -833,6 +833,19 @@ def resync_all_operational_controls() -> int:
 
 
 @transaction.atomic
+def get_or_create_turno(*, sucursal: Sucursal, fecha_operativa, tipo: str, creado_por=None) -> Turno:
+    turno, _ = Turno.objects.get_or_create(
+        sucursal=sucursal,
+        fecha_operativa=fecha_operativa,
+        tipo=tipo,
+        defaults={"estado": Turno.Estado.ABIERTO, "creado_por": creado_por},
+    )
+    if turno.estado == Turno.Estado.CERRADO:
+        raise ValidationError({"tipo_turno": "Ese turno ya fue cerrado para esa fecha y sucursal."})
+    return turno
+
+
+@transaction.atomic
 def open_box(*, user, turno: Turno, sucursal: Sucursal, monto_inicial: Decimal, actor=None) -> Caja:
     actor = actor or user
     _require_actor(actor)

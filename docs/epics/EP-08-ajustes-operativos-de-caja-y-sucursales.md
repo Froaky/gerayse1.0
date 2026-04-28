@@ -13,12 +13,16 @@ Simplificar la operatoria diaria de cajas para que registren solo lo que realmen
 - totales por sucursal y por periodo
 - traspasos entre cajas
 - escenarios controlados de unificacion o arrastre entre turnos y dias
+- turnos operativos recurrentes sin alta manual diaria
+- apertura de caja con importes claros y persistencia verificable
+- carga diaria por canal de venta y egresos operativos desde la caja
 
 ## No incluye todavia
 
 - rediseno contable general
 - conciliacion bancaria avanzada
 - reglas de rentabilidad economica
+- egresos administrativos de tesoreria o caja fuerte central, cubiertos por `EP-05`
 
 ## Reglas de negocio
 
@@ -28,6 +32,12 @@ Simplificar la operatoria diaria de cajas para que registren solo lo que realmen
 - no debe existir transferencia entre sucursales si la operatoria real ya no la usa
 - un arrastre o unificacion entre turnos o dias solo aplica dentro de la misma sucursal salvo nueva regla explicita
 - un arrastre o unificacion entre turnos o dias no puede duplicar ni perder saldo
+- el operador no debe depender de crear un turno diario antes de abrir caja
+- los turnos `Turno Manana` y `Turno Tarde` deben estar disponibles como nombres operativos recurrentes
+- la fecha operativa sigue siendo obligatoria para reportes, pero debe resolverse en apertura de caja sin bloquear por falta de alta previa de turno
+- cada importe de apertura debe indicar si impacta efectivo fisico, ventas a acreditar o solo lectura operativa
+- una apertura que no se guarda debe mostrar validaciones visibles y no perder la carga del usuario
+- una caja no puede abrirse con un turno o sucursal que no correspondan al contexto elegido por el operador
 
 ## User Stories
 
@@ -120,10 +130,81 @@ Criterios:
 - los saldos de origen y destino quedan consistentes
 - el flujo permite ampliar a otros escenarios similares sin duplicar reglas
 
+### [x] US-8.8 Turnos operativos recurrentes
+
+Como operador de sucursal
+Quiero elegir `Turno Manana` o `Turno Tarde` sin tener que crear un turno por fecha
+Para poder abrir caja en cualquier momento sin depender de una configuracion previa
+
+Criterios:
+- existen turnos operativos activos con nombre y descripcion opcional
+- `Turno Manana` y `Turno Tarde` estan disponibles para cualquier fecha operativa
+- el alta o mantenimiento de turnos no exige cargar una fecha diaria para que el turno exista
+- la fecha operativa se sigue guardando en la apertura de caja para reportes, cierres y auditoria
+- el flujo no obliga al operador a salir de apertura de caja para crear el turno del dia
+- turnos historicos con fecha siguen visibles y no pierden trazabilidad
+
+### [x] US-8.9 Apertura de caja persistente y con errores visibles
+
+Como operador de sucursal
+Quiero abrir caja y confirmar que quedo guardada
+Para empezar a cargar ventas y movimientos sin repetir la operacion
+
+Criterios:
+- al guardar una apertura valida se crea una caja abierta asociada a usuario, sucursal, turno y fecha operativa
+- despues de guardar, el sistema lleva al operador a la caja activa o muestra confirmacion visible
+- si la apertura falla, se muestran errores concretos por campo o por regla de negocio
+- si la apertura falla, el formulario conserva los datos ya cargados
+- no se permite abrir una caja duplicada para el mismo usuario, sucursal, turno y fecha operativa
+- la prueba funcional debe demostrar que una apertura valida persiste y queda disponible en el dashboard
+
+### [x] US-8.10 Apertura con importes discriminados y etiquetas claras
+
+Como operador de sucursal
+Quiero distinguir efectivo inicial, ventas por tarjeta y otros canales al abrir o iniciar la carga diaria
+Para saber que importe afecta el efectivo fisico y que importe queda como venta a acreditar
+
+Criterios:
+- el campo generico `monto inicial` se reemplaza o acompana con etiquetas claras de negocio
+- el efectivo inicial queda identificado como dinero fisico disponible en la caja
+- las ventas o importes por debito, credito, QR, MercadoPago, Vivre u otros canales no se suman al efectivo fisico
+- si se permite cargar ventas ya realizadas al iniciar el turno, deben quedar como movimientos por canal y no como saldo inicial ambiguo
+- el total diario puede reconstruirse por canal sin depender de observaciones libres
+- la UI debe dejar claro que conceptos impactan saldo de caja y cuales quedan solo como venta registrada o pendiente de acreditacion
+
+### [x] US-8.11 Carga diaria de ventas y egresos operativos desde la caja
+
+Como operador de sucursal
+Quiero que al abrir caja tenga a mano la carga de ventas por canal y egresos por rubro
+Para completar la planilla diaria operativa sin buscar pantallas separadas
+
+Criterios:
+- desde una caja abierta se puede cargar venta total discriminada por efectivo, debito, credito, QR, apps u otros canales configurados
+- desde una caja abierta se puede cargar egreso operativo por rubro
+- cada venta o egreso queda como movimiento auditado con usuario, caja, sucursal, turno y fecha operativa
+- los egresos por rubro impactan el saldo de caja solo cuando salen de esa caja fisica
+- los egresos administrativos de tesoreria no se cargan como egresos operativos de caja
+- la pantalla de caja muestra movimientos recientes para confirmar que la carga quedo registrada
+
+### [x] US-8.12 Coherencia entre sucursal, turno y caja al abrir
+
+Como operador de sucursal
+Quiero ver solo turnos compatibles con mi sucursal
+Para no abrir caja por error en otra terminal o local
+
+Criterios:
+- la sucursal se selecciona o queda predefinida antes de elegir turno
+- la lista de turnos no muestra opciones de otra sucursal o terminal
+- si el usuario es fijo de una sucursal, la apertura usa esa sucursal por defecto y no permite mezclar otra
+- la etiqueta del turno muestra nombre operativo, fecha operativa y sucursal de forma entendible
+- la validacion rechaza cualquier combinacion inconsistente entre usuario, sucursal, turno y caja
+- el operador no debe ver `Terminal` u otra sucursal cuando esta cargando una caja de `Vivre`, salvo que esa sea realmente la sucursal seleccionada
+
 ## Dependencias
 
 - EP-01 caja operativa base
 - EP-02 alertas operativas
+- EP-05 para caja fuerte central y egresos administrativos de tesoreria
 
 ## Orden tecnico sugerido
 
@@ -133,6 +214,10 @@ Criterios:
 4. quitar traspaso entre sucursales
 5. agregar totales por sucursal y periodo
 6. cerrar escenario de unificacion o arrastre entre turnos y dias
+7. simplificar turnos operativos recurrentes
+8. corregir persistencia y validaciones de apertura de caja
+9. discriminar importes de apertura y carga diaria por canal
+10. reforzar coherencia sucursal-turno-caja
 
 ## Criterio de cierre
 
@@ -140,3 +225,6 @@ Criterios:
 - cada sucursal queda identificada por codigo y razon social
 - ya no hay necesidad de corregir por fuera del sistema traspasos o arrastres especiales
 - el total por sucursal y periodo sale del sistema sin planilla auxiliar
+- el operador puede abrir caja para turno manana o tarde sin crear turnos diarios manualmente
+- la apertura de caja guarda de forma verificable o muestra errores accionables
+- la carga diaria permite explicar ventas por canal, efectivo fisico y egresos operativos sin ambiguedad

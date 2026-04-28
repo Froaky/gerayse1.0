@@ -642,6 +642,96 @@ class CentralCashMovementForm(TreasuryStyledFormMixin, forms.ModelForm):
         self._apply_input_classes()
 
 
+class CargaInicialCajaCentralForm(TreasuryStyledFormMixin, forms.Form):
+    fecha = forms.DateField(
+        label="Fecha",
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+    monto = forms.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        min_value=Decimal("0.01"),
+        label="Importe",
+        widget=forms.NumberInput(attrs={"step": "0.01", "placeholder": "0.00"}),
+    )
+    motivo = forms.CharField(
+        max_length=160,
+        label="Motivo",
+        widget=forms.TextInput(attrs={"placeholder": "Puesta en marcha, ajuste auditado..."}),
+        help_text="Queda registrado como concepto del movimiento y es obligatorio.",
+    )
+    observaciones = forms.CharField(
+        max_length=255,
+        required=False,
+        label="Observaciones adicionales",
+        widget=forms.Textarea(attrs={"placeholder": "Contexto adicional (opcional)"}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        import datetime
+        self.fields["fecha"].initial = datetime.date.today()
+        self._apply_input_classes()
+
+
+class EgresoTesoreriaForm(TreasuryStyledFormMixin, forms.Form):
+    FUENTE_CAJA = "CAJA_CENTRAL"
+    FUENTE_BANCO = "BANCO"
+    FUENTE_CHOICES = [
+        (FUENTE_CAJA, "Caja fuerte central (efectivo)"),
+        (FUENTE_BANCO, "Cuenta bancaria"),
+    ]
+
+    fuente = forms.ChoiceField(
+        choices=FUENTE_CHOICES,
+        label="Origen del egreso",
+        help_text="Si sale de caja central reduce el libro de efectivo. Si sale de banco impacta el libro bancario.",
+    )
+    cuenta_bancaria = forms.ModelChoiceField(
+        queryset=CuentaBancaria.objects.none(),
+        required=False,
+        label="Cuenta bancaria",
+        empty_label="Seleccionar cuenta...",
+    )
+    fecha = forms.DateField(
+        label="Fecha",
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+    monto = forms.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        min_value=Decimal("0.01"),
+        label="Importe",
+        widget=forms.NumberInput(attrs={"step": "0.01", "placeholder": "0.00"}),
+    )
+    concepto = forms.CharField(
+        max_length=160,
+        label="Concepto",
+        widget=forms.TextInput(attrs={"placeholder": "Pago de servicio, honorario, insumo administrativo..."}),
+    )
+    observaciones = forms.CharField(
+        max_length=255,
+        required=False,
+        label="Observaciones",
+        widget=forms.Textarea(attrs={"placeholder": "Detalle adicional (opcional)"}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        import datetime
+        self.fields["fecha"].initial = datetime.date.today()
+        self.fields["cuenta_bancaria"].queryset = CuentaBancaria.objects.filter(activa=True).order_by("banco", "nombre")
+        self._apply_input_classes()
+
+    def clean(self):
+        cleaned_data = super().clean()
+        fuente = cleaned_data.get("fuente")
+        cuenta_bancaria = cleaned_data.get("cuenta_bancaria")
+        if fuente == self.FUENTE_BANCO and not cuenta_bancaria:
+            self.add_error("cuenta_bancaria", "La cuenta bancaria es obligatoria cuando el egreso sale de banco.")
+        return cleaned_data
+
+
 class ArqueoForm(TreasuryStyledFormMixin, forms.ModelForm):
     class Meta:
         model = ArqueoDisponibilidades

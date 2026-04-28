@@ -12,10 +12,10 @@ Estado actual:
 - `EP-02`: alertas y semaforos operativos. Implementada.
 - `EP-03`: tesoreria central base. Implementada.
 - `EP-04`: bancos y conciliacion. Implementada.
-- `EP-05`: flujo de disponibilidades. Implementada.
+- `EP-05`: flujo de disponibilidades. Implementada. Cerrada 2026-04-27 tras completar US-5.7 y US-5.8.
 - `EP-06`: control de gestion y alertas. Implementada.
 - `EP-07`: impuestos, planes y autorizaciones. Implementada.
-- `EP-08`: ajustes operativos de caja y sucursales. Implementada.
+- `EP-08`: ajustes operativos de caja y sucursales. Implementada. Cerrada 2026-04-27 tras completar US-8.8 a US-8.12.
 - `EP-09`: usuarios operativos y datos minimos. Implementada.
 - `EP-10`: situacion financiera y alertas consolidadas. Implementada.
 - `EP-11`: rentabilidad y situacion economica. Implementada.

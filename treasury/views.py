@@ -37,6 +37,8 @@ from .forms import (
     SpecialCommitmentDecisionForm,
     SpecialCommitmentFilterForm,
     SpecialCommitmentForm,
+    CargaInicialCajaCentralForm,
+    EgresoTesoreriaForm,
     SupplierFilterForm,
     SupplierForm,
     SupplierHistoryFilterForm,
@@ -85,6 +87,8 @@ from .services import (
     register_central_cash_movement,
     register_cheque_payment,
     register_echeq_payment,
+    register_carga_inicial_caja_central,
+    register_egreso_tesoreria,
     register_payable,
     register_special_commitment,
     register_transfer_payment,
@@ -1704,12 +1708,16 @@ def central_cash_movements(request):
             "meta": m.observaciones or f"Registrado por {m.creado_por}"
         })
         
+    caja = get_or_create_default_caja_central()
     return render(request, "treasury/list_page.html", {
         "title": "Libro de Efectivo Central",
-        "subtitle": "Historial de ingresos y egresos de la caja central",
+        "subtitle": f"Saldo actual: ${caja.saldo_actual:,.2f} — Historial de ingresos y egresos de la caja fuerte central.",
         "items": items,
-        "create_url": reverse("treasury:central_cash_create"),
-        "create_label": "Registrar movimiento manual"
+        "actions": [
+            {"label": "Cargar saldo inicial", "href": reverse("treasury:carga_inicial_caja_central"), "kind": "secondary"},
+            {"label": "Registrar egreso", "href": reverse("treasury:egreso_tesoreria_create"), "kind": "secondary"},
+            {"label": "Movimiento manual", "href": reverse("treasury:central_cash_create"), "kind": "primary"},
+        ],
     })
 
 
@@ -1739,6 +1747,66 @@ def central_cash_create(request):
         "title": "Nuevo Movimiento de Efectivo",
         "form": form,
         "back_url": reverse("treasury:central_cash_list")
+    })
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def carga_inicial_caja_central(request):
+    _require_treasury_admin(request)
+    if request.method == "POST":
+        form = CargaInicialCajaCentralForm(request.POST)
+        if form.is_valid():
+            try:
+                register_carga_inicial_caja_central(
+                    fecha=form.cleaned_data["fecha"],
+                    monto=form.cleaned_data["monto"],
+                    motivo=form.cleaned_data["motivo"],
+                    observaciones=form.cleaned_data["observaciones"],
+                    actor=request.user,
+                )
+                messages.success(request, "Carga inicial de caja fuerte registrada y auditada.")
+                return redirect(reverse("treasury:central_cash_list"))
+            except ValidationError as e:
+                form.add_error(None, e)
+    else:
+        form = CargaInicialCajaCentralForm()
+    return render(request, "treasury/form_page.html", {
+        "title": "Carga inicial de caja fuerte central",
+        "subtitle": "Registra o ajusta el saldo inicial de efectivo de tesoreria. Queda auditado con fecha, usuario y motivo. No requiere una caja operativa abierta.",
+        "form": form,
+        "back_url": reverse("treasury:central_cash_list"),
+    })
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def egreso_tesoreria_create(request):
+    _require_treasury_admin(request)
+    if request.method == "POST":
+        form = EgresoTesoreriaForm(request.POST)
+        if form.is_valid():
+            try:
+                register_egreso_tesoreria(
+                    fuente=form.cleaned_data["fuente"],
+                    fecha=form.cleaned_data["fecha"],
+                    monto=form.cleaned_data["monto"],
+                    concepto=form.cleaned_data["concepto"],
+                    cuenta_bancaria=form.cleaned_data.get("cuenta_bancaria"),
+                    observaciones=form.cleaned_data["observaciones"],
+                    actor=request.user,
+                )
+                messages.success(request, "Egreso administrativo de tesoreria registrado.")
+                return redirect(reverse("treasury:central_cash_list"))
+            except ValidationError as e:
+                form.add_error(None, e)
+    else:
+        form = EgresoTesoreriaForm()
+    return render(request, "treasury/form_page.html", {
+        "title": "Egreso administrativo de tesoreria",
+        "subtitle": "Pagos y gastos que salen directamente de tesoreria (no de una caja operativa de sucursal). Si el origen es caja fuerte, reduce el libro de efectivo central. Si es banco, impacta el libro bancario.",
+        "form": form,
+        "back_url": reverse("treasury:central_cash_list"),
     })
 
 

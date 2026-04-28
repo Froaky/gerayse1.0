@@ -160,19 +160,20 @@
               </a>
               <a class="action-card" href="{% url 'cashops:box_income' selected_box.id %}">
                 <span>Cobro en efectivo</span>
-                <small>dinero que entra a la caja</small>
+                <small>dinero fisico que entra a la caja</small>
               </a>
-              <a class="action-card" href="{% url 'cashops:box_close' selected_box.id %}">
-                <span>Cerrar caja</span>
-                <small>saldo fisico y validacion</small>
+              <a class="action-card" href="{% url 'cashops:box_expense' selected_box.id %}">
+                <span>Egreso operativo</span>
+                <small>gasto por rubro con trazabilidad</small>
               </a>
               <a class="action-card" href="{% url 'cashops:transfer_boxes' %}">
                 <span>Traspaso de fondos</span>
                 <small>entre cajas de la misma sucursal</small>
               </a>
-            </div>
-            <div style="margin-top:12px;">
-              <a class="button-secondary" href="{% url 'cashops:box_expense' selected_box.id %}">Registrar gasto</a>
+              <a class="action-card" href="{% url 'cashops:box_close' selected_box.id %}">
+                <span>Cerrar caja</span>
+                <small>saldo fisico y validacion</small>
+              </a>
             </div>
           {% endif %}
         </div>

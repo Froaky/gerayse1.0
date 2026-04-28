@@ -1604,6 +1604,73 @@ def register_central_cash_movement(
     return _save_instance(movement)
 
 
+def register_carga_inicial_caja_central(
+    *,
+    fecha,
+    monto: Decimal,
+    motivo: str,
+    observaciones: str = "",
+    actor=None,
+) -> MovimientoCajaCentral:
+    _require_actor(actor)
+    motivo = (motivo or "").strip()
+    if not motivo:
+        raise ValidationError({"motivo": "El motivo es obligatorio para la carga inicial de caja fuerte."})
+    if monto <= 0:
+        raise ValidationError({"monto": "El importe debe ser mayor que cero."})
+    return register_central_cash_movement(
+        tipo=MovimientoCajaCentral.Tipo.AJUSTE_POSITIVO,
+        monto=monto,
+        concepto=f"Carga inicial: {motivo}",
+        fecha=fecha,
+        observaciones=observaciones,
+        actor=actor,
+    )
+
+
+def register_egreso_tesoreria(
+    *,
+    fuente: str,
+    fecha,
+    monto: Decimal,
+    concepto: str,
+    cuenta_bancaria=None,
+    observaciones: str = "",
+    actor=None,
+) -> MovimientoCajaCentral | MovimientoBancario:
+    _require_actor(actor)
+    concepto = (concepto or "").strip()
+    if not concepto:
+        raise ValidationError({"concepto": "El concepto es obligatorio para el egreso administrativo."})
+    if monto <= 0:
+        raise ValidationError({"monto": "El importe debe ser mayor que cero."})
+
+    if fuente == "BANCO":
+        if cuenta_bancaria is None:
+            raise ValidationError({"cuenta_bancaria": "La cuenta bancaria es obligatoria para egresos bancarios."})
+        movement = MovimientoBancario(
+            cuenta_bancaria=cuenta_bancaria,
+            tipo=MovimientoBancario.Tipo.DEBITO,
+            clase=MovimientoBancario.Clase.OTRO_EGRESO,
+            origen=MovimientoBancario.Origen.MANUAL,
+            fecha=fecha,
+            monto=monto,
+            concepto=concepto,
+            observaciones=observaciones,
+            creado_por=actor,
+        )
+        return _save_instance(movement)
+
+    return register_central_cash_movement(
+        tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
+        monto=monto,
+        concepto=concepto,
+        fecha=fecha,
+        observaciones=observaciones,
+        actor=actor,
+    )
+
+
 def build_disponibilidades_snapshot(year: int, month: int, sucursal=None) -> dict:
     """
     US-5.2: Calculates consolidated or branch-specific liquidity in a period.

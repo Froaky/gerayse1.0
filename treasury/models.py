@@ -1154,6 +1154,7 @@ class CajaCentral(models.Model):
             ])),
             egresos=Sum("monto", filter=Q(tipo__in=[
                 MovimientoCajaCentral.Tipo.EGRESO_PAGO,
+                MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
                 MovimientoCajaCentral.Tipo.DEPOSITO_BANCO,
                 MovimientoCajaCentral.Tipo.AJUSTE_NEGATIVO
             ]))
@@ -1169,6 +1170,7 @@ class MovimientoCajaCentral(models.Model):
         APORTE = "APORTE", "Aporte de Socios/Capital"
         RETIRO_BANCO = "RETIRO_BANCO", "Retiro de Banco (Efectivo)"
         EGRESO_PAGO = "EGRESO_PAGO", "Egreso por Pago Administrativo"
+        EGRESO_ADMIN = "EGRESO_ADMIN", "Egreso Administrativo de Tesoreria"
         DEPOSITO_BANCO = "DEPOSITO_BANCO", "Deposito en Banco"
         AJUSTE_POSITIVO = "AJUSTE_POSITIVO", "Ajuste de Saldo (+)"
         AJUSTE_NEGATIVO = "AJUSTE_NEGATIVO", "Ajuste de Saldo (-)"

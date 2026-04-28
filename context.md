@@ -1,6 +1,6 @@
 # Context
 
-Last updated: 2026-04-25
+Last updated: 2026-04-28
 
 ## Product Snapshot
 
@@ -62,6 +62,7 @@ Last updated: 2026-04-25
 - Reduce emphasis on bank integration features that are not part of the real operating model.
 - Convert the user-provided `Fixes y detalles para Gerayse.docx` requirements into executable backlog epics and user stories.
 - Create specialized local skills for the new epic areas and make them directly invocable.
+- Convert new client feedback from 2026-04-28 about apertura de caja, turnos, ventas por canal, egresos and caja fuerte into executable backlog stories.
 
 ### Findings Before Fixes
 
@@ -128,6 +129,7 @@ Last updated: 2026-04-25
 - `docs/epics/EP-06-control-de-gestion-y-alertas.md`
 - `docs/epics/EP-07-impuestos-planes-y-autorizaciones.md`
 - `docs/epics/EP-08-ajustes-operativos-de-caja-y-sucursales.md`
+- `docs/epics/EP-05-flujo-de-disponibilidades.md`
 - `docs/epics/EP-09-usuarios-operativos-y-datos-minimos.md`
 - `docs/epics/EP-10-situacion-financiera-y-alertas-consolidadas.md`
 - `docs/epics/EP-11-rentabilidad-y-situacion-economica.md`
@@ -153,6 +155,21 @@ Last updated: 2026-04-25
   - added a backlog-wide implementation principle forbidding automatic bank reconciliation or import-based matching until the user requests it
 - `context.md`
   - recorded the product decision that bank reconciliation stays manual for now so future agents do not assume automation
+- `docs/epics/EP-08-ajustes-operativos-de-caja-y-sucursales.md`
+  - reopened EP-08 with pending stories from client feedback:
+    - `US-8.8` turnos operativos recurrentes without daily pre-creation
+    - `US-8.9` apertura de caja must persist or show actionable validation errors
+    - `US-8.10` apertura/carga inicial must separate efectivo fisico from card/QR/app channels
+    - `US-8.11` caja screen should support daily sales by channel and operational egresos by rubro
+    - `US-8.12` opening must prevent sucursal/turno/terminal mismatch
+- `docs/epics/EP-05-flujo-de-disponibilidades.md`
+  - reopened EP-05 with pending stories for central treasury concerns from the same client feedback:
+    - `US-5.7` visible initial balance flow for caja fuerte central
+    - `US-5.8` egresos administrativos from treasury separated from branch operational caja
+- `docs/epics/README.md`
+  - updated EP-05 and EP-08 status from implemented to reopened because the client feedback introduced new pending stories
+- Decision:
+  - Caja operativa remains separated from caja fuerte central/tesoreria. Client feedback was split between `EP-08` and `EP-05` to avoid mixing branch cash movements with central treasury availability.
 - `cashops/*` and `treasury/*` EP-06/EP-07 closure slice
   - EP-06 closed: added admin-only daily management matrix and CSV export from persisted cash movements, grouped by operational date, income channel and expense rubro
   - EP-06 uses existing `LimiteRubroOperativo`, `AlertaOperativa`, `CierreCaja` and `Justificacion` for rubro targets, deviation alerts, dashboard follow-up and difference tracking
@@ -439,6 +456,7 @@ Last updated: 2026-04-25
   - `.venv\Scripts\python.exe -m compileall treasury` after treasury view cleanup
   - `git diff --check` after EP-06/EP-07 closure slice and view cleanup
 - Not run:
+  - application tests for the 2026-04-28 backlog update, because only epic markdown and context were changed
   - first `.venv\Scripts\python.exe manage.py test treasury.tests_ep05 -v 1` run failed because a legacy fixture missed mandatory `periodo_referencia`; fixture was fixed and the combined treasury suite passed
   - full non-treasury regression was not run after EP-11 third slice because the behavior changed only in treasury category/payable/economic reporting surfaces
   - application tests after the `treasury/views.py` text-normalization pass, because this slice only adjusted UI labels/separators and did not change business behavior

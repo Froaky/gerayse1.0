@@ -52,6 +52,8 @@ urlpatterns = [
     path("disponibilidades/cerrar/", views.close_month_action, name="close_month"),
     path("efectivo-central/", views.central_cash_movements, name="central_cash_list"),
     path("efectivo-central/nuevo/", views.central_cash_create, name="central_cash_create"),
+    path("efectivo-central/carga-inicial/", views.carga_inicial_caja_central, name="carga_inicial_caja_central"),
+    path("efectivo-central/egreso/", views.egreso_tesoreria_create, name="egreso_tesoreria_create"),
     path("arqueos/", views.arqueo_list, name="arqueo_list"),
     path("arqueos/nuevo/", views.arqueo_create, name="arqueo_create"),
 ]

@@ -1,3 +1,4 @@
+import datetime
 from decimal import Decimal
 
 from django import forms
@@ -53,17 +54,24 @@ class TurnoForm(forms.ModelForm):
 class CajaAperturaForm(forms.Form):
     usuario = forms.ModelChoiceField(queryset=User.objects.none(), label="Responsable")
     sucursal = forms.ModelChoiceField(queryset=Sucursal.objects.none())
-    turno = forms.ModelChoiceField(queryset=Turno.objects.none())
-    monto_inicial = forms.DecimalField(
+    tipo_turno = forms.ChoiceField(choices=Turno.Tipo.choices, label="Turno")
+    fecha_operativa = forms.DateField(
+        label="Fecha operativa",
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+    efectivo_inicial = forms.DecimalField(
         max_digits=14,
         decimal_places=2,
         min_value=Decimal("0.00"),
+        label="Efectivo inicial (caja fisica)",
         widget=forms.NumberInput(attrs={"step": "0.01", "placeholder": "0.00"}),
+        help_text="Solo dinero fisico en la caja. Las ventas por tarjeta, QR o transferencia no van aca.",
     )
 
     def __init__(self, *args, **kwargs):
         self.actor = kwargs.pop("actor", None)
         super().__init__(*args, **kwargs)
+        self.fields["fecha_operativa"].initial = datetime.date.today()
         if self.actor:
             self.fields["usuario"].initial = self.actor.pk
             self.fields["usuario"].queryset = (
@@ -71,15 +79,15 @@ class CajaAperturaForm(forms.Form):
                 if is_cashops_admin(self.actor)
                 else User.objects.filter(pk=self.actor.pk, is_active=True)
             )
-            self.fields["turno"].queryset = Turno.objects.select_related("sucursal").filter(estado=Turno.Estado.ABIERTO)
-            self.fields["sucursal"].queryset = Sucursal.objects.filter(activa=True)
             if not is_cashops_admin(self.actor):
                 self.fields["usuario"].help_text = "La caja se abre a tu nombre."
             if getattr(self.actor, "usuario_fijo", False) and getattr(self.actor, "sucursal_base_id", None):
                 self.fields["sucursal"].initial = self.actor.sucursal_base_id
-                self.fields["turno"].queryset = self.fields["turno"].queryset.filter(
-                    sucursal_id=self.actor.sucursal_base_id
+                self.fields["sucursal"].queryset = Sucursal.objects.filter(
+                    pk=self.actor.sucursal_base_id, activa=True
                 )
+            else:
+                self.fields["sucursal"].queryset = Sucursal.objects.filter(activa=True)
         for field in self.fields.values():
             if isinstance(field.widget, forms.Select):
                 field.widget.attrs.setdefault("class", "input select")
@@ -90,9 +98,6 @@ class CajaAperturaForm(forms.Form):
         cleaned_data = super().clean()
         usuario = cleaned_data.get("usuario")
         sucursal = cleaned_data.get("sucursal")
-        turno = cleaned_data.get("turno")
-        if turno and sucursal and turno.sucursal_id != sucursal.id:
-            self.add_error("turno", "El turno seleccionado no pertenece a la sucursal elegida.")
         if self.actor and usuario and not can_assign_box_to_user(self.actor, usuario):
             self.add_error("usuario", "No podes asignar una caja a otro usuario.")
         if (
