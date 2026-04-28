@@ -63,6 +63,7 @@ Last updated: 2026-04-28
 - Convert the user-provided `Fixes y detalles para Gerayse.docx` requirements into executable backlog epics and user stories.
 - Create specialized local skills for the new epic areas and make them directly invocable.
 - Convert new client feedback from 2026-04-28 about apertura de caja, turnos, ventas por canal, egresos and caja fuerte into executable backlog stories.
+- Convert new client feedback from 2026-04-28 about company contexts, branch-to-company assignment, data isolation, header navigation, module menu, and dashboard cash/channel separation into executable backlog.
 
 ### Findings Before Fixes
 
@@ -133,6 +134,7 @@ Last updated: 2026-04-28
 - `docs/epics/EP-09-usuarios-operativos-y-datos-minimos.md`
 - `docs/epics/EP-10-situacion-financiera-y-alertas-consolidadas.md`
 - `docs/epics/EP-11-rentabilidad-y-situacion-economica.md`
+- `docs/epics/EP-12-empresas-contexto-y-navegacion.md`
 - `treasury/admin.py`
 - `treasury/models.py`
 - `treasury/forms.py`
@@ -170,6 +172,22 @@ Last updated: 2026-04-28
   - updated EP-05 and EP-08 status from implemented to reopened because the client feedback introduced new pending stories
 - Decision:
   - Caja operativa remains separated from caja fuerte central/tesoreria. Client feedback was split between `EP-08` and `EP-05` to avoid mixing branch cash movements with central treasury availability.
+- `docs/epics/EP-08-ajustes-operativos-de-caja-y-sucursales.md`
+  - added pending `US-8.13` from client screenshot: dashboard must separate `saldo efectivo en caja` from ventas by card/QR/debit/credit/wallet/app; non-cash sales must not be presented as physical cash available.
+- `docs/epics/EP-12-empresas-contexto-y-navegacion.md`
+  - created a new cross-cutting proposed epic for:
+    - Empresa master data
+    - Sucursal-to-Empresa assignment
+    - active company selector near the user menu
+    - data isolation by active company across cashops/treasury/reports
+    - totals by company and branch
+    - global header with `Gerayse` home link
+    - module dropdown navigation to reduce loose buttons
+- `docs/epics/README.md`
+  - added `EP-12` to backlog status, suggested specialist mapping and implementation order
+  - reopened `EP-08` because `US-8.13` is pending
+- Decision:
+  - Company context is a cross-domain feature, not only a branch-field change. Implementation must avoid partial filtering that isolates caja but still leaks treasury, bank or report data from another company.
 - `cashops/*` and `treasury/*` EP-06/EP-07 closure slice
   - EP-06 closed: added admin-only daily management matrix and CSV export from persisted cash movements, grouped by operational date, income channel and expense rubro
   - EP-06 uses existing `LimiteRubroOperativo`, `AlertaOperativa`, `CierreCaja` and `Justificacion` for rubro targets, deviation alerts, dashboard follow-up and difference tracking
@@ -457,6 +475,7 @@ Last updated: 2026-04-28
   - `git diff --check` after EP-06/EP-07 closure slice and view cleanup
 - Not run:
   - application tests for the 2026-04-28 backlog update, because only epic markdown and context were changed
+  - application tests for the EP-12/company-context backlog update, because only markdown docs and context were changed
   - first `.venv\Scripts\python.exe manage.py test treasury.tests_ep05 -v 1` run failed because a legacy fixture missed mandatory `periodo_referencia`; fixture was fixed and the combined treasury suite passed
   - full non-treasury regression was not run after EP-11 third slice because the behavior changed only in treasury category/payable/economic reporting surfaces
   - application tests after the `treasury/views.py` text-normalization pass, because this slice only adjusted UI labels/separators and did not change business behavior
@@ -480,8 +499,13 @@ Last updated: 2026-04-28
 - `P2` was interpreted as the current personal/users screen because the source document does not define that label.
 - EP-08 review snapshot:
   - implemented: quick path principal enfocado en ingresos, egreso como acceso secundario, detalle minimo de movimientos, venta por rubro sin `producto`, arrastre auditado entre cajas de la misma sucursal incluso entre turnos o dias
+  - reopened 2026-04-28: pending `US-8.13` to avoid mixing physical cash balance with card/QR/debit/credit/wallet/app sales in the caja dashboard
   - guardrails: sigue bloqueado el cruce entre sucursales y el dominio rechaza arrastres fuera de la misma sucursal
   - key refs: `cashops/models.py`, `cashops/forms.py`, `cashops/services.py`, `cashops/views.py`, `templates/cashops/dashboard.html`, `templates/cashops/sucursal_list.html`
+- EP-12 initial scope:
+  - create `Empresa`, assign each `Sucursal` to one active company, add active-company selector, filter cashops/treasury/reports by active company, and clean global navigation with a Gerayse home link plus module dropdown
+  - compatibility need: backfill or assisted migration from current `Sucursal.razon_social` text to `Empresa`
+  - key risk: partial company filtering can leak or mix financial/cash data across companies
 - EP-09 review snapshot after first slice:
   - implemented: `legajo` fuera del flujo operativo, vista minima de personal, busqueda operativa y `usuario fijo` con modelo, validacion, admin, persistencia y efecto en apertura de caja
   - key refs: `users/forms.py`, `users/views.py`, `templates/users/personal_list.html`, `users/tests.py`

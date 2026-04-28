@@ -232,26 +232,52 @@
     <div class="shell">
       <header class="topbar">
         <div class="brand">
-          <strong>Gerayse</strong>
-          <span>Cajas, turnos y movimientos financieros</span>
+          <a href="{% url 'home' %}" style="text-decoration:none;color:inherit;">
+            <strong>Gerayse</strong>
+          </a>
+          <span>{% if empresa_activa %}{{ empresa_activa.nombre }}{% else %}Cajas y tesoreria{% endif %}</span>
         </div>
         <nav class="nav">
           <div class="nav-primary">
-            <a class="chip" href="{% url 'cashops:dashboard' %}">Dashboard</a>
+            <a class="chip" href="{% url 'cashops:dashboard' %}">Caja</a>
             <a class="chip" href="{% url 'cashops:box_open' %}">Abrir caja</a>
             {% if request.user.is_authenticated and request.user.is_cashops_admin %}
-              <a class="chip" href="{% url 'cashops:alert_panel' %}">Alertas</a>
               <a class="chip" href="{% url 'treasury:dashboard' %}">Tesoreria</a>
               <span class="nav-divider"></span>
-              <a class="chip" href="{% url 'cashops:operational_category_list' %}">Rubros</a>
-              <a class="chip" href="{% url 'cashops:operational_limit_list' %}">Limites</a>
-              <a class="chip" href="{% url 'cashops:sucursal_list' %}">Sucursales</a>
-              <a class="chip" href="{% url 'cashops:turno_list' %}">Turnos</a>
-              <a class="chip" href="{% url 'users:personal_list' %}">Personal</a>
+              <details class="nav-menu">
+                <summary class="chip chip-button">Config &#9662;</summary>
+                <div class="nav-menu__dropdown">
+                  <a class="nav-menu__item" href="{% url 'cashops:alert_panel' %}">Alertas</a>
+                  <a class="nav-menu__item" href="{% url 'cashops:management_matrix' %}">Matriz diaria</a>
+                  <a class="nav-menu__item" href="{% url 'cashops:operational_category_list' %}">Rubros</a>
+                  <a class="nav-menu__item" href="{% url 'cashops:operational_limit_list' %}">Limites</a>
+                  <a class="nav-menu__item" href="{% url 'cashops:empresa_list' %}">Empresas</a>
+                  <a class="nav-menu__item" href="{% url 'cashops:sucursal_list' %}">Sucursales</a>
+                  <a class="nav-menu__item" href="{% url 'cashops:turno_list' %}">Turnos</a>
+                  <a class="nav-menu__item" href="{% url 'users:personal_list' %}">Personal</a>
+                </div>
+              </details>
             {% endif %}
           </div>
           {% if request.user.is_authenticated %}
             <div class="nav-user">
+              {% if empresas_disponibles|length > 1 %}
+                <details class="nav-menu">
+                  <summary class="chip chip-button">{{ empresa_activa.nombre|default:"Empresa" }} &#9662;</summary>
+                  <div class="nav-menu__dropdown nav-menu__dropdown--right">
+                    {% for emp in empresas_disponibles %}
+                      <form method="post" action="{% url 'cashops:set_empresa_activa' %}" style="margin:0;">
+                        {% csrf_token %}
+                        <input type="hidden" name="empresa_id" value="{{ emp.pk }}">
+                        <input type="hidden" name="next" value="{{ request.path }}">
+                        <button class="nav-menu__item {% if empresa_activa and empresa_activa.pk == emp.pk %}nav-menu__item--active{% endif %}" type="submit">{{ emp.nombre }}</button>
+                      </form>
+                    {% endfor %}
+                  </div>
+                </details>
+              {% elif empresa_activa %}
+                <span class="chip">{{ empresa_activa.nombre }}</span>
+              {% endif %}
               <span class="chip">{{ request.user }}</span>
               <form method="post" action="{% url 'users:logout' %}">
                 {% csrf_token %}
@@ -261,6 +287,41 @@
           {% endif %}
         </nav>
       </header>
+      <style>
+        .nav-menu { position: relative; }
+        .nav-menu summary { list-style: none; cursor: pointer; }
+        .nav-menu summary::-webkit-details-marker { display: none; }
+        .nav-menu__dropdown {
+          position: absolute;
+          top: calc(100% + 6px);
+          left: 0;
+          z-index: 100;
+          min-width: 180px;
+          background: var(--panel);
+          border: 1px solid var(--line);
+          border-radius: 14px;
+          box-shadow: var(--shadow);
+          padding: 6px;
+          display: grid;
+          gap: 2px;
+        }
+        .nav-menu__dropdown--right { left: auto; right: 0; }
+        .nav-menu__item {
+          display: block;
+          width: 100%;
+          padding: 9px 12px;
+          border-radius: 10px;
+          border: none;
+          background: transparent;
+          text-align: left;
+          font: inherit;
+          color: var(--text);
+          cursor: pointer;
+          text-decoration: none;
+        }
+        .nav-menu__item:hover { background: var(--panel-soft); }
+        .nav-menu__item--active { font-weight: 700; color: var(--accent); }
+      </style>
       {% if messages %}
         <div class="messages">
           {% for message in messages %}

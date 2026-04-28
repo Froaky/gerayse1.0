@@ -430,6 +430,22 @@ def build_operational_control_snapshot(
     status_order = {"ROJO": 0, "AMARILLO": 1, "VERDE": 2, "SIN_LIMITE": 3}
     items.sort(key=lambda item: (status_order[item["estado"]], item["rubro"].nombre.lower()))
 
+    _non_cash_types = [t for t in MANAGEMENT_INCOME_TYPES if t != MovimientoCaja.Tipo.INGRESO_EFECTIVO]
+    ventas_rows = movement_qs.filter(tipo__in=_non_cash_types).values("tipo").annotate(total=Sum("monto"))
+    ventas_por_canal = sorted(
+        [
+            {"label": MANAGEMENT_INCOME_TYPES[row["tipo"]], "tipo": row["tipo"], "total": row["total"] or Decimal("0.00")}
+            for row in ventas_rows
+        ],
+        key=lambda v: v["label"],
+    )
+    total_ventas_digitales = sum((v["total"] for v in ventas_por_canal), Decimal("0.00"))
+    ingreso_efectivo_total = (
+        movement_qs.filter(tipo=MovimientoCaja.Tipo.INGRESO_EFECTIVO).aggregate(total=Sum("monto"))["total"]
+        or Decimal("0.00")
+    )
+    saldo_efectivo_caja = scope.caja.saldo_esperado if scope.kind == "CAJA" and scope.caja else None
+
     snapshot = {
         "scope": scope,
         "scope_kind": scope.kind,
@@ -443,6 +459,10 @@ def build_operational_control_snapshot(
         "total_ingresos": totals["total_ingresos"] or Decimal("0.00"),
         "total_egresos": totals["total_egresos"] or Decimal("0.00"),
         "saldo_neto": (totals["total_ingresos"] or Decimal("0.00")) - (totals["total_egresos"] or Decimal("0.00")),
+        "ventas_por_canal": ventas_por_canal,
+        "total_ventas_digitales": total_ventas_digitales,
+        "ingreso_efectivo_total": ingreso_efectivo_total,
+        "saldo_efectivo_caja": saldo_efectivo_caja,
         "items": items,
     }
     if sync_alerts:
@@ -544,6 +564,21 @@ def build_operational_period_summary(*, date_from: date, date_to: date, sucursal
     status_order = {"ROJO": 0, "AMARILLO": 1, "VERDE": 2, "SIN_LIMITE": 3}
     items.sort(key=lambda item: (status_order[item["estado"]], item["rubro"].nombre.lower()))
 
+    _non_cash_types = [t for t in MANAGEMENT_INCOME_TYPES if t != MovimientoCaja.Tipo.INGRESO_EFECTIVO]
+    ventas_rows = movement_qs.filter(tipo__in=_non_cash_types).values("tipo").annotate(total=Sum("monto"))
+    ventas_por_canal = sorted(
+        [
+            {"label": MANAGEMENT_INCOME_TYPES[row["tipo"]], "tipo": row["tipo"], "total": row["total"] or Decimal("0.00")}
+            for row in ventas_rows
+        ],
+        key=lambda v: v["label"],
+    )
+    total_ventas_digitales = sum((v["total"] for v in ventas_por_canal), Decimal("0.00"))
+    ingreso_efectivo_total = (
+        movement_qs.filter(tipo=MovimientoCaja.Tipo.INGRESO_EFECTIVO).aggregate(total=Sum("monto"))["total"]
+        or Decimal("0.00")
+    )
+
     return {
         "scope_kind": "SUCURSAL" if sucursal is not None else "GLOBAL",
         "scope_kind_label": "Sucursal" if sucursal is not None else "Global",
@@ -558,6 +593,10 @@ def build_operational_period_summary(*, date_from: date, date_to: date, sucursal
         "total_ingresos": totals["total_ingresos"] or Decimal("0.00"),
         "total_egresos": totals["total_egresos"] or Decimal("0.00"),
         "saldo_neto": (totals["total_ingresos"] or Decimal("0.00")) - (totals["total_egresos"] or Decimal("0.00")),
+        "ventas_por_canal": ventas_por_canal,
+        "total_ventas_digitales": total_ventas_digitales,
+        "ingreso_efectivo_total": ingreso_efectivo_total,
+        "saldo_efectivo_caja": None,
         "items": items,
         "active_alerts": [],
         "active_alert_count": 0,

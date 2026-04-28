@@ -16,6 +16,7 @@ from django.views.decorators.http import require_http_methods
 from .forms import (
     CajaAperturaForm,
     CierreCajaForm,
+    EmpresaForm,
     IngresoEfectivoForm,
     GastoRapidoForm,
     LimiteRubroOperativoForm,
@@ -26,7 +27,7 @@ from .forms import (
     TransferenciaEntreSucursalesForm,
     VentaGeneralForm,
 )
-from .models import Caja, CierreCaja, LimiteRubroOperativo, RubroOperativo, Sucursal, Turno
+from .models import Caja, CierreCaja, Empresa, LimiteRubroOperativo, RubroOperativo, Sucursal, Turno
 from .services import (
     BRANCH_TRANSFER_DISABLED_REASON,
     CLOSING_DIFF_THRESHOLD,
@@ -90,6 +91,24 @@ def _hx_redirect(url: str) -> HttpResponse:
 def _render_form(request, full_template: str, partial_template: str, context: dict, status: int = 200):
     template = partial_template if _is_htmx(request) else full_template
     return render(request, template, context, status=status)
+
+
+def _get_empresa_activa(request):
+    eid = request.session.get("empresa_activa_id")
+    if not eid:
+        return None
+    try:
+        return Empresa.objects.get(pk=eid, activa=True)
+    except Empresa.DoesNotExist:
+        return None
+
+
+def _sucursales_for_empresa(request):
+    qs = Sucursal.objects.all()
+    empresa = _get_empresa_activa(request)
+    if empresa:
+        qs = qs.filter(empresa=empresa)
+    return qs
 
 
 def _apply_validation_error(form, error: ValidationError) -> None:
@@ -267,7 +286,7 @@ def dashboard(request):
         "turnos_abiertos": Turno.objects.select_related("sucursal").filter(estado=Turno.Estado.ABIERTO)
         if scope_context["is_admin"]
         else [],
-        "sucursales": Sucursal.objects.filter(activa=True)
+        "sucursales": _sucursales_for_empresa(request).filter(activa=True)
         if scope_context["is_admin"]
         else [],
         "dashboard_scope": scope_context["scope_name"],
@@ -1024,6 +1043,110 @@ def resolve_alert(request, alert_id: int):
     alert.resuelta = True
     alert.save(update_fields=['resuelta'])
     messages.success(request, 'Alerta marcada como resuelta.')
-    
+
     url = request.META.get('HTTP_REFERER') or reverse('cashops:dashboard')
     return _hx_redirect(url) if _is_htmx(request) else redirect(url)
+
+
+# --- EP-12: Empresas ---
+
+@login_required
+def empresa_list(request):
+    _require_cashops_admin(request)
+    empresas = Empresa.objects.all()
+    items = []
+    for e in empresas:
+        num_suc = e.sucursales.count()
+        items.append({
+            "title": e.nombre,
+            "subtitle": e.identificador_fiscal or "Sin identificador fiscal",
+            "badge": "Activa" if e.activa else "Inactiva",
+            "badge_class": "badge-success" if e.activa else "badge-muted",
+            "meta": f"{num_suc} sucursal{'es' if num_suc != 1 else ''}",
+            "href": reverse("cashops:empresa_update", args=[e.pk]),
+        })
+    return render(request, "cashops/list_page.html", {
+        "title": "Empresas",
+        "subtitle": "Razon social o unidad de negocio que agrupa sucursales.",
+        "create_url": reverse("cashops:empresa_create"),
+        "items": items,
+    })
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def empresa_create(request):
+    _require_cashops_admin(request)
+    form = EmpresaForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        empresa = form.save()
+        messages.success(request, f"Empresa {empresa.nombre} creada.")
+        return redirect(reverse("cashops:empresa_list"))
+    return _render_form(
+        request,
+        "cashops/form_page.html",
+        "cashops/partials/form_card.html",
+        {
+            "title": "Nueva empresa",
+            "subtitle": "Alta de razon social o unidad de negocio.",
+            "form": form,
+            "submit_label": "Guardar empresa",
+            "back_url": reverse("cashops:empresa_list"),
+            "form_action": reverse("cashops:empresa_create"),
+        },
+        status=400 if request.method == "POST" and not form.is_valid() else 200,
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def empresa_update(request, empresa_id: int):
+    _require_cashops_admin(request)
+    empresa = get_object_or_404(Empresa, pk=empresa_id)
+    form = EmpresaForm(request.POST or None, instance=empresa)
+    if request.method == "POST" and form.is_valid():
+        empresa = form.save()
+        messages.success(request, f"Empresa {empresa.nombre} actualizada.")
+        return redirect(reverse("cashops:empresa_list"))
+    return _render_form(
+        request,
+        "cashops/form_page.html",
+        "cashops/partials/form_card.html",
+        {
+            "title": f"Editar empresa: {empresa.nombre}",
+            "subtitle": "Ajusta nombre, identificador y estado.",
+            "form": form,
+            "submit_label": "Guardar cambios",
+            "back_url": reverse("cashops:empresa_list"),
+            "form_action": reverse("cashops:empresa_update", args=[empresa.pk]),
+        },
+        status=400 if request.method == "POST" and not form.is_valid() else 200,
+    )
+
+
+@login_required
+@require_http_methods(["POST"])
+def empresa_toggle(request, empresa_id: int):
+    _require_cashops_admin(request)
+    empresa = get_object_or_404(Empresa, pk=empresa_id)
+    empresa.activa = not empresa.activa
+    empresa.save(update_fields=["activa", "actualizada_en"])
+    messages.success(
+        request,
+        f"Empresa {empresa.nombre} {'activada' if empresa.activa else 'desactivada'}.",
+    )
+    return redirect(reverse("cashops:empresa_list"))
+
+
+@login_required
+@require_http_methods(["POST"])
+def set_empresa_activa(request):
+    empresa_id = request.POST.get("empresa_id")
+    if empresa_id:
+        try:
+            Empresa.objects.get(pk=int(empresa_id), activa=True)
+            request.session["empresa_activa_id"] = int(empresa_id)
+        except (Empresa.DoesNotExist, TypeError, ValueError):
+            pass
+    next_url = request.POST.get("next") or reverse("cashops:dashboard")
+    return redirect(next_url)

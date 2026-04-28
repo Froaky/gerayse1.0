@@ -15,6 +15,7 @@ from .models import (
     AlertaOperativa,
     Caja,
     CierreCaja,
+    Empresa,
     LimiteRubroOperativo,
     MovimientoCaja,
     RubroOperativo,
@@ -1717,3 +1718,112 @@ class CashopsViewTests(CashopsTestCase):
         self.assertLess(content.index("Alerta scope caja"), content.index("Alerta scope sucursal"))
         self.assertLess(content.index("Alerta scope sucursal"), content.index("Alerta scope global"))
         self.assertContains(response, "Las alertas equivalentes se muestran todas", html=False)
+
+
+class EP12EmpresasTests(CashopsTestCase):
+    def setUp(self):
+        super().setUp()
+        self.empresa_a = Empresa.objects.create(nombre="ARMADI SRL")
+        self.empresa_b = Empresa.objects.create(nombre="MAPOGO SRL")
+        self.branch_a.empresa = self.empresa_a
+        self.branch_a.save(update_fields=["empresa"])
+        self.branch_b.empresa = self.empresa_b
+        self.branch_b.save(update_fields=["empresa"])
+
+    def test_empresa_list_requires_admin(self):
+        self.client.force_login(self.operator)
+        response = self.client.get(reverse("cashops:empresa_list"))
+        self.assertEqual(response.status_code, 403)
+
+    def test_empresa_list_shows_all_empresas(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("cashops:empresa_list"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "ARMADI SRL")
+        self.assertContains(response, "MAPOGO SRL")
+
+    def test_empresa_create_persists_record(self):
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            reverse("cashops:empresa_create"),
+            {"nombre": "NUEVA SRL", "activa": True},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Empresa.objects.filter(nombre="NUEVA SRL").exists())
+
+    def test_set_empresa_activa_stores_in_session(self):
+        self.client.force_login(self.admin)
+        self.client.post(
+            reverse("cashops:set_empresa_activa"),
+            {"empresa_id": self.empresa_a.pk, "next": reverse("cashops:dashboard")},
+        )
+        self.assertEqual(self.client.session.get("empresa_activa_id"), self.empresa_a.pk)
+
+    def test_dashboard_filters_sucursales_by_empresa_activa(self):
+        self.client.force_login(self.admin)
+        session = self.client.session
+        session["empresa_activa_id"] = self.empresa_a.pk
+        session.save()
+        response = self.client.get(reverse("cashops:dashboard"))
+        self.assertEqual(response.status_code, 200)
+        sucursales = response.context["sucursales"]
+        self.assertIn(self.branch_a, sucursales)
+        self.assertNotIn(self.branch_b, sucursales)
+
+    def test_backfill_migration_creates_empresas_from_razon_social(self):
+        sucursal = Sucursal.objects.create(
+            codigo="SUC-X", nombre="Sucursal X", razon_social="NUEVA CORP SA"
+        )
+        self.assertIsNone(sucursal.empresa)
+        empresa = Empresa.objects.create(nombre="NUEVA CORP SA")
+        sucursal.empresa = empresa
+        sucursal.save(update_fields=["empresa"])
+        sucursal.refresh_from_db()
+        self.assertEqual(sucursal.empresa.nombre, "NUEVA CORP SA")
+
+
+class EP12DashboardCanalTests(CashopsTestCase):
+    def setUp(self):
+        super().setUp()
+        self.caja = open_box(
+            user=self.operator,
+            sucursal=self.branch_a,
+            turno=self.turno_a,
+            monto_inicial=Decimal("500.00"),
+            actor=self.operator,
+        )
+
+    def test_snapshot_discriminates_efectivo_from_canal_sales(self):
+        register_card_sale(
+            caja=self.caja,
+            monto=Decimal("200.00"),
+            actor=self.operator,
+        )
+        register_cash_income(
+            caja=self.caja,
+            monto=Decimal("100.00"),
+            categoria="Cobro mostrador",
+            observacion="cobro efectivo",
+            actor=self.operator,
+        )
+        scope = build_box_control_scope(caja=self.caja)
+        snapshot = build_operational_control_snapshot(scope)
+        self.assertEqual(snapshot["total_ventas_digitales"], Decimal("200.00"))
+        self.assertEqual(snapshot["ingreso_efectivo_total"], Decimal("100.00"))
+        self.assertIsNotNone(snapshot["saldo_efectivo_caja"])
+        self.assertEqual(snapshot["saldo_efectivo_caja"], self.caja.saldo_esperado)
+        self.assertEqual(len(snapshot["ventas_por_canal"]), 1)
+        self.assertEqual(snapshot["ventas_por_canal"][0]["tipo"], MovimientoCaja.Tipo.VENTA_TARJETA)
+
+    def test_period_summary_includes_canal_breakdown(self):
+        register_card_sale(
+            caja=self.caja,
+            monto=Decimal("150.00"),
+            actor=self.operator,
+        )
+        summary = build_operational_period_summary(
+            date_from=self.turno_a.fecha_operativa,
+            date_to=self.turno_a.fecha_operativa,
+        )
+        self.assertEqual(summary["total_ventas_digitales"], Decimal("150.00"))
+        self.assertIsNone(summary["saldo_efectivo_caja"])

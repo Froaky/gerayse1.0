@@ -5,7 +5,7 @@ from django import forms
 from django.contrib.auth import get_user_model
 from django.db.models import Q
 
-from .models import Caja, LimiteRubroOperativo, MovimientoCaja, RubroOperativo, Sucursal, Transferencia, Turno
+from .models import Caja, Empresa, LimiteRubroOperativo, MovimientoCaja, RubroOperativo, Sucursal, Transferencia, Turno
 from .permissions import can_assign_box_to_user, is_cashops_admin
 from .services import CLOSING_DIFF_THRESHOLD, MAX_OPERATIONAL_LIMIT_PERCENTAGE
 
@@ -13,10 +13,26 @@ from .services import CLOSING_DIFF_THRESHOLD, MAX_OPERATIONAL_LIMIT_PERCENTAGE
 User = get_user_model()
 
 
+class EmpresaForm(forms.ModelForm):
+    class Meta:
+        model = Empresa
+        fields = ["nombre", "identificador_fiscal", "activa"]
+        widgets = {
+            "nombre": forms.TextInput(attrs={"placeholder": "ARMADI SRL"}),
+            "identificador_fiscal": forms.TextInput(attrs={"placeholder": "30-12345678-9"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["identificador_fiscal"].required = False
+        for field in self.fields.values():
+            field.widget.attrs.setdefault("class", "input")
+
+
 class SucursalForm(forms.ModelForm):
     class Meta:
         model = Sucursal
-        fields = ["codigo", "nombre", "razon_social", "activa"]
+        fields = ["empresa", "codigo", "nombre", "razon_social", "activa"]
         widgets = {
             "codigo": forms.TextInput(attrs={"placeholder": "SUC-01"}),
             "nombre": forms.TextInput(attrs={"placeholder": "Sucursal Centro"}),
@@ -25,6 +41,8 @@ class SucursalForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["empresa"].queryset = Empresa.objects.filter(activa=True)
+        self.fields["empresa"].required = False
         self.fields["razon_social"].required = True
         for field in self.fields.values():
             if isinstance(field.widget, forms.Select):

@@ -16,6 +16,7 @@ Simplificar la operatoria diaria de cajas para que registren solo lo que realmen
 - turnos operativos recurrentes sin alta manual diaria
 - apertura de caja con importes claros y persistencia verificable
 - carga diaria por canal de venta y egresos operativos desde la caja
+- dashboard de caja con saldo efectivo y ventas a acreditar discriminadas
 
 ## No incluye todavia
 
@@ -23,6 +24,7 @@ Simplificar la operatoria diaria de cajas para que registren solo lo que realmen
 - conciliacion bancaria avanzada
 - reglas de rentabilidad economica
 - egresos administrativos de tesoreria o caja fuerte central, cubiertos por `EP-05`
+- cambio de empresa activa o aislamiento entre empresas, cubierto por `EP-12`
 
 ## Reglas de negocio
 
@@ -38,6 +40,8 @@ Simplificar la operatoria diaria de cajas para que registren solo lo que realmen
 - cada importe de apertura debe indicar si impacta efectivo fisico, ventas a acreditar o solo lectura operativa
 - una apertura que no se guarda debe mostrar validaciones visibles y no perder la carga del usuario
 - una caja no puede abrirse con un turno o sucursal que no correspondan al contexto elegido por el operador
+- el saldo neto operativo puede mostrar resultado total, pero no debe ocultar cuanto queda en efectivo fisico
+- las ventas por tarjeta, debito, credito, QR o billetera deben verse separadas del efectivo disponible en caja
 
 ## User Stories
 
@@ -200,11 +204,27 @@ Criterios:
 - la validacion rechaza cualquier combinacion inconsistente entre usuario, sucursal, turno y caja
 - el operador no debe ver `Terminal` u otra sucursal cuando esta cargando una caja de `Vivre`, salvo que esa sea realmente la sucursal seleccionada
 
+### [x] US-8.13 Dashboard de caja con saldo efectivo y ventas por canal
+
+Como operador o administrador de sucursal
+Quiero ver separado el saldo efectivo de caja y las ventas por tarjeta, QR, debito, credito o billetera
+Para no confundir el neto operativo con el dinero fisico disponible
+
+Criterios:
+- el dashboard de caja muestra `saldo efectivo en caja` como lectura principal del dinero fisico disponible
+- las ventas en efectivo impactan el saldo efectivo de caja
+- las ventas por tarjeta, QR, debito, credito, billetera o app quedan visibles como ventas por canal, pero no aumentan el efectivo fisico
+- el dashboard puede mostrar un `total de ventas` o `neto operativo`, pero debe aclarar que incluye canales no efectivos
+- la lectura por caja, sucursal y periodo mantiene la misma separacion entre efectivo y ventas a acreditar
+- los movimientos recientes permiten reconocer de que canal viene cada venta
+- los tests deben cubrir que una venta en efectivo y una venta por tarjeta no se mezclan como saldo efectivo
+
 ## Dependencias
 
 - EP-01 caja operativa base
 - EP-02 alertas operativas
 - EP-05 para caja fuerte central y egresos administrativos de tesoreria
+- EP-12 para filtrar vistas por empresa cuando una sucursal pertenezca a una empresa
 
 ## Orden tecnico sugerido
 
@@ -218,6 +238,7 @@ Criterios:
 8. corregir persistencia y validaciones de apertura de caja
 9. discriminar importes de apertura y carga diaria por canal
 10. reforzar coherencia sucursal-turno-caja
+11. separar visualmente saldo efectivo, ventas por canal y neto operativo en dashboard
 
 ## Criterio de cierre
 
@@ -228,3 +249,4 @@ Criterios:
 - el operador puede abrir caja para turno manana o tarde sin crear turnos diarios manualmente
 - la apertura de caja guarda de forma verificable o muestra errores accionables
 - la carga diaria permite explicar ventas por canal, efectivo fisico y egresos operativos sin ambiguedad
+- el dashboard de caja no hace pasar ventas a acreditar como efectivo disponible

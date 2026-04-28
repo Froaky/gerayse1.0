@@ -8,7 +8,35 @@ from django.db.models.functions import Lower
 from django.utils import timezone
 
 
+class Empresa(models.Model):
+    nombre = models.CharField(max_length=160, unique=True)
+    identificador_fiscal = models.CharField(max_length=40, blank=True, null=True, unique=True)
+    activa = models.BooleanField(default=True)
+    creada_en = models.DateTimeField(auto_now_add=True)
+    actualizada_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["nombre"]
+
+    def clean(self) -> None:
+        self.nombre = (self.nombre or "").strip()
+        if not self.nombre:
+            raise ValidationError({"nombre": "El nombre de la empresa es obligatorio."})
+        if self.identificador_fiscal:
+            self.identificador_fiscal = self.identificador_fiscal.strip().upper()
+
+    def __str__(self) -> str:
+        return self.nombre
+
+
 class Sucursal(models.Model):
+    empresa = models.ForeignKey(
+        Empresa,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="sucursales",
+    )
     nombre = models.CharField(max_length=120, unique=True)
     codigo = models.CharField(max_length=20, unique=True)
     razon_social = models.CharField(max_length=160, default="")

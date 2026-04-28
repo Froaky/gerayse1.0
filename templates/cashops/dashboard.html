@@ -140,9 +140,17 @@
           </div>
           <div class="summary-grid" style="margin-top:14px;">
             <div class="summary">
-              <span class="muted">Saldo esperado</span>
+              <span class="muted">Efectivo en caja</span>
               <strong>${{ selected_box.saldo_esperado }}</strong>
+              <small class="muted">dinero fisico disponible</small>
             </div>
+            {% if dashboard_snapshot.total_ventas_digitales %}
+              <div class="summary">
+                <span class="muted">Ventas a acreditar</span>
+                <strong>${{ dashboard_snapshot.total_ventas_digitales }}</strong>
+                <small class="muted">tarjeta, QR y otros canales</small>
+              </div>
+            {% endif %}
             <div class="summary">
               <span class="muted">Turno</span>
               <strong>{{ selected_box.turno.get_tipo_display }}</strong>
@@ -152,6 +160,19 @@
               <strong>{{ selected_box.sucursal.nombre }}</strong>
             </div>
           </div>
+          {% if dashboard_snapshot.ventas_por_canal %}
+            <div style="margin-top:12px;">
+              <p class="muted" style="margin-bottom:8px;font-size:0.9rem;">Ventas por canal (no suman al efectivo)</p>
+              <div class="summary-grid">
+                {% for v in dashboard_snapshot.ventas_por_canal %}
+                  <div class="summary">
+                    <span class="muted">{{ v.label }}</span>
+                    <strong>${{ v.total }}</strong>
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+          {% endif %}
           {% if selected_box.estado == 'ABIERTA' %}
             <div class="action-grid" style="margin-top:16px;">
               <a class="action-card" href="{% url 'cashops:register_sale' selected_box.id %}">
