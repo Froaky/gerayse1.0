@@ -4,7 +4,8 @@
       "Bash(python manage.py test cashops.tests --verbosity=1)",
       "Bash(python manage.py test cashops.tests_commands --verbosity=1)",
       "Bash(python manage.py test cashops treasury --verbosity=2)",
-      "Bash(python manage.py test cashops treasury --verbosity=1)"
+      "Bash(python manage.py test cashops treasury --verbosity=1)",
+      "WebSearch"
     ]
   }
 }

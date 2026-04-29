@@ -7,17 +7,24 @@
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <style>
       :root {
-        --bg: #0b1520;
-        --panel: #111d2b;
-        --panel-soft: #162134;
-        --text: #d8e6f0;
-        --muted: #6a8499;
-        --line: #1c2f42;
-        --accent: #1f8a6e;
-        --accent-2: #d47d2c;
-        --danger: #c04a50;
-        --success: #2a8a48;
-        --shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+        /* Neutral Blue palette — 4 base tones */
+        --nb-light:  #edf3f0;   /* swatch 1: blanco frío */
+        --nb-sage:   #9bbfb4;   /* swatch 2: sage/mint suave */
+        --nb-teal:   #4a8595;   /* swatch 3: teal medio */
+        --nb-navy:   #1a3040;   /* swatch 4: navy profundo */
+
+        --bg:         #0e1e2a;  /* más oscuro que navy, base de fondo */
+        --panel:      #152636;  /* navy con algo de luminosidad */
+        --panel-soft: #1c3145;  /* navy levemente más claro */
+        --text:       #edf3f0;  /* nb-light: texto principal */
+        --muted:      #7aa8b4;  /* entre sage y teal, atenuado */
+        --line:       #1e3448;  /* borde sutil sobre fondo oscuro */
+        --accent:     #4a8595;  /* nb-teal: acento principal */
+        --accent-hi:  #6db5c8;  /* teal más claro para hover/highlights */
+        --accent-2:   #9bbfb4;  /* nb-sage: acento secundario */
+        --danger:     #b85a60;
+        --success:    #4a9a6e;
+        --shadow:     0 12px 32px rgba(0, 0, 0, 0.5);
       }
       * { box-sizing: border-box; }
       body {
@@ -25,8 +32,8 @@
         font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         color: var(--text);
         background:
-          radial-gradient(circle at top left, rgba(31, 138, 110, 0.07), transparent 30%),
-          radial-gradient(circle at bottom right, rgba(11, 30, 50, 0.6), transparent 40%),
+          radial-gradient(ellipse at top left, rgba(74, 133, 149, 0.09), transparent 35%),
+          radial-gradient(ellipse at bottom right, rgba(26, 48, 64, 0.5), transparent 45%),
           var(--bg);
       }
       a { color: inherit; text-decoration: none; }
@@ -69,13 +76,15 @@
         font-weight: 500;
         font-size: 0.9rem;
         color: var(--text);
+        transition: border-color 0.12s, background 0.12s;
       }
+      .chip:hover { border-color: var(--accent); }
       .chip-button {
         cursor: pointer;
         font: inherit;
-        box-shadow: none;
       }
-      .button { background: var(--accent); color: #fff; border-color: transparent; font-weight: 600; }
+      .button { background: var(--accent); color: var(--nb-light); border-color: transparent; font-weight: 600; }
+      .button:hover { background: var(--accent-hi); }
       .button-secondary { background: var(--panel-soft); color: var(--text); }
       .grid { display: grid; gap: 16px; }
       .card {
@@ -110,7 +119,7 @@
       .action-card {
         min-height: 86px;
         padding: 14px;
-        border-radius: 6px;
+        border-radius: 4px;
         background: var(--panel-soft);
         border: 1px solid var(--line);
         border-left: 3px solid var(--accent);
@@ -119,7 +128,9 @@
         justify-content: space-between;
         gap: 8px;
         font-weight: 700;
+        transition: border-color 0.12s;
       }
+      .action-card:hover { border-color: var(--accent); }
       .action-card small { color: var(--muted); font-weight: 500; }
       .stack { display: grid; gap: 12px; }
       .field { display: grid; gap: 6px; }
@@ -187,17 +198,17 @@
         min-height: 24px;
         padding: 3px 8px;
         border-radius: 3px;
-        background: rgba(31, 138, 110, 0.15);
-        color: #4ecdb4;
-        font-size: 0.82rem;
+        background: rgba(74, 133, 149, 0.18);
+        color: var(--accent-hi);
+        font-size: 0.81rem;
         font-weight: 700;
-        letter-spacing: 0.02em;
+        letter-spacing: 0.04em;
         text-transform: uppercase;
       }
-      .badge-success { background: rgba(42, 138, 72, 0.15); color: #5dd68a; }
-      .badge-warning { background: rgba(212, 125, 44, 0.18); color: #e09a54; }
-      .badge-danger { background: rgba(192, 74, 80, 0.18); color: #e07a7e; }
-      .badge-muted { background: rgba(106, 132, 153, 0.15); color: var(--muted); }
+      .badge-success { background: rgba(74, 154, 110, 0.18); color: #7dd4a0; }
+      .badge-warning { background: rgba(155, 191, 180, 0.2); color: var(--accent-2); }
+      .badge-danger { background: rgba(184, 90, 96, 0.18); color: #dd9598; }
+      .badge-muted { background: rgba(122, 168, 180, 0.12); color: var(--muted); }
       .nav-divider {
         display: block;
         width: 1px;
@@ -306,12 +317,12 @@
           top: calc(100% + 4px);
           left: 0;
           z-index: 100;
-          min-width: 200px;
-          background: #0d1c2b;
-          border: 1px solid #1a3048;
+          min-width: 210px;
+          background: var(--nb-navy);
+          border: 1px solid var(--line);
           border-top: 2px solid var(--accent);
           border-radius: 0 0 4px 4px;
-          box-shadow: 0 16px 40px rgba(0,0,0,0.55);
+          box-shadow: 0 20px 48px rgba(0,0,0,0.6);
           padding: 4px 0;
           display: grid;
           gap: 0;
@@ -328,25 +339,25 @@
           text-align: left;
           font: inherit;
           font-size: 0.88rem;
-          color: #a8bfcc;
+          color: var(--accent-2);
           cursor: pointer;
           text-decoration: none;
-          transition: background 0.12s, border-left-color 0.12s, color 0.12s;
+          transition: background 0.1s, border-left-color 0.1s, color 0.1s;
         }
         .nav-menu__item:hover {
-          background: rgba(31,138,110,0.1);
+          background: rgba(74, 133, 149, 0.12);
           border-left-color: var(--accent);
-          color: #e0f0ea;
+          color: var(--nb-light);
         }
         .nav-menu__item--active {
           font-weight: 600;
-          border-left-color: var(--accent);
-          color: #5dd6ba;
-          background: rgba(31,138,110,0.08);
+          border-left-color: var(--accent-hi);
+          color: var(--accent-hi);
+          background: rgba(74, 133, 149, 0.1);
         }
         .nav-menu__separator {
           height: 1px;
-          background: #1a3048;
+          background: var(--line);
           margin: 4px 0;
         }
       </style>
