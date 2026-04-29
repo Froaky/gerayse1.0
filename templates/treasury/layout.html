@@ -80,24 +80,27 @@
         padding: 20px;
       }
       .hero { display: grid; gap: 12px; margin-bottom: 16px; }
-      .hero h1 { font-size: 1.9rem; font-weight: 800; letter-spacing: -0.02em; margin: 0; }
-      .card h2, .card h3 { margin: 0; font-weight: 700; }
+      .hero h1 { font-size: 1.7rem; font-weight: 700; letter-spacing: -0.01em; margin: 0; }
+      .card h2 { margin: 0; font-size: 1.05rem; font-weight: 700; }
+      .card h3 { margin: 0; font-weight: 600; }
       .muted { color: var(--muted); }
-      .summary-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+      .summary-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
       .summary {
         display: grid;
         gap: 4px;
-        padding: 16px;
-        border-radius: 6px;
+        padding: 14px;
+        border-radius: 4px;
         background: var(--panel-soft);
         border: 1px solid var(--line);
+        transition: border-color 0.12s;
       }
       .summary:hover { border-color: var(--accent); }
-      .summary strong { font-size: 1.3rem; font-weight: 700; }
-      .action-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+      .summary strong { font-size: 1.2rem; font-weight: 700; color: var(--nb-light); }
+      .summary small { font-size: 0.82rem; }
+      .action-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
       .action-card {
-        min-height: 86px;
-        padding: 14px;
+        min-height: 80px;
+        padding: 12px 14px;
         border-radius: 4px;
         background: var(--panel-soft);
         border: 1px solid var(--line);
@@ -105,46 +108,57 @@
         display: flex;
         flex-direction: column;
         justify-content: space-between;
-        gap: 8px;
-        font-weight: 700;
-        transition: border-color 0.12s;
+        gap: 6px;
+        font-weight: 600;
+        font-size: 0.9rem;
+        color: var(--text);
+        text-decoration: none;
+        transition: border-color 0.12s, background 0.12s;
       }
-      .action-card:hover { border-color: var(--accent); }
-      .action-card small { color: var(--muted); font-weight: 500; }
+      .action-card:hover { border-color: var(--accent); background: rgba(74,133,149,0.08); }
+      .action-card small { color: var(--muted); font-weight: 400; font-size: 0.82rem; }
+      .list-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
       .stack { display: grid; gap: 12px; }
       .field { display: grid; gap: 6px; }
-      label { font-weight: 600; font-size: 0.88rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+      label { font-weight: 600; font-size: 0.82rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
       .input, .select, .textarea {
         width: 100%;
-        min-height: 44px;
-        padding: 10px 12px;
+        min-height: 40px;
+        padding: 9px 12px;
         border: 1px solid var(--line);
         border-radius: 4px;
         background: var(--panel-soft);
         font: inherit;
+        font-size: 0.9rem;
         color: var(--text);
+        transition: border-color 0.12s;
       }
       .input:focus, .select:focus, .textarea:focus { outline: none; border-color: var(--accent); }
       .textarea { min-height: 96px; resize: vertical; }
+      .errors, .errorlist { margin: 0; padding-left: 18px; color: var(--danger); }
+      .error { color: var(--danger); font-size: 0.88rem; }
       .messages { display: grid; gap: 8px; margin-bottom: 16px; }
+      @keyframes slideIn { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
       .message {
         padding: 11px 14px;
         border-radius: 4px;
         border: 1px solid var(--line);
         background: var(--panel-soft);
+        animation: slideIn 0.2s ease-out;
       }
-      @keyframes slideIn { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
-      .message { animation: slideIn 0.2s ease-out; }
-      .message.success { border-color: rgba(74, 154, 110, 0.35); background: rgba(74, 154, 110, 0.1); }
-      .message.error { border-color: rgba(184, 90, 96, 0.35); background: rgba(184, 90, 96, 0.1); }
-      .list { display: grid; gap: 8px; }
+      .message.success { border-color: rgba(74, 154, 110, 0.35); background: rgba(74, 154, 110, 0.08); }
+      .message.error { border-color: rgba(184, 90, 96, 0.35); background: rgba(184, 90, 96, 0.08); }
+      .list { display: grid; gap: 6px; }
       .list-item {
-        padding: 14px;
+        padding: 12px 14px;
         border: 1px solid var(--line);
         border-left: 3px solid transparent;
-        border-radius: 6px;
+        border-radius: 4px;
         background: var(--panel);
-        transition: border-color 0.12s;
+        transition: border-left-color 0.12s, border-color 0.12s;
+        color: var(--text);
+        text-decoration: none;
+        display: block;
       }
       .list-item:hover { border-left-color: var(--accent); border-color: var(--accent); }
       .row { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
@@ -156,15 +170,17 @@
       .badge {
         display: inline-flex;
         align-items: center;
-        min-height: 24px;
-        padding: 3px 8px;
+        white-space: nowrap;
+        min-height: 22px;
+        padding: 2px 8px;
         border-radius: 3px;
         background: rgba(74, 133, 149, 0.18);
         color: var(--accent-hi);
-        font-size: 0.81rem;
+        font-size: 0.78rem;
         font-weight: 700;
         letter-spacing: 0.04em;
         text-transform: uppercase;
+        flex-shrink: 0;
       }
       .badge-success { background: rgba(74, 154, 110, 0.18); color: #7dd4a0; }
       .badge-warning { background: rgba(155, 191, 180, 0.2); color: var(--accent-2); }
@@ -172,15 +188,70 @@
       .badge-info { background: rgba(74, 133, 149, 0.18); color: var(--accent-hi); }
       .badge-muted { background: rgba(122, 168, 180, 0.12); color: var(--muted); }
       .footer-space { height: 32px; }
+      /* nav dropdown */
+      .nav-menu { position: relative; }
+      .nav-menu summary { list-style: none; cursor: pointer; }
+      .nav-menu summary::-webkit-details-marker { display: none; }
+      .nav-menu__dropdown {
+        position: absolute;
+        top: calc(100% + 4px);
+        left: 0;
+        z-index: 100;
+        min-width: 200px;
+        background: var(--nb-navy);
+        border: 1px solid var(--line);
+        border-top: 2px solid var(--accent);
+        border-radius: 0 0 4px 4px;
+        box-shadow: 0 20px 48px rgba(0,0,0,0.6);
+        padding: 4px 0;
+        display: grid;
+        gap: 0;
+      }
+      .nav-menu__dropdown--right { left: auto; right: 0; }
+      .nav-menu__item {
+        display: block;
+        width: 100%;
+        padding: 10px 16px;
+        border-radius: 0;
+        border: none;
+        border-left: 3px solid transparent;
+        background: transparent;
+        text-align: left;
+        font: inherit;
+        font-size: 0.88rem;
+        color: var(--accent-2);
+        cursor: pointer;
+        text-decoration: none;
+        transition: background 0.1s, border-left-color 0.1s, color 0.1s;
+      }
+      .nav-menu__item:hover {
+        background: rgba(74,133,149,0.12);
+        border-left-color: var(--accent);
+        color: var(--nb-light);
+      }
+      .nav-menu__item--active {
+        font-weight: 600;
+        border-left-color: var(--accent-hi);
+        color: var(--accent-hi);
+        background: rgba(74,133,149,0.1);
+      }
       @media (min-width: 880px) {
         .topbar { grid-template-columns: auto minmax(0, 1fr); align-items: center; }
         .nav { grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: 8px 12px; }
         .nav-user { flex-wrap: nowrap; align-items: center; }
-        .layout-two { grid-template-columns: 1.2fr 0.8fr; align-items: start; }
+        .layout-two { grid-template-columns: 1fr 1fr; align-items: start; }
+      }
+      @media (max-width: 880px) {
+        .layout-two { grid-template-columns: 1fr; }
       }
       @media (max-width: 640px) {
-        .shell { padding: 16px; }
+        .shell { padding: 12px; }
+        .card { padding: 14px; }
         .grid-2, .grid-4 { grid-template-columns: 1fr; }
+        .summary-grid { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+        .hero h1 { font-size: 1.4rem; }
+        .row { flex-direction: column; align-items: flex-start; }
+        .row .list-actions { width: 100%; }
       }
     </style>
   </head>
@@ -197,11 +268,25 @@
             <a class="chip" href="{% url 'treasury:cuentas_por_pagar_list' %}">Deudas</a>
             <a class="chip" href="{% url 'treasury:pagos_list' %}">Pagos</a>
             <a class="chip" href="{% url 'treasury:bank_movements_list' %}">Bancos</a>
-            <a class="chip" href="{% url 'treasury:pos_batches_list' %}">Lotes POS</a>
-            <a class="chip" href="{% url 'treasury:bank_reconciliation' %}"><b>Conciliacion</b></a>
-            <a class="chip" href="{% url 'treasury:disponibilidades' %}"><b>Disponibilidades</b></a>
-            <a class="chip" href="{% url 'treasury:central_cash_list' %}">Efectivo</a>
-            <a class="chip" href="{% url 'treasury:proveedores_list' %}">Prov.</a>
+            <span class="nav-divider"></span>
+            <details class="nav-menu">
+              <summary class="chip chip-button">Reportes &#9662;</summary>
+              <div class="nav-menu__dropdown">
+                <a class="nav-menu__item" href="{% url 'treasury:disponibilidades' %}">Disponibilidades</a>
+                <a class="nav-menu__item" href="{% url 'treasury:bank_reconciliation' %}">Conciliacion</a>
+                <a class="nav-menu__item" href="{% url 'treasury:pos_batches_list' %}">Lotes POS</a>
+                <a class="nav-menu__item" href="{% url 'treasury:central_cash_list' %}">Efectivo central</a>
+              </div>
+            </details>
+            <details class="nav-menu">
+              <summary class="chip chip-button">Config &#9662;</summary>
+              <div class="nav-menu__dropdown">
+                <a class="nav-menu__item" href="{% url 'treasury:proveedores_list' %}">Proveedores</a>
+                <a class="nav-menu__item" href="{% url 'treasury:categorias_list' %}">Categorias</a>
+                <a class="nav-menu__item" href="{% url 'treasury:cuentas_bancarias_list' %}">Cuentas bancarias</a>
+              </div>
+            </details>
+            <span class="nav-divider"></span>
             <a class="chip" href="{% url 'cashops:dashboard' %}">Caja</a>
           </div>
           {% if request.user.is_authenticated %}
