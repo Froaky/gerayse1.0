@@ -72,6 +72,15 @@ def consolidate_turnos_and_backfill_cajas(apps, schema_editor):
     canonical_ids = set(empresa_tipo_to_canonical.values())
     Turno.objects.exclude(pk__in=canonical_ids).delete()
 
+    # Step 5: flush deferred FK trigger events.
+    # Deleting Turno rows above queues deferred constraint-check triggers in
+    # PostgreSQL. If those triggers are still "pending" when Django runs the
+    # subsequent AlterField operations in this same migration transaction,
+    # PostgreSQL raises "cannot ALTER TABLE because it has pending trigger events".
+    # SET CONSTRAINTS ALL IMMEDIATE forces those checks to run now so the queue
+    # is empty before any DDL executes.
+    schema_editor.execute("SET CONSTRAINTS ALL IMMEDIATE")
+
 
 def reverse_noop(apps, schema_editor):
     pass
