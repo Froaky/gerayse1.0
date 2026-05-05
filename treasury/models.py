@@ -857,6 +857,21 @@ class MovimientoBancario(models.Model):
         blank=True,
         related_name="movimiento_bancario",
     )
+    rubro_operativo = models.ForeignKey(
+        "cashops.RubroOperativo",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="egresos_bancarios",
+    )
+    sucursal_gasto = models.ForeignKey(
+        "cashops.Sucursal",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="egresos_bancarios",
+    )
+    periodo_pago = models.DateField(null=True, blank=True)
     creado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -1196,6 +1211,21 @@ class MovimientoCajaCentral(models.Model):
     )
     
     observaciones = models.CharField(max_length=255, blank=True)
+    rubro_operativo = models.ForeignKey(
+        "cashops.RubroOperativo",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="egresos_caja_central",
+    )
+    sucursal_gasto = models.ForeignKey(
+        "cashops.Sucursal",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="egresos_caja_central",
+    )
+    periodo_pago = models.DateField(null=True, blank=True)
     creado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

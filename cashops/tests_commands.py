@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 from io import StringIO
 
@@ -9,7 +10,7 @@ from django.utils import timezone
 
 from users.models import Role
 
-from cashops.models import AlertaOperativa, Caja, LimiteRubroOperativo, MovimientoCaja, RubroOperativo, Sucursal, Turno
+from cashops.models import AlertaOperativa, Caja, Empresa, LimiteRubroOperativo, MovimientoCaja, RubroOperativo, Sucursal, Turno
 from cashops.services import close_box, open_box, register_expense
 
 
@@ -23,22 +24,24 @@ class ResyncOperationalEngineCommandTests(TestCase):
         self.admin = User.objects.create_user(username="admin", password="test", role=admin_role)
         self.operator = User.objects.create_user(username="operador", password="test", role=operator_role)
 
+        self.empresa = Empresa.objects.create(nombre="Empresa 01 SRL")
         self.branch = Sucursal.objects.create(
             codigo="SUC-01",
             nombre="Sucursal 01",
             razon_social="Sucursal 01 SRL",
+            empresa=self.empresa,
         )
         self.turno = Turno.objects.create(
-            sucursal=self.branch,
-            fecha_operativa="2026-03-27",
+            empresa=self.empresa,
             tipo=Turno.Tipo.MANANA,
-            estado=Turno.Estado.ABIERTO,
             creado_por=self.admin,
         )
+        self.fecha_op = date(2026, 3, 27)
         self.box = open_box(
             user=self.operator,
             turno=self.turno,
             sucursal=self.branch,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("1000.00"),
             actor=self.admin,
         )
@@ -211,7 +214,7 @@ class ResyncOperationalEngineCommandTests(TestCase):
             tipo=AlertaOperativa.Tipo.RUBRO_EXCEDIDO,
             rubro_operativo=self.rubro,
             sucursal=self.branch,
-            periodo_fecha=self.turno.fecha_operativa,
+            periodo_fecha=self.fecha_op,
             caja__isnull=True,
             resuelta=False,
         )
@@ -230,22 +233,24 @@ class SanitizeLegacyAlertsCommandTests(TestCase):
         self.admin = User.objects.create_user(username="admin_sanitize", password="test", role=admin_role)
         self.operator = User.objects.create_user(username="operador_sanitize", password="test", role=operator_role)
 
+        self.empresa = Empresa.objects.create(nombre="Empresa Sanitize SRL")
         self.branch = Sucursal.objects.create(
             codigo="SUC-02",
             nombre="Sucursal 02",
             razon_social="Sucursal 02 SRL",
+            empresa=self.empresa,
         )
         self.turno = Turno.objects.create(
-            sucursal=self.branch,
-            fecha_operativa="2026-03-27",
+            empresa=self.empresa,
             tipo=Turno.Tipo.MANANA,
-            estado=Turno.Estado.ABIERTO,
             creado_por=self.admin,
         )
+        self.fecha_op = date(2026, 3, 27)
         self.box = open_box(
             user=self.operator,
             turno=self.turno,
             sucursal=self.branch,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("1000.00"),
             actor=self.admin,
         )

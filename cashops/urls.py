@@ -36,4 +36,5 @@ urlpatterns = [
     path("cajas/<int:box_id>/cerrar/", views.close_box_view, name="box_close"),
     path("traspasos/cajas/", views.transfer_between_boxes_view, name="transfer_boxes"),
     path("traspasos/sucursales/", views.transfer_between_branches_view, name="transfer_branches"),
+    path("config/reiniciar/", views.reset_operational_data, name="reset_operational_data"),
 ]

@@ -1,6 +1,6 @@
 # Context
 
-Last updated: 2026-04-28
+Last updated: 2026-04-30
 
 ## Product Snapshot
 
@@ -58,12 +58,17 @@ Last updated: 2026-04-28
 
 ### Objective
 
+- External GitHub profile task:
+  - Review and improve `github.com/Froaky` so it presents Mateo Coca as hireable.
+  - Work target is the separate profile repository `Froaky/Froaky`, not Gerayse runtime behavior.
+  - Main decision: use a visual profile README with business-app positioning, featured projects, stack, and contact CTA.
 - Stabilize treasury for a same-day internal-control demo.
 - Reduce emphasis on bank integration features that are not part of the real operating model.
 - Convert the user-provided `Fixes y detalles para Gerayse.docx` requirements into executable backlog epics and user stories.
 - Create specialized local skills for the new epic areas and make them directly invocable.
 - Convert new client feedback from 2026-04-28 about apertura de caja, turnos, ventas por canal, egresos and caja fuerte into executable backlog stories.
 - Convert new client feedback from 2026-04-28 about company contexts, branch-to-company assignment, data isolation, header navigation, module menu, and dashboard cash/channel separation into executable backlog.
+- Convert new client feedback from 2026-04-29 about treasury administrative expense form into executable backlog: cash origin must not require bank account; expense needs amount, rubro, concept, branch and paid period.
 
 ### Findings Before Fixes
 
@@ -76,6 +81,18 @@ Last updated: 2026-04-28
 - `link_payment_to_bank_movement()` tried to use a non-existing bank status `ACREDITADO`.
 - accreditation filters used non-ORM properties and could fail when filtering from the UI.
 - treasury dashboard copy overpromised bank integration for a workflow that is really internal-control oriented.
+- 2026-05-04 client dashboard finding:
+  - `CajaCentral.saldo_actual` subtracts `MovimientoCajaCentral.Tipo.EGRESO_ADMIN`, but `treasury.services._central_cash_balance_until()` does not.
+  - `build_financial_period_snapshot()` uses `_central_cash_balance_until()` for the treasury dashboard cards, so caja fuerte general can overstate cash by ignoring administrative cash expenses.
+  - `build_disponibilidades_snapshot()` also omits `EGRESO_ADMIN` from monthly cash outflow, so the EP-05 disponibilidades report likely has the same bug.
+  - `EgresoTesoreriaForm` correctly only requires `cuenta_bancaria` when `fuente == BANCO`, but the reusable form template renders the bank-account field even when the user selected caja fuerte central; this is a UX/confidence issue already aligned with pending `US-5.9`.
+  - Local DB inspection could not verify production-like data because the configured SQLite database has no migrated `treasury_movimientocajacentral` table.
+- Current fix target:
+  - Enforce `cuenta_bancaria` if and only if `EgresoTesoreriaForm.fuente == BANCO`.
+  - Hide/disable the bank account field for caja fuerte central in the rendered form and clear it server-side if submitted anyway.
+  - Files changed for this fix: `treasury/forms.py`, `templates/treasury/partials/form_card.html`, `treasury/tests.py`.
+  - Validation: `.venv\Scripts\python.exe -m compileall treasury` passed.
+  - Blocked validation: `.venv\Scripts\python.exe manage.py test treasury.tests.TreasuryViewTests -v 2` fails before tests run because untracked `cashops/migrations/0012_turno_remove_legacy_fields.py` tries to remove missing index `cashops_tur_sucursa_bc2124_idx`; `.venv\Scripts\python.exe manage.py check` fails on unrelated `cashops.admin.TurnoAdmin` autocomplete for unregistered `Empresa`.
 
 ### Files Touched In This Session
 
@@ -151,6 +168,29 @@ Last updated: 2026-04-28
 
 ### Changes Applied
 
+- External GitHub profile:
+  - created and pushed `README.md` to `https://github.com/Froaky/Froaky`
+  - commit: `46ba285 Add profile README`
+  - profile README now uses visual header, hiring/contact badges, stack badges, featured project table and GitHub stats cards
+  - validation: `git ls-remote origin refs/heads/main` and GitHub contents API both confirmed the pushed README
+  - note: public GitHub profile page may show stale cached content briefly after first push
+  - follow-up commit `59abaa0 Replace profile stats with current focus`
+  - removed the `GitHub Snapshot` stats section because it highlighted early-profile metrics; replaced it with `Current Focus` table showing hireable service areas
+  - follow-up commit `6331ede Strengthen profile positioning`
+  - profile copy now positions Mateo as a fullstack developer who turns spreadsheet/manual-control operational pain into maintainable internal software, with a `Why Teams Hire Me` section
+  - follow-up commit `014cd16 Add violet profile design`
+  - added `assets/profile-banner.svg` to use a custom purple/violet visual banner instead of the external capsule-render banner
+  - README badge colors now follow the violet palette; GitHub API confirmed the SVG exists in `Froaky/Froaky`
+  - follow-up commit `0b581ce Add profile polish sections`
+  - added animated typing tagline, `assets/delivery-flow.svg` visual delivery flow, and `Engineering Signals` section to make the profile read as polished and technically reliable
+  - follow-up commit `203428c Clean up profile header layout`
+  - removed `Available for work` from both the SVG banner and README badges; adjusted banner line/text positioning to avoid overlap in GitHub profile render
+  - follow-up commit `f45ebc5 Bust cached profile banner`
+  - renamed banner asset to `assets/profile-banner-v2.svg` and updated README reference because GitHub was still serving the old cached SVG in the profile overview
+  - follow-up commit `e39a4cd Add profile case study`
+  - added `Signature Case Study` for Gerayse and `Best Fit` section so the profile sells concrete proof of operational/business-software skill, not only visual polish
+  - follow-up commit `b365a09 Add portfolio domain to profile`
+  - verified `https://froaky.com` redirects to `https://www.froaky.com/` with HTTP 200 and added it as profile badge, featured portfolio link, and contact link
 - `docs/epics/EP-04-bancos-y-conciliacion.md`
   - made explicit that bank reconciliation remains manual-assisted and that automatic reconciliation is out of scope until a later explicit decision
 - `docs/epics/README.md`
@@ -188,6 +228,14 @@ Last updated: 2026-04-28
   - reopened `EP-08` because `US-8.13` is pending
 - Decision:
   - Company context is a cross-domain feature, not only a branch-field change. Implementation must avoid partial filtering that isolates caja but still leaks treasury, bank or report data from another company.
+- `docs/epics/EP-05-flujo-de-disponibilidades.md`
+  - reopened EP-05 with pending `US-5.9` from 2026-04-29 client feedback:
+    - administrative treasury expense origin dropdown must support at least central cash and bank account
+    - when origin is cash/`Caja fuerte central`, bank account must be hidden/disabled and not required
+    - when origin is bank, active bank account is required
+    - expense requires importe, rubro, concepto, sucursal correspondiente and periodo pagado; observation/comment remains optional
+- `docs/epics/README.md`
+  - marked EP-05 reopened due to pending `US-5.9`
 - `cashops/*` and `treasury/*` EP-06/EP-07 closure slice
   - EP-06 closed: added admin-only daily management matrix and CSV export from persisted cash movements, grouped by operational date, income channel and expense rubro
   - EP-06 uses existing `LimiteRubroOperativo`, `AlertaOperativa`, `CierreCaja` and `Justificacion` for rubro targets, deviation alerts, dashboard follow-up and difference tracking
@@ -474,6 +522,7 @@ Last updated: 2026-04-28
   - `.venv\Scripts\python.exe -m compileall treasury` after treasury view cleanup
   - `git diff --check` after EP-06/EP-07 closure slice and view cleanup
 - Not run:
+  - application tests for the 2026-04-29 treasury-expense backlog update, because only epic markdown and context were changed
   - application tests for the 2026-04-28 backlog update, because only epic markdown and context were changed
   - application tests for the EP-12/company-context backlog update, because only markdown docs and context were changed
   - first `.venv\Scripts\python.exe manage.py test treasury.tests_ep05 -v 1` run failed because a legacy fixture missed mandatory `periodo_referencia`; fixture was fixed and the combined treasury suite passed

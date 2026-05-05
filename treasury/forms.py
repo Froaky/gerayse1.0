@@ -704,10 +704,24 @@ class EgresoTesoreriaForm(TreasuryStyledFormMixin, forms.Form):
         label="Importe",
         widget=forms.NumberInput(attrs={"step": "0.01", "placeholder": "0.00"}),
     )
+    rubro = forms.ModelChoiceField(
+        queryset=RubroOperativo.objects.none(),
+        label="Rubro",
+    )
     concepto = forms.CharField(
         max_length=160,
         label="Concepto",
         widget=forms.TextInput(attrs={"placeholder": "Pago de servicio, honorario, insumo administrativo..."}),
+    )
+    sucursal = forms.ModelChoiceField(
+        queryset=Sucursal.objects.none(),
+        label="Sucursal correspondiente",
+        help_text="A qué local o unidad corresponde este gasto, aunque el dinero salga de tesorería central.",
+    )
+    periodo = forms.DateField(
+        label="Periodo que se está pagando",
+        widget=forms.DateInput(attrs={"type": "date"}),
+        help_text="Primer día del mes al que corresponde el gasto.",
     )
     observaciones = forms.CharField(
         max_length=255,
@@ -719,8 +733,21 @@ class EgresoTesoreriaForm(TreasuryStyledFormMixin, forms.Form):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         import datetime
-        self.fields["fecha"].initial = datetime.date.today()
+        today = datetime.date.today()
+        self.fields["fecha"].initial = today
+        self.fields["periodo"].initial = today.replace(day=1)
         self.fields["cuenta_bancaria"].queryset = CuentaBancaria.objects.filter(activa=True).order_by("banco", "nombre")
+        self.fields["rubro"].queryset = RubroOperativo.objects.filter(activo=True, es_sistema=False).order_by("nombre")
+        self.fields["sucursal"].queryset = Sucursal.objects.filter(activa=True).order_by("nombre")
+        selected_source = self.data.get(self.add_prefix("fuente")) if self.is_bound else self.initial.get("fuente")
+        self.show_bank_account_field = selected_source == self.FUENTE_BANCO
+        self.conditional_bank_account = True
+        self.bank_account_field_name = "cuenta_bancaria"
+        self.bank_account_source_field_id = self["fuente"].id_for_label
+        self.bank_account_field_id = self["cuenta_bancaria"].id_for_label
+        self.bank_account_required_value = self.FUENTE_BANCO
+        if not self.show_bank_account_field:
+            self.fields["cuenta_bancaria"].widget.attrs["disabled"] = "disabled"
         self._apply_input_classes()
 
     def clean(self):
@@ -729,6 +756,8 @@ class EgresoTesoreriaForm(TreasuryStyledFormMixin, forms.Form):
         cuenta_bancaria = cleaned_data.get("cuenta_bancaria")
         if fuente == self.FUENTE_BANCO and not cuenta_bancaria:
             self.add_error("cuenta_bancaria", "La cuenta bancaria es obligatoria cuando el egreso sale de banco.")
+        elif fuente != self.FUENTE_BANCO:
+            cleaned_data["cuenta_bancaria"] = None
         return cleaned_data
 
 

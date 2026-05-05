@@ -1123,12 +1123,12 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
         rubro_operativo__isnull=False,
     )
     sales = MovimientoCaja.objects.filter(
-        caja__turno__fecha_operativa__gte=date_from,
-        caja__turno__fecha_operativa__lte=date_to,
+        caja__fecha_operativa__gte=date_from,
+        caja__fecha_operativa__lte=date_to,
     ).filter(sale_query)
     expenses = MovimientoCaja.objects.filter(
-        caja__turno__fecha_operativa__gte=date_from,
-        caja__turno__fecha_operativa__lte=date_to,
+        caja__fecha_operativa__gte=date_from,
+        caja__fecha_operativa__lte=date_to,
         tipo=MovimientoCaja.Tipo.GASTO,
         rubro_operativo__isnull=False,
     )
@@ -1138,7 +1138,7 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
 
     sales_rows = list(
         sales.annotate(
-            period_month=TruncMonth("caja__turno__fecha_operativa", output_field=DateField())
+            period_month=TruncMonth("caja__fecha_operativa", output_field=DateField())
         )
         .values("rubro_operativo", "period_month")
         .annotate(total=Sum("monto"))
@@ -1334,8 +1334,8 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     from cashops.models import MovimientoCaja
 
     cash_movements = MovimientoCaja.objects.filter(
-        caja__turno__fecha_operativa__gte=date_from,
-        caja__turno__fecha_operativa__lte=date_to,
+        caja__fecha_operativa__gte=date_from,
+        caja__fecha_operativa__lte=date_to,
         impacta_saldo_caja=True,
     ).exclude(tipo=MovimientoCaja.Tipo.APERTURA)
     if sucursal is not None:
@@ -1395,8 +1395,8 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     )
 
     digital_sales = MovimientoCaja.objects.filter(
-        caja__turno__fecha_operativa__gte=date_from,
-        caja__turno__fecha_operativa__lte=date_to,
+        caja__fecha_operativa__gte=date_from,
+        caja__fecha_operativa__lte=date_to,
         tipo=MovimientoCaja.Tipo.VENTA_TARJETA,
     )
     if sucursal is not None:
@@ -1636,6 +1636,9 @@ def register_egreso_tesoreria(
     concepto: str,
     cuenta_bancaria=None,
     observaciones: str = "",
+    rubro=None,
+    sucursal=None,
+    periodo=None,
     actor=None,
 ) -> MovimientoCajaCentral | MovimientoBancario:
     _require_actor(actor)
@@ -1657,18 +1660,27 @@ def register_egreso_tesoreria(
             monto=monto,
             concepto=concepto,
             observaciones=observaciones,
+            rubro_operativo=rubro,
+            sucursal_gasto=sucursal,
+            periodo_pago=periodo,
             creado_por=actor,
         )
         return _save_instance(movement)
 
-    return register_central_cash_movement(
+    caja = get_or_create_default_caja_central()
+    movement = MovimientoCajaCentral(
+        caja_central=caja,
+        fecha=fecha or timezone.localdate(),
         tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
         monto=monto,
         concepto=concepto,
-        fecha=fecha,
         observaciones=observaciones,
-        actor=actor,
+        rubro_operativo=rubro,
+        sucursal_gasto=sucursal,
+        periodo_pago=periodo,
+        creado_por=actor,
     )
+    return _save_instance(movement)
 
 
 def build_disponibilidades_snapshot(year: int, month: int, sucursal=None) -> dict:

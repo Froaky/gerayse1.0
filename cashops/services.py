@@ -176,14 +176,14 @@ def build_box_control_scope(*, caja: Caja) -> OperationalControlScope:
         caja = Caja.objects.select_related("turno", "sucursal", "usuario").get(pk=caja.pk)
     return OperationalControlScope(
         kind="CAJA",
-        fecha_operativa=caja.turno.fecha_operativa,
+        fecha_operativa=caja.fecha_operativa,
         sucursal=caja.sucursal,
         caja=caja,
     )
 
 
 def _movement_scope_filter(scope: OperationalControlScope) -> Q:
-    query = Q(caja__turno__fecha_operativa=scope.fecha_operativa)
+    query = Q(caja__fecha_operativa=scope.fecha_operativa)
     if scope.kind == "CAJA" and scope.caja is not None:
         return query & Q(caja=scope.caja)
     if scope.kind == "SUCURSAL" and scope.sucursal is not None:
@@ -478,8 +478,8 @@ def build_operational_period_summary(*, date_from: date, date_to: date, sucursal
         raise ValidationError({"fecha_hasta": "La fecha hasta no puede ser anterior a la fecha desde."})
 
     movement_qs = MovimientoCaja.objects.filter(
-        caja__turno__fecha_operativa__gte=date_from,
-        caja__turno__fecha_operativa__lte=date_to,
+        caja__fecha_operativa__gte=date_from,
+        caja__fecha_operativa__lte=date_to,
     ).exclude(tipo=MovimientoCaja.Tipo.APERTURA)
     if sucursal is not None:
         movement_qs = movement_qs.filter(caja__sucursal=sucursal)
@@ -614,20 +614,20 @@ def build_management_daily_matrix(*, date_from: date, date_to: date, sucursal: S
         "rubro_operativo",
         "creado_por",
     ).filter(
-        caja__turno__fecha_operativa__gte=date_from,
-        caja__turno__fecha_operativa__lte=date_to,
+        caja__fecha_operativa__gte=date_from,
+        caja__fecha_operativa__lte=date_to,
     ).exclude(tipo=MovimientoCaja.Tipo.APERTURA)
     if sucursal is not None:
         movement_qs = movement_qs.filter(caja__sucursal=sucursal)
 
     income_rows = (
         movement_qs.filter(tipo__in=MANAGEMENT_INCOME_TYPES.keys())
-        .values("caja__turno__fecha_operativa", "tipo")
+        .values("caja__fecha_operativa", "tipo")
         .annotate(total=Sum("monto"))
     )
     expense_rows = (
         movement_qs.filter(tipo=MovimientoCaja.Tipo.GASTO)
-        .values("caja__turno__fecha_operativa", "rubro_operativo", "rubro_operativo__nombre")
+        .values("caja__fecha_operativa", "rubro_operativo", "rubro_operativo__nombre")
         .annotate(total=Sum("monto"))
     )
 
@@ -646,11 +646,11 @@ def build_management_daily_matrix(*, date_from: date, date_to: date, sucursal: S
     incomes_by_day = defaultdict(lambda: defaultdict(lambda: Decimal("0.00")))
     expenses_by_day = defaultdict(lambda: defaultdict(lambda: Decimal("0.00")))
     for row in income_rows:
-        incomes_by_day[row["caja__turno__fecha_operativa"]][row["tipo"]] += row["total"] or Decimal("0.00")
+        incomes_by_day[row["caja__fecha_operativa"]][row["tipo"]] += row["total"] or Decimal("0.00")
     for row in expense_rows:
         rubro_id = row["rubro_operativo"]
         if rubro_id is not None:
-            expenses_by_day[row["caja__turno__fecha_operativa"]][rubro_id] += row["total"] or Decimal("0.00")
+            expenses_by_day[row["caja__fecha_operativa"]][rubro_id] += row["total"] or Decimal("0.00")
 
     days = []
     current = date_from
@@ -677,7 +677,7 @@ def build_management_daily_matrix(*, date_from: date, date_to: date, sucursal: S
         )
         current += timedelta(days=1)
 
-    detail_movements = movement_qs.order_by("caja__turno__fecha_operativa", "caja_id", "id")
+    detail_movements = movement_qs.order_by("caja__fecha_operativa", "caja_id", "id")
 
     return {
         "date_from": date_from,
@@ -779,8 +779,8 @@ def sync_operational_alerts_for_scope(
 def resync_operational_control_for_caja(caja: Caja) -> None:
     caja = Caja.objects.select_related("turno", "sucursal", "usuario").get(pk=caja.pk)
     scopes = [
-        build_global_control_scope(fecha_operativa=caja.turno.fecha_operativa),
-        build_branch_control_scope(fecha_operativa=caja.turno.fecha_operativa, sucursal=caja.sucursal),
+        build_global_control_scope(fecha_operativa=caja.fecha_operativa),
+        build_branch_control_scope(fecha_operativa=caja.fecha_operativa, sucursal=caja.sucursal),
         build_box_control_scope(caja=caja),
     ]
     for scope in scopes:
@@ -792,7 +792,7 @@ def _distinct_operational_scope_rows(*, rubro: RubroOperativo | None = None):
     if rubro is not None:
         queryset = queryset.filter(rubro_operativo=rubro)
     return queryset.values(
-        "caja__turno__fecha_operativa",
+        "caja__fecha_operativa",
         "caja__sucursal_id",
         "caja_id",
     ).distinct()
@@ -808,13 +808,13 @@ def resync_operational_control_for_rubro(rubro: RubroOperativo) -> None:
     branches = Sucursal.objects.in_bulk(branch_ids)
     boxes = Caja.objects.select_related("turno", "sucursal", "usuario").in_bulk(box_ids)
 
-    for fecha_operativa in {row["caja__turno__fecha_operativa"] for row in rows}:
+    for fecha_operativa in {row["caja__fecha_operativa"] for row in rows}:
         build_operational_control_snapshot(
             build_global_control_scope(fecha_operativa=fecha_operativa),
             sync_alerts=True,
         )
     for fecha_operativa, sucursal_id in {
-        (row["caja__turno__fecha_operativa"], row["caja__sucursal_id"])
+        (row["caja__fecha_operativa"], row["caja__sucursal_id"])
         for row in rows
         if row["caja__sucursal_id"]
     }:
@@ -843,14 +843,14 @@ def resync_all_operational_controls() -> int:
     boxes = Caja.objects.select_related("turno", "sucursal", "usuario").in_bulk(box_ids)
 
     recalculated = 0
-    for fecha_operativa in {row["caja__turno__fecha_operativa"] for row in rows}:
+    for fecha_operativa in {row["caja__fecha_operativa"] for row in rows}:
         build_operational_control_snapshot(
             build_global_control_scope(fecha_operativa=fecha_operativa),
             sync_alerts=True,
         )
         recalculated += 1
     for fecha_operativa, sucursal_id in {
-        (row["caja__turno__fecha_operativa"], row["caja__sucursal_id"])
+        (row["caja__fecha_operativa"], row["caja__sucursal_id"])
         for row in rows
         if row["caja__sucursal_id"]
     }:
@@ -872,20 +872,7 @@ def resync_all_operational_controls() -> int:
 
 
 @transaction.atomic
-def get_or_create_turno(*, sucursal: Sucursal, fecha_operativa, tipo: str, creado_por=None) -> Turno:
-    turno, _ = Turno.objects.get_or_create(
-        sucursal=sucursal,
-        fecha_operativa=fecha_operativa,
-        tipo=tipo,
-        defaults={"estado": Turno.Estado.ABIERTO, "creado_por": creado_por},
-    )
-    if turno.estado == Turno.Estado.CERRADO:
-        raise ValidationError({"tipo_turno": "Ese turno ya fue cerrado para esa fecha y sucursal."})
-    return turno
-
-
-@transaction.atomic
-def open_box(*, user, turno: Turno, sucursal: Sucursal, monto_inicial: Decimal, actor=None) -> Caja:
+def open_box(*, user, turno: Turno, sucursal: Sucursal, fecha_operativa, monto_inicial: Decimal, actor=None) -> Caja:
     actor = actor or user
     _require_actor(actor)
     if user is None:
@@ -901,11 +888,7 @@ def open_box(*, user, turno: Turno, sucursal: Sucursal, monto_inicial: Decimal, 
         if sucursal.id != base_sucursal_id:
             raise ValidationError({"sucursal": "El usuario fijo solo puede abrir cajas en su sucursal base."})
 
-    turno = Turno.objects.select_for_update().select_related("sucursal").get(pk=turno.pk)
-    if turno.estado != Turno.Estado.ABIERTO:
-        raise ValidationError({"turno": "El turno debe estar abierto para abrir una caja."})
-    if turno.sucursal_id != sucursal.id:
-        raise ValidationError({"sucursal": "La sucursal debe coincidir con el turno."})
+    turno = Turno.objects.select_for_update().select_related("empresa").get(pk=turno.pk)
     if Caja.objects.filter(
         usuario=user,
         turno=turno,
@@ -919,6 +902,7 @@ def open_box(*, user, turno: Turno, sucursal: Sucursal, monto_inicial: Decimal, 
     caja = Caja.objects.create(
         sucursal=sucursal,
         turno=turno,
+        fecha_operativa=fecha_operativa,
         usuario=user,
         monto_inicial=monto_inicial,
         estado=Caja.Estado.ABIERTA,
@@ -944,8 +928,7 @@ def _validate_open_box(caja: Caja, *, actor=None, lock: bool = True) -> Caja:
         ensure_can_operate_box(actor, caja)
     if caja.estado != Caja.Estado.ABIERTA:
         raise ValidationError({"caja": "La caja esta cerrada."})
-    if caja.turno.estado != Turno.Estado.ABIERTO:
-        raise ValidationError({"turno": "El turno de la caja esta cerrado."})
+    pass  # turno is catalog-only; no estado to check
     return caja
 
 
@@ -1271,7 +1254,7 @@ def close_box(
             sucursal=caja.sucursal,
             usuario=caja.usuario,
             rubro_operativo=None,
-            periodo_fecha=caja.turno.fecha_operativa,
+            periodo_fecha=caja.fecha_operativa,
             mensaje=f"Diferencia grave detectada en caja {caja.id}: {diferencia}.",
             resuelta=False,
         )
@@ -1280,10 +1263,6 @@ def close_box(
     caja.cerrada_en = timezone.now()
     caja.cerrada_por = actor
     caja.save(update_fields=["estado", "cerrada_en", "cerrada_por"])
-    if not caja.turno.cajas.filter(estado=Caja.Estado.ABIERTA).exists():
-        caja.turno.estado = Turno.Estado.CERRADO
-        caja.turno.cerrado_en = timezone.now()
-        caja.turno.save(update_fields=["estado", "cerrado_en"])
     caja_ref.estado = caja.estado
     caja_ref.cerrada_en = caja.cerrada_en
     caja_ref.cerrada_por = caja.cerrada_por

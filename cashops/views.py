@@ -41,7 +41,6 @@ from .services import (
     build_operational_control_snapshot,
     build_operational_period_summary,
     close_box,
-    get_or_create_turno,
     open_box,
     register_cash_income,
     register_general_sale,
@@ -217,7 +216,7 @@ def _resolve_dashboard_scope(request):
         if selected_box is None:
             requested_scope = "global" if is_admin else ""
         else:
-            scope_date = selected_box.turno.fecha_operativa
+            scope_date = selected_box.fecha_operativa
             snapshot = build_operational_control_snapshot(
                 build_box_control_scope(caja=selected_box),
                 sync_alerts=True,
@@ -283,7 +282,7 @@ def dashboard(request):
         "selected_branch": scope_context["selected_branch"],
         "open_boxes": boxes.filter(estado=Caja.Estado.ABIERTA),
         "recent_movements": recent_movements,
-        "turnos_abiertos": Turno.objects.select_related("sucursal").filter(estado=Turno.Estado.ABIERTO)
+        "turnos_disponibles": Turno.objects.select_related("empresa").all()
         if scope_context["is_admin"]
         else [],
         "sucursales": _sucursales_for_empresa(request).filter(activa=True)
@@ -403,7 +402,7 @@ def management_matrix_export(request):
         writer.writerow(
             [
                 movement.pk,
-                movement.caja.turno.fecha_operativa.isoformat(),
+                movement.caja.fecha_operativa.isoformat(),
                 movement.caja.sucursal.nombre,
                 movement.caja_id,
                 movement.get_tipo_display(),
@@ -696,14 +695,12 @@ def sucursal_toggle(request, sucursal_id: int):
 def turno_create(request):
     _require_cashops_admin(request)
     form = TurnoForm(request.POST or None)
-    form.fields["sucursal"].queryset = Sucursal.objects.filter(activa=True)
     if request.method == "POST" and form.is_valid():
         turno = form.save(commit=False)
-        turno.estado = Turno.Estado.ABIERTO
         if request.user.is_authenticated:
             turno.creado_por = request.user
         turno.save()
-        messages.success(request, f"Turno {turno.get_tipo_display()} creado.")
+        messages.success(request, f"{turno.get_tipo_display()} configurado para {turno.empresa}.")
         url = reverse("cashops:turno_list")
         return _hx_redirect(url) if _is_htmx(request) else redirect(url)
 
@@ -713,7 +710,7 @@ def turno_create(request):
         "cashops/partials/form_card.html",
         {
             "title": "Nuevo turno",
-            "subtitle": "Defini Turno Mañana o Turno Tarde para la sucursal.",
+            "subtitle": "Configura Turno Mañana o Turno Tarde para la empresa. Aplica a todas sus sucursales.",
             "form": form,
             "submit_label": "Guardar turno",
             "back_url": reverse("cashops:turno_list"),
@@ -732,7 +729,7 @@ def turno_list(request):
         {
             "title": "Turnos",
             "create_url": reverse("cashops:turno_create"),
-            "items": Turno.objects.select_related("sucursal").all(),
+            "items": Turno.objects.select_related("empresa").all(),
         },
     )
 
@@ -740,26 +737,25 @@ def turno_list(request):
 @login_required
 @require_http_methods(["GET", "POST"])
 def open_box_view(request):
-    form = CajaAperturaForm(request.POST or None, actor=request.user)
+    empresa = _get_empresa_activa(request)
+    form = CajaAperturaForm(request.POST or None, actor=request.user, empresa=empresa)
     if request.method == "POST" and form.is_valid():
         try:
-            turno = get_or_create_turno(
-                sucursal=form.cleaned_data["sucursal"],
-                fecha_operativa=form.cleaned_data["fecha_operativa"],
-                tipo=form.cleaned_data["tipo_turno"],
-                creado_por=request.user,
-            )
             box = open_box(
                 user=form.cleaned_data["usuario"],
-                turno=turno,
+                turno=form.cleaned_data["turno"],
                 sucursal=form.cleaned_data["sucursal"],
+                fecha_operativa=form.cleaned_data["fecha_operativa"],
                 monto_inicial=form.cleaned_data["efectivo_inicial"],
                 actor=request.user,
             )
         except (ValidationError, IntegrityError) as error:
             _handle_operation_error(form, error, "No se pudo abrir la caja.")
         else:
-            messages.success(request, f"Caja abierta — {turno.get_tipo_display()} {turno.fecha_operativa:%d/%m/%Y} en {turno.sucursal.nombre}.")
+            turno = form.cleaned_data["turno"]
+            sucursal = form.cleaned_data["sucursal"]
+            fecha = form.cleaned_data["fecha_operativa"]
+            messages.success(request, f"Caja abierta — {turno.get_tipo_display()} {fecha:%d/%m/%Y} en {sucursal.nombre}.")
             url = f"{reverse('cashops:dashboard')}?scope=box&box={box.pk}"
             return _hx_redirect(url) if _is_htmx(request) else redirect(url)
 
@@ -769,7 +765,7 @@ def open_box_view(request):
         "cashops/partials/form_card.html",
         {
             "title": "Abrir caja",
-            "subtitle": "El turno se crea o reutiliza automaticamente para la fecha y sucursal elegidas.",
+            "subtitle": "Selecciona el turno, sucursal y fecha para la apertura.",
             "form": form,
             "submit_label": "Abrir caja",
             "back_url": reverse("cashops:dashboard"),
@@ -1070,6 +1066,8 @@ def empresa_list(request):
         "subtitle": "Razon social o unidad de negocio que agrupa sucursales.",
         "create_url": reverse("cashops:empresa_create"),
         "items": items,
+        "show_danger_zone": True,
+        "reset_url": reverse("cashops:reset_operational_data"),
     })
 
 
@@ -1150,3 +1148,51 @@ def set_empresa_activa(request):
             pass
     next_url = request.POST.get("next") or reverse("cashops:dashboard")
     return redirect(next_url)
+
+
+# --- Reinicio de datos operativos (solo para entornos de prueba) ---
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def reset_operational_data(request):
+    _require_cashops_admin(request)
+
+    if request.method == "POST":
+        step = request.POST.get("step", "1")
+
+        if step == "2":
+            from django.db import transaction
+            from .models import AlertaOperativa, MovimientoCaja, CierreCaja, Transferencia
+            from treasury.models import (
+                DescuentoAcreditacion, AcreditacionTarjeta, MovimientoBancario,
+                MovimientoCajaCentral, ArqueoDisponibilidades, CajaCentral,
+                CompromisoEspecial, PagoTesoreria, CuentaPorPagar, LotePOS,
+                CierreMensualTesoreria,
+            )
+            with transaction.atomic():
+                # Cashops: orden respeta PROTECT FKs hacia Caja
+                AlertaOperativa.objects.all().delete()
+                MovimientoCaja.objects.all().delete()
+                CierreCaja.objects.all().delete()    # cascadea Justificacion
+                Transferencia.objects.all().delete()
+                Caja.objects.all().delete()
+                # Treasury: orden respeta PROTECT FKs en cadena
+                DescuentoAcreditacion.objects.all().delete()
+                AcreditacionTarjeta.objects.all().delete()
+                MovimientoBancario.objects.all().delete()
+                MovimientoCajaCentral.objects.all().delete()
+                ArqueoDisponibilidades.objects.all().delete()
+                CajaCentral.objects.all().delete()
+                CompromisoEspecial.objects.all().delete()
+                PagoTesoreria.objects.all().delete()
+                CuentaPorPagar.objects.all().delete()
+                LotePOS.objects.all().delete()
+                CierreMensualTesoreria.objects.all().delete()
+
+            messages.success(request, "Todos los datos operativos fueron eliminados. El sistema quedo vacio.")
+            return redirect(reverse("cashops:empresa_list"))
+
+        # step == "1" → mostrar segunda confirmacion
+        return render(request, "cashops/reset_confirm.html", {"step": 2})
+
+    return render(request, "cashops/reset_confirm.html", {"step": 1})

@@ -161,7 +161,7 @@ class Command(BaseCommand):
             self._merge_object(plan, "sucursal", source_box.sucursal, "conflicto_sucursal")
             self._merge_object(plan, "turno", source_box.turno, "conflicto_turno")
             self._merge_object(plan, "usuario", source_box.usuario, "conflicto_usuario")
-            self._merge_value(plan, "periodo_fecha", source_box.turno.fecha_operativa, "conflicto_periodo_fecha")
+            self._merge_value(plan, "periodo_fecha", source_box.fecha_operativa, "conflicto_periodo_fecha")
 
         return plan
 
@@ -199,11 +199,11 @@ class Command(BaseCommand):
 
         period_source = None
         if source_box is not None:
-            period_source = source_box.turno.fecha_operativa
-            if key_info is not None and key_info["periodo_fecha"] != source_box.turno.fecha_operativa:
+            period_source = source_box.fecha_operativa
+            if key_info is not None and key_info["periodo_fecha"] != source_box.fecha_operativa:
                 plan.issues.append("conflicto_periodo_fecha")
         elif alert.turno_id and alert.turno is not None:
-            period_source = alert.turno.fecha_operativa
+            period_source = alert.periodo_fecha
         elif key_info is not None:
             period_source = key_info["periodo_fecha"]
         self._merge_value(plan, "periodo_fecha", period_source, "conflicto_periodo_fecha")

@@ -1794,6 +1794,9 @@ def egreso_tesoreria_create(request):
                     concepto=form.cleaned_data["concepto"],
                     cuenta_bancaria=form.cleaned_data.get("cuenta_bancaria"),
                     observaciones=form.cleaned_data["observaciones"],
+                    rubro=form.cleaned_data.get("rubro"),
+                    sucursal=form.cleaned_data.get("sucursal"),
+                    periodo=form.cleaned_data.get("periodo"),
                     actor=request.user,
                 )
                 messages.success(request, "Egreso administrativo de tesoreria registrado.")

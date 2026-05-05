@@ -12,7 +12,7 @@ from django.test import RequestFactory, TestCase, TransactionTestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from cashops.models import RubroOperativo, Sucursal, Turno
+from cashops.models import Empresa, RubroOperativo, Sucursal, Turno
 from cashops.services import open_box, register_card_sale, register_cash_income, register_expense
 from users.models import Role
 
@@ -24,6 +24,7 @@ from .admin import (
     PagoTesoreriaAdmin,
     ProveedorAdmin,
 )
+from .forms import EgresoTesoreriaForm
 from .models import (
     AcreditacionTarjeta,
     CategoriaCuentaPagar,
@@ -81,6 +82,11 @@ class TreasuryTestCase(TestCase):
             nombre="Servicios",
             rubro_operativo=self.rubro_servicios,
             actor=self.admin,
+        )
+        self.sucursal = Sucursal.objects.create(
+            nombre="Sucursal Central",
+            codigo="SC01",
+            razon_social="Empresa Demo SA",
         )
         self.supplier = create_supplier(razon_social="Proveedor Uno SA", identificador_fiscal="30-12345678-9", actor=self.admin)
         self.bank_account = create_bank_account(
@@ -643,6 +649,7 @@ class TreasuryServiceTests(TreasuryTestCase):
 
     def test_financial_period_snapshot_aggregates_cash_bank_accreditations_and_due_buckets(self):
         branch = Sucursal.objects.create(codigo="SUC-T", nombre="Sucursal Test", razon_social="Test SRL")
+        empresa = Empresa.objects.create(nombre="Empresa Test Snapshot")
         branch_account = create_bank_account(
             nombre="Cuenta Sucursal Test",
             banco="Banco Test",
@@ -652,16 +659,15 @@ class TreasuryServiceTests(TreasuryTestCase):
             actor=self.admin,
         )
         turno = Turno.objects.create(
-            sucursal=branch,
-            fecha_operativa=timezone.localdate(),
+            empresa=empresa,
             tipo=Turno.Tipo.MANANA,
-            estado=Turno.Estado.ABIERTO,
             creado_por=self.admin,
         )
         box = open_box(
             user=self.operator,
             turno=turno,
             sucursal=branch,
+            fecha_operativa=timezone.localdate(),
             monto_inicial=Decimal("100.00"),
             actor=self.admin,
         )
@@ -783,6 +789,7 @@ class TreasuryServiceTests(TreasuryTestCase):
 
     def test_financial_period_snapshot_uses_grouped_accreditation_coverage_period(self):
         branch = Sucursal.objects.create(codigo="SUC-P", nombre="Sucursal Periodo", razon_social="Periodo SRL")
+        empresa = Empresa.objects.create(nombre="Empresa Periodo Snapshot")
         branch_account = create_bank_account(
             nombre="Cuenta Periodo",
             banco="Banco Periodo",
@@ -792,16 +799,15 @@ class TreasuryServiceTests(TreasuryTestCase):
             actor=self.admin,
         )
         turno = Turno.objects.create(
-            sucursal=branch,
-            fecha_operativa=timezone.localdate(),
+            empresa=empresa,
             tipo=Turno.Tipo.MANANA,
-            estado=Turno.Estado.ABIERTO,
             creado_por=self.admin,
         )
         box = open_box(
             user=self.operator,
             turno=turno,
             sucursal=branch,
+            fecha_operativa=timezone.localdate(),
             monto_inicial=Decimal("0.00"),
             actor=self.admin,
         )
@@ -835,6 +841,7 @@ class TreasuryServiceTests(TreasuryTestCase):
 
     def test_economic_period_snapshot_groups_sales_cash_expense_and_period_debt_by_rubro(self):
         branch = Sucursal.objects.create(codigo="SUC-E", nombre="Sucursal Economica", razon_social="Economica SRL")
+        empresa = Empresa.objects.create(nombre="Empresa Economica Snapshot")
         rubro_admin = RubroOperativo.objects.create(nombre="Administracion")
         rubro_ventas = RubroOperativo.objects.create(nombre="Ventas")
         category_admin = create_payable_category(
@@ -843,16 +850,15 @@ class TreasuryServiceTests(TreasuryTestCase):
             actor=self.admin,
         )
         turno = Turno.objects.create(
-            sucursal=branch,
-            fecha_operativa=timezone.datetime(2026, 4, 20).date(),
+            empresa=empresa,
             tipo=Turno.Tipo.MANANA,
-            estado=Turno.Estado.ABIERTO,
             creado_por=self.admin,
         )
         box = open_box(
             user=self.operator,
             turno=turno,
             sucursal=branch,
+            fecha_operativa=timezone.datetime(2026, 4, 20).date(),
             monto_inicial=Decimal("0.00"),
             actor=self.admin,
         )
@@ -920,18 +926,18 @@ class TreasuryServiceTests(TreasuryTestCase):
 
     def test_economic_period_snapshot_applies_branch_objective_over_global(self):
         branch = Sucursal.objects.create(codigo="SUC-O", nombre="Sucursal Objetivos", razon_social="Objetivos SRL")
+        empresa = Empresa.objects.create(nombre="Empresa Objetivos Snapshot")
         rubro_ventas = RubroOperativo.objects.create(nombre="Ventas objetivo")
         turno = Turno.objects.create(
-            sucursal=branch,
-            fecha_operativa=timezone.datetime(2026, 4, 20).date(),
+            empresa=empresa,
             tipo=Turno.Tipo.MANANA,
-            estado=Turno.Estado.ABIERTO,
             creado_por=self.admin,
         )
         box = open_box(
             user=self.operator,
             turno=turno,
             sucursal=branch,
+            fecha_operativa=timezone.datetime(2026, 4, 20).date(),
             monto_inicial=Decimal("0.00"),
             actor=self.admin,
         )
@@ -1201,6 +1207,173 @@ class TreasuryViewTests(TreasuryTestCase):
         self.assertContains(response, "Incluida por rubro")
         self.assertNotContains(response, "Oculta por rubro")
 
+    def test_egreso_tesoreria_form_requires_bank_account_only_for_bank_source(self):
+        today = timezone.localdate()
+        periodo = today.replace(day=1).isoformat()
+
+        cash_form = EgresoTesoreriaForm(
+            data={
+                "fuente": EgresoTesoreriaForm.FUENTE_CAJA,
+                "cuenta_bancaria": self.bank_account.pk,
+                "fecha": today.isoformat(),
+                "monto": "100.00",
+                "rubro": self.rubro_servicios.pk,
+                "concepto": "Egreso caja central",
+                "sucursal": self.sucursal.pk,
+                "periodo": periodo,
+                "observaciones": "",
+            }
+        )
+        self.assertTrue(cash_form.is_valid(), cash_form.errors)
+        self.assertIsNone(cash_form.cleaned_data["cuenta_bancaria"])
+
+        bank_form = EgresoTesoreriaForm(
+            data={
+                "fuente": EgresoTesoreriaForm.FUENTE_BANCO,
+                "cuenta_bancaria": "",
+                "fecha": today.isoformat(),
+                "monto": "100.00",
+                "rubro": self.rubro_servicios.pk,
+                "concepto": "Egreso banco",
+                "sucursal": self.sucursal.pk,
+                "periodo": periodo,
+                "observaciones": "",
+            }
+        )
+        self.assertFalse(bank_form.is_valid())
+        self.assertIn("cuenta_bancaria", bank_form.errors)
+
+        valid_bank_form = EgresoTesoreriaForm(
+            data={
+                "fuente": EgresoTesoreriaForm.FUENTE_BANCO,
+                "cuenta_bancaria": self.bank_account.pk,
+                "fecha": today.isoformat(),
+                "monto": "100.00",
+                "rubro": self.rubro_servicios.pk,
+                "concepto": "Egreso banco",
+                "sucursal": self.sucursal.pk,
+                "periodo": periodo,
+                "observaciones": "",
+            }
+        )
+        self.assertTrue(valid_bank_form.is_valid(), valid_bank_form.errors)
+        self.assertEqual(valid_bank_form.cleaned_data["cuenta_bancaria"], self.bank_account)
+
+    def test_egreso_tesoreria_hides_bank_account_until_bank_source_is_selected(self):
+        response = self.client.get(reverse("treasury:egreso_tesoreria_create"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-bank-account-row hidden')
+        self.assertContains(response, f'value="{EgresoTesoreriaForm.FUENTE_BANCO}"')
+        self.assertContains(response, 'account.disabled = !requiresAccount')
+
+    def test_egreso_tesoreria_cash_source_ignores_submitted_bank_account(self):
+        today = timezone.localdate()
+        response = self.client.post(
+            reverse("treasury:egreso_tesoreria_create"),
+            {
+                "fuente": EgresoTesoreriaForm.FUENTE_CAJA,
+                "cuenta_bancaria": self.bank_account.pk,
+                "fecha": today.isoformat(),
+                "monto": "130.00",
+                "rubro": self.rubro_servicios.pk,
+                "concepto": "Egreso desde caja central",
+                "sucursal": self.sucursal.pk,
+                "periodo": today.replace(day=1).isoformat(),
+                "observaciones": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(
+            MovimientoCajaCentral.objects.filter(
+                tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
+                concepto="Egreso desde caja central",
+                monto=Decimal("130.00"),
+            ).exists()
+        )
+        self.assertFalse(MovimientoBancario.objects.filter(concepto="Egreso desde caja central").exists())
+
+    def test_egreso_tesoreria_bank_source_creates_bank_debit(self):
+        today = timezone.localdate()
+        response = self.client.post(
+            reverse("treasury:egreso_tesoreria_create"),
+            {
+                "fuente": EgresoTesoreriaForm.FUENTE_BANCO,
+                "cuenta_bancaria": self.bank_account.pk,
+                "fecha": today.isoformat(),
+                "monto": "150.00",
+                "rubro": self.rubro_servicios.pk,
+                "concepto": "Egreso desde banco",
+                "sucursal": self.sucursal.pk,
+                "periodo": today.replace(day=1).isoformat(),
+                "observaciones": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(
+            MovimientoBancario.objects.filter(
+                cuenta_bancaria=self.bank_account,
+                tipo=MovimientoBancario.Tipo.DEBITO,
+                concepto="Egreso desde banco",
+                monto=Decimal("150.00"),
+            ).exists()
+        )
+        self.assertFalse(MovimientoCajaCentral.objects.filter(concepto="Egreso desde banco").exists())
+
+    def test_egreso_tesoreria_cash_persists_rubro_sucursal_periodo(self):
+        today = timezone.localdate()
+        periodo = today.replace(day=1)
+        self.client.post(
+            reverse("treasury:egreso_tesoreria_create"),
+            {
+                "fuente": EgresoTesoreriaForm.FUENTE_CAJA,
+                "cuenta_bancaria": "",
+                "fecha": today.isoformat(),
+                "monto": "200.00",
+                "rubro": self.rubro_servicios.pk,
+                "concepto": "Gasto admin efectivo",
+                "sucursal": self.sucursal.pk,
+                "periodo": periodo.isoformat(),
+                "observaciones": "",
+            },
+        )
+
+        mov = MovimientoCajaCentral.objects.get(
+            tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
+            concepto="Gasto admin efectivo",
+        )
+        self.assertEqual(mov.rubro_operativo, self.rubro_servicios)
+        self.assertEqual(mov.sucursal_gasto, self.sucursal)
+        self.assertEqual(mov.periodo_pago, periodo)
+
+    def test_egreso_tesoreria_bank_persists_rubro_sucursal_periodo(self):
+        today = timezone.localdate()
+        periodo = today.replace(day=1)
+        self.client.post(
+            reverse("treasury:egreso_tesoreria_create"),
+            {
+                "fuente": EgresoTesoreriaForm.FUENTE_BANCO,
+                "cuenta_bancaria": self.bank_account.pk,
+                "fecha": today.isoformat(),
+                "monto": "250.00",
+                "rubro": self.rubro_servicios.pk,
+                "concepto": "Gasto admin banco",
+                "sucursal": self.sucursal.pk,
+                "periodo": periodo.isoformat(),
+                "observaciones": "",
+            },
+        )
+
+        mov = MovimientoBancario.objects.get(
+            tipo=MovimientoBancario.Tipo.DEBITO,
+            concepto="Gasto admin banco",
+        )
+        self.assertEqual(mov.rubro_operativo, self.rubro_servicios)
+        self.assertEqual(mov.sucursal_gasto, self.sucursal)
+        self.assertEqual(mov.periodo_pago, periodo)
+
     def test_special_commitment_create_list_and_authorize_flow(self):
         payable = register_payable(
             proveedor=self.supplier,
@@ -1363,6 +1536,7 @@ class TreasuryViewTests(TreasuryTestCase):
 
     def test_dashboard_supports_period_and_branch_financial_view(self):
         branch = Sucursal.objects.create(codigo="SUC-D", nombre="Sucursal Dashboard", razon_social="Dashboard SRL")
+        empresa = Empresa.objects.create(nombre="Empresa Dashboard Snapshot")
         branch_account = create_bank_account(
             nombre="Cuenta Dashboard",
             banco="Banco Dashboard",
@@ -1372,16 +1546,15 @@ class TreasuryViewTests(TreasuryTestCase):
             actor=self.admin,
         )
         turno = Turno.objects.create(
-            sucursal=branch,
-            fecha_operativa=timezone.localdate(),
+            empresa=empresa,
             tipo=Turno.Tipo.MANANA,
-            estado=Turno.Estado.ABIERTO,
             creado_por=self.admin,
         )
         box = open_box(
             user=self.operator,
             turno=turno,
             sucursal=branch,
+            fecha_operativa=timezone.localdate(),
             monto_inicial=Decimal("0.00"),
             actor=self.admin,
         )

@@ -4,6 +4,7 @@ from .models import (
     AlertaOperativa,
     Caja,
     CierreCaja,
+    Empresa,
     Justificacion,
     LimiteRubroOperativo,
     MovimientoCaja,
@@ -22,12 +23,18 @@ class SucursalAdmin(admin.ModelAdmin):
     search_fields = ("codigo", "nombre")
 
 
+@admin.register(Empresa)
+class EmpresaAdmin(admin.ModelAdmin):
+    list_display = ("nombre",)
+    search_fields = ("nombre",)
+
+
 @admin.register(Turno)
 class TurnoAdmin(admin.ModelAdmin):
-    list_display = ("sucursal", "fecha_operativa", "tipo", "estado", "abierto_en", "cerrado_en")
-    list_filter = ("estado", "tipo", "sucursal")
-    search_fields = ("sucursal__nombre", "sucursal__codigo", "observacion")
-    autocomplete_fields = ("sucursal", "creado_por")
+    list_display = ("empresa", "tipo", "creado_por", "creado_en")
+    list_filter = ("tipo", "empresa")
+    search_fields = ("empresa__nombre",)
+    autocomplete_fields = ("empresa", "creado_por")
 
 
 class MovimientoCajaInline(admin.TabularInline):

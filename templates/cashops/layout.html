@@ -278,6 +278,8 @@
                   <a class="nav-menu__item" href="{% url 'cashops:sucursal_list' %}">Sucursales</a>
                   <a class="nav-menu__item" href="{% url 'cashops:turno_list' %}">Turnos</a>
                   <a class="nav-menu__item" href="{% url 'users:personal_list' %}">Personal</a>
+                  <div class="nav-menu__separator"></div>
+                  <a class="nav-menu__item" href="{% url 'cashops:reset_operational_data' %}" style="color:#dd9598;">Reiniciar datos</a>
                 </div>
               </details>
             {% endif %}

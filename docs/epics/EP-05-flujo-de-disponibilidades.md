@@ -14,6 +14,7 @@ Replicar el libro mensual de `efectivo` y `banco` que hoy se administra en `FLUJ
 - arqueo de disponibilidades
 - carga inicial visible de caja fuerte central
 - egresos administrativos de tesoreria separados de caja operativa
+- formulario de egreso administrativo con origen, rubro, sucursal y periodo de imputacion
 
 ## No incluye todavia
 
@@ -32,6 +33,9 @@ Replicar el libro mensual de `efectivo` y `banco` que hoy se administra en `FLUJ
 - el saldo inicial de caja fuerte central no se carga desde la apertura de caja de una sucursal
 - un egreso administrativo de tesoreria no debe impactar una caja operativa abierta
 - si se permite una carga inicial manual por puesta en marcha, debe quedar auditada con fecha, usuario y motivo
+- si un egreso administrativo sale en efectivo, no debe pedir ni validar cuenta bancaria
+- si un egreso administrativo sale de banco, debe exigir cuenta bancaria
+- todo egreso administrativo debe poder imputarse a una sucursal y a un periodo de pago cuando corresponda
 
 ## User Stories
 
@@ -134,6 +138,24 @@ Criterios:
 - el egreso queda visible en disponibilidades y no en movimientos operativos de una caja de sucursal
 - la UI diferencia con claridad `egreso operativo de caja` y `egreso de tesoreria`
 
+### [x] US-5.9 Formulario de egreso administrativo segun origen de pago
+
+Como administracion
+Quiero que el formulario de egreso administrativo muestre solo los campos que corresponden al origen del pago
+Para registrar gastos en efectivo o banco sin bloqueos innecesarios ni datos ambiguos
+
+Criterios:
+- el desplegable de origen permite seleccionar al menos `Caja fuerte central (efectivo)` y `Cuenta bancaria`
+- cuando el origen es `Caja fuerte central (efectivo)`, el campo `cuenta bancaria` no se muestra o queda deshabilitado
+- cuando el origen es `Caja fuerte central (efectivo)`, la validacion no exige cuenta bancaria y permite guardar el egreso
+- cuando el origen es `Cuenta bancaria`, el formulario exige seleccionar una cuenta bancaria activa
+- el egreso exige importe, rubro, concepto, sucursal correspondiente y periodo que se esta pagando
+- el comentario u observacion es opcional
+- el periodo de pago queda persistido para lectura financiera/economica posterior
+- la sucursal seleccionada identifica a que local o unidad corresponde el gasto, aunque el dinero salga de tesoreria central
+- un egreso en efectivo reduce caja fuerte central y no impacta libro bancario
+- un egreso bancario impacta la cuenta bancaria seleccionada y no reduce caja fuerte central
+
 ## Dependencias
 
 - EP-03 y EP-04 cerradas
@@ -149,6 +171,7 @@ Criterios:
 6. cerrar arqueo y diferencias de disponibilidades
 7. reforzar carga inicial visible de caja fuerte central
 8. separar egresos administrativos de tesoreria respecto de caja operativa
+9. ajustar formulario de egreso administrativo para origen efectivo/banco y periodo de imputacion
 
 ## Criterio de cierre
 
@@ -156,3 +179,5 @@ Criterios:
 - el saldo inicial del mes siguiente ya no se toma manualmente del Excel anterior
 - administracion sabe donde cargar o ajustar el saldo inicial de caja fuerte central
 - los egresos de tesoreria no se confunden con egresos operativos de sucursal
+- un egreso administrativo en efectivo se puede guardar sin cuenta bancaria
+- los egresos administrativos quedan imputados por rubro, sucursal y periodo

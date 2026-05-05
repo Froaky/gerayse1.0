@@ -19,5 +19,18 @@
       {% endfor %}
     </div>
   </section>
+  {% if show_danger_zone %}
+  <section class="card mt-16" style="border-color: rgba(184,90,96,0.35);">
+    <h3 style="margin:0 0 6px; color:var(--danger);">Zona de peligro</h3>
+    <p class="muted" style="margin:0 0 14px; font-size:0.88rem;">Acciones irreversibles. Solo para entornos de prueba.</p>
+    <div class="row">
+      <div>
+        <strong>Reiniciar datos de cajas</strong>
+        <p class="muted mt-8" style="font-size:0.85rem; margin:4px 0 0;">Elimina todos los datos operativos: cajas, movimientos, cierres, transferencias y carga de moneda. La configuracion se conserva.</p>
+      </div>
+      <a class="button" href="{{ reset_url }}" style="background:var(--danger); border-color:transparent; white-space:nowrap;">Reiniciar datos</a>
+    </div>
+  </section>
+  {% endif %}
 {% endblock %}
 

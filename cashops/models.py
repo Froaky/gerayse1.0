@@ -70,15 +70,8 @@ class Turno(models.Model):
         MANANA = "TM", "Turno Mañana"
         TARDE = "TT", "Turno Tarde"
 
-    class Estado(models.TextChoices):
-        ABIERTO = "ABIERTO", "Abierto"
-        CERRADO = "CERRADO", "Cerrado"
-
-    sucursal = models.ForeignKey(Sucursal, on_delete=models.PROTECT, related_name="turnos")
-    fecha_operativa = models.DateField()
+    empresa = models.ForeignKey(Empresa, on_delete=models.PROTECT, related_name="turnos")
     tipo = models.CharField(max_length=2, choices=Tipo.choices)
-    estado = models.CharField(max_length=10, choices=Estado.choices, default=Estado.ABIERTO)
-    observacion = models.CharField(max_length=255, blank=True)
     creado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -86,30 +79,22 @@ class Turno(models.Model):
         blank=True,
         related_name="turnos_creados",
     )
-    abierto_en = models.DateTimeField(auto_now_add=True)
-    cerrado_en = models.DateTimeField(null=True, blank=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["-fecha_operativa", "tipo", "sucursal__nombre"]
+        ordering = ["empresa__nombre", "tipo"]
         constraints = [
             models.UniqueConstraint(
-                fields=["sucursal", "fecha_operativa", "tipo"],
-                name="unique_turno_by_branch_date_type",
+                fields=["empresa", "tipo"],
+                name="unique_turno_per_empresa",
             ),
         ]
         indexes = [
-            models.Index(fields=["sucursal", "fecha_operativa", "tipo"]),
-            models.Index(fields=["estado"]),
+            models.Index(fields=["empresa", "tipo"]),
         ]
 
-    def clean(self) -> None:
-        if self.cerrado_en and self.estado != self.Estado.CERRADO:
-            raise ValidationError({"cerrado_en": "Solo un turno cerrado puede tener fecha de cierre."})
-        if self.estado == self.Estado.ABIERTO and self.cerrado_en:
-            raise ValidationError({"estado": "Un turno abierto no puede tener fecha de cierre."})
-
     def __str__(self) -> str:
-        return f"{self.get_tipo_display()} {self.fecha_operativa} - {self.sucursal}"
+        return f"{self.get_tipo_display()} — {self.empresa}"
 
 
 class Caja(models.Model):
@@ -119,6 +104,7 @@ class Caja(models.Model):
 
     sucursal = models.ForeignKey(Sucursal, on_delete=models.PROTECT, related_name="cajas")
     turno = models.ForeignKey(Turno, on_delete=models.PROTECT, related_name="cajas")
+    fecha_operativa = models.DateField()
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -150,9 +136,9 @@ class Caja(models.Model):
             ),
         ]
         indexes = [
-            models.Index(fields=["estado", "turno"]),
             models.Index(fields=["sucursal", "estado"]),
             models.Index(fields=["usuario", "estado"]),
+            models.Index(fields=["fecha_operativa", "sucursal"]),
         ]
 
     @property
@@ -574,7 +560,7 @@ class AlertaOperativa(models.Model):
     def turno_resumen(self) -> str:
         if not self.turno_id or self.turno is None:
             return "-"
-        return f"{self.turno.get_tipo_display()} {self.turno.fecha_operativa}"
+        return self.turno.get_tipo_display()
 
     @property
     def usuario_resumen(self) -> str:

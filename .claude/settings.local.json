@@ -5,7 +5,13 @@
       "Bash(python manage.py test cashops.tests_commands --verbosity=1)",
       "Bash(python manage.py test cashops treasury --verbosity=2)",
       "Bash(python manage.py test cashops treasury --verbosity=1)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(.venv\\\\Scripts\\\\python.exe -m compileall cashops treasury -q)",
+      "Bash(.venv\\\\Scripts\\\\python.exe manage.py test cashops.tests.CashopsServiceTests cashops.tests.CashopsViewTests -v 1)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\MateoCoca\\\\Documents\\\\REPOS\\\\gerayse\" -Directory)",
+      "Bash(Select-Object Name)",
+      "Bash(findstr /R \"^def.*\" cashops\\\\views.py)",
+      "Bash(findstr /E \"empresa|sucursal|turno|rubro|limite\")"
     ]
   }
 }

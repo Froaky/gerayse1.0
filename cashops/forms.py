@@ -54,14 +54,11 @@ class SucursalForm(forms.ModelForm):
 class TurnoForm(forms.ModelForm):
     class Meta:
         model = Turno
-        fields = ["sucursal", "fecha_operativa", "tipo", "observacion"]
-        widgets = {
-            "fecha_operativa": forms.DateInput(attrs={"type": "date"}),
-            "observacion": forms.TextInput(attrs={"placeholder": "Notas del turno"}),
-        }
+        fields = ["empresa", "tipo"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["empresa"].queryset = Empresa.objects.filter(activa=True)
         for field in self.fields.values():
             if isinstance(field.widget, forms.Select):
                 field.widget.attrs.setdefault("class", "input select")
@@ -72,7 +69,7 @@ class TurnoForm(forms.ModelForm):
 class CajaAperturaForm(forms.Form):
     usuario = forms.ModelChoiceField(queryset=User.objects.none(), label="Responsable")
     sucursal = forms.ModelChoiceField(queryset=Sucursal.objects.none())
-    tipo_turno = forms.ChoiceField(choices=Turno.Tipo.choices, label="Turno")
+    turno = forms.ModelChoiceField(queryset=Turno.objects.none(), label="Turno")
     fecha_operativa = forms.DateField(
         label="Fecha operativa",
         widget=forms.DateInput(attrs={"type": "date"}),
@@ -86,10 +83,13 @@ class CajaAperturaForm(forms.Form):
         help_text="Solo dinero fisico en la caja. Las ventas por tarjeta, QR o transferencia no van aca.",
     )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, empresa=None, **kwargs):
         self.actor = kwargs.pop("actor", None)
         super().__init__(*args, **kwargs)
         self.fields["fecha_operativa"].initial = datetime.date.today()
+        self.fields["turno"].queryset = (
+            Turno.objects.filter(empresa=empresa) if empresa else Turno.objects.all()
+        )
         if self.actor:
             self.fields["usuario"].initial = self.actor.pk
             self.fields["usuario"].queryset = (

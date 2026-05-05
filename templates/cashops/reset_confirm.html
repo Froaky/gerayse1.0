@@ -1,0 +1,47 @@
+{% extends "cashops/layout.html" %}
+{% block content %}
+<section class="card" style="max-width:560px; margin: 0 auto; border-color: rgba(184,90,96,0.45);">
+  {% if step == 1 %}
+    <h2 style="color:var(--danger); margin:0 0 16px;">Reiniciar datos operativos</h2>
+    <p>Esta accion eliminara <strong>de forma permanente e irreversible</strong> todos los datos operativos del sistema.</p>
+    <div class="stack mt-12" style="background:rgba(184,90,96,0.08); border:1px solid rgba(184,90,96,0.25); border-radius:6px; padding:14px;">
+      <p class="muted" style="margin:0; font-size:0.9rem;">Se eliminaran:</p>
+      <ul style="margin:8px 0 0; padding-left:18px; color:var(--muted); font-size:0.88rem; display:grid; gap:4px;">
+        <li>Todas las cajas y sus movimientos</li>
+        <li>Todos los cierres de caja</li>
+        <li>Todas las transferencias entre cajas y sucursales</li>
+        <li>Todos los movimientos de efectivo central (carga de moneda)</li>
+        <li>Todas las cuentas por pagar y pagos de tesoreria</li>
+        <li>Todos los arqueos y cierres mensuales</li>
+        <li>Todas las alertas operativas</li>
+      </ul>
+    </div>
+    <p class="muted mt-12" style="font-size:0.88rem;">Los datos de configuracion se conservan: empresas, sucursales, turnos, rubros, limites, usuarios, proveedores, cuentas bancarias y categorias.</p>
+    <p style="margin-top:20px;"><strong>¿Seguro queres eliminar todo?</strong></p>
+    <form method="post" action="{% url 'cashops:reset_operational_data' %}" class="mt-12">
+      {% csrf_token %}
+      <input type="hidden" name="step" value="1">
+      <div class="row">
+        <a class="button button-secondary" href="{% url 'cashops:empresa_list' %}">Cancelar</a>
+        <button class="button" type="submit" style="background:var(--danger); border-color:transparent;">Si, continuar</button>
+      </div>
+    </form>
+
+  {% elif step == 2 %}
+    <h2 style="color:var(--danger); margin:0 0 16px;">ATENCION — Confirmacion final</h2>
+    <div style="background:rgba(184,90,96,0.12); border:1px solid rgba(184,90,96,0.4); border-radius:6px; padding:16px;">
+      <p style="margin:0; color:var(--danger); font-weight:700; font-size:1.05rem;">Esto eliminara todos los datos cargados.</p>
+      <p style="margin:8px 0 0; color:var(--danger);">Esta accion no se puede deshacer. No hay forma de recuperar los datos una vez eliminados.</p>
+    </div>
+    <p style="margin-top:20px;"><strong>¿Estas realmente seguro?</strong></p>
+    <form method="post" action="{% url 'cashops:reset_operational_data' %}" class="mt-12">
+      {% csrf_token %}
+      <input type="hidden" name="step" value="2">
+      <div class="row">
+        <a class="button button-secondary" href="{% url 'cashops:empresa_list' %}">No, cancelar</a>
+        <button class="button" type="submit" style="background:var(--danger); border-color:transparent; font-weight:700; letter-spacing:0.03em;">SI, ELIMINAR TODO</button>
+      </div>
+    </form>
+  {% endif %}
+</section>
+{% endblock %}

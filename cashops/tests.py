@@ -58,30 +58,30 @@ class CashopsTestCase(TestCase):
         self.operator_2 = User.objects.create_user(username="operador2", password="test", role=self.operator_role)
         self.other = User.objects.create_user(username="ajeno", password="test", role=self.operator_role)
 
-        self.branch_a = Sucursal.objects.create(codigo="SUC-A", nombre="Sucursal A", razon_social="ARMADI SRL")
-        self.branch_b = Sucursal.objects.create(codigo="SUC-B", nombre="Sucursal B", razon_social="MAPOGO SRL")
+        self.empresa_a = Empresa.objects.create(nombre="ARMADI SRL")
+        self.empresa_b = Empresa.objects.create(nombre="MAPOGO SRL")
+        self.branch_a = Sucursal.objects.create(codigo="SUC-A", nombre="Sucursal A", razon_social="ARMADI SRL", empresa=self.empresa_a)
+        self.branch_b = Sucursal.objects.create(codigo="SUC-B", nombre="Sucursal B", razon_social="MAPOGO SRL", empresa=self.empresa_b)
         self.rubro_insumos = RubroOperativo.objects.create(nombre="Insumos")
         self.rubro_viaticos = RubroOperativo.objects.create(nombre="Viaticos")
 
         self.turno_a = Turno.objects.create(
-            sucursal=self.branch_a,
-            fecha_operativa="2026-03-27",
+            empresa=self.empresa_a,
             tipo=Turno.Tipo.MANANA,
-            estado=Turno.Estado.ABIERTO,
             creado_por=self.operator,
         )
         self.turno_b = Turno.objects.create(
-            sucursal=self.branch_b,
-            fecha_operativa="2026-03-27",
+            empresa=self.empresa_b,
             tipo=Turno.Tipo.MANANA,
-            estado=Turno.Estado.ABIERTO,
             creado_por=self.operator_2,
         )
+        self.fecha_op = date(2026, 3, 27)
 
     def _open_form(self, actor, data):
-        form = CajaAperturaForm(data=data, actor=actor)
+        form = CajaAperturaForm(data=data, actor=actor, empresa=self.empresa_a)
         form.fields["usuario"].queryset = User.objects.all()
         form.fields["sucursal"].queryset = Sucursal.objects.all()
+        form.fields["turno"].queryset = Turno.objects.all()
         return form
 
 
@@ -94,7 +94,7 @@ class CashopsPermissionUnitTests(CashopsTestCase):
         self.assertFalse(is_cashops_admin(self.operator))
 
     def test_box_permission_helper_allows_owner_and_admin(self):
-        caja = open_box(user=self.operator, turno=self.turno_a, sucursal=self.branch_a, monto_inicial=Decimal("100.00"), actor=self.operator)
+        caja = open_box(user=self.operator, turno=self.turno_a, sucursal=self.branch_a, fecha_operativa=self.fecha_op, monto_inicial=Decimal("100.00"), actor=self.operator)
 
         self.assertTrue(can_operate_box(self.operator, caja))
         self.assertTrue(can_operate_box(self.admin, caja))
@@ -112,7 +112,7 @@ class CashopsPermissionUnitTests(CashopsTestCase):
             data={
                 "usuario": self.other.pk,
                 "sucursal": self.branch_a.pk,
-                "tipo_turno": Turno.Tipo.MANANA,
+                "turno": self.turno_a.pk,
                 "fecha_operativa": "2026-03-27",
                 "efectivo_inicial": "100.00",
             },
@@ -127,7 +127,7 @@ class CashopsPermissionUnitTests(CashopsTestCase):
             data={
                 "usuario": self.other.pk,
                 "sucursal": self.branch_a.pk,
-                "tipo_turno": Turno.Tipo.MANANA,
+                "turno": self.turno_a.pk,
                 "fecha_operativa": "2026-03-27",
                 "efectivo_inicial": "100.00",
             },
@@ -148,7 +148,7 @@ class CashopsPermissionUnitTests(CashopsTestCase):
 
         self.assertEqual(form.fields["usuario"].initial, fixed_user.pk)
         self.assertEqual(form.fields["sucursal"].initial, self.branch_a.pk)
-        self.assertNotIn("turno", form.fields)
+        self.assertIn("turno", form.fields)
         self.assertQuerySetEqual(
             form.fields["sucursal"].queryset,
             Sucursal.objects.filter(pk=self.branch_a.pk, activa=True),
@@ -166,6 +166,7 @@ class CashopsServiceTests(CashopsTestCase):
             user=self.other,
             turno=self.turno_a,
             sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("5000.00"),
             actor=self.admin,
         )
@@ -180,6 +181,7 @@ class CashopsServiceTests(CashopsTestCase):
                 user=self.other,
                 turno=self.turno_a,
                 sucursal=self.branch_a,
+                fecha_operativa=self.fecha_op,
                 monto_inicial=Decimal("100.00"),
                 actor=self.operator,
             )
@@ -198,6 +200,7 @@ class CashopsServiceTests(CashopsTestCase):
                 user=fixed_user,
                 turno=self.turno_b,
                 sucursal=self.branch_b,
+                fecha_operativa=self.fecha_op,
                 monto_inicial=Decimal("100.00"),
                 actor=fixed_user,
             )
@@ -218,6 +221,7 @@ class CashopsServiceTests(CashopsTestCase):
             user=fixed_user,
             turno=self.turno_a,
             sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("100.00"),
             actor=fixed_user,
         )
@@ -230,6 +234,7 @@ class CashopsServiceTests(CashopsTestCase):
             user=self.operator,
             turno=self.turno_a,
             sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("0.00"),
             actor=self.operator,
         )
@@ -243,6 +248,7 @@ class CashopsServiceTests(CashopsTestCase):
             user=self.operator,
             turno=self.turno_a,
             sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("250.00"),
             actor=self.operator,
         )
@@ -252,6 +258,7 @@ class CashopsServiceTests(CashopsTestCase):
                 user=self.operator,
                 turno=self.turno_a,
                 sucursal=self.branch_a,
+                fecha_operativa=self.fecha_op,
                 monto_inicial=Decimal("50.00"),
                 actor=self.operator,
             )
@@ -261,6 +268,7 @@ class CashopsServiceTests(CashopsTestCase):
             user=self.operator,
             turno=self.turno_a,
             sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("1000.00"),
             actor=self.operator,
         )
@@ -283,6 +291,7 @@ class CashopsServiceTests(CashopsTestCase):
             user=self.operator,
             turno=self.turno_a,
             sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("1000.00"),
             actor=self.operator,
         )
@@ -304,6 +313,7 @@ class CashopsServiceTests(CashopsTestCase):
             user=self.operator,
             turno=self.turno_a,
             sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("1000.00"),
             actor=self.operator,
         )
@@ -328,6 +338,7 @@ class CashopsServiceTests(CashopsTestCase):
             user=self.operator,
             turno=self.turno_a,
             sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("1000.00"),
             actor=self.operator,
         )
@@ -355,6 +366,7 @@ class CashopsServiceTests(CashopsTestCase):
             user=self.other,
             turno=self.turno_b,
             sucursal=self.branch_b,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("100.00"),
             actor=self.admin,
         )
@@ -375,6 +387,7 @@ class CashopsServiceTests(CashopsTestCase):
             user=self.operator,
             turno=self.turno_a,
             sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("200.00"),
             actor=self.operator,
         )
@@ -395,6 +408,7 @@ class CashopsServiceTests(CashopsTestCase):
             user=self.operator,
             turno=self.turno_a,
             sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("200.00"),
             actor=self.operator,
         )
@@ -429,6 +443,7 @@ class CashopsServiceTests(CashopsTestCase):
             user=self.operator,
             turno=self.turno_a,
             sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("1000.00"),
             actor=self.operator,
         )
@@ -451,7 +466,7 @@ class CashopsServiceTests(CashopsTestCase):
         )
 
         snapshot = build_operational_control_snapshot(
-            build_branch_control_scope(fecha_operativa=self.turno_a.fecha_operativa, sucursal=self.branch_a)
+            build_branch_control_scope(fecha_operativa=self.fecha_op, sucursal=self.branch_a)
         )
 
         self.assertEqual(snapshot["base_calculo_label"], "Egresos operativos del periodo")
@@ -463,6 +478,7 @@ class CashopsServiceTests(CashopsTestCase):
             user=self.operator,
             turno=self.turno_a,
             sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("500.00"),
             actor=self.operator,
         )
@@ -484,16 +500,15 @@ class CashopsServiceTests(CashopsTestCase):
             actor=self.operator,
         )
         turno_siguiente = Turno.objects.create(
-            sucursal=self.branch_a,
-            fecha_operativa="2026-03-28",
+            empresa=self.empresa_a,
             tipo=Turno.Tipo.TARDE,
-            estado=Turno.Estado.ABIERTO,
             creado_por=self.admin,
         )
         caja_siguiente = open_box(
             user=self.operator_2,
             turno=turno_siguiente,
             sucursal=self.branch_a,
+            fecha_operativa=date(2026, 3, 28),
             monto_inicial=Decimal("0.00"),
             actor=self.admin,
         )
@@ -532,6 +547,7 @@ class CashopsServiceTests(CashopsTestCase):
             user=self.operator,
             turno=self.turno_a,
             sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("0.00"),
             actor=self.operator,
         )
@@ -558,16 +574,15 @@ class CashopsServiceTests(CashopsTestCase):
             actor=self.operator,
         )
         turno_next = Turno.objects.create(
-            sucursal=self.branch_a,
-            fecha_operativa="2026-03-28",
+            empresa=self.empresa_a,
             tipo=Turno.Tipo.TARDE,
-            estado=Turno.Estado.ABIERTO,
             creado_por=self.admin,
         )
         caja_next = open_box(
             user=self.operator_2,
             turno=turno_next,
             sucursal=self.branch_a,
+            fecha_operativa=date(2026, 3, 28),
             monto_inicial=Decimal("0.00"),
             actor=self.admin,
         )
@@ -614,6 +629,7 @@ class CashopsServiceTests(CashopsTestCase):
             user=self.operator,
             turno=self.turno_a,
             sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("1000.00"),
             actor=self.operator,
         )
@@ -637,7 +653,7 @@ class CashopsServiceTests(CashopsTestCase):
         )
 
         overview = build_operational_category_overview(
-            fecha_operativa=self.turno_a.fecha_operativa,
+            fecha_operativa=self.fecha_op,
             sucursal=self.branch_a,
         )
         insumos = next(item for item in overview["items"] if item["rubro"] == self.rubro_insumos)
@@ -657,6 +673,7 @@ class CashopsServiceTests(CashopsTestCase):
             user=self.operator,
             turno=self.turno_a,
             sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("500.00"),
             actor=self.operator,
         )
@@ -674,7 +691,7 @@ class CashopsServiceTests(CashopsTestCase):
         self.assertEqual(
             AlertaOperativa.objects.filter(
                 tipo=AlertaOperativa.Tipo.RUBRO_EXCEDIDO,
-                periodo_fecha=self.turno_a.fecha_operativa,
+                periodo_fecha=self.fecha_op,
                 sucursal__isnull=True,
                 caja__isnull=True,
             ).count(),
@@ -683,7 +700,7 @@ class CashopsServiceTests(CashopsTestCase):
         self.assertEqual(
             AlertaOperativa.objects.filter(
                 tipo=AlertaOperativa.Tipo.RUBRO_EXCEDIDO,
-                periodo_fecha=self.turno_a.fecha_operativa,
+                periodo_fecha=self.fecha_op,
                 sucursal=self.branch_a,
                 caja__isnull=True,
             ).count(),
@@ -692,7 +709,7 @@ class CashopsServiceTests(CashopsTestCase):
         self.assertEqual(
             AlertaOperativa.objects.filter(
                 tipo=AlertaOperativa.Tipo.RUBRO_EXCEDIDO,
-                periodo_fecha=self.turno_a.fecha_operativa,
+                periodo_fecha=self.fecha_op,
                 caja=caja,
             ).count(),
             1,
@@ -708,6 +725,7 @@ class CashopsServiceTests(CashopsTestCase):
             user=self.operator,
             turno=self.turno_a,
             sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("500.00"),
             actor=self.operator,
         )
@@ -735,7 +753,7 @@ class CashopsServiceTests(CashopsTestCase):
             tipo=AlertaOperativa.Tipo.RUBRO_EXCEDIDO,
             rubro_operativo=self.rubro_insumos,
             sucursal=self.branch_a,
-            periodo_fecha=self.turno_a.fecha_operativa,
+            periodo_fecha=self.fecha_op,
             caja__isnull=True,
         )
 
@@ -757,6 +775,7 @@ class CashopsServiceTests(CashopsTestCase):
             user=self.operator,
             turno=self.turno_a,
             sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("500.00"),
             actor=self.operator,
         )
@@ -796,6 +815,7 @@ class CashopsServiceTests(CashopsTestCase):
             user=self.operator,
             turno=self.turno_a,
             sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("100.00"),
             actor=self.operator,
         )
@@ -803,6 +823,7 @@ class CashopsServiceTests(CashopsTestCase):
             user=self.operator_2,
             turno=self.turno_a,
             sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("0.00"),
             actor=self.admin,
         )
@@ -822,6 +843,7 @@ class CashopsServiceTests(CashopsTestCase):
             user=self.operator,
             turno=self.turno_a,
             sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("200.00"),
             actor=self.operator,
         )
@@ -829,6 +851,7 @@ class CashopsServiceTests(CashopsTestCase):
             user=self.operator_2,
             turno=self.turno_b,
             sucursal=self.branch_b,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("50.00"),
             actor=self.admin,
         )
@@ -851,20 +874,20 @@ class CashopsServiceTests(CashopsTestCase):
             user=self.operator,
             turno=self.turno_a,
             sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("500.00"),
             actor=self.operator,
         )
         turno_siguiente = Turno.objects.create(
-            sucursal=self.branch_a,
-            fecha_operativa="2026-03-28",
+            empresa=self.empresa_a,
             tipo=Turno.Tipo.TARDE,
-            estado=Turno.Estado.ABIERTO,
             creado_por=self.admin,
         )
         caja_destino = open_box(
             user=self.operator_2,
             turno=turno_siguiente,
             sucursal=self.branch_a,
+            fecha_operativa=date(2026, 3, 28),
             monto_inicial=Decimal("0.00"),
             actor=self.admin,
         )
@@ -883,8 +906,8 @@ class CashopsServiceTests(CashopsTestCase):
 
         self.assertEqual(transferencia.sucursal_origen, self.branch_a)
         self.assertEqual(transferencia.sucursal_destino, self.branch_a)
-        self.assertEqual(transferencia.caja_origen.turno.fecha_operativa, date(2026, 3, 27))
-        self.assertEqual(transferencia.caja_destino.turno.fecha_operativa, date(2026, 3, 28))
+        self.assertEqual(transferencia.caja_origen.fecha_operativa, date(2026, 3, 27))
+        self.assertEqual(transferencia.caja_destino.fecha_operativa, date(2026, 3, 28))
         self.assertEqual(caja_origen.saldo_esperado, Decimal("350.00"))
         self.assertEqual(caja_destino.saldo_esperado, Decimal("150.00"))
         self.assertEqual(
@@ -905,6 +928,7 @@ class CashopsServiceTests(CashopsTestCase):
             user=self.operator,
             turno=self.turno_a,
             sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("120.00"),
             actor=self.operator,
         )
@@ -912,6 +936,7 @@ class CashopsServiceTests(CashopsTestCase):
             user=self.operator_2,
             turno=self.turno_b,
             sucursal=self.branch_b,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("50.00"),
             actor=self.admin,
         )
@@ -938,6 +963,7 @@ class CashopsServiceTests(CashopsTestCase):
             user=self.operator,
             turno=self.turno_a,
             sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("1000.00"),
             actor=self.operator,
         )
@@ -971,6 +997,7 @@ class CashopsServiceTests(CashopsTestCase):
             user=self.operator,
             turno=self.turno_a,
             sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("1000.00"),
             actor=self.operator,
         )
@@ -995,6 +1022,7 @@ class CashopsViewTests(CashopsTestCase):
             user=self.operator,
             turno=self.turno_a,
             sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("1000.00"),
             actor=self.operator,
         )
@@ -1002,6 +1030,7 @@ class CashopsViewTests(CashopsTestCase):
             user=self.other,
             turno=self.turno_b,
             sucursal=self.branch_b,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("800.00"),
             actor=self.admin,
         )
@@ -1058,7 +1087,7 @@ class CashopsViewTests(CashopsTestCase):
             {
                 "usuario": self.operator.pk,
                 "sucursal": self.branch_a.pk,
-                "tipo_turno": Turno.Tipo.MANANA,
+                "turno": self.turno_a.pk,
                 "fecha_operativa": "2026-03-27",
                 "efectivo_inicial": "10.00",
             },
@@ -1130,16 +1159,15 @@ class CashopsViewTests(CashopsTestCase):
 
     def test_transfer_between_boxes_without_funds_returns_error_message(self):
         turno_siguiente = Turno.objects.create(
-            sucursal=self.branch_a,
-            fecha_operativa="2026-03-28",
+            empresa=self.empresa_a,
             tipo=Turno.Tipo.TARDE,
-            estado=Turno.Estado.ABIERTO,
             creado_por=self.admin,
         )
         second_box = open_box(
             user=self.operator,
             turno=turno_siguiente,
             sucursal=self.branch_a,
+            fecha_operativa=date(2026, 3, 28),
             monto_inicial=Decimal("0.00"),
             actor=self.operator,
         )
@@ -1276,16 +1304,15 @@ class CashopsViewTests(CashopsTestCase):
             actor=self.operator,
         )
         turno_siguiente = Turno.objects.create(
-            sucursal=self.branch_a,
-            fecha_operativa="2026-03-28",
+            empresa=self.empresa_a,
             tipo=Turno.Tipo.TARDE,
-            estado=Turno.Estado.ABIERTO,
             creado_por=self.admin,
         )
         box_siguiente = open_box(
             user=self.operator_2,
             turno=turno_siguiente,
             sucursal=self.branch_a,
+            fecha_operativa=date(2026, 3, 28),
             monto_inicial=Decimal("0.00"),
             actor=self.admin,
         )
@@ -1470,8 +1497,8 @@ class CashopsViewTests(CashopsTestCase):
             {
                 "estado": "activas",
                 "alcance": "caja",
-                "periodo_desde": self._period(self.turno_a.fecha_operativa),
-                "periodo_hasta": self._period(self.turno_a.fecha_operativa),
+                "periodo_desde": self._period(self.fecha_op),
+                "periodo_hasta": self._period(self.fecha_op),
                 "sucursal": self.branch_a.pk,
                 "rubro": self.rubro_insumos.pk,
             },
@@ -1498,16 +1525,15 @@ class CashopsViewTests(CashopsTestCase):
             actor=self.operator,
         )
         turno_siguiente = Turno.objects.create(
-            sucursal=self.branch_a,
-            fecha_operativa="2026-03-28",
-            tipo=Turno.Tipo.MANANA,
-            estado=Turno.Estado.ABIERTO,
+            empresa=self.empresa_a,
+            tipo=Turno.Tipo.TARDE,
             creado_por=self.admin,
         )
         box_siguiente = open_box(
             user=self.operator_2,
             turno=turno_siguiente,
             sucursal=self.branch_a,
+            fecha_operativa=date(2026, 3, 28),
             monto_inicial=Decimal("500.00"),
             actor=self.admin,
         )
@@ -1529,17 +1555,17 @@ class CashopsViewTests(CashopsTestCase):
                 "alcance": "sucursal",
                 "sucursal": self.branch_a.pk,
                 "rubro": self.rubro_insumos.pk,
-                "periodo_desde": self._period(self.turno_a.fecha_operativa),
-                "periodo_hasta": self._period(self.turno_a.fecha_operativa),
+                "periodo_desde": self._period(self.fecha_op),
+                "periodo_hasta": self._period(self.fecha_op),
             },
         )
 
         self.assertEqual(response.status_code, 200)
         alertas = list(response.context["alertas"])
         self.assertEqual(len(alertas), 1)
-        self.assertEqual(alertas[0].periodo_fecha.isoformat(), self._period(self.turno_a.fecha_operativa))
-        self.assertContains(response, self._period(self.turno_a.fecha_operativa))
-        self.assertNotContains(response, self._period(turno_siguiente.fecha_operativa))
+        self.assertEqual(alertas[0].periodo_fecha.isoformat(), self._period(self.fecha_op))
+        self.assertContains(response, self._period(self.fecha_op))
+        self.assertNotContains(response, "2026-03-28")
 
     def test_alert_panel_shows_complete_context_for_grave_alert(self):
         close_box(
@@ -1557,8 +1583,8 @@ class CashopsViewTests(CashopsTestCase):
                 "estado": "activas",
                 "alcance": "caja",
                 "sucursal": self.branch_a.pk,
-                "periodo_desde": self._period(self.turno_a.fecha_operativa),
-                "periodo_hasta": self._period(self.turno_a.fecha_operativa),
+                "periodo_desde": self._period(self.fecha_op),
+                "periodo_hasta": self._period(self.fecha_op),
             },
         )
 
@@ -1592,8 +1618,8 @@ class CashopsViewTests(CashopsTestCase):
             {
                 "estado": "activas",
                 "rubro": self.rubro_insumos.pk,
-                "periodo_desde": self._period(self.turno_a.fecha_operativa),
-                "periodo_hasta": self._period(self.turno_a.fecha_operativa),
+                "periodo_desde": self._period(self.fecha_op),
+                "periodo_hasta": self._period(self.fecha_op),
             },
         )
 
@@ -1602,7 +1628,7 @@ class CashopsViewTests(CashopsTestCase):
             AlertaOperativa.objects.filter(
                 tipo=AlertaOperativa.Tipo.RUBRO_EXCEDIDO,
                 rubro_operativo=self.rubro_insumos,
-                periodo_fecha=self.turno_a.fecha_operativa,
+                periodo_fecha=self.fecha_op,
                 resuelta=False,
             )
         )
@@ -1619,7 +1645,7 @@ class CashopsViewTests(CashopsTestCase):
             tipo=AlertaOperativa.Tipo.RUBRO_EXCEDIDO,
             sucursal=self.branch_a,
             rubro_operativo=self.rubro_insumos,
-            periodo_fecha=self.turno_a.fecha_operativa,
+            periodo_fecha=self.fecha_op,
             mensaje="Periodo operativo correcto",
         )
         alert_outside_range = AlertaOperativa.objects.create(
@@ -1664,8 +1690,8 @@ class CashopsViewTests(CashopsTestCase):
             reverse("cashops:alert_panel"),
             {
                 "estado": "activas",
-                "periodo_desde": str(self.turno_a.fecha_operativa),
-                "periodo_hasta": str(self.turno_a.fecha_operativa),
+                "periodo_desde": str(self.fecha_op),
+                "periodo_hasta": str(self.fecha_op),
             },
         )
 
@@ -1673,7 +1699,7 @@ class CashopsViewTests(CashopsTestCase):
         self.assertContains(response, self.branch_a.nombre)
         self.assertContains(response, f"#{self.owned_box.pk}")
         self.assertContains(response, self.turno_a.get_tipo_display())
-        self.assertContains(response, str(self.turno_a.fecha_operativa))
+        self.assertContains(response, str(self.fecha_op))
         self.assertContains(response, self.operator.username)
         self.assertContains(response, "Diferencia grave")
 
@@ -1685,20 +1711,20 @@ class CashopsViewTests(CashopsTestCase):
             sucursal=self.branch_a,
             usuario=self.operator,
             rubro_operativo=self.rubro_insumos,
-            periodo_fecha=self.turno_a.fecha_operativa,
+            periodo_fecha=self.fecha_op,
             mensaje="Alerta scope caja",
         )
         AlertaOperativa.objects.create(
             tipo=AlertaOperativa.Tipo.RUBRO_EXCEDIDO,
             sucursal=self.branch_a,
             rubro_operativo=self.rubro_insumos,
-            periodo_fecha=self.turno_a.fecha_operativa,
+            periodo_fecha=self.fecha_op,
             mensaje="Alerta scope sucursal",
         )
         AlertaOperativa.objects.create(
             tipo=AlertaOperativa.Tipo.RUBRO_EXCEDIDO,
             rubro_operativo=self.rubro_insumos,
-            periodo_fecha=self.turno_a.fecha_operativa,
+            periodo_fecha=self.fecha_op,
             mensaje="Alerta scope global",
         )
         self.client.force_login(self.admin)
@@ -1707,8 +1733,8 @@ class CashopsViewTests(CashopsTestCase):
             reverse("cashops:alert_panel"),
             {
                 "estado": "activas",
-                "periodo_desde": str(self.turno_a.fecha_operativa),
-                "periodo_hasta": str(self.turno_a.fecha_operativa),
+                "periodo_desde": str(self.fecha_op),
+                "periodo_hasta": str(self.fecha_op),
                 "rubro": self.rubro_insumos.pk,
             },
         )
@@ -1723,12 +1749,6 @@ class CashopsViewTests(CashopsTestCase):
 class EP12EmpresasTests(CashopsTestCase):
     def setUp(self):
         super().setUp()
-        self.empresa_a = Empresa.objects.create(nombre="ARMADI SRL")
-        self.empresa_b = Empresa.objects.create(nombre="MAPOGO SRL")
-        self.branch_a.empresa = self.empresa_a
-        self.branch_a.save(update_fields=["empresa"])
-        self.branch_b.empresa = self.empresa_b
-        self.branch_b.save(update_fields=["empresa"])
 
     def test_empresa_list_requires_admin(self):
         self.client.force_login(self.operator)
@@ -1789,6 +1809,7 @@ class EP12DashboardCanalTests(CashopsTestCase):
             user=self.operator,
             sucursal=self.branch_a,
             turno=self.turno_a,
+            fecha_operativa=self.fecha_op,
             monto_inicial=Decimal("500.00"),
             actor=self.operator,
         )
@@ -1822,8 +1843,8 @@ class EP12DashboardCanalTests(CashopsTestCase):
             actor=self.operator,
         )
         summary = build_operational_period_summary(
-            date_from=self.turno_a.fecha_operativa,
-            date_to=self.turno_a.fecha_operativa,
+            date_from=self.fecha_op,
+            date_to=self.fecha_op,
         )
         self.assertEqual(summary["total_ventas_digitales"], Decimal("150.00"))
         self.assertIsNone(summary["saldo_efectivo_caja"])

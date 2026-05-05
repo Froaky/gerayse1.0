@@ -21,7 +21,7 @@
       {{ hidden }}
     {% endfor %}
     {% for field in form.visible_fields %}
-      <div class="field">
+      <div class="field"{% if form.conditional_bank_account and field.name == form.bank_account_field_name %} data-bank-account-row{% if not form.show_bank_account_field %} hidden{% endif %}{% endif %}>
         <label for="{{ field.id_for_label }}">{{ field.label }}</label>
         {{ field }}
         {% if field.help_text %}
@@ -37,4 +37,24 @@
       <button class="button" type="submit">{{ submit_label }}</button>
     </div>
   </form>
+  {% if form.conditional_bank_account %}
+    <script>
+      (() => {
+        const source = document.getElementById("{{ form.bank_account_source_field_id }}");
+        const account = document.getElementById("{{ form.bank_account_field_id }}");
+        const row = document.querySelector("[data-bank-account-row]");
+        if (!source || !account || !row) return;
+
+        const syncAccountField = () => {
+          const requiresAccount = source.value === "{{ form.bank_account_required_value }}";
+          row.hidden = !requiresAccount;
+          account.disabled = !requiresAccount;
+          if (!requiresAccount) account.value = "";
+        };
+
+        source.addEventListener("change", syncAccountField);
+        syncAccountField();
+      })();
+    </script>
+  {% endif %}
 </section>
