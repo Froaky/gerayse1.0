@@ -29,29 +29,38 @@ def consolidate_turnos_and_backfill_cajas(apps, schema_editor):
         old_to_canonical[turno.id] = empresa_tipo_to_canonical[key]
 
     # Step 3: repoint cajas to canonical turno
-    # Track ABIERTA combos already claimed to detect collisions before they happen.
-    # Two cajas that pointed to different turno records can end up mapping to the
-    # same canonical turno; the second one would violate unique_open_box_by_user_turn_branch.
-    # We close the duplicate before updating so the partial constraint no longer applies.
-    seen_open = set()  # (usuario_id, canonical_turno_id, sucursal_id)
+    # Problem: multiple ABIERTA cajas for the same (usuario, sucursal) can point
+    # to different old turno_ids that all map to the SAME canonical turno. Updating
+    # them sequentially violates unique_open_box_by_user_turn_branch.
+    #
+    # Strategy: compute every caja's *future* canonical turno_id first, group the
+    # ABIERTA ones, close any extras in bulk, then do the turno_id updates safely.
+    from collections import defaultdict
 
+    def canonical_for(turno_id):
+        # If the turno is being remapped use the mapping; otherwise keep as-is.
+        return old_to_canonical.get(turno_id, turno_id)
+
+    # Group ABIERTA cajas by their future (usuario, canonical_turno, sucursal) key.
+    future_open = defaultdict(list)
+    for caja in Caja.objects.filter(estado="ABIERTA"):
+        future_key = (caja.usuario_id, canonical_for(caja.turno_id), caja.sucursal_id)
+        future_open[future_key].append(caja.pk)
+
+    # For any group with more than one ABIERTA caja, close all but the first (lowest pk).
+    pks_to_close = []
+    for pks in future_open.values():
+        if len(pks) > 1:
+            pks_to_close.extend(sorted(pks)[1:])
+    if pks_to_close:
+        Caja.objects.filter(pk__in=pks_to_close).update(estado="CERRADA")
+
+    # Now that duplicates are closed, update turno_ids safely via QuerySet.update()
+    # (bypasses ORM save() to go straight to SQL without triggering Python validators).
     for caja in Caja.objects.all():
-        canonical = old_to_canonical.get(caja.turno_id)
-        if canonical is None:
-            continue
-
-        if caja.estado == "ABIERTA":
-            key = (caja.usuario_id, canonical, caja.sucursal_id)
-            if key in seen_open:
-                # Collision: close this caja first so the constraint doesn't apply.
-                Caja.objects.filter(pk=caja.pk).update(estado="CERRADA")
-            else:
-                seen_open.add(key)
-
-        if canonical != caja.turno_id:
-            # Use QuerySet.update() to bypass ORM save() and go straight to SQL,
-            # avoiding any Python-level validation that could interfere.
-            Caja.objects.filter(pk=caja.pk).update(turno_id=canonical)
+        new_turno = old_to_canonical.get(caja.turno_id)
+        if new_turno and new_turno != caja.turno_id:
+            Caja.objects.filter(pk=caja.pk).update(turno_id=new_turno)
 
     for alerta in AlertaOperativa.objects.filter(turno_id__isnull=False):
         canonical = old_to_canonical.get(alerta.turno_id)
