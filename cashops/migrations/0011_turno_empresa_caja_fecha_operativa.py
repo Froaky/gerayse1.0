@@ -28,12 +28,30 @@ def consolidate_turnos_and_backfill_cajas(apps, schema_editor):
             Turno.objects.filter(pk=turno.id).update(empresa_id=empresa_id)
         old_to_canonical[turno.id] = empresa_tipo_to_canonical[key]
 
-    # Step 3: repoint cajas and alertas to canonical turno
+    # Step 3: repoint cajas to canonical turno
+    # Track ABIERTA combos already claimed to detect collisions before they happen.
+    # Two cajas that pointed to different turno records can end up mapping to the
+    # same canonical turno; the second one would violate unique_open_box_by_user_turn_branch.
+    # We close the duplicate before updating so the partial constraint no longer applies.
+    seen_open = set()  # (usuario_id, canonical_turno_id, sucursal_id)
+
     for caja in Caja.objects.all():
         canonical = old_to_canonical.get(caja.turno_id)
-        if canonical and canonical != caja.turno_id:
-            caja.turno_id = canonical
-            caja.save(update_fields=["turno_id"])
+        if canonical is None:
+            continue
+
+        if caja.estado == "ABIERTA":
+            key = (caja.usuario_id, canonical, caja.sucursal_id)
+            if key in seen_open:
+                # Collision: close this caja first so the constraint doesn't apply.
+                Caja.objects.filter(pk=caja.pk).update(estado="CERRADA")
+            else:
+                seen_open.add(key)
+
+        if canonical != caja.turno_id:
+            # Use QuerySet.update() to bypass ORM save() and go straight to SQL,
+            # avoiding any Python-level validation that could interfere.
+            Caja.objects.filter(pk=caja.pk).update(turno_id=canonical)
 
     for alerta in AlertaOperativa.objects.filter(turno_id__isnull=False):
         canonical = old_to_canonical.get(alerta.turno_id)
