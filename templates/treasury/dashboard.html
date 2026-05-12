@@ -55,7 +55,7 @@
       <div class="summary">
         <span class="muted">Pendiente de acreditacion</span>
         <strong>{{ snapshot.pending_accreditation_total|money }}</strong>
-        <small class="muted">Ventas tarjeta del periodo menos acreditaciones registradas</small>
+        <small class="muted">Creditos de acreditacion bancaria menos ventas tarjeta del periodo</small>
       </div>
       <div class="summary">
         <span class="muted">Deuda pendiente</span>
@@ -247,7 +247,7 @@
           <small class="muted">Neto mas descuentos informados</small>
         </div>
       </div>
-      <p class="muted mt-16">Pendiente de acreditacion = ventas tarjeta del periodo menos acreditaciones registradas. Para lectura neta, descontar costos de servicio e impuestos de Payway u operador equivalente cuando corresponda.</p>
+      <p class="muted mt-16">Pendiente de acreditacion = creditos de acreditacion bancaria cargados en el periodo menos ventas tarjeta. Negativo indica que hay ventas pendientes de acreditar por el banco. Positivo indica que el banco acredito mas de lo vendido.</p>
     </div>
 
     <div class="card">

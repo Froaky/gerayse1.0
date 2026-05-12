@@ -1415,7 +1415,11 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
         or Decimal("0.00")
     )
     accredited_gross = accredited_net + accreditation_discounts
-    pending_accreditation_total = digital_sales_total - accredited_gross
+
+    bank_acreditacion_total = bank_movements.aggregate(
+        total=Sum("monto", filter=Q(tipo=MovimientoBancario.Tipo.CREDITO, clase=MovimientoBancario.Clase.ACREDITACION))
+    )["total"] or Decimal("0.00")
+    pending_accreditation_total = bank_acreditacion_total - digital_sales_total
 
     recent_movements = bank_movements.select_related("cuenta_bancaria", "categoria", "proveedor").order_by(
         "-fecha", "-id"
