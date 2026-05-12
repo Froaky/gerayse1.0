@@ -781,9 +781,9 @@ class TreasuryServiceTests(TreasuryTestCase):
         self.assertEqual(snapshot["accredited_net"], Decimal("170.00"))
         self.assertEqual(snapshot["accredited_gross"], Decimal("200.00"))
         self.assertEqual(snapshot["pending_accreditation_total"], Decimal("0.00"))
-        self.assertEqual(snapshot["overdue_count"], 1)
-        self.assertEqual(snapshot["due_today_count"], 1)
-        self.assertEqual(snapshot["upcoming_count"], 1)
+        self.assertEqual(snapshot["red_count"], 3)
+        self.assertEqual(snapshot["yellow_count"], 0)
+        self.assertEqual(snapshot["green_count"], 0)
         self.assertEqual(branch_snapshot["total_bank_balance"], Decimal("430.00"))
         self.assertEqual(branch_snapshot["pending_total"], Decimal("240.00"))
 

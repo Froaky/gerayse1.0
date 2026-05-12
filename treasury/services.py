@@ -1388,13 +1388,12 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
         pending_payables = pending_payables.filter(sucursal=sucursal)
 
     reference_date = date_to
-    overdue_payables = pending_payables.filter(fecha_vencimiento__lt=reference_date)
-    due_today_payables = pending_payables.filter(fecha_vencimiento=reference_date)
-    upcoming_window = reference_date + timedelta(days=7)
-    upcoming_payables = pending_payables.filter(
-        fecha_vencimiento__gt=reference_date,
-        fecha_vencimiento__lte=upcoming_window,
-    )
+    red_threshold = reference_date + timedelta(days=4)
+    yellow_threshold = reference_date + timedelta(days=8)
+    red_payables = pending_payables.filter(fecha_vencimiento__lt=red_threshold)
+    yellow_payables = pending_payables.filter(fecha_vencimiento__gte=red_threshold, fecha_vencimiento__lt=yellow_threshold)
+    green_payables = pending_payables.filter(fecha_vencimiento__gte=yellow_threshold)
+    all_pending_payables = pending_payables.select_related("proveedor", "categoria", "categoria__rubro_operativo")
 
     digital_sales = MovimientoCaja.objects.filter(
         caja__fecha_operativa__gte=date_from,
@@ -1464,15 +1463,13 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
         "pending_accreditation_total": pending_accreditation_total,
         "pending_count": pending_payables.count(),
         "pending_total": pending_payables.aggregate(total=Sum("saldo_pendiente"))["total"] or Decimal("0.00"),
-        "overdue_count": overdue_payables.count(),
-        "overdue_total": overdue_payables.aggregate(total=Sum("saldo_pendiente"))["total"] or Decimal("0.00"),
-        "due_today_count": due_today_payables.count(),
-        "due_today_total": due_today_payables.aggregate(total=Sum("saldo_pendiente"))["total"] or Decimal("0.00"),
-        "upcoming_count": upcoming_payables.count(),
-        "upcoming_total": upcoming_payables.aggregate(total=Sum("saldo_pendiente"))["total"] or Decimal("0.00"),
-        "overdue_payables": overdue_payables.select_related("proveedor", "categoria", "categoria__rubro_operativo")[:10],
-        "due_today_payables": due_today_payables.select_related("proveedor", "categoria", "categoria__rubro_operativo")[:10],
-        "upcoming_payables": upcoming_payables.select_related("proveedor", "categoria", "categoria__rubro_operativo")[:10],
+        "red_count": red_payables.count(),
+        "red_total": red_payables.aggregate(total=Sum("saldo_pendiente"))["total"] or Decimal("0.00"),
+        "yellow_count": yellow_payables.count(),
+        "yellow_total": yellow_payables.aggregate(total=Sum("saldo_pendiente"))["total"] or Decimal("0.00"),
+        "green_count": green_payables.count(),
+        "green_total": green_payables.aggregate(total=Sum("saldo_pendiente"))["total"] or Decimal("0.00"),
+        "all_pending_payables": all_pending_payables,
         "recent_payments": recent_payments,
         "recent_movements": recent_movements,
         "recent_batches": recent_batches,

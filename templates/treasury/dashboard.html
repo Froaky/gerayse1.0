@@ -63,19 +63,19 @@
         <small class="muted">{{ snapshot.pending_count }} compromiso{{ snapshot.pending_count|pluralize }}</small>
       </div>
       <div class="summary">
-        <span class="muted">Vencido</span>
-        <strong>{{ snapshot.overdue_total|money }}</strong>
-        <small class="muted">{{ snapshot.overdue_count }} fuera de termino</small>
+        <span class="muted">Critico (menos de 4 dias)</span>
+        <strong>{{ snapshot.red_total|money }}</strong>
+        <small class="muted">{{ snapshot.red_count }} compromiso{{ snapshot.red_count|pluralize }}</small>
       </div>
       <div class="summary">
-        <span class="muted">Vence hoy</span>
-        <strong>{{ snapshot.due_today_total|money }}</strong>
-        <small class="muted">{{ snapshot.due_today_count }} compromiso{{ snapshot.due_today_count|pluralize }}</small>
+        <span class="muted">Proximo (4 a 7 dias)</span>
+        <strong>{{ snapshot.yellow_total|money }}</strong>
+        <small class="muted">{{ snapshot.yellow_count }} compromiso{{ snapshot.yellow_count|pluralize }}</small>
       </div>
       <div class="summary">
-        <span class="muted">Proximos 7 dias</span>
-        <strong>{{ snapshot.upcoming_total|money }}</strong>
-        <small class="muted">{{ snapshot.upcoming_count }} compromiso{{ snapshot.upcoming_count|pluralize }}</small>
+        <span class="muted">En plazo (8 dias o mas)</span>
+        <strong>{{ snapshot.green_total|money }}</strong>
+        <small class="muted">{{ snapshot.green_count }} compromiso{{ snapshot.green_count|pluralize }}</small>
       </div>
     </div>
   </section>
@@ -280,50 +280,29 @@
     <div class="card">
       <div class="row">
         <div>
-          <h2>Alertas de vencimientos</h2>
-          <p class="muted">Priorizacion de deuda vencida, del dia y de los proximos dias.</p>
+          <h2>Vencimientos</h2>
+          <p class="muted">Deuda pendiente ordenada por urgencia.</p>
         </div>
-        <span class="badge badge-danger">{{ snapshot.overdue_count|add:snapshot.due_today_count|add:snapshot.upcoming_count }}</span>
+        <span class="badge badge-danger">{{ snapshot.pending_count }}</span>
       </div>
       <div class="list mt-16">
-        {% for payable in overdue_payables %}
-          <a class="list-item" href="{% url 'treasury:cuentas_por_pagar_detail' payable.pk %}">
+        {% for payable in all_pending_payables %}
+          <a class="list-item list-item--{{ payable.urgency_class }}" href="{% url 'treasury:cuentas_por_pagar_detail' payable.pk %}">
             <div class="row">
               <div>
                 <strong>{{ payable.proveedor.razon_social }}</strong>
-                <div class="muted mt-16">{{ payable.concepto }} - Rubro {{ payable.categoria.rubro_label }} - Periodo {{ payable.periodo_referencia|date:"m/Y" }}</div>
+                <div class="muted mt-8">{{ payable.concepto }} · {{ payable.categoria.rubro_label }} · {{ payable.periodo_referencia|date:"m/Y" }}</div>
               </div>
-              <span class="badge badge-danger">Vencido</span>
+              <span class="badge badge-{{ payable.urgency_class }}">{{ payable.urgency_label }}</span>
             </div>
-            <div class="muted mt-16">Vencio {{ payable.fecha_vencimiento|date:"d/m/Y" }} - Pendiente {{ payable.saldo_pendiente|money }}</div>
-          </a>
-        {% endfor %}
-        {% for payable in due_today_payables %}
-          <a class="list-item" href="{% url 'treasury:cuentas_por_pagar_detail' payable.pk %}">
-            <div class="row">
-              <div>
-                <strong>{{ payable.proveedor.razon_social }}</strong>
-                <div class="muted mt-16">{{ payable.concepto }} - Rubro {{ payable.categoria.rubro_label }} - Periodo {{ payable.periodo_referencia|date:"m/Y" }}</div>
-              </div>
-              <span class="badge badge-warning">Vence hoy</span>
-            </div>
-            <div class="muted mt-16">Hoy {{ payable.fecha_vencimiento|date:"d/m/Y" }} - Pendiente {{ payable.saldo_pendiente|money }}</div>
-          </a>
-        {% endfor %}
-        {% for payable in upcoming_payables %}
-          <a class="list-item" href="{% url 'treasury:cuentas_por_pagar_detail' payable.pk %}">
-            <div class="row">
-              <div>
-                <strong>{{ payable.proveedor.razon_social }}</strong>
-                <div class="muted mt-16">{{ payable.concepto }} - Rubro {{ payable.categoria.rubro_label }} - Periodo {{ payable.periodo_referencia|date:"m/Y" }}</div>
-              </div>
-              <span class="badge badge-info">Proximo</span>
-            </div>
-            <div class="muted mt-16">Vence {{ payable.fecha_vencimiento|date:"d/m/Y" }} - Pendiente {{ payable.saldo_pendiente|money }}</div>
+            <div class="muted mt-8">Vence {{ payable.fecha_vencimiento|date:"d/m/Y" }} · Pendiente {{ payable.saldo_pendiente|money }}</div>
           </a>
         {% empty %}
-          <p class="muted">No hay vencimientos ni proximos compromisos para este periodo.</p>
+          <p class="muted">No hay deudas pendientes.</p>
         {% endfor %}
+      </div>
+      <div class="mt-16">
+        <a href="{% url 'treasury:cuentas_por_pagar_list' %}?estado=PAGADA" class="badge badge-muted">Ver archivadas (pagadas) →</a>
       </div>
     </div>
 

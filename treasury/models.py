@@ -379,6 +379,32 @@ class CuentaPorPagar(models.Model):
         return "VENCIDA" if self.esta_vencida else self.estado
 
     @property
+    def days_remaining(self) -> int:
+        return (self.fecha_vencimiento - timezone.localdate()).days
+
+    @property
+    def urgency_class(self) -> str:
+        days = self.days_remaining
+        if days < 4:
+            return "danger"
+        if days < 8:
+            return "warning"
+        return "success"
+
+    @property
+    def urgency_label(self) -> str:
+        days = self.days_remaining
+        if days < 0:
+            return "Vencida"
+        if days == 0:
+            return "Vence hoy"
+        if days < 4:
+            return "Urgente"
+        if days < 8:
+            return "Proximo"
+        return "En plazo"
+
+    @property
     def total_pagado(self) -> Decimal:
         return self.importe_total - (self.saldo_pendiente or Decimal("0.00"))
 
