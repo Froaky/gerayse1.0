@@ -21,7 +21,7 @@
       {{ hidden }}
     {% endfor %}
     {% for field in form.visible_fields %}
-      <div class="field"{% if form.conditional_bank_account and field.name == form.bank_account_field_name %} data-bank-account-row{% if not form.show_bank_account_field %} hidden{% endif %}{% endif %}>
+      <div class="field"{% if form.conditional_bank_account and field.name == form.bank_account_field_name %} data-bank-account-row{% if not form.show_bank_account_field %} hidden{% endif %}{% endif %}{% if form.conditional_sucursal and field.name == form.sucursal_field_name %} data-sucursal-row{% if not form.show_sucursal_field %} hidden{% endif %}{% endif %}>
         <label for="{{ field.id_for_label }}">{{ field.label }}</label>
         {{ field }}
         {% if field.help_text %}
@@ -44,16 +44,32 @@
         const account = document.getElementById("{{ form.bank_account_field_id }}");
         const row = document.querySelector("[data-bank-account-row]");
         if (!source || !account || !row) return;
-// }
         const syncAccountField = () => {
           const requiresAccount = source.value === "{{ form.bank_account_required_value }}";
           row.hidden = !requiresAccount;
           account.disabled = !requiresAccount;
           if (!requiresAccount) account.value = "";
         };
-
         source.addEventListener("change", syncAccountField);
         syncAccountField();
+      })();
+    </script>
+  {% endif %}
+  {% if form.conditional_sucursal %}
+    <script>
+      (() => {
+        const source = document.getElementById("{{ form.sucursal_source_field_id }}");
+        const target = document.getElementById("{{ form.sucursal_field_id }}");
+        const row = document.querySelector("[data-sucursal-row]");
+        if (!source || !target || !row) return;
+        const sync = () => {
+          const show = source.value === "{{ form.sucursal_required_value }}";
+          row.hidden = !show;
+          target.disabled = !show;
+          if (!show) target.value = "";
+        };
+        source.addEventListener("change", sync);
+        sync();
       })();
     </script>
   {% endif %}

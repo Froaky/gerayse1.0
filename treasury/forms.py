@@ -504,7 +504,20 @@ class BankMovementForm(TreasuryStyledFormMixin, forms.ModelForm):
         self.fields["sucursal_gasto"].empty_label = "Sin asignar"
         self.fields["clase"].label = "Tipo financiero"
         self.fields["categoria"].label = "Rubro / categoria"
+        tipo_actual = self.data.get(self.add_prefix("tipo")) if self.is_bound else None
+        self.show_sucursal_field = tipo_actual == MovimientoBancario.Tipo.DEBITO or not tipo_actual
+        self.conditional_sucursal = True
+        self.sucursal_source_field_id = self["tipo"].id_for_label
+        self.sucursal_field_id = self["sucursal_gasto"].id_for_label
+        self.sucursal_field_name = "sucursal_gasto"
+        self.sucursal_required_value = MovimientoBancario.Tipo.DEBITO
         self._apply_input_classes()
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if cleaned_data.get("tipo") != MovimientoBancario.Tipo.DEBITO:
+            cleaned_data["sucursal_gasto"] = None
+        return cleaned_data
 
 
 class BankMovementFilterForm(TreasuryStyledFormMixin, forms.Form):
