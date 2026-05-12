@@ -779,7 +779,7 @@ def open_box_view(request):
 @require_http_methods(["GET", "POST"])
 def register_expense_view(request, box_id: int):
     box = _get_box_for_request(request, box_id)
-    form = GastoRapidoForm(request.POST or None)
+    form = GastoRapidoForm(request.POST or None, sucursal=box.sucursal)
     if request.method == "POST" and form.is_valid():
         try:
             register_expense(
@@ -788,6 +788,7 @@ def register_expense_view(request, box_id: int):
                 rubro_operativo=form.cleaned_data["rubro_operativo"],
                 categoria=form.cleaned_data["categoria"],
                 observacion=form.cleaned_data["observacion"],
+                sucursal_destino=form.cleaned_data.get("sucursal_destino"),
                 creado_por=request.user,
                 actor=request.user,
             )

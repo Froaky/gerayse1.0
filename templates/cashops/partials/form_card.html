@@ -21,7 +21,7 @@
       {{ hidden }}
     {% endfor %}
     {% for field in form.visible_fields %}
-      <div class="field">
+      <div class="field"{% if form.conditional_checkbox_target and field.name == form.checkbox_target_field_name %}  data-checkbox-target-row{% if not form.show_checkbox_target_field %} hidden{% endif %}{% endif %}>
         <label for="{{ field.id_for_label }}">{{ field.label }}</label>
         {{ field }}
         {% if field.help_text %}
@@ -37,5 +37,22 @@
       <button class="button" type="submit">{{ submit_label }}</button>
     </div>
   </form>
+  {% if form.conditional_checkbox_target %}
+    <script>
+      (() => {
+        const trigger = document.getElementById("{{ form.checkbox_trigger_field_id }}");
+        const row = document.querySelector("[data-checkbox-target-row]");
+        const target = document.getElementById("{{ form.checkbox_target_field_id }}");
+        if (!trigger || !row || !target) return;
+        const sync = () => {
+          row.hidden = !trigger.checked;
+          target.disabled = !trigger.checked;
+          if (!trigger.checked) target.value = "";
+        };
+        trigger.addEventListener("change", sync);
+        sync();
+      })();
+    </script>
+  {% endif %}
 </section>
 

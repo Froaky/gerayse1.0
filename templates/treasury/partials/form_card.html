@@ -44,7 +44,7 @@
         const account = document.getElementById("{{ form.bank_account_field_id }}");
         const row = document.querySelector("[data-bank-account-row]");
         if (!source || !account || !row) return;
-
+// }
         const syncAccountField = () => {
           const requiresAccount = source.value === "{{ form.bank_account_required_value }}";
           row.hidden = !requiresAccount;

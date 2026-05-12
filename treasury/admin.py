@@ -3,6 +3,7 @@ from django.core.exceptions import PermissionDenied
 
 from .models import (
     AcreditacionTarjeta,
+    CajaCentral,
     CategoriaCuentaPagar,
     CompromisoEspecial,
     CuentaBancaria,
@@ -10,6 +11,7 @@ from .models import (
     DescuentoAcreditacion,
     LotePOS,
     MovimientoBancario,
+    MovimientoCajaCentral,
     ObjetivoRubroEconomico,
     PagoTesoreria,
     Proveedor,
@@ -33,6 +35,22 @@ class TreasuryReadOnlyAdminMixin(TreasuryNoDeleteAdminMixin):
 
     def has_change_permission(self, request, obj=None):
         return False
+
+
+@admin.register(CajaCentral)
+class CajaCentralAdmin(admin.ModelAdmin):
+    list_display = ("nombre", "sucursal", "activo", "creado_en")
+    list_filter = ("activo", "sucursal")
+    search_fields = ("nombre", "sucursal__nombre", "sucursal__codigo")
+    autocomplete_fields = ("sucursal",)
+
+
+@admin.register(MovimientoCajaCentral)
+class MovimientoCajaCentralAdmin(TreasuryReadOnlyAdminMixin, admin.ModelAdmin):
+    list_display = ("fecha", "caja_central", "tipo", "monto", "concepto", "creado_por", "creado_en")
+    list_filter = ("tipo", "fecha", "caja_central")
+    search_fields = ("concepto", "observaciones", "caja_central__nombre")
+    autocomplete_fields = ("caja_central", "creado_por")
 
 
 @admin.register(Proveedor)

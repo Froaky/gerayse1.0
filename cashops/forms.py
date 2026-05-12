@@ -174,20 +174,68 @@ class GastoRapidoForm(forms.Form):
         required=False,
         widget=forms.Textarea(attrs={"placeholder": "Detalle breve"}),
     )
+    pago_otra_sucursal = forms.BooleanField(
+        required=False,
+        label="Pago de otra sucursal",
+        help_text="Marca si este gasto corresponde a otra sucursal.",
+    )
+    sucursal_destino = forms.ModelChoiceField(
+        queryset=Sucursal.objects.none(),
+        required=False,
+        label="Sucursal destino",
+        help_text="Sucursal que recibe el ingreso de mercaderia.",
+    )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, sucursal=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self._sucursal = sucursal
         self.fields["rubro_operativo"].queryset = RubroOperativo.objects.filter(
             activo=True,
             es_sistema=False,
         )
+        if sucursal and sucursal.empresa_id:
+            qs = Sucursal.objects.filter(empresa=sucursal.empresa, activa=True).exclude(pk=sucursal.pk)
+        else:
+            qs = Sucursal.objects.filter(activa=True)
+            if sucursal:
+                qs = qs.exclude(pk=sucursal.pk)
+        self.fields["sucursal_destino"].queryset = qs
         for field in self.fields.values():
             if isinstance(field.widget, forms.Textarea):
                 field.widget.attrs.setdefault("class", "input textarea")
             elif isinstance(field.widget, forms.Select):
                 field.widget.attrs.setdefault("class", "input select")
+            elif isinstance(field.widget, forms.CheckboxInput):
+                field.widget.attrs.setdefault("class", "input")
             else:
                 field.widget.attrs.setdefault("class", "input")
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if cleaned_data.get("pago_otra_sucursal") and not cleaned_data.get("sucursal_destino"):
+            self.add_error("sucursal_destino", "Selecciona la sucursal destino.")
+        return cleaned_data
+
+    # --- Propiedades para el template (campo condicional por checkbox) ---
+    @property
+    def conditional_checkbox_target(self):
+        return True
+
+    @property
+    def checkbox_trigger_field_id(self):
+        return "id_pago_otra_sucursal"
+
+    @property
+    def checkbox_target_field_name(self):
+        return "sucursal_destino"
+
+    @property
+    def checkbox_target_field_id(self):
+        return "id_sucursal_destino"
+
+    @property
+    def show_checkbox_target_field(self):
+        return bool(self.data.get("pago_otra_sucursal"))
 
 
 class VentaGeneralForm(forms.Form):
@@ -319,7 +367,6 @@ class CierreCajaForm(forms.Form):
     saldo_fisico = forms.DecimalField(
         max_digits=14,
         decimal_places=2,
-        min_value=Decimal("0.00"),
         widget=forms.NumberInput(attrs={"step": "0.01", "placeholder": "0.00"}),
     )
     justificacion = forms.CharField(

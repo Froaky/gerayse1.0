@@ -11,7 +11,8 @@
       "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\MateoCoca\\\\Documents\\\\REPOS\\\\gerayse\" -Directory)",
       "Bash(Select-Object Name)",
       "Bash(findstr /R \"^def.*\" cashops\\\\views.py)",
-      "Bash(findstr /E \"empresa|sucursal|turno|rubro|limite\")"
+      "Bash(findstr /E \"empresa|sucursal|turno|rubro|limite\")",
+      "PowerShell(Get-ChildItem -Path \"c:\\\\Users\\\\MateoCoca\\\\Documents\\\\REPOS\\\\gerayse\" -Recurse -Directory | Select-Object -First 30 | ForEach-Object { $_.FullName })"
     ]
   }
 }

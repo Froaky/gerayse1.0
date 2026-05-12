@@ -1395,6 +1395,7 @@ def bank_movements_detail(request, pk):
         {"label": "Monto", "value": _money(movement.monto)},
         {"label": "Rubro / categoria", "value": movement.categoria.nombre if movement.categoria_id else "No aplica"},
         {"label": "Proveedor", "value": movement.proveedor.razon_social if movement.proveedor_id else "No aplica"},
+        {"label": "Sucursal", "value": movement.sucursal_gasto.nombre if movement.sucursal_gasto_id else "Sin asignar"},
         {"label": "Concepto", "value": movement.concepto},
         {"label": "Referencia", "value": movement.referencia or "Sin referencia"},
         {"label": "Origen", "value": movement.get_origen_display()},

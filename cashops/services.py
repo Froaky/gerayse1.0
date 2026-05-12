@@ -966,6 +966,7 @@ def register_expense(
     rubro_operativo: RubroOperativo,
     categoria: str,
     observacion: str = "",
+    sucursal_destino=None,
     creado_por=None,
     actor=None,
 ) -> MovimientoCaja:
@@ -988,6 +989,15 @@ def register_expense(
         rubro_operativo=rubro_operativo,
         creado_por=actor,
     )
+    if sucursal_destino is not None:
+        Transferencia.objects.create(
+            tipo=Transferencia.Tipo.ENTRE_SUCURSALES,
+            clase=Transferencia.Clase.MERCADERIA,
+            sucursal_origen=caja.sucursal,
+            sucursal_destino=sucursal_destino,
+            observacion=f"Egreso #{movement.id}: {categoria}" if not observacion else f"Egreso #{movement.id}: {observacion}",
+            creado_por=actor,
+        )
     resync_operational_control_for_caja(caja)
     return movement
 
@@ -1266,4 +1276,25 @@ def close_box(
     caja_ref.estado = caja.estado
     caja_ref.cerrada_en = caja.cerrada_en
     caja_ref.cerrada_por = caja.cerrada_por
+
+    if saldo_fisico > 0 and caja.sucursal_id:
+        from django.apps import apps
+        CajaCentral = apps.get_model("treasury", "CajaCentral")
+        MovimientoCajaCentral = apps.get_model("treasury", "MovimientoCajaCentral")
+        caja_central = CajaCentral.objects.filter(sucursal=caja.sucursal, activo=True).first()
+        if caja_central is None:
+            caja_central = CajaCentral.objects.create(
+                sucursal=caja.sucursal,
+                nombre=f"Caja Central {caja.sucursal.nombre}",
+                activo=True,
+            )
+        MovimientoCajaCentral.objects.create(
+            caja_central=caja_central,
+            fecha=caja.fecha_operativa,
+            tipo="INGRESO_CAJA",
+            monto=saldo_fisico,
+            concepto=f"Cierre caja #{caja.id}",
+            creado_por=actor,
+        )
+
     return cierre

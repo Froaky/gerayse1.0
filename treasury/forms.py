@@ -476,6 +476,7 @@ class BankMovementForm(TreasuryStyledFormMixin, forms.ModelForm):
             "clase",
             "categoria",
             "proveedor",
+            "sucursal_gasto",
             "fecha",
             "monto",
             "concepto",
@@ -495,8 +496,12 @@ class BankMovementForm(TreasuryStyledFormMixin, forms.ModelForm):
         self.fields["cuenta_bancaria"].queryset = CuentaBancaria.objects.filter(activa=True).order_by("banco", "nombre")
         self.fields["categoria"].queryset = CategoriaCuentaPagar.objects.filter(activo=True).order_by("nombre")
         self.fields["proveedor"].queryset = Proveedor.objects.filter(activo=True).order_by("razon_social")
+        self.fields["sucursal_gasto"].queryset = Sucursal.objects.filter(activa=True).order_by("nombre")
         self.fields["categoria"].required = False
         self.fields["proveedor"].required = False
+        self.fields["sucursal_gasto"].required = False
+        self.fields["sucursal_gasto"].label = "Sucursal"
+        self.fields["sucursal_gasto"].empty_label = "Sin asignar"
         self.fields["clase"].label = "Tipo financiero"
         self.fields["categoria"].label = "Rubro / categoria"
         self._apply_input_classes()
