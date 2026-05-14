@@ -1,0 +1,91 @@
+{% extends "cashops/layout.html" %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Usuarios</h1>
+        <p class="muted">Alta, permisos, archivo y baja de accesos operativos.</p>
+      </div>
+      <a class="button" href="{% url 'users:user_create' %}">Nuevo usuario</a>
+    </div>
+
+    <div class="summary-grid mt-16">
+      <div class="summary">
+        <small class="muted">Activos</small>
+        <strong>{{ active_count }}</strong>
+      </div>
+      <div class="summary">
+        <small class="muted">Archivados</small>
+        <strong>{{ archived_count }}</strong>
+      </div>
+      <div class="summary">
+        <small class="muted">Vista</small>
+        <strong>{{ status|title }}</strong>
+      </div>
+    </div>
+
+    <form method="get" class="row mt-16" style="align-items:end;">
+      <div class="field" style="flex:1;">
+        <label for="id_q">Buscar</label>
+        <input id="id_q" class="input" type="text" name="q" value="{{ query }}" placeholder="Nombre, usuario, rol o sucursal">
+      </div>
+      <div class="field">
+        <label for="id_status">Estado</label>
+        <select id="id_status" class="input select" name="status">
+          <option value="active"{% if status == "active" %} selected{% endif %}>Activos</option>
+          <option value="archived"{% if status == "archived" %} selected{% endif %}>Archivados</option>
+          <option value="all"{% if status == "all" %} selected{% endif %}>Todos</option>
+        </select>
+      </div>
+      <button class="button-secondary" type="submit">Buscar</button>
+    </form>
+  </section>
+
+  <section class="card mt-16">
+    <div class="list">
+      {% for member in items %}
+        <div class="list-item">
+          <div class="row">
+            <a href="{% url 'users:user_detail' member.id %}" style="display:block; flex:1;">
+              <strong>{{ member.first_name|default:"-" }} {{ member.last_name|default:"" }}</strong>
+              <div class="muted">Usuario: {{ member.username }}</div>
+              <div class="muted">Rol: {{ member.role.name|default:"Sin rol" }}</div>
+              {% if member.usuario_fijo %}
+                <span class="badge badge-warning">Fijo{% if member.sucursal_base %}: {{ member.sucursal_base.nombre }}{% endif %}</span>
+              {% endif %}
+              {% if member.must_change_password %}
+                <span class="badge badge-info">Cambio de contrasena pendiente</span>
+              {% endif %}
+              {% if not member.is_active %}
+                <span class="badge badge-muted">Archivado</span>
+              {% endif %}
+            </a>
+            <div class="list-actions">
+              <a class="button-secondary" href="{% url 'users:user_detail' member.id %}">Permisos</a>
+              <a class="button-secondary" href="{% url 'users:user_update' member.id %}">Editar</a>
+              {% if member.is_active %}
+                <form method="post" action="{% url 'users:user_archive' member.id %}">
+                  {% csrf_token %}
+                  <button class="button-secondary" type="submit">Archivar</button>
+                </form>
+              {% else %}
+                <form method="post" action="{% url 'users:user_restore' member.id %}">
+                  {% csrf_token %}
+                  <button class="button-secondary" type="submit">Reactivar</button>
+                </form>
+              {% endif %}
+              {% if member.id != request.user.id %}
+                <form method="post" action="{% url 'users:user_delete' member.id %}">
+                  {% csrf_token %}
+                  <button class="button-secondary" type="submit">Eliminar</button>
+                </form>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      {% empty %}
+        <p class="muted">No hay usuarios para los filtros seleccionados.</p>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

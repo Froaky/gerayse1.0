@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Gerayse | Primer ingreso{% endblock %}
+{% block body_class %}app-shell--auth{% endblock %}
+{% block topbar_status %}
+  <span class="pill auth-pill">Primer ingreso</span>
+{% endblock %}
+
+{% block content %}
+  <section class="auth-shell">
+    <div class="auth-layout">
+      <article class="auth-card auth-card--login">
+        <div class="auth-card__header">
+          <span class="auth-badge">Acceso</span>
+          <h2>Definir contrasena</h2>
+          {% if validlink %}
+            <p class="muted">Usuario: {{ target_user.username }}</p>
+          {% else %}
+            <p class="muted">El link no esta vigente o el usuario ya completo su primer ingreso.</p>
+          {% endif %}
+        </div>
+
+        {% if validlink %}
+          <form method="post" class="form-stack" novalidate>
+            {% csrf_token %}
+            {% if form.non_field_errors %}
+              <div class="alert alert--danger">{{ form.non_field_errors }}</div>
+            {% endif %}
+
+            {% for field in form.visible_fields %}
+              <label class="field">
+                <span>{{ field.label }}</span>
+                {{ field }}
+                {% if field.help_text %}<small class="muted">{{ field.help_text }}</small>{% endif %}
+                {% if field.errors %}<small class="field__error">{{ field.errors }}</small>{% endif %}
+              </label>
+            {% endfor %}
+
+            <button class="button button--primary button--block" type="submit">Crear contrasena</button>
+          </form>
+        {% else %}
+          <a class="button button--primary button--block" href="{% url 'users:login' %}">Ir al login</a>
+        {% endif %}
+      </article>
+
+      <article class="auth-copy">
+        <p class="eyebrow">Primer acceso</p>
+        <h1>Entrar sin usar la contrasena default</h1>
+        <p class="auth-lead">Este link permite crear una contrasena propia y deja sin efecto el cambio obligatorio pendiente.</p>
+      </article>
+    </div>
+  </section>
+{% endblock %}

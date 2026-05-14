@@ -1,7 +1,10 @@
 from django.contrib import admin
+from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.urls import reverse
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
 
 from cashops.models import Sucursal
 from users.forms import PersonalForm
@@ -118,6 +121,8 @@ class UserAdminTests(TestCase):
 
         self.assertIn("role", fieldset_fields)
         self.assertIn("role", add_fieldset_fields)
+        self.assertIn("must_change_password", fieldset_fields)
+        self.assertIn("must_change_password", add_fieldset_fields)
         self.assertIn("usuario_fijo", fieldset_fields)
         self.assertIn("usuario_fijo", add_fieldset_fields)
         self.assertIn("sucursal_base", fieldset_fields)
@@ -305,6 +310,7 @@ class PersonalViewTests(TestCase):
         created_user = User.objects.get(username="operadora_fija")
         self.assertTrue(created_user.usuario_fijo)
         self.assertEqual(created_user.sucursal_base, self.sucursal_centro)
+        self.assertTrue(created_user.must_change_password)
 
     def test_personal_update_can_disable_fixed_assignment(self):
         self.operator.usuario_fijo = True
@@ -333,3 +339,147 @@ class PersonalViewTests(TestCase):
         self.operator.refresh_from_db()
         self.assertFalse(self.operator.usuario_fijo)
         self.assertIsNone(self.operator.sucursal_base)
+
+    def test_user_detail_shows_first_access_link_when_password_change_is_pending(self):
+        self.operator.must_change_password = True
+        self.operator.save(update_fields=["must_change_password"])
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("users:user_detail", args=[self.operator.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Link de primer ingreso")
+        self.assertContains(response, "/primer-ingreso/")
+
+    def test_user_detail_updates_role_and_effective_access(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.post(
+            reverse("users:user_detail", args=[self.operator.pk]),
+            {
+                "role": self.admin_role.pk,
+                "usuario_fijo": "",
+                "sucursal_base": "",
+                "is_active": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.operator.refresh_from_db()
+        self.assertEqual(self.operator.role, self.admin_role)
+        self.assertTrue(self.operator.is_cashops_admin())
+
+    def test_user_archive_disables_login(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.post(reverse("users:user_archive", args=[self.operator.pk]))
+
+        self.assertEqual(response.status_code, 302)
+        self.operator.refresh_from_db()
+        self.assertFalse(self.operator.is_active)
+        self.client.logout()
+        self.assertFalse(self.client.login(username=self.operator.username, password="secret12345"))
+
+    def test_user_delete_removes_user_without_operational_history(self):
+        disposable = User.objects.create_user(
+            username="usuario_descartable",
+            password="secret12345",
+            role=self.operator_role,
+        )
+        self.client.force_login(self.admin)
+
+        response = self.client.post(reverse("users:user_delete", args=[disposable.pk]))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(User.objects.filter(pk=disposable.pk).exists())
+
+    def test_admin_cannot_archive_self_from_detail_form(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.post(
+            reverse("users:user_detail", args=[self.admin.pk]),
+            {
+                "role": self.admin_role.pk,
+                "usuario_fijo": "",
+                "sucursal_base": "",
+                "is_active": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.admin.refresh_from_db()
+        self.assertTrue(self.admin.is_active)
+
+
+class FirstAccessPasswordTests(TestCase):
+    def setUp(self):
+        self.role = Role.objects.create(code="ENCARGADO", name="Encargado")
+        self.user = User.objects.create_user(
+            username="primer_ingreso",
+            password="default12345",
+            first_name="Luz",
+            last_name="Caja",
+            role=self.role,
+            must_change_password=True,
+        )
+
+    def test_default_password_login_redirects_to_mandatory_change(self):
+        response = self.client.post(
+            reverse("users:login"),
+            {"username": self.user.username, "password": "default12345"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("users:password_change_required"))
+
+        dashboard_response = self.client.get(reverse("cashops:dashboard"))
+        self.assertEqual(dashboard_response.status_code, 302)
+        self.assertEqual(dashboard_response.url, reverse("users:password_change_required"))
+
+    def test_mandatory_change_clears_flag_and_keeps_session(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("users:password_change_required"),
+            {
+                "old_password": "default12345",
+                "new_password1": "propia12345",
+                "new_password2": "propia12345",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.must_change_password)
+        self.assertTrue(self.user.check_password("propia12345"))
+
+    def test_first_access_link_sets_password_without_default_password(self):
+        uid = urlsafe_base64_encode(force_bytes(self.user.pk))
+        token = default_token_generator.make_token(self.user)
+
+        response = self.client.post(
+            reverse("users:first_access", args=[uid, token]),
+            {
+                "new_password1": "linkpropia12345",
+                "new_password2": "linkpropia12345",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("users:login"))
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.must_change_password)
+        self.assertTrue(self.user.check_password("linkpropia12345"))
+        self.assertFalse(self.user.check_password("default12345"))
+
+    def test_first_access_link_is_invalid_after_password_change(self):
+        uid = urlsafe_base64_encode(force_bytes(self.user.pk))
+        token = default_token_generator.make_token(self.user)
+        self.user.set_password("alreadychanged12345")
+        self.user.must_change_password = False
+        self.user.save(update_fields=["password", "must_change_password"])
+
+        response = self.client.get(reverse("users:first_access", args=[uid, token]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "El link no esta vigente")

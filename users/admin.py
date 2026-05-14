@@ -15,13 +15,13 @@ class RoleAdmin(admin.ModelAdmin):
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
     fieldsets = BaseUserAdmin.fieldsets + (
-        ("Business", {"fields": ("role", "usuario_fijo", "sucursal_base")}),
+        ("Business", {"fields": ("role", "must_change_password", "usuario_fijo", "sucursal_base")}),
     )
     add_fieldsets = BaseUserAdmin.add_fieldsets + (
-        ("Business", {"fields": ("role", "usuario_fijo", "sucursal_base")}),
+        ("Business", {"fields": ("role", "must_change_password", "usuario_fijo", "sucursal_base")}),
     )
-    list_display = ("username", "get_full_name", "email", "role", "is_staff", "is_active")
-    list_filter = BaseUserAdmin.list_filter + ("role", "usuario_fijo", "sucursal_base")
+    list_display = ("username", "get_full_name", "email", "role", "must_change_password", "is_staff", "is_active")
+    list_filter = BaseUserAdmin.list_filter + ("role", "must_change_password", "usuario_fijo", "sucursal_base")
     search_fields = (
         "username",
         "first_name",

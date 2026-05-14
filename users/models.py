@@ -29,6 +29,10 @@ class User(AbstractUser):
     )
     dni = models.CharField(max_length=20, blank=True, verbose_name="DNI")
     telefono = models.CharField(max_length=40, blank=True, verbose_name="Telefono")
+    must_change_password = models.BooleanField(
+        default=False,
+        verbose_name="Debe cambiar contrasena",
+    )
     usuario_fijo = models.BooleanField(default=False, verbose_name="Usuario fijo")
     sucursal_base = models.ForeignKey(
         "cashops.Sucursal",

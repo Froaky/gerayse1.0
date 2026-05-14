@@ -1,15 +1,46 @@
 from django import forms
 from django.contrib.auth import get_user_model
+from django.db.models import Q
 from cashops.models import Sucursal
 from .models import Role
 
 User = get_user_model()
 
+
+def _apply_operational_classes(form: forms.BaseForm) -> None:
+    for field in form.fields.values():
+        if isinstance(field.widget, forms.Select):
+            field.widget.attrs.setdefault("class", "input select")
+        elif isinstance(field.widget, forms.CheckboxInput):
+            field.widget.attrs.setdefault("class", "")
+        else:
+            field.widget.attrs.setdefault("class", "input")
+
+
+def _configure_fixed_user_target(form: forms.BaseForm) -> None:
+    form.conditional_checkbox_target = True
+    form.checkbox_target_field_name = "sucursal_base"
+    form.checkbox_trigger_field_id = form["usuario_fijo"].id_for_label
+    form.checkbox_target_field_id = form["sucursal_base"].id_for_label
+    form.show_checkbox_target_field = bool(
+        form.data.get("usuario_fijo")
+        if form.is_bound
+        else getattr(form.instance, "usuario_fijo", False)
+    )
+
+
+def _role_queryset_for_instance(instance):
+    query = Q(is_active=True)
+    if getattr(instance, "role_id", None):
+        query |= Q(pk=instance.role_id)
+    return Role.objects.filter(query).order_by("name")
+
+
 class PersonalForm(forms.ModelForm):
     password = forms.CharField(
         widget=forms.PasswordInput(attrs={"placeholder": "Contrasena (obligatoria para nuevos)"}),
         required=False,
-        help_text="Dejalo en blanco si solo estas editando y no queres cambiarla."
+        help_text="En altas funciona como contrasena default. El usuario debera cambiarla al primer ingreso.",
     )
 
     class Meta:
@@ -34,6 +65,7 @@ class PersonalForm(forms.ModelForm):
             "role": "Rol / Permisos",
             "usuario_fijo": "Usuario fijo",
             "sucursal_base": "Sucursal base",
+            "is_active": "Usuario activo",
         }
         widgets = {
             "username": forms.TextInput(attrs={"placeholder": "juan.perez"}),
@@ -47,16 +79,16 @@ class PersonalForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["sucursal_base"].queryset = Sucursal.objects.filter(activa=True).order_by("nombre")
-        for field in self.fields.values():
-            if isinstance(field.widget, forms.Select):
-                field.widget.attrs.setdefault("class", "input select")
-            else:
-                field.widget.attrs.setdefault("class", "input")
+        self.fields["role"].queryset = _role_queryset_for_instance(self.instance)
+        _apply_operational_classes(self)
+        _configure_fixed_user_target(self)
 
     def clean(self):
         cleaned_data = super().clean()
         if cleaned_data.get("usuario_fijo") and not cleaned_data.get("sucursal_base"):
             self.add_error("sucursal_base", "La sucursal base es obligatoria para un usuario fijo.")
+        if not cleaned_data.get("usuario_fijo"):
+            cleaned_data["sucursal_base"] = None
         if not self.instance.pk and not cleaned_data.get("password"):
             self.add_error("password", "La contrasena es obligatoria para nuevos usuarios.")
         return cleaned_data
@@ -66,6 +98,43 @@ class PersonalForm(forms.ModelForm):
         password = self.cleaned_data.get("password")
         if password:
             user.set_password(password)
+            user.must_change_password = True
         if commit:
             user.save()
         return user
+
+
+class UserAccessForm(forms.ModelForm):
+    class Meta:
+        model = User
+        fields = [
+            "role",
+            "usuario_fijo",
+            "sucursal_base",
+            "is_active",
+        ]
+        labels = {
+            "role": "Rol / permisos",
+            "usuario_fijo": "Usuario fijo",
+            "sucursal_base": "Sucursal base",
+            "is_active": "Usuario activo",
+        }
+        help_texts = {
+            "role": "El rol define los accesos reales hoy: caja, configuracion, tesoreria y usuarios.",
+            "usuario_fijo": "Si esta activo, el usuario queda asociado a una sucursal base.",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["role"].queryset = _role_queryset_for_instance(self.instance)
+        self.fields["sucursal_base"].queryset = Sucursal.objects.filter(activa=True).order_by("nombre")
+        _apply_operational_classes(self)
+        _configure_fixed_user_target(self)
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if cleaned_data.get("usuario_fijo") and not cleaned_data.get("sucursal_base"):
+            self.add_error("sucursal_base", "La sucursal base es obligatoria para un usuario fijo.")
+        if not cleaned_data.get("usuario_fijo"):
+            cleaned_data["sucursal_base"] = None
+        return cleaned_data

@@ -17,7 +17,7 @@ Estado actual:
 - `EP-06`: control de gestion y alertas. Implementada.
 - `EP-07`: impuestos, planes y autorizaciones. Implementada.
 - `EP-08`: ajustes operativos de caja y sucursales. Implementada. Cerrada 2026-04-28 tras completar US-8.8 a US-8.13.
-- `EP-09`: usuarios operativos y datos minimos. Implementada.
+- `EP-09`: usuarios operativos y datos minimos. Reabierta: gestion operativa de usuarios y primer ingreso implementados; pendiente matriz granular por modulo/lugar/accion (`US-9.9`).
 - `EP-10`: situacion financiera y alertas consolidadas. Implementada.
 - `EP-11`: rentabilidad y situacion economica. Implementada.
 - `EP-12`: empresas, contexto activo y navegacion. Implementada. Cerrada 2026-04-28.

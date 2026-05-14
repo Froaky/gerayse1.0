@@ -79,7 +79,8 @@ def consolidate_turnos_and_backfill_cajas(apps, schema_editor):
     # PostgreSQL raises "cannot ALTER TABLE because it has pending trigger events".
     # SET CONSTRAINTS ALL IMMEDIATE forces those checks to run now so the queue
     # is empty before any DDL executes.
-    schema_editor.execute("SET CONSTRAINTS ALL IMMEDIATE")
+    if schema_editor.connection.vendor == "postgresql":
+        schema_editor.execute("SET CONSTRAINTS ALL IMMEDIATE")
 
 
 def reverse_noop(apps, schema_editor):

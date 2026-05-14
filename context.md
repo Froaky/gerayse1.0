@@ -58,6 +58,10 @@ Last updated: 2026-04-30
 
 ### Objective
 
+- 2026-05-14 users slice:
+  - Build an operational `Usuarios` management view from the Config menu.
+  - Replace the old personal-oriented admin flow with user listing, creation, detail/access management, archive/delete actions, default password, mandatory first password change, and first-entry link.
+  - Preserve current real access rules: role controls admin/config/treasury/users access; `usuario_fijo` + `sucursal_base` controls operational assignment scope.
 - External GitHub profile task:
   - Review and improve `github.com/Froaky` so it presents Mateo Coca as hireable.
   - Work target is the separate profile repository `Froaky/Froaky`, not Gerayse runtime behavior.
@@ -69,6 +73,32 @@ Last updated: 2026-04-30
 - Convert new client feedback from 2026-04-28 about apertura de caja, turnos, ventas por canal, egresos and caja fuerte into executable backlog stories.
 - Convert new client feedback from 2026-04-28 about company contexts, branch-to-company assignment, data isolation, header navigation, module menu, and dashboard cash/channel separation into executable backlog.
 - Convert new client feedback from 2026-04-29 about treasury administrative expense form into executable backlog: cash origin must not require bank account; expense needs amount, rubro, concept, branch and paid period.
+
+### Current Users Slice Notes
+
+- Files touched for 2026-05-14 users slice:
+  - `users/models.py`, `users/forms.py`, `users/views.py`, `users/urls.py`, `users/admin.py`, `users/middleware.py`, `users/tests.py`
+  - `users/migrations/0006_user_must_change_password.py`
+  - `templates/users/user_list.html`, `templates/users/user_detail.html`, `templates/users/password_change_required.html`, `templates/users/first_access.html`
+  - `templates/cashops/layout.html`, `templates/treasury/layout.html`, `config/settings.py`
+  - `cashops/migrations/0011_turno_empresa_caja_fecha_operativa.py` only changed to skip PostgreSQL-only `SET CONSTRAINTS` on SQLite test DBs
+  - `docs/epics/EP-09-usuarios-operativos-y-datos-minimos.md`, `docs/epics/README.md`, `context.md`
+- Behavior added:
+  - Config now links to `Usuarios`; old `/personal/` URLs remain compatible.
+  - New users created/reset through the operational form get `must_change_password=True`.
+  - Login with default password is blocked by middleware until the password is changed.
+  - First-entry token link lets the user set a password without using the default; the link expires after password change.
+  - User detail manages actual current access levers: role, active/archive state, `usuario_fijo`, and `sucursal_base`.
+  - Archive disables login; delete is blocked if protected related operations exist.
+- Scope decision:
+  - Current permission view is based on rules the backend already enforces. True granular ACL by module/location/read/write remains `US-9.9` because it needs backend enforcement across every protected view/form.
+- Validation:
+  - `.venv\Scripts\python.exe -m compileall users config` passed.
+  - `.venv\Scripts\python.exe manage.py test users -v 2` passed: 25 tests OK.
+  - `.venv\Scripts\python.exe manage.py test users -v 1` passed after including inactive legacy roles in user forms and delete coverage: 26 tests OK.
+  - `.venv\Scripts\python.exe manage.py check` passed.
+  - `.venv\Scripts\python.exe manage.py makemigrations users --check` passed.
+  - `.venv\Scripts\python.exe manage.py makemigrations --check` is still red because existing cashops/treasury model drift wants new migrations `cashops.0013...` and `treasury.0018...`; no users migration drift remains.
 
 ### Findings Before Fixes
 

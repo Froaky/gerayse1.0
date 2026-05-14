@@ -1,0 +1,163 @@
+{% extends "cashops/layout.html" %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>{{ target_user.get_full_name|default:target_user.username }}</h1>
+        <p class="muted">Gestion de acceso real para {{ target_user.username }}.</p>
+      </div>
+      <div class="list-actions">
+        <a class="button-secondary" href="{% url 'users:user_list' %}">Volver</a>
+        <a class="button-secondary" href="{% url 'users:user_update' target_user.id %}">Editar datos</a>
+      </div>
+    </div>
+
+    <div class="summary-grid mt-16">
+      <div class="summary">
+        <small class="muted">Estado</small>
+        <strong>{% if target_user.is_active %}Activo{% else %}Archivado{% endif %}</strong>
+      </div>
+      <div class="summary">
+        <small class="muted">Rol</small>
+        <strong>{{ target_user.role.name|default:"Sin rol" }}</strong>
+      </div>
+      <div class="summary">
+        <small class="muted">Sucursal base</small>
+        <strong>{{ target_user.sucursal_base.nombre|default:"No fija" }}</strong>
+      </div>
+      <div class="summary">
+        <small class="muted">Password</small>
+        <strong>{% if target_user.must_change_password %}Debe cambiar{% else %}Propia{% endif %}</strong>
+      </div>
+    </div>
+  </section>
+
+  {% if first_access_url %}
+    <section class="card mt-16">
+      <div class="row">
+        <div>
+          <h2>Link de primer ingreso</h2>
+          <p class="muted">Sirve para que el usuario defina su contrasena sin usar la default.</p>
+        </div>
+      </div>
+      <div class="field mt-12">
+        <label for="first-access-url">URL</label>
+        <input id="first-access-url" class="input" type="text" readonly value="{{ first_access_url }}">
+      </div>
+    </section>
+  {% endif %}
+
+  <section class="card mt-16">
+    <div class="row">
+      <div>
+        <h2>Permisos y alcance</h2>
+        <p class="muted">Estos permisos salen del rol, estado activo y sucursal base.</p>
+      </div>
+    </div>
+
+    <div class="list mt-16">
+      {% for row in access_rows %}
+        <div class="list-item">
+          <div class="row">
+            <div>
+              <strong>{{ row.module }}</strong>
+              <div class="muted">{{ row.scope }}</div>
+              <small class="muted">{{ row.source }}</small>
+            </div>
+            <div class="list-actions">
+              <span class="badge {% if row.read %}badge-success{% else %}badge-muted{% endif %}">
+                Lectura: {% if row.read %}Si{% else %}No{% endif %}
+              </span>
+              <span class="badge {% if row.write %}badge-success{% else %}badge-muted{% endif %}">
+                Escritura: {% if row.write %}Si{% else %}No{% endif %}
+              </span>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="card mt-16">
+    <div class="row">
+      <div>
+        <h2>Gestionar acceso</h2>
+        <p class="muted">Cambiar estos datos modifica permisos reales del sistema.</p>
+      </div>
+    </div>
+
+    {% if access_form.non_field_errors %}
+      <ul class="errors">
+        {% for error in access_form.non_field_errors %}
+          <li>{{ error }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    <form method="post" class="stack mt-16">
+      {% csrf_token %}
+      {% for field in access_form.visible_fields %}
+        <div class="field"{% if access_form.conditional_checkbox_target and field.name == access_form.checkbox_target_field_name %} data-checkbox-target-row{% if not access_form.show_checkbox_target_field %} hidden{% endif %}{% endif %}>
+          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+          {% if field.help_text %}
+            <small class="muted">{{ field.help_text }}</small>
+          {% endif %}
+          {% for error in field.errors %}
+            <div class="error">{{ error }}</div>
+          {% endfor %}
+        </div>
+      {% endfor %}
+      <div class="row mt-8">
+        <span class="muted">El usuario archivado no puede iniciar sesion.</span>
+        <button class="button" type="submit">Guardar permisos</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card mt-16">
+    <div class="row">
+      <div>
+        <h2>Acciones de cuenta</h2>
+        <p class="muted">Archivar conserva trazabilidad. Eliminar solo funciona si no hay operaciones asociadas.</p>
+      </div>
+      <div class="list-actions">
+        {% if target_user.is_active %}
+          <form method="post" action="{% url 'users:user_archive' target_user.id %}">
+            {% csrf_token %}
+            <button class="button-secondary" type="submit">Archivar</button>
+          </form>
+        {% else %}
+          <form method="post" action="{% url 'users:user_restore' target_user.id %}">
+            {% csrf_token %}
+            <button class="button-secondary" type="submit">Reactivar</button>
+          </form>
+        {% endif %}
+        {% if can_delete %}
+          <form method="post" action="{% url 'users:user_delete' target_user.id %}">
+            {% csrf_token %}
+            <button class="button-secondary" type="submit">Eliminar</button>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  {% if access_form.conditional_checkbox_target %}
+    <script>
+      (() => {
+        const trigger = document.getElementById("{{ access_form.checkbox_trigger_field_id }}");
+        const row = document.querySelector("[data-checkbox-target-row]");
+        const target = document.getElementById("{{ access_form.checkbox_target_field_id }}");
+        if (!trigger || !row || !target) return;
+        const sync = () => {
+          row.hidden = !trigger.checked;
+          target.disabled = !trigger.checked;
+          if (!trigger.checked) target.value = "";
+        };
+        trigger.addEventListener("change", sync);
+        sync();
+      })();
+    </script>
+  {% endif %}
+{% endblock %}
