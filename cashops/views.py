@@ -28,6 +28,7 @@ from .forms import (
     VentaGeneralForm,
 )
 from .models import Caja, CierreCaja, Empresa, LimiteRubroOperativo, RubroOperativo, Sucursal, Turno
+from .permissions import ensure_cashops_read, ensure_cashops_write, ensure_config_read, ensure_config_write
 from .services import (
     BRANCH_TRANSFER_DISABLED_REASON,
     CLOSING_DIFF_THRESHOLD,
@@ -73,8 +74,23 @@ def _get_box_for_request(request, box_id: int):
 
 
 def _require_cashops_admin(request) -> None:
-    if not request.user.is_authenticated or not request.user.is_cashops_admin():
-        raise PermissionDenied("Acceso solo para administradores.")
+    ensure_config_write(request.user)
+
+
+def _require_config_read(request) -> None:
+    ensure_config_read(request.user)
+
+
+def _require_config_write(request) -> None:
+    ensure_config_write(request.user)
+
+
+def _require_cashops_read(request) -> None:
+    ensure_cashops_read(request.user)
+
+
+def _require_cashops_write(request) -> None:
+    ensure_cashops_write(request.user)
 
 
 def _is_htmx(request) -> bool:
@@ -258,6 +274,7 @@ def _resolve_dashboard_scope(request):
 
 @login_required
 def dashboard(request):
+    _require_cashops_read(request)
     is_admin = request.user.is_authenticated and request.user.is_cashops_admin()
     if not request.GET.get("scope") and not is_admin:
         open_boxes = Caja.objects.filter(usuario=request.user, estado=Caja.Estado.ABIERTA)
@@ -301,7 +318,7 @@ def dashboard(request):
 
 @login_required
 def alert_panel(request):
-    _require_cashops_admin(request)
+    _require_config_read(request)
     estado = (request.GET.get("estado") or "activas").lower()
     alcance = (request.GET.get("alcance") or "todos").lower()
     periodo_desde = parse_date(request.GET.get("periodo_desde") or request.GET.get("fecha_desde") or "")
@@ -351,7 +368,7 @@ def alert_panel(request):
 
 @login_required
 def management_matrix(request):
-    _require_cashops_admin(request)
+    _require_config_read(request)
     date_from, date_to, sucursal = _parse_management_matrix_filters(request)
     matrix = build_management_daily_matrix(date_from=date_from, date_to=date_to, sucursal=sucursal)
     return render(
@@ -369,7 +386,7 @@ def management_matrix(request):
 
 @login_required
 def management_matrix_export(request):
-    _require_cashops_admin(request)
+    _require_config_read(request)
     date_from, date_to, sucursal = _parse_management_matrix_filters(request)
     matrix = build_management_daily_matrix(date_from=date_from, date_to=date_to, sucursal=sucursal)
     filename_scope = sucursal.codigo if sucursal else "global"
@@ -419,7 +436,7 @@ def management_matrix_export(request):
 
 @login_required
 def operational_category_list(request):
-    _require_cashops_admin(request)
+    _require_config_read(request)
     categories = RubroOperativo.objects.annotate(limit_count=Count("limites")).order_by("nombre")
     return render(
         request,
@@ -433,7 +450,7 @@ def operational_category_list(request):
 @login_required
 @require_http_methods(["GET", "POST"])
 def operational_category_create(request):
-    _require_cashops_admin(request)
+    _require_config_write(request)
     form = RubroOperativoForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         try:
@@ -464,7 +481,7 @@ def operational_category_create(request):
 @login_required
 @require_http_methods(["GET", "POST"])
 def operational_category_update(request, category_id: int):
-    _require_cashops_admin(request)
+    _require_config_write(request)
     category = get_object_or_404(RubroOperativo, pk=category_id)
     if category.es_sistema:
         raise PermissionDenied("El rubro de sistema no se puede editar desde esta pantalla.")
@@ -499,7 +516,7 @@ def operational_category_update(request, category_id: int):
 @login_required
 @require_http_methods(["POST"])
 def operational_category_toggle(request, category_id: int):
-    _require_cashops_admin(request)
+    _require_config_write(request)
     category = get_object_or_404(RubroOperativo, pk=category_id)
     if category.es_sistema:
         raise PermissionDenied("El rubro de sistema no se puede activar ni desactivar manualmente.")
@@ -516,7 +533,7 @@ def operational_category_toggle(request, category_id: int):
 
 @login_required
 def operational_limit_list(request):
-    _require_cashops_admin(request)
+    _require_config_read(request)
     limits = LimiteRubroOperativo.objects.select_related("rubro", "sucursal").order_by(
         "rubro__nombre",
         "sucursal__nombre",
@@ -534,7 +551,7 @@ def operational_limit_list(request):
 @login_required
 @require_http_methods(["GET", "POST"])
 def operational_limit_create(request):
-    _require_cashops_admin(request)
+    _require_config_write(request)
     form = LimiteRubroOperativoForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         try:
@@ -566,7 +583,7 @@ def operational_limit_create(request):
 @login_required
 @require_http_methods(["GET", "POST"])
 def operational_limit_update(request, limit_id: int):
-    _require_cashops_admin(request)
+    _require_config_write(request)
     limit = get_object_or_404(LimiteRubroOperativo.objects.select_related("rubro", "sucursal"), pk=limit_id)
     previous_rubro = limit.rubro
     form = LimiteRubroOperativoForm(request.POST or None, instance=limit)
@@ -602,7 +619,7 @@ def operational_limit_update(request, limit_id: int):
 @login_required
 @require_http_methods(["GET", "POST"])
 def sucursal_create(request):
-    _require_cashops_admin(request)
+    _require_config_write(request)
     form = SucursalForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         sucursal = form.save()
@@ -628,7 +645,7 @@ def sucursal_create(request):
 
 @login_required
 def sucursal_list(request):
-    _require_cashops_admin(request)
+    _require_config_read(request)
     q = (request.GET.get("q") or "").strip()
     items = Sucursal.objects.all().order_by("nombre")
     if q:
@@ -650,7 +667,7 @@ def sucursal_list(request):
 @login_required
 @require_http_methods(["GET", "POST"])
 def sucursal_update(request, sucursal_id: int):
-    _require_cashops_admin(request)
+    _require_config_write(request)
     sucursal = get_object_or_404(Sucursal, pk=sucursal_id)
     form = SucursalForm(request.POST or None, instance=sucursal)
     if request.method == "POST" and form.is_valid():
@@ -678,7 +695,7 @@ def sucursal_update(request, sucursal_id: int):
 @login_required
 @require_http_methods(["POST"])
 def sucursal_toggle(request, sucursal_id: int):
-    _require_cashops_admin(request)
+    _require_config_write(request)
     sucursal = get_object_or_404(Sucursal, pk=sucursal_id)
     sucursal.activa = not sucursal.activa
     sucursal.save(update_fields=["activa", "actualizada_en"])
@@ -693,7 +710,7 @@ def sucursal_toggle(request, sucursal_id: int):
 @login_required
 @require_http_methods(["GET", "POST"])
 def turno_create(request):
-    _require_cashops_admin(request)
+    _require_config_write(request)
     form = TurnoForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         turno = form.save(commit=False)
@@ -722,7 +739,7 @@ def turno_create(request):
 
 @login_required
 def turno_list(request):
-    _require_cashops_admin(request)
+    _require_config_read(request)
     return render(
         request,
         "cashops/list_page.html",
@@ -737,6 +754,7 @@ def turno_list(request):
 @login_required
 @require_http_methods(["GET", "POST"])
 def open_box_view(request):
+    _require_cashops_write(request)
     empresa = _get_empresa_activa(request)
     form = CajaAperturaForm(request.POST or None, actor=request.user, empresa=empresa)
     if request.method == "POST" and form.is_valid():
@@ -778,6 +796,7 @@ def open_box_view(request):
 @login_required
 @require_http_methods(["GET", "POST"])
 def register_expense_view(request, box_id: int):
+    _require_cashops_write(request)
     box = _get_box_for_request(request, box_id)
     form = GastoRapidoForm(request.POST or None, sucursal=box.sucursal)
     if request.method == "POST" and form.is_valid():
@@ -818,6 +837,7 @@ def register_expense_view(request, box_id: int):
 @login_required
 @require_http_methods(["GET", "POST"])
 def register_sale_view(request, box_id: int):
+    _require_cashops_write(request)
     box = _get_box_for_request(request, box_id)
     form = VentaGeneralForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
@@ -856,6 +876,7 @@ def register_sale_view(request, box_id: int):
 @login_required
 @require_http_methods(["GET", "POST"])
 def register_cash_income_view(request, box_id: int):
+    _require_cashops_write(request)
     box = _get_box_for_request(request, box_id)
     form = IngresoEfectivoForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
@@ -894,6 +915,7 @@ def register_cash_income_view(request, box_id: int):
 @login_required
 @require_http_methods(["GET", "POST"])
 def transfer_between_boxes_view(request):
+    _require_cashops_write(request)
     form = TransferenciaEntreCajasForm(request.POST or None)
     open_boxes = _owned_open_boxes(request)
     form.fields["caja_origen"].queryset = _owned_open_boxes(request)
@@ -980,6 +1002,7 @@ def transfer_between_branches_view(request):
 
 @login_required
 def close_box_preview(request, box_id: int):
+    _require_cashops_write(request)
     box = _get_box_for_request(request, box_id)
     context = _build_close_preview_context(box, request.GET.get("saldo_fisico"))
     return render(request, "cashops/partials/close_preview.html", context)
@@ -988,6 +1011,7 @@ def close_box_preview(request, box_id: int):
 @login_required
 @require_http_methods(["GET", "POST"])
 def close_box_view(request, box_id: int):
+    _require_cashops_write(request)
     box = _get_box_for_request(request, box_id)
     form = CierreCajaForm(request.POST or None, caja=box)
     form.fields["saldo_fisico"].widget.attrs.update(
@@ -1036,6 +1060,7 @@ def close_box_view(request, box_id: int):
 
 @login_required
 def resolve_alert(request, alert_id: int):
+    _require_config_write(request)
     alert = get_object_or_404(AlertaOperativa, pk=alert_id)
     alert.resuelta = True
     alert.save(update_fields=['resuelta'])
@@ -1049,7 +1074,7 @@ def resolve_alert(request, alert_id: int):
 
 @login_required
 def empresa_list(request):
-    _require_cashops_admin(request)
+    _require_config_read(request)
     empresas = Empresa.objects.all()
     items = []
     for e in empresas:
@@ -1075,7 +1100,7 @@ def empresa_list(request):
 @login_required
 @require_http_methods(["GET", "POST"])
 def empresa_create(request):
-    _require_cashops_admin(request)
+    _require_config_write(request)
     form = EmpresaForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         empresa = form.save()
@@ -1100,7 +1125,7 @@ def empresa_create(request):
 @login_required
 @require_http_methods(["GET", "POST"])
 def empresa_update(request, empresa_id: int):
-    _require_cashops_admin(request)
+    _require_config_write(request)
     empresa = get_object_or_404(Empresa, pk=empresa_id)
     form = EmpresaForm(request.POST or None, instance=empresa)
     if request.method == "POST" and form.is_valid():
@@ -1126,7 +1151,7 @@ def empresa_update(request, empresa_id: int):
 @login_required
 @require_http_methods(["POST"])
 def empresa_toggle(request, empresa_id: int):
-    _require_cashops_admin(request)
+    _require_config_write(request)
     empresa = get_object_or_404(Empresa, pk=empresa_id)
     empresa.activa = not empresa.activa
     empresa.save(update_fields=["activa", "actualizada_en"])
@@ -1156,7 +1181,7 @@ def set_empresa_activa(request):
 @login_required
 @require_http_methods(["GET", "POST"])
 def reset_operational_data(request):
-    _require_cashops_admin(request)
+    _require_config_write(request)
 
     if request.method == "POST":
         step = request.POST.get("step", "1")

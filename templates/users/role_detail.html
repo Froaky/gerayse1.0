@@ -1,0 +1,99 @@
+{% extends "cashops/layout.html" %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>{{ role.name }}</h1>
+        <p class="muted">Permisos default para usuarios con rol {{ role.code }}.</p>
+      </div>
+      <div class="list-actions">
+        <a class="button-secondary" href="{% url 'users:role_list' %}">Volver</a>
+        <a class="button-secondary" href="{% url 'users:user_list' %}">Usuarios</a>
+      </div>
+    </div>
+  </section>
+
+  {% if can_edit_permissions %}
+    <section class="card mt-16">
+      <div class="row">
+        <div>
+          <h2>Datos del rol</h2>
+          <p class="muted">El codigo se usa para compatibilidad con reglas existentes.</p>
+        </div>
+      </div>
+
+    {% if form.non_field_errors %}
+      <ul class="errors">
+        {% for error in form.non_field_errors %}
+          <li>{{ error }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+      <form method="post" class="stack mt-16">
+        {% csrf_token %}
+        {% for field in form.visible_fields %}
+          <div class="field">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% if field.help_text %}
+              <small class="muted">{{ field.help_text }}</small>
+            {% endif %}
+            {% for error in field.errors %}
+              <div class="error">{{ error }}</div>
+            {% endfor %}
+          </div>
+        {% endfor %}
+        <div class="row mt-8">
+          <span class="muted">Los usuarios sin permisos personalizados heredan esta matriz.</span>
+          <button class="button" type="submit">Guardar rol</button>
+        </div>
+      </form>
+    </section>
+  {% endif %}
+
+  <section class="card mt-16">
+    <div class="row">
+      <div>
+        <h2>Permisos default</h2>
+        <p class="muted">Click en Lectura o Escritura cambia el permiso base del rol.</p>
+      </div>
+    </div>
+
+    <div class="list mt-16">
+      {% for row in permission_rows %}
+        <div class="list-item">
+          <div class="row">
+            <div>
+              <strong>{{ row.label }}</strong>
+              <div class="muted">{{ row.scope }}</div>
+            </div>
+            <div class="list-actions">
+              {% if can_edit_permissions %}
+                <form method="post" action="{% url 'users:role_permission_toggle' role.id row.module 'read' %}">
+                  {% csrf_token %}
+                  <button class="badge {% if row.read %}badge-success{% else %}badge-muted{% endif %}" type="submit">
+                    Lectura: {% if row.read %}Si{% else %}No{% endif %}
+                  </button>
+                </form>
+                <form method="post" action="{% url 'users:role_permission_toggle' role.id row.module 'write' %}">
+                  {% csrf_token %}
+                  <button class="badge {% if row.write %}badge-success{% else %}badge-muted{% endif %}" type="submit">
+                    Escritura: {% if row.write %}Si{% else %}No{% endif %}
+                  </button>
+                </form>
+              {% else %}
+                <span class="badge {% if row.read %}badge-success{% else %}badge-muted{% endif %}">
+                  Lectura: {% if row.read %}Si{% else %}No{% endif %}
+                </span>
+                <span class="badge {% if row.write %}badge-success{% else %}badge-muted{% endif %}">
+                  Escritura: {% if row.write %}Si{% else %}No{% endif %}
+                </span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

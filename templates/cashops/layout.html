@@ -263,23 +263,34 @@
         <nav class="nav">
           <div class="nav-primary">
             <a class="chip" href="{% url 'cashops:dashboard' %}">Caja</a>
-            <a class="chip" href="{% url 'cashops:box_open' %}">Abrir caja</a>
-            {% if request.user.is_authenticated and request.user.is_cashops_admin %}
+            {% if request.user.can_write_cashops %}
+              <a class="chip" href="{% url 'cashops:box_open' %}">Abrir caja</a>
+            {% endif %}
+            {% if request.user.is_authenticated and request.user.can_read_treasury %}
               <a class="chip" href="{% url 'treasury:dashboard' %}">Tesoreria</a>
+            {% endif %}
+            {% if request.user.is_authenticated and request.user.can_read_config or request.user.can_read_users %}
               <span class="nav-divider"></span>
               <details class="nav-menu">
                 <summary class="chip chip-button">Config &#9662;</summary>
                 <div class="nav-menu__dropdown">
-                  <a class="nav-menu__item" href="{% url 'cashops:alert_panel' %}">Alertas</a>
-                  <a class="nav-menu__item" href="{% url 'cashops:management_matrix' %}">Matriz diaria</a>
-                  <a class="nav-menu__item" href="{% url 'cashops:operational_category_list' %}">Rubros</a>
-                  <a class="nav-menu__item" href="{% url 'cashops:operational_limit_list' %}">Limites</a>
-                  <a class="nav-menu__item" href="{% url 'cashops:empresa_list' %}">Empresas</a>
-                  <a class="nav-menu__item" href="{% url 'cashops:sucursal_list' %}">Sucursales</a>
-                  <a class="nav-menu__item" href="{% url 'cashops:turno_list' %}">Turnos</a>
-                  <a class="nav-menu__item" href="{% url 'users:user_list' %}">Usuarios</a>
-                  <div class="nav-menu__separator"></div>
-                  <a class="nav-menu__item" href="{% url 'cashops:reset_operational_data' %}" style="color:#dd9598;">Reiniciar datos</a>
+                  {% if request.user.can_read_config %}
+                    <a class="nav-menu__item" href="{% url 'cashops:alert_panel' %}">Alertas</a>
+                    <a class="nav-menu__item" href="{% url 'cashops:management_matrix' %}">Matriz diaria</a>
+                    <a class="nav-menu__item" href="{% url 'cashops:operational_category_list' %}">Rubros</a>
+                    <a class="nav-menu__item" href="{% url 'cashops:operational_limit_list' %}">Limites</a>
+                    <a class="nav-menu__item" href="{% url 'cashops:empresa_list' %}">Empresas</a>
+                    <a class="nav-menu__item" href="{% url 'cashops:sucursal_list' %}">Sucursales</a>
+                    <a class="nav-menu__item" href="{% url 'cashops:turno_list' %}">Turnos</a>
+                  {% endif %}
+                  {% if request.user.can_read_users %}
+                    <a class="nav-menu__item" href="{% url 'users:user_list' %}">Usuarios</a>
+                    <a class="nav-menu__item" href="{% url 'users:role_list' %}">Roles</a>
+                  {% endif %}
+                  {% if request.user.can_write_config %}
+                    <div class="nav-menu__separator"></div>
+                    <a class="nav-menu__item" href="{% url 'cashops:reset_operational_data' %}" style="color:#dd9598;">Reiniciar datos</a>
+                  {% endif %}
                 </div>
               </details>
             {% endif %}

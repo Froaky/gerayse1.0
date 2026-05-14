@@ -281,15 +281,22 @@
                 <a class="nav-menu__item" href="{% url 'treasury:central_cash_list' %}">Efectivo central</a>
               </div>
             </details>
-            <details class="nav-menu">
-              <summary class="chip chip-button">Config &#9662;</summary>
-              <div class="nav-menu__dropdown">
-                <a class="nav-menu__item" href="{% url 'treasury:proveedores_list' %}">Proveedores</a>
-                <a class="nav-menu__item" href="{% url 'treasury:categorias_list' %}">Categorias</a>
-                <a class="nav-menu__item" href="{% url 'treasury:cuentas_bancarias_list' %}">Cuentas bancarias</a>
-                <a class="nav-menu__item" href="{% url 'users:user_list' %}">Usuarios</a>
-              </div>
-            </details>
+            {% if request.user.can_read_treasury or request.user.can_read_users %}
+              <details class="nav-menu">
+                <summary class="chip chip-button">Config &#9662;</summary>
+                <div class="nav-menu__dropdown">
+                  {% if request.user.can_read_treasury %}
+                    <a class="nav-menu__item" href="{% url 'treasury:proveedores_list' %}">Proveedores</a>
+                    <a class="nav-menu__item" href="{% url 'treasury:categorias_list' %}">Categorias</a>
+                    <a class="nav-menu__item" href="{% url 'treasury:cuentas_bancarias_list' %}">Cuentas bancarias</a>
+                  {% endif %}
+                  {% if request.user.can_read_users %}
+                    <a class="nav-menu__item" href="{% url 'users:user_list' %}">Usuarios</a>
+                    <a class="nav-menu__item" href="{% url 'users:role_list' %}">Roles</a>
+                  {% endif %}
+                </div>
+              </details>
+            {% endif %}
             <span class="nav-divider"></span>
             <a class="chip" href="{% url 'cashops:dashboard' %}">Caja</a>
           </div>

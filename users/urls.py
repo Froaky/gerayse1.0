@@ -18,6 +18,11 @@ urlpatterns = [
     path("usuarios/<int:user_id>/archivar/", views.user_archive, name="user_archive"),
     path("usuarios/<int:user_id>/reactivar/", views.user_restore, name="user_restore"),
     path("usuarios/<int:user_id>/eliminar/", views.user_delete, name="user_delete"),
+    path("usuarios/<int:user_id>/permisos/<str:module>/<str:action>/", views.user_permission_toggle, name="user_permission_toggle"),
+    path("usuarios/roles/", views.role_list, name="role_list"),
+    path("usuarios/roles/nuevo/", views.role_create, name="role_create"),
+    path("usuarios/roles/<int:role_id>/", views.role_detail, name="role_detail"),
+    path("usuarios/roles/<int:role_id>/permisos/<str:module>/<str:action>/", views.role_permission_toggle, name="role_permission_toggle"),
 
     # Backward-compatible personal URLs
     path("personal/", views.user_list, name="personal_list"),

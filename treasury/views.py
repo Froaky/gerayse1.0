@@ -61,7 +61,7 @@ from .models import (
     PagoTesoreria,
     Proveedor,
 )
-from .permissions import ensure_treasury_admin
+from .permissions import ensure_treasury_permission
 from .services import (
     annul_payable,
     annul_payment,
@@ -104,10 +104,44 @@ from .services import (
 )
 
 
+TREASURY_WRITE_VIEW_NAMES = {
+    "proveedores_create",
+    "proveedores_update",
+    "proveedores_toggle",
+    "categorias_create",
+    "categorias_update",
+    "categorias_toggle",
+    "cuentas_bancarias_create",
+    "cuentas_bancarias_update",
+    "cuentas_bancarias_toggle",
+    "cuentas_por_pagar_create",
+    "cuentas_por_pagar_update",
+    "cuentas_por_pagar_annul",
+    "compromisos_especiales_create",
+    "compromisos_especiales_decide",
+    "pagos_transferencia_create",
+    "pagos_cheque_create",
+    "pagos_echeq_create",
+    "pagos_efectivo_create",
+    "pagos_annul",
+    "bank_movements_create",
+    "bank_movements_link",
+    "pos_batches_create",
+    "card_accreditations_register",
+    "central_cash_create",
+    "carga_inicial_caja_central",
+    "egreso_tesoreria_create",
+    "arqueo_create",
+    "close_month",
+}
+
+
 def _require_treasury_admin(request) -> None:
     if not request.user.is_authenticated:
         raise PermissionDenied("Debes iniciar sesion.")
-    ensure_treasury_admin(request.user)
+    view_name = request.resolver_match.url_name if request.resolver_match else ""
+    action = "write" if request.method != "GET" or view_name in TREASURY_WRITE_VIEW_NAMES else "read"
+    ensure_treasury_permission(request.user, action)
 
 
 def _is_htmx(request) -> bool:

@@ -4,6 +4,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import PasswordChangeForm, SetPasswordForm
 from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth.views import LoginView, LogoutView
+from django.core.exceptions import PermissionDenied
 from django.db.models import Q
 from django.db.models.deletion import ProtectedError
 from django.http import HttpResponse
@@ -13,9 +14,29 @@ from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.views.decorators.http import require_POST
 
-from .forms import PersonalForm, UserAccessForm
+from .forms import PersonalForm, RoleForm, UserAccessForm
+from .models import PermissionModule, Role, RolePermission, UserPermission
 
 User = get_user_model()
+
+PERMISSION_MODULE_META = {
+    PermissionModule.CASHOPS: {
+        "label": "Caja operativa",
+        "scope": "Cajas, apertura, movimientos, ingresos, egresos, traspasos y cierre operativo.",
+    },
+    PermissionModule.CONFIG: {
+        "label": "Configuracion",
+        "scope": "Rubros, limites, empresas, sucursales, turnos y reinicio de datos.",
+    },
+    PermissionModule.TREASURY: {
+        "label": "Tesoreria",
+        "scope": "Proveedores, deudas, pagos, bancos, caja central y reportes.",
+    },
+    PermissionModule.USERS: {
+        "label": "Usuarios",
+        "scope": "Alta, edicion, roles, permisos, archivo, baja y links de primer ingreso.",
+    },
+}
 
 
 class GerayseLoginView(LoginView):
@@ -66,11 +87,9 @@ def _render_form(request, context: dict, status: int = 200, template: str = "cas
     return render(request, template, context, status=status)
 
 
-def _admin_redirect(request):
-    if not request.user.is_cashops_admin():
-        messages.error(request, "No tenes permisos para gestionar usuarios.")
-        return redirect("cashops:dashboard")
-    return None
+def _ensure_users_permission(request, action: str) -> None:
+    if not request.user.has_module_permission(PermissionModule.USERS, action):
+        raise PermissionDenied("No tenes permisos para gestionar usuarios.")
 
 
 def _style_password_form(form) -> None:
@@ -82,61 +101,72 @@ def _display_name(user) -> str:
     return user.get_full_name() or user.get_username()
 
 
-def _is_admin_role(role) -> bool:
-    if not role or not role.code:
-        return False
-    return role.code.strip().upper() in User.ADMIN_ROLE_CODES
-
-
 def _first_access_url(request, user) -> str:
     uid = urlsafe_base64_encode(force_bytes(user.pk))
     token = default_token_generator.make_token(user)
     return request.build_absolute_uri(reverse("users:first_access", args=[uid, token]))
 
 
-def _effective_access_rows(user):
-    is_active = user.is_active
-    is_admin = is_active and user.is_cashops_admin()
-    can_use_cashops = is_active
-    if not is_active:
-        location_scope = "Usuario archivado: no puede ingresar."
-    elif is_admin:
-        location_scope = "Todas las sucursales y cajas."
-    elif user.usuario_fijo and user.sucursal_base_id:
-        location_scope = f"Sucursal base: {user.sucursal_base.nombre}."
-    else:
-        location_scope = "Solo cajas asignadas operativamente."
+def _permission_rows_for_user(user):
+    rows = []
+    for module, label in PermissionModule.choices:
+        can_read, can_write, source = user.configured_permission_values(module)
+        if not user.is_active:
+            can_read = False
+            can_write = False
+            source = "Archivado"
+        rows.append(
+            {
+                "module": module,
+                "label": label,
+                "read": can_read,
+                "write": can_write,
+                "scope": PERMISSION_MODULE_META[module]["scope"],
+                "source": source,
+            }
+        )
+    return rows
 
-    return [
-        {
-            "module": "Caja operativa",
-            "read": can_use_cashops,
-            "write": can_use_cashops,
-            "scope": location_scope,
-            "source": "Usuario activo + caja asignada; admin ve todas.",
-        },
-        {
-            "module": "Configuracion",
-            "read": is_admin,
-            "write": is_admin,
-            "scope": "Rubros, limites, empresas, sucursales, turnos y reinicio de datos.",
-            "source": "Rol ADMIN/ADMINISTRADOR o superusuario.",
-        },
-        {
-            "module": "Tesoreria",
-            "read": is_admin,
-            "write": is_admin,
-            "scope": "Proveedores, deudas, pagos, bancos, caja central y reportes.",
-            "source": "Misma regla vigente de administrador operativo.",
-        },
-        {
-            "module": "Usuarios",
-            "read": is_admin,
-            "write": is_admin,
-            "scope": "Alta, edicion, permisos, archivo, baja y links de primer ingreso.",
-            "source": "Misma regla vigente de administrador operativo.",
-        },
-    ]
+
+def _permission_rows_for_role(role):
+    role.ensure_permission_rows()
+    permissions = {permission.module: permission for permission in role.permissions.all()}
+    rows = []
+    for module, label in PermissionModule.choices:
+        permission = permissions[module]
+        rows.append(
+            {
+                "module": module,
+                "label": label,
+                "read": permission.can_read or permission.can_write,
+                "write": permission.can_write,
+                "scope": PERMISSION_MODULE_META[module]["scope"],
+            }
+        )
+    return rows
+
+
+def _target_user_has_users_write_after_toggle(target_user, module: str, action: str, new_value: bool) -> bool:
+    if module != PermissionModule.USERS:
+        return target_user.has_module_permission(PermissionModule.USERS, "write")
+    if action == "write":
+        return new_value
+    if action == "read" and not new_value:
+        return False
+    return target_user.has_module_permission(PermissionModule.USERS, "write")
+
+
+def _role_grants_permission(role, module: str, action: str) -> bool:
+    if not role:
+        return False
+    if (role.code or "").strip().upper() in User.ADMIN_ROLE_CODES:
+        return True
+    permission = RolePermission.objects.filter(role=role, module=module).first()
+    if permission:
+        return permission.can_write if action == "write" else permission.can_read or permission.can_write
+    if module == PermissionModule.CASHOPS:
+        return True
+    return False
 
 
 def _render_user_detail(request, target_user, access_form=None, status=200):
@@ -150,9 +180,10 @@ def _render_user_detail(request, target_user, access_form=None, status=200):
         {
             "target_user": target_user,
             "access_form": access_form,
-            "access_rows": _effective_access_rows(target_user),
+            "access_rows": _permission_rows_for_user(target_user),
             "first_access_url": first_access_url,
             "can_delete": target_user.pk != request.user.pk,
+            "can_edit_permissions": request.user.has_module_permission(PermissionModule.USERS, "write"),
         },
         status=status,
     )
@@ -160,9 +191,7 @@ def _render_user_detail(request, target_user, access_form=None, status=200):
 
 @login_required
 def user_list(request):
-    guard = _admin_redirect(request)
-    if guard:
-        return guard
+    _ensure_users_permission(request, "read")
 
     q = (request.GET.get("q") or "").strip()
     status = request.GET.get("status") or "active"
@@ -196,9 +225,7 @@ def user_list(request):
 
 @login_required
 def user_create(request):
-    guard = _admin_redirect(request)
-    if guard:
-        return guard
+    _ensure_users_permission(request, "write")
 
     form = PersonalForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
@@ -222,9 +249,7 @@ def user_create(request):
 
 @login_required
 def user_update(request, user_id: int):
-    guard = _admin_redirect(request)
-    if guard:
-        return guard
+    _ensure_users_permission(request, "write")
 
     target_user = get_object_or_404(User, pk=user_id)
     form = PersonalForm(request.POST or None, instance=target_user)
@@ -249,9 +274,7 @@ def user_update(request, user_id: int):
 
 @login_required
 def user_detail(request, user_id: int):
-    guard = _admin_redirect(request)
-    if guard:
-        return guard
+    _ensure_users_permission(request, "write" if request.method == "POST" else "read")
 
     target_user = get_object_or_404(User.objects.select_related("role", "sucursal_base"), pk=user_id)
     if request.method == "POST":
@@ -261,8 +284,14 @@ def user_detail(request, user_id: int):
             is_active = access_form.cleaned_data.get("is_active")
             if target_user.pk == request.user.pk and not is_active:
                 access_form.add_error("is_active", "No podes archivar tu propio usuario.")
-            if target_user.pk == request.user.pk and not request.user.is_superuser and not _is_admin_role(role):
-                access_form.add_error("role", "No podes quitarte tu propio acceso administrador.")
+            if target_user.pk == request.user.pk and not request.user.is_superuser:
+                has_user_override = UserPermission.objects.filter(
+                    user=target_user,
+                    module=PermissionModule.USERS,
+                    can_write=True,
+                ).exists()
+                if not _role_grants_permission(role, PermissionModule.USERS, "write") and not has_user_override:
+                    access_form.add_error("role", "No podes quitarte tu propio acceso a usuarios.")
         if access_form.is_valid():
             access_form.save()
             messages.success(request, f"Permisos de {_display_name(target_user)} actualizados.")
@@ -276,9 +305,7 @@ def user_detail(request, user_id: int):
 @login_required
 @require_POST
 def user_archive(request, user_id: int):
-    guard = _admin_redirect(request)
-    if guard:
-        return guard
+    _ensure_users_permission(request, "write")
 
     target_user = get_object_or_404(User, pk=user_id)
     if target_user.pk == request.user.pk:
@@ -293,9 +320,7 @@ def user_archive(request, user_id: int):
 @login_required
 @require_POST
 def user_restore(request, user_id: int):
-    guard = _admin_redirect(request)
-    if guard:
-        return guard
+    _ensure_users_permission(request, "write")
 
     target_user = get_object_or_404(User, pk=user_id)
     target_user.is_active = True
@@ -307,9 +332,7 @@ def user_restore(request, user_id: int):
 @login_required
 @require_POST
 def user_delete(request, user_id: int):
-    guard = _admin_redirect(request)
-    if guard:
-        return guard
+    _ensure_users_permission(request, "write")
 
     target_user = get_object_or_404(User, pk=user_id)
     if target_user.pk == request.user.pk:
@@ -323,6 +346,135 @@ def user_delete(request, user_id: int):
         return redirect("users:user_detail", target_user.pk)
     messages.success(request, f"Usuario {user_label} eliminado.")
     return redirect("users:user_list")
+
+
+@login_required
+@require_POST
+def user_permission_toggle(request, user_id: int, module: str, action: str):
+    _ensure_users_permission(request, "write")
+    if module not in PermissionModule.values or action not in {"read", "write"}:
+        raise PermissionDenied("Permiso invalido.")
+
+    target_user = get_object_or_404(User, pk=user_id)
+    current_read, current_write, _ = target_user.configured_permission_values(module)
+    permission, created = UserPermission.objects.get_or_create(
+        user=target_user,
+        module=module,
+        defaults={"can_read": current_read, "can_write": current_write},
+    )
+    if created:
+        permission.can_read = current_read
+        permission.can_write = current_write
+
+    if action == "read":
+        permission.can_read = not current_read
+        if not permission.can_read:
+            permission.can_write = False
+    else:
+        permission.can_write = not current_write
+        if permission.can_write:
+            permission.can_read = True
+
+    if target_user.pk == request.user.pk and not request.user.is_superuser:
+        new_value = permission.can_write if action == "write" else permission.can_read
+        if not _target_user_has_users_write_after_toggle(target_user, module, action, new_value):
+            messages.error(request, "No podes quitarte tu propio permiso para gestionar usuarios.")
+            return redirect("users:user_detail", target_user.pk)
+
+    permission.save()
+    messages.success(request, f"Permiso de {target_user} actualizado.")
+    return redirect("users:user_detail", target_user.pk)
+
+
+@login_required
+def role_list(request):
+    _ensure_users_permission(request, "read")
+    q = (request.GET.get("q") or "").strip()
+    roles = Role.objects.prefetch_related("permissions").order_by("name")
+    if q:
+        roles = roles.filter(Q(code__icontains=q) | Q(name__icontains=q))
+    return render(
+        request,
+        "users/role_list.html",
+        {
+            "roles": roles,
+            "query": q,
+            "can_edit_permissions": request.user.has_module_permission(PermissionModule.USERS, "write"),
+        },
+    )
+
+
+@login_required
+def role_create(request):
+    _ensure_users_permission(request, "write")
+    form = RoleForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        role = form.save()
+        role.ensure_permission_rows()
+        messages.success(request, f"Rol {role.name} creado. Configura sus permisos default.")
+        return redirect("users:role_detail", role.pk)
+    return _render_form(
+        request,
+        {
+            "title": "Nuevo rol",
+            "subtitle": "Define el nombre del rol. Sus permisos default se configuran al guardar.",
+            "form": form,
+            "submit_label": "Crear rol",
+            "back_url": reverse("users:role_list"),
+            "form_action": reverse("users:role_create"),
+        },
+        status=400 if request.method == "POST" and not form.is_valid() else 200,
+    )
+
+
+@login_required
+def role_detail(request, role_id: int):
+    _ensure_users_permission(request, "write" if request.method == "POST" else "read")
+    role = get_object_or_404(Role.objects.prefetch_related("permissions"), pk=role_id)
+    form = RoleForm(request.POST or None, instance=role)
+    if request.method == "POST" and form.is_valid():
+        role = form.save()
+        role.ensure_permission_rows()
+        messages.success(request, f"Rol {role.name} actualizado.")
+        return redirect("users:role_detail", role.pk)
+    return render(
+        request,
+        "users/role_detail.html",
+        {
+            "role": role,
+            "form": form,
+            "permission_rows": _permission_rows_for_role(role),
+            "can_edit_permissions": request.user.has_module_permission(PermissionModule.USERS, "write"),
+        },
+        status=400 if request.method == "POST" and not form.is_valid() else 200,
+    )
+
+
+@login_required
+@require_POST
+def role_permission_toggle(request, role_id: int, module: str, action: str):
+    _ensure_users_permission(request, "write")
+    if module not in PermissionModule.values or action not in {"read", "write"}:
+        raise PermissionDenied("Permiso invalido.")
+    role = get_object_or_404(Role, pk=role_id)
+    permission, _ = RolePermission.objects.get_or_create(role=role, module=module)
+
+    current_value = permission.can_write if action == "write" else permission.can_read
+    if request.user.role_id == role.pk and module == PermissionModule.USERS and current_value and not request.user.is_superuser:
+        messages.error(request, "No podes quitar permisos de usuarios al rol con el que estas operando.")
+        return redirect("users:role_detail", role.pk)
+
+    if action == "read":
+        permission.can_read = not permission.can_read
+        if not permission.can_read:
+            permission.can_write = False
+    else:
+        permission.can_write = not permission.can_write
+        if permission.can_write:
+            permission.can_read = True
+    permission.save()
+    messages.success(request, f"Permiso default de {role.name} actualizado.")
+    return redirect("users:role_detail", role.pk)
 
 
 @login_required

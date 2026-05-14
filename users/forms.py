@@ -120,7 +120,7 @@ class UserAccessForm(forms.ModelForm):
             "is_active": "Usuario activo",
         }
         help_texts = {
-            "role": "El rol define los accesos reales hoy: caja, configuracion, tesoreria y usuarios.",
+            "role": "El rol define permisos default; la ficha del usuario puede tener ajustes puntuales.",
             "usuario_fijo": "Si esta activo, el usuario queda asociado a una sucursal base.",
         }
 
@@ -138,3 +138,28 @@ class UserAccessForm(forms.ModelForm):
         if not cleaned_data.get("usuario_fijo"):
             cleaned_data["sucursal_base"] = None
         return cleaned_data
+
+
+class RoleForm(forms.ModelForm):
+    class Meta:
+        model = Role
+        fields = ["code", "name", "is_active"]
+        labels = {
+            "code": "Codigo",
+            "name": "Nombre",
+            "is_active": "Rol activo",
+        }
+        help_texts = {
+            "code": "Usar codigos cortos, por ejemplo ADMIN, ENCARGADO o SOLO_LECTURA.",
+        }
+        widgets = {
+            "code": forms.TextInput(attrs={"placeholder": "ENCARGADO"}),
+            "name": forms.TextInput(attrs={"placeholder": "Encargado"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        _apply_operational_classes(self)
+
+    def clean_code(self):
+        return (self.cleaned_data["code"] or "").strip().upper()

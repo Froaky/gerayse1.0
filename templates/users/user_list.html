@@ -6,7 +6,12 @@
         <h1>Usuarios</h1>
         <p class="muted">Alta, permisos, archivo y baja de accesos operativos.</p>
       </div>
-      <a class="button" href="{% url 'users:user_create' %}">Nuevo usuario</a>
+      <div class="list-actions">
+        <a class="button-secondary" href="{% url 'users:role_list' %}">Roles</a>
+        {% if request.user.can_write_users %}
+          <a class="button" href="{% url 'users:user_create' %}">Nuevo usuario</a>
+        {% endif %}
+      </div>
     </div>
 
     <div class="summary-grid mt-16">
@@ -62,23 +67,25 @@
             </a>
             <div class="list-actions">
               <a class="button-secondary" href="{% url 'users:user_detail' member.id %}">Permisos</a>
-              <a class="button-secondary" href="{% url 'users:user_update' member.id %}">Editar</a>
-              {% if member.is_active %}
-                <form method="post" action="{% url 'users:user_archive' member.id %}">
-                  {% csrf_token %}
-                  <button class="button-secondary" type="submit">Archivar</button>
-                </form>
-              {% else %}
-                <form method="post" action="{% url 'users:user_restore' member.id %}">
-                  {% csrf_token %}
-                  <button class="button-secondary" type="submit">Reactivar</button>
-                </form>
-              {% endif %}
-              {% if member.id != request.user.id %}
-                <form method="post" action="{% url 'users:user_delete' member.id %}">
-                  {% csrf_token %}
-                  <button class="button-secondary" type="submit">Eliminar</button>
-                </form>
+              {% if request.user.can_write_users %}
+                <a class="button-secondary" href="{% url 'users:user_update' member.id %}">Editar</a>
+                {% if member.is_active %}
+                  <form method="post" action="{% url 'users:user_archive' member.id %}">
+                    {% csrf_token %}
+                    <button class="button-secondary" type="submit">Archivar</button>
+                  </form>
+                {% else %}
+                  <form method="post" action="{% url 'users:user_restore' member.id %}">
+                    {% csrf_token %}
+                    <button class="button-secondary" type="submit">Reactivar</button>
+                  </form>
+                {% endif %}
+                {% if member.id != request.user.id %}
+                  <form method="post" action="{% url 'users:user_delete' member.id %}">
+                    {% csrf_token %}
+                    <button class="button-secondary" type="submit">Eliminar</button>
+                  </form>
+                {% endif %}
               {% endif %}
             </div>
           </div>

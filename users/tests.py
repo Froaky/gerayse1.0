@@ -8,7 +8,7 @@ from django.utils.http import urlsafe_base64_encode
 
 from cashops.models import Sucursal
 from users.forms import PersonalForm
-from users.models import Role, User
+from users.models import PermissionModule, Role, RolePermission, User, UserPermission
 
 
 class RoleModelTests(TestCase):
@@ -52,6 +52,28 @@ class UserModelTests(TestCase):
         self.assertTrue(legacy_admin_user.is_cashops_admin())
         self.assertTrue(superuser.is_cashops_admin())
         self.assertFalse(operator_user.is_cashops_admin())
+
+    def test_module_permissions_use_role_defaults_and_user_overrides(self):
+        read_only_role = Role.objects.create(code="LECTURA", name="Solo lectura")
+        RolePermission.objects.create(
+            role=read_only_role,
+            module=PermissionModule.TREASURY,
+            can_read=True,
+            can_write=False,
+        )
+        user = User.objects.create_user(username="tesoreria_lectura", password="secret12345", role=read_only_role)
+
+        self.assertTrue(user.has_module_permission(PermissionModule.TREASURY, "read"))
+        self.assertFalse(user.has_module_permission(PermissionModule.TREASURY, "write"))
+
+        UserPermission.objects.create(
+            user=user,
+            module=PermissionModule.TREASURY,
+            can_read=True,
+            can_write=True,
+        )
+
+        self.assertTrue(user.has_module_permission(PermissionModule.TREASURY, "write"))
 
     def test_user_can_be_assigned_a_role(self):
         role = Role.objects.create(code="ENCARGADO", name="Encargado")
@@ -368,6 +390,112 @@ class PersonalViewTests(TestCase):
         self.operator.refresh_from_db()
         self.assertEqual(self.operator.role, self.admin_role)
         self.assertTrue(self.operator.is_cashops_admin())
+
+    def test_user_permission_badge_toggle_creates_user_override(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.post(
+            reverse(
+                "users:user_permission_toggle",
+                args=[self.operator.pk, PermissionModule.TREASURY, "read"],
+            )
+        )
+
+        self.assertEqual(response.status_code, 302)
+        override = UserPermission.objects.get(user=self.operator, module=PermissionModule.TREASURY)
+        self.assertTrue(override.can_read)
+        self.assertFalse(override.can_write)
+        self.operator.refresh_from_db()
+        self.assertTrue(self.operator.has_module_permission(PermissionModule.TREASURY, "read"))
+
+    def test_write_permission_toggle_also_enables_read(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.post(
+            reverse(
+                "users:user_permission_toggle",
+                args=[self.operator.pk, PermissionModule.USERS, "write"],
+            )
+        )
+
+        self.assertEqual(response.status_code, 302)
+        override = UserPermission.objects.get(user=self.operator, module=PermissionModule.USERS)
+        self.assertTrue(override.can_read)
+        self.assertTrue(override.can_write)
+
+    def test_role_permissions_are_managed_from_roles_submenu(self):
+        self.client.force_login(self.admin)
+
+        create_response = self.client.post(
+            reverse("users:role_create"),
+            {
+                "code": "LECTURA",
+                "name": "Solo lectura usuarios",
+                "is_active": "on",
+            },
+        )
+
+        self.assertEqual(create_response.status_code, 302)
+        role = Role.objects.get(code="LECTURA")
+        self.assertEqual(role.permissions.count(), 4)
+
+        toggle_response = self.client.post(
+            reverse(
+                "users:role_permission_toggle",
+                args=[role.pk, PermissionModule.USERS, "read"],
+            )
+        )
+
+        self.assertEqual(toggle_response.status_code, 302)
+        permission = RolePermission.objects.get(role=role, module=PermissionModule.USERS)
+        self.assertTrue(permission.can_read)
+        self.assertFalse(permission.can_write)
+
+    def test_user_with_users_read_can_view_but_not_write_users(self):
+        read_role = Role.objects.create(code="USERS_READ", name="Usuarios lectura")
+        RolePermission.objects.create(role=read_role, module=PermissionModule.USERS, can_read=True)
+        read_user = User.objects.create_user(
+            username="usuarios_lectura",
+            password="secret12345",
+            role=read_role,
+        )
+        self.client.force_login(read_user)
+
+        list_response = self.client.get(reverse("users:user_list"))
+        create_response = self.client.get(reverse("users:user_create"))
+
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(create_response.status_code, 403)
+
+    def test_treasury_read_permission_allows_dashboard_but_blocks_create_forms(self):
+        treasury_role = Role.objects.create(code="TESO_READ", name="Tesoreria lectura")
+        RolePermission.objects.create(role=treasury_role, module=PermissionModule.TREASURY, can_read=True)
+        read_user = User.objects.create_user(
+            username="tesoreria_lectura_view",
+            password="secret12345",
+            role=treasury_role,
+        )
+        self.client.force_login(read_user)
+
+        dashboard_response = self.client.get(reverse("treasury:dashboard"))
+        create_response = self.client.get(reverse("treasury:proveedores_create"))
+
+        self.assertEqual(dashboard_response.status_code, 200)
+        self.assertEqual(create_response.status_code, 403)
+
+    def test_cashops_read_permission_is_required_for_dashboard(self):
+        no_cash_role = Role.objects.create(code="SIN_CAJA", name="Sin caja")
+        RolePermission.objects.create(role=no_cash_role, module=PermissionModule.CASHOPS, can_read=False, can_write=False)
+        read_user = User.objects.create_user(
+            username="sin_caja",
+            password="secret12345",
+            role=no_cash_role,
+        )
+        self.client.force_login(read_user)
+
+        response = self.client.get(reverse("cashops:dashboard"))
+
+        self.assertEqual(response.status_code, 403)
 
     def test_user_archive_disables_login(self):
         self.client.force_login(self.admin)

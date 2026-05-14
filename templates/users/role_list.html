@@ -1,0 +1,47 @@
+{% extends "cashops/layout.html" %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Roles</h1>
+        <p class="muted">Permisos default que heredan los usuarios al asignarles un rol.</p>
+      </div>
+      <div class="list-actions">
+        <a class="button-secondary" href="{% url 'users:user_list' %}">Usuarios</a>
+        {% if can_edit_permissions %}
+          <a class="button" href="{% url 'users:role_create' %}">Nuevo rol</a>
+        {% endif %}
+      </div>
+    </div>
+
+    <form method="get" class="row mt-16" style="align-items:end;">
+      <div class="field" style="flex:1;">
+        <label for="id_q">Buscar</label>
+        <input id="id_q" class="input" type="text" name="q" value="{{ query }}" placeholder="Codigo o nombre">
+      </div>
+      <button class="button-secondary" type="submit">Buscar</button>
+    </form>
+  </section>
+
+  <section class="card mt-16">
+    <div class="list">
+      {% for role in roles %}
+        <a class="list-item" href="{% url 'users:role_detail' role.id %}">
+          <div class="row">
+            <div>
+              <strong>{{ role.name }}</strong>
+              <div class="muted">Codigo: {{ role.code }}</div>
+            </div>
+            {% if role.is_active %}
+              <span class="badge badge-success">Activo</span>
+            {% else %}
+              <span class="badge badge-muted">Inactivo</span>
+            {% endif %}
+          </div>
+        </a>
+      {% empty %}
+        <p class="muted">No hay roles para los filtros seleccionados.</p>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

@@ -1,7 +1,13 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
-from .models import Role, User
+from .models import Role, RolePermission, User, UserPermission
+
+
+class RolePermissionInline(admin.TabularInline):
+    model = RolePermission
+    extra = 0
+    fields = ("module", "can_read", "can_write")
 
 
 @admin.register(Role)
@@ -10,6 +16,7 @@ class RoleAdmin(admin.ModelAdmin):
     list_filter = ("is_active",)
     search_fields = ("code", "name")
     ordering = ("name",)
+    inlines = (RolePermissionInline,)
 
 
 @admin.register(User)
@@ -33,3 +40,10 @@ class UserAdmin(BaseUserAdmin):
         "sucursal_base__codigo",
     )
     ordering = ("username",)
+
+
+@admin.register(UserPermission)
+class UserPermissionAdmin(admin.ModelAdmin):
+    list_display = ("user", "module", "can_read", "can_write")
+    list_filter = ("module", "can_read", "can_write")
+    search_fields = ("user__username", "user__first_name", "user__last_name")

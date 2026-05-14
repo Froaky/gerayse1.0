@@ -76,6 +76,36 @@ Last updated: 2026-04-30
 
 ### Current Users Slice Notes
 
+- 2026-05-14 follow-up permissions slice:
+  - User requested clickable read/write permissions from the user detail screen and a Roles submenu under Usuarios.
+  - Implemented direction: role-level default permissions plus user-level overrides; user detail badges POST real permission changes.
+  - Permission modules for this slice: cashops, config, treasury, users.
+  - Read/write toggles now affect backend authorization, not only UI labels.
+  - Files touched for this follow-up:
+    - `users/models.py`, `users/forms.py`, `users/views.py`, `users/urls.py`, `users/admin.py`, `users/tests.py`
+    - `users/migrations/0007_rolepermission_userpermission.py`
+    - `templates/users/user_detail.html`, `templates/users/user_list.html`, `templates/users/role_list.html`, `templates/users/role_detail.html`
+    - `cashops/permissions.py`, `cashops/views.py`, `treasury/permissions.py`, `treasury/views.py`
+    - `templates/cashops/layout.html`, `templates/treasury/layout.html`
+    - `docs/epics/EP-09-usuarios-operativos-y-datos-minimos.md`, `docs/epics/README.md`, `context.md`
+  - Behavior added:
+    - Roles submenu under Usuarios with role create/edit and default permission toggles.
+    - User detail permission badges are POST buttons for read/write overrides.
+    - Role permissions seed legacy behavior: admin roles get all modules; non-admin roles get caja by default.
+    - User overrides take precedence over role defaults.
+    - Write permission automatically implies read.
+    - Users cannot remove their own users-management permission by accident.
+    - Cashops, treasury and users guards now enforce module read/write permissions.
+  - Scope still pending:
+    - `US-9.11` covers future permissions by sucursal, empresa or operational location.
+  - Validation:
+    - `.venv\Scripts\python.exe -m compileall users cashops treasury` passed.
+    - `.venv\Scripts\python.exe manage.py test users -v 1` passed: 33 tests OK.
+    - `.venv\Scripts\python.exe manage.py test treasury.tests.TreasuryPermissionTests treasury.tests.TreasuryViewTests -v 1` passed: 20 tests OK.
+    - `.venv\Scripts\python.exe manage.py test cashops.tests.CashopsPermissionUnitTests cashops.tests.CashopsViewTests -v 1` passed: 40 tests OK.
+    - `.venv\Scripts\python.exe manage.py check` passed.
+    - `.venv\Scripts\python.exe manage.py makemigrations users --check` passed.
+    - `.venv\Scripts\python.exe manage.py makemigrations --check` remains red on pre-existing cashops/treasury drift (`cashops.0013...`, `treasury.0018...`); users has no pending migration drift.
 - Files touched for 2026-05-14 users slice:
   - `users/models.py`, `users/forms.py`, `users/views.py`, `users/urls.py`, `users/admin.py`, `users/middleware.py`, `users/tests.py`
   - `users/migrations/0006_user_must_change_password.py`

@@ -8,7 +8,9 @@
       </div>
       <div class="list-actions">
         <a class="button-secondary" href="{% url 'users:user_list' %}">Volver</a>
-        <a class="button-secondary" href="{% url 'users:user_update' target_user.id %}">Editar datos</a>
+        {% if can_edit_permissions %}
+          <a class="button-secondary" href="{% url 'users:user_update' target_user.id %}">Editar datos</a>
+        {% endif %}
       </div>
     </div>
 
@@ -51,7 +53,7 @@
     <div class="row">
       <div>
         <h2>Permisos y alcance</h2>
-        <p class="muted">Estos permisos salen del rol, estado activo y sucursal base.</p>
+        <p class="muted">Click en Lectura o Escritura cambia el permiso puntual del usuario.</p>
       </div>
     </div>
 
@@ -60,17 +62,32 @@
         <div class="list-item">
           <div class="row">
             <div>
-              <strong>{{ row.module }}</strong>
+              <strong>{{ row.label }}</strong>
               <div class="muted">{{ row.scope }}</div>
               <small class="muted">{{ row.source }}</small>
             </div>
             <div class="list-actions">
-              <span class="badge {% if row.read %}badge-success{% else %}badge-muted{% endif %}">
-                Lectura: {% if row.read %}Si{% else %}No{% endif %}
-              </span>
-              <span class="badge {% if row.write %}badge-success{% else %}badge-muted{% endif %}">
-                Escritura: {% if row.write %}Si{% else %}No{% endif %}
-              </span>
+              {% if can_edit_permissions %}
+                <form method="post" action="{% url 'users:user_permission_toggle' target_user.id row.module 'read' %}">
+                  {% csrf_token %}
+                  <button class="badge {% if row.read %}badge-success{% else %}badge-muted{% endif %}" type="submit">
+                    Lectura: {% if row.read %}Si{% else %}No{% endif %}
+                  </button>
+                </form>
+                <form method="post" action="{% url 'users:user_permission_toggle' target_user.id row.module 'write' %}">
+                  {% csrf_token %}
+                  <button class="badge {% if row.write %}badge-success{% else %}badge-muted{% endif %}" type="submit">
+                    Escritura: {% if row.write %}Si{% else %}No{% endif %}
+                  </button>
+                </form>
+              {% else %}
+                <span class="badge {% if row.read %}badge-success{% else %}badge-muted{% endif %}">
+                  Lectura: {% if row.read %}Si{% else %}No{% endif %}
+                </span>
+                <span class="badge {% if row.write %}badge-success{% else %}badge-muted{% endif %}">
+                  Escritura: {% if row.write %}Si{% else %}No{% endif %}
+                </span>
+              {% endif %}
             </div>
           </div>
         </div>
@@ -78,13 +95,14 @@
     </div>
   </section>
 
-  <section class="card mt-16">
-    <div class="row">
-      <div>
-        <h2>Gestionar acceso</h2>
-        <p class="muted">Cambiar estos datos modifica permisos reales del sistema.</p>
+  {% if can_edit_permissions %}
+    <section class="card mt-16">
+      <div class="row">
+        <div>
+          <h2>Gestionar acceso</h2>
+          <p class="muted">Cambiar estos datos modifica permisos reales del sistema.</p>
+        </div>
       </div>
-    </div>
 
     {% if access_form.non_field_errors %}
       <ul class="errors">
@@ -94,56 +112,59 @@
       </ul>
     {% endif %}
 
-    <form method="post" class="stack mt-16">
-      {% csrf_token %}
-      {% for field in access_form.visible_fields %}
-        <div class="field"{% if access_form.conditional_checkbox_target and field.name == access_form.checkbox_target_field_name %} data-checkbox-target-row{% if not access_form.show_checkbox_target_field %} hidden{% endif %}{% endif %}>
-          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-          {{ field }}
-          {% if field.help_text %}
-            <small class="muted">{{ field.help_text }}</small>
-          {% endif %}
-          {% for error in field.errors %}
-            <div class="error">{{ error }}</div>
-          {% endfor %}
+      <form method="post" class="stack mt-16">
+        {% csrf_token %}
+        {% for field in access_form.visible_fields %}
+          <div class="field"{% if access_form.conditional_checkbox_target and field.name == access_form.checkbox_target_field_name %} data-checkbox-target-row{% if not access_form.show_checkbox_target_field %} hidden{% endif %}{% endif %}>
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% if field.help_text %}
+              <small class="muted">{{ field.help_text }}</small>
+            {% endif %}
+            {% for error in field.errors %}
+              <div class="error">{{ error }}</div>
+            {% endfor %}
+          </div>
+        {% endfor %}
+        <div class="row mt-8">
+          <span class="muted">El usuario archivado no puede iniciar sesion.</span>
+          <button class="button" type="submit">Guardar permisos</button>
         </div>
-      {% endfor %}
-      <div class="row mt-8">
-        <span class="muted">El usuario archivado no puede iniciar sesion.</span>
-        <button class="button" type="submit">Guardar permisos</button>
-      </div>
-    </form>
-  </section>
+      </form>
+    </section>
+  {% endif %}
 
-  <section class="card mt-16">
-    <div class="row">
-      <div>
-        <h2>Acciones de cuenta</h2>
-        <p class="muted">Archivar conserva trazabilidad. Eliminar solo funciona si no hay operaciones asociadas.</p>
+  {% if can_edit_permissions %}
+    <section class="card mt-16">
+      <div class="row">
+        <div>
+          <h2>Acciones de cuenta</h2>
+          <p class="muted">Archivar conserva trazabilidad. Eliminar solo funciona si no hay operaciones asociadas.</p>
+        </div>
+        <div class="list-actions">
+          {% if target_user.is_active %}
+            <form method="post" action="{% url 'users:user_archive' target_user.id %}">
+              {% csrf_token %}
+              <button class="button-secondary" type="submit">Archivar</button>
+            </form>
+          {% else %}
+            <form method="post" action="{% url 'users:user_restore' target_user.id %}">
+              {% csrf_token %}
+              <button class="button-secondary" type="submit">Reactivar</button>
+            </form>
+          {% endif %}
+          {% if can_delete %}
+            <form method="post" action="{% url 'users:user_delete' target_user.id %}">
+              {% csrf_token %}
+              <button class="button-secondary" type="submit">Eliminar</button>
+            </form>
+          {% endif %}
+        </div>
       </div>
-      <div class="list-actions">
-        {% if target_user.is_active %}
-          <form method="post" action="{% url 'users:user_archive' target_user.id %}">
-            {% csrf_token %}
-            <button class="button-secondary" type="submit">Archivar</button>
-          </form>
-        {% else %}
-          <form method="post" action="{% url 'users:user_restore' target_user.id %}">
-            {% csrf_token %}
-            <button class="button-secondary" type="submit">Reactivar</button>
-          </form>
-        {% endif %}
-        {% if can_delete %}
-          <form method="post" action="{% url 'users:user_delete' target_user.id %}">
-            {% csrf_token %}
-            <button class="button-secondary" type="submit">Eliminar</button>
-          </form>
-        {% endif %}
-      </div>
-    </div>
-  </section>
+    </section>
+  {% endif %}
 
-  {% if access_form.conditional_checkbox_target %}
+  {% if can_edit_permissions and access_form.conditional_checkbox_target %}
     <script>
       (() => {
         const trigger = document.getElementById("{{ access_form.checkbox_trigger_field_id }}");

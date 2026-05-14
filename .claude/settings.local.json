@@ -12,7 +12,16 @@
       "Bash(Select-Object Name)",
       "Bash(findstr /R \"^def.*\" cashops\\\\views.py)",
       "Bash(findstr /E \"empresa|sucursal|turno|rubro|limite\")",
-      "PowerShell(Get-ChildItem -Path \"c:\\\\Users\\\\MateoCoca\\\\Documents\\\\REPOS\\\\gerayse\" -Recurse -Directory | Select-Object -First 30 | ForEach-Object { $_.FullName })"
+      "PowerShell(Get-ChildItem -Path \"c:\\\\Users\\\\MateoCoca\\\\Documents\\\\REPOS\\\\gerayse\" -Recurse -Directory | Select-Object -First 30 | ForEach-Object { $_.FullName })",
+      "Bash(python manage.py test treasury.tests.TreasuryServiceTests.test_financial_period_snapshot --verbosity=2)",
+      "Bash(python manage.py test treasury.tests.TreasuryServiceTests.test_financial_period_snapshot_aggregates_cash_bank_accreditations_and_due_buckets --verbosity=2)",
+      "Bash(python manage.py test treasury.tests.TreasuryServiceTests.test_financial_period_snapshot_aggregates_cash_bank_accreditations_and_due_buckets)",
+      "Bash(python manage.py test treasury.tests.TreasuryServiceTests.test_supplier_history_snapshot_aggregates_payables_and_payments)",
+      "Bash(python -c ' *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(findstr /R \"require_cashops_admin\\\\|_require_treasury_admin\\\\|ensure_cashops_admin\" cashops\\\\views.py treasury\\\\views.py)"
     ]
   }
 }
