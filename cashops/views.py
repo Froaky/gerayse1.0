@@ -149,24 +149,8 @@ def _sucursales_for_empresa(request):
     return qs
 
 
-def _parse_dashboard_empresa_ids(request):
-    raw = request.GET.getlist("empresa")
-    ids = []
-    for v in raw:
-        try:
-            ids.append(int(v))
-        except (TypeError, ValueError):
-            pass
-    return ids
-
-
-def _sucursales_for_dashboard(request, dashboard_empresa_ids):
-    """Filtra sucursales por params URL del dashboard; cae a empresa_ids de sesión."""
-    empresa_ids = dashboard_empresa_ids if dashboard_empresa_ids else _get_empresa_ids(request)
-    qs = Sucursal.objects.all()
-    if empresa_ids:
-        qs = qs.filter(empresa_id__in=empresa_ids)
-    return qs
+def _sucursales_for_dashboard(request):
+    return _sucursales_for_empresa(request)
 
 
 def _apply_validation_error(form, error: ValidationError) -> None:
@@ -266,10 +250,7 @@ def _resolve_dashboard_scope(request):
     has_explicit_dates = bool(request.GET.get("fecha_desde") or request.GET.get("fecha_hasta") or request.GET.get("fecha"))
     period_from, period_to = _parse_dashboard_period(request)
 
-    empresa_ids = _parse_dashboard_empresa_ids(request)
-    empresa_activa = _get_empresa_activa(request)
-    # Empresa IDs used for snapshot filtering: URL params take priority; session empresa_activa is fallback.
-    empresa_ids_for_snapshot = empresa_ids if empresa_ids else ([empresa_activa.pk] if empresa_activa else [])
+    empresa_ids = _get_empresa_ids(request)
 
     if requested_scope == "box":
         box_id = request.GET.get("box")
@@ -307,10 +288,10 @@ def _resolve_dashboard_scope(request):
         snapshot = build_operational_period_summary(
             date_from=period_from,
             date_to=period_to,
-            empresa_ids=empresa_ids_for_snapshot if empresa_ids_for_snapshot else None,
+            empresa_ids=empresa_ids or None,
         )
-        if snapshot and empresa_ids_for_snapshot:
-            empresas_filtradas = list(Empresa.objects.filter(pk__in=empresa_ids_for_snapshot).order_by("nombre"))
+        if snapshot and empresa_ids:
+            empresas_filtradas = list(Empresa.objects.filter(pk__in=empresa_ids).order_by("nombre"))
             snapshot["scope_label"] = ", ".join(e.nombre for e in empresas_filtradas)
     else:
         requested_scope = "global" if is_admin else ""
@@ -324,7 +305,6 @@ def _resolve_dashboard_scope(request):
         "is_admin": is_admin,
         "period_from": period_from,
         "period_to": period_to,
-        "empresa_ids": empresa_ids,
     }
 
 
@@ -350,7 +330,6 @@ def dashboard(request):
             .order_by("-creado_en", "-id")[:20]
         )
 
-    empresa_ids = scope_context["empresa_ids"]
     is_admin = scope_context["is_admin"]
 
     context = {
@@ -359,10 +338,7 @@ def dashboard(request):
         "open_boxes": boxes.filter(estado=Caja.Estado.ABIERTA),
         "recent_movements": recent_movements,
         "turnos_disponibles": Turno.objects.select_related("empresa").all() if is_admin else [],
-        "sucursales": _sucursales_for_dashboard(request, empresa_ids).filter(activa=True) if is_admin else [],
-        "todas_empresas": list(Empresa.objects.filter(activa=True)) if is_admin else [],
-        "selected_empresa_ids": set(empresa_ids),
-        "empresa_qs": "".join(f"&empresa={eid}" for eid in empresa_ids),
+        "sucursales": _sucursales_for_dashboard(request).filter(activa=True) if is_admin else [],
         "dashboard_scope": scope_context["scope_name"],
         "dashboard_scope_date": scope_context["scope_date"],
         "dashboard_period_from": scope_context["period_from"],

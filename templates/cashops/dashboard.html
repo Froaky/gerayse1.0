@@ -40,31 +40,11 @@
         <a class="button-secondary" href="{% url 'cashops:management_matrix' %}">Matriz diaria</a>
       {% endif %}
     </div>
-    {% if is_cashops_admin and todas_empresas|length > 1 %}
-      <form method="get" id="empresa-filter-form" style="margin-bottom:8px;">
-        <input type="hidden" name="scope" value="{{ dashboard_scope }}">
-        {% if selected_branch %}<input type="hidden" name="sucursal" value="{{ selected_branch.id }}">{% endif %}
-        <input type="hidden" name="fecha_desde" value="{{ dashboard_period_from|date:'Y-m-d' }}">
-        <input type="hidden" name="fecha_hasta" value="{{ dashboard_period_to|date:'Y-m-d' }}">
-        <div class="list-actions">
-          <span class="muted" style="align-self:center;font-size:.85em;">Empresa:</span>
-          {% for emp in todas_empresas %}
-            <label class="button-secondary" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;{% if emp.pk in selected_empresa_ids %}outline:2px solid var(--color-accent,#4f8ef7);{% endif %}">
-              <input type="checkbox" name="empresa" value="{{ emp.pk }}"
-                     {% if emp.pk in selected_empresa_ids %}checked{% endif %}
-                     onchange="document.getElementById('empresa-filter-form').submit()"
-                     style="margin:0;">
-              {{ emp.nombre }}
-            </label>
-          {% endfor %}
-        </div>
-      </form>
-    {% endif %}
     <div class="list-actions">
       {% if is_cashops_admin %}
-        <a class="button-secondary" href="{% url 'cashops:dashboard' %}?scope=global{{ empresa_qs }}&fecha_desde={{ dashboard_period_from|date:'Y-m-d' }}&fecha_hasta={{ dashboard_period_to|date:'Y-m-d' }}">Vista global</a>
+        <a class="button-secondary" href="{% url 'cashops:dashboard' %}?scope=global&fecha_desde={{ dashboard_period_from|date:'Y-m-d' }}&fecha_hasta={{ dashboard_period_to|date:'Y-m-d' }}">Vista global</a>
         {% for sucursal in sucursales %}
-          <a class="button-secondary" href="{% url 'cashops:dashboard' %}?scope=branch&sucursal={{ sucursal.id }}{{ empresa_qs }}&fecha_desde={{ dashboard_period_from|date:'Y-m-d' }}&fecha_hasta={{ dashboard_period_to|date:'Y-m-d' }}">{{ sucursal.nombre }}</a>
+          <a class="button-secondary" href="{% url 'cashops:dashboard' %}?scope=branch&sucursal={{ sucursal.id }}&fecha_desde={{ dashboard_period_from|date:'Y-m-d' }}&fecha_hasta={{ dashboard_period_to|date:'Y-m-d' }}">{{ sucursal.nombre }}</a>
         {% endfor %}
       {% endif %}
       {% for box in open_boxes %}
@@ -75,9 +55,6 @@
       <input type="hidden" name="scope" value="{{ dashboard_scope }}">
       {% if selected_branch %}<input type="hidden" name="sucursal" value="{{ selected_branch.id }}">{% endif %}
       {% if selected_box %}<input type="hidden" name="box" value="{{ selected_box.id }}">{% endif %}
-      {% for eid in selected_empresa_ids %}
-        <input type="hidden" name="empresa" value="{{ eid }}">
-      {% endfor %}
       {% if selected_box %}
         <div class="field">
           <label for="id_fecha">Fecha operativa</label>
