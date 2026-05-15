@@ -238,6 +238,27 @@
         color: var(--accent-hi);
         background: rgba(74,133,149,0.1);
       }
+      .nav-menu__separator {
+        height: 1px;
+        background: var(--line);
+        margin: 4px 0;
+      }
+      .nav-menu__item--check {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+      }
+      .nav-menu__item--check input[type="checkbox"] {
+        accent-color: var(--accent);
+        width: 14px;
+        height: 14px;
+        flex-shrink: 0;
+      }
+      .nav-menu__item--apply {
+        font-weight: 600;
+        color: var(--accent-hi);
+      }
       @media (min-width: 880px) {
         .topbar { grid-template-columns: auto minmax(0, 1fr); align-items: center; }
         .nav { grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: 8px 12px; }
@@ -302,6 +323,30 @@
           </div>
           {% if request.user.is_authenticated %}
             <div class="nav-user">
+              {% if empresas_disponibles|length > 1 %}
+                <details class="nav-menu">
+                  <summary class="chip chip-button">
+                    {% if empresas_activas|length == 1 %}{{ empresas_activas.0.nombre }}{% elif empresas_activas|length > 1 %}{{ empresas_activas|length }} empresas{% else %}Sin empresa{% endif %} &#9662;
+                  </summary>
+                  <div class="nav-menu__dropdown nav-menu__dropdown--right">
+                    <form method="post" action="{% url 'cashops:set_empresas_activas' %}" style="margin:0;">
+                      {% csrf_token %}
+                      <input type="hidden" name="next" value="{{ request.path }}">
+                      {% for emp in empresas_disponibles %}
+                        <label class="nav-menu__item nav-menu__item--check">
+                          <input type="checkbox" name="empresa_ids" value="{{ emp.pk }}"
+                            {% if emp.pk in selected_empresa_ids_set %}checked{% endif %}>
+                          {{ emp.nombre }}
+                        </label>
+                      {% endfor %}
+                      <div class="nav-menu__separator"></div>
+                      <button class="nav-menu__item nav-menu__item--apply" type="submit">Aplicar seleccion</button>
+                    </form>
+                  </div>
+                </details>
+              {% elif empresa_activa %}
+                <span class="chip">{{ empresa_activa.nombre }}</span>
+              {% endif %}
               <span class="chip">{{ request.user }}</span>
               <form method="post" action="{% url 'users:logout' %}">
                 {% csrf_token %}
@@ -311,6 +356,11 @@
           {% endif %}
         </nav>
       </header>
+      {% if empresas_disponibles and not empresas_activas %}
+        <div class="message" style="border-color:rgba(184,90,96,0.4);background:rgba(184,90,96,0.1);margin-bottom:12px;">
+          Selecciona una o mas empresas para ver los datos correspondientes.
+        </div>
+      {% endif %}
       {% if messages %}
         <div class="messages">
           {% for message in messages %}

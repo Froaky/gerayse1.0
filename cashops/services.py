@@ -308,6 +308,7 @@ def build_alert_panel_queryset(
     rubro: RubroOperativo | None = None,
     sucursal: Sucursal | None = None,
     alcance: str = "todos",
+    empresa_ids: list[int] | None = None,
 ):
     """Lee alertas persistidas para auditoria usando periodo operativo real."""
     severity_order = Case(
@@ -342,6 +343,12 @@ def build_alert_panel_queryset(
         queryset = queryset.filter(rubro_operativo=rubro)
     if sucursal is not None:
         queryset = queryset.filter(sucursal=sucursal)
+    elif empresa_ids:
+        queryset = queryset.filter(
+            Q(caja__sucursal__empresa_id__in=empresa_ids)
+            | Q(sucursal__empresa_id__in=empresa_ids)
+            | Q(turno__empresa_id__in=empresa_ids)
+        )
     if alcance == "global":
         queryset = queryset.filter(caja__isnull=True, sucursal__isnull=True)
     elif alcance == "sucursal":
@@ -473,7 +480,7 @@ def build_operational_control_snapshot(
     return snapshot
 
 
-def build_operational_period_summary(*, date_from: date, date_to: date, sucursal: Sucursal | None = None) -> dict:
+def build_operational_period_summary(*, date_from: date, date_to: date, sucursal: Sucursal | None = None, empresa_ids: list[int] | None = None) -> dict:
     if date_to < date_from:
         raise ValidationError({"fecha_hasta": "La fecha hasta no puede ser anterior a la fecha desde."})
 
@@ -483,6 +490,8 @@ def build_operational_period_summary(*, date_from: date, date_to: date, sucursal
     ).exclude(tipo=MovimientoCaja.Tipo.APERTURA)
     if sucursal is not None:
         movement_qs = movement_qs.filter(caja__sucursal=sucursal)
+    elif empresa_ids:
+        movement_qs = movement_qs.filter(caja__sucursal__empresa_id__in=empresa_ids)
 
     totals = movement_qs.aggregate(
         total_ingresos=Sum("monto", filter=Q(sentido=MovimientoCaja.Sentido.INGRESO)),
@@ -603,7 +612,7 @@ def build_operational_period_summary(*, date_from: date, date_to: date, sucursal
     }
 
 
-def build_management_daily_matrix(*, date_from: date, date_to: date, sucursal: Sucursal | None = None) -> dict:
+def build_management_daily_matrix(*, date_from: date, date_to: date, sucursal: Sucursal | None = None, empresa_ids: list[int] | None = None) -> dict:
     if date_to < date_from:
         raise ValidationError({"fecha_hasta": "La fecha hasta no puede ser anterior a la fecha desde."})
 
@@ -619,6 +628,8 @@ def build_management_daily_matrix(*, date_from: date, date_to: date, sucursal: S
     ).exclude(tipo=MovimientoCaja.Tipo.APERTURA)
     if sucursal is not None:
         movement_qs = movement_qs.filter(caja__sucursal=sucursal)
+    elif empresa_ids:
+        movement_qs = movement_qs.filter(caja__sucursal__empresa_id__in=empresa_ids)
 
     income_rows = (
         movement_qs.filter(tipo__in=MANAGEMENT_INCOME_TYPES.keys())

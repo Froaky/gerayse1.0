@@ -26,6 +26,7 @@ urlpatterns = [
     path("empresas/<int:empresa_id>/editar/", views.empresa_update, name="empresa_update"),
     path("empresas/<int:empresa_id>/toggle/", views.empresa_toggle, name="empresa_toggle"),
     path("empresas/activar/", views.set_empresa_activa, name="set_empresa_activa"),
+    path("empresas/seleccionar/", views.set_empresas_activas, name="set_empresas_activas"),
     path("turnos/", views.turno_list, name="turno_list"),
     path("turnos/nuevo/", views.turno_create, name="turno_create"),
     path("cajas/nueva/", views.open_box_view, name="box_open"),

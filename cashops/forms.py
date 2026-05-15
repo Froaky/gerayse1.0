@@ -83,13 +83,17 @@ class CajaAperturaForm(forms.Form):
         help_text="Solo dinero fisico en la caja. Las ventas por tarjeta, QR o transferencia no van aca.",
     )
 
-    def __init__(self, *args, empresa=None, **kwargs):
+    def __init__(self, *args, empresa=None, empresa_ids=None, **kwargs):
         self.actor = kwargs.pop("actor", None)
         super().__init__(*args, **kwargs)
         self.fields["fecha_operativa"].initial = datetime.date.today()
-        self.fields["turno"].queryset = (
-            Turno.objects.filter(empresa=empresa) if empresa else Turno.objects.all()
-        )
+        # empresa_ids (multi) tiene prioridad; empresa (single) es fallback de compatibilidad
+        if empresa_ids:
+            self.fields["turno"].queryset = Turno.objects.filter(empresa_id__in=empresa_ids)
+        elif empresa:
+            self.fields["turno"].queryset = Turno.objects.filter(empresa=empresa)
+        else:
+            self.fields["turno"].queryset = Turno.objects.all()
         if self.actor:
             self.fields["usuario"].initial = self.actor.pk
             self.fields["usuario"].queryset = (
@@ -103,6 +107,10 @@ class CajaAperturaForm(forms.Form):
                 self.fields["sucursal"].initial = self.actor.sucursal_base_id
                 self.fields["sucursal"].queryset = Sucursal.objects.filter(
                     pk=self.actor.sucursal_base_id, activa=True
+                )
+            elif empresa_ids:
+                self.fields["sucursal"].queryset = Sucursal.objects.filter(
+                    activa=True, empresa_id__in=empresa_ids
                 )
             else:
                 self.fields["sucursal"].queryset = Sucursal.objects.filter(activa=True)

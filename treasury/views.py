@@ -177,6 +177,25 @@ def _handle_operation_error(form, error: Exception, fallback_message: str) -> No
         form.add_error(None, fallback_message)
 
 
+def _get_empresa_ids(request):
+    """Retorna la lista de empresa IDs seleccionados en sesión."""
+    ids = request.session.get("empresa_ids")
+    if ids is not None:
+        return ids
+    old_id = request.session.get("empresa_activa_id")
+    if old_id:
+        return [old_id]
+    return []
+
+
+def _filter_sucursal_qs(request, qs):
+    """Aplica filtro de empresa al queryset de Sucursal."""
+    empresa_ids = _get_empresa_ids(request)
+    if empresa_ids:
+        return qs.filter(empresa_id__in=empresa_ids)
+    return qs
+
+
 def _money(value) -> str:
     value = value or Decimal("0.00")
     formatted = f"{value:,.2f}"
@@ -332,8 +351,9 @@ def dashboard(request):
         date_from = first_day_of_month
         date_to = today
 
-    snapshot = build_financial_period_snapshot(date_from=date_from, date_to=date_to, sucursal=sucursal)
-    economic_snapshot = build_economic_period_snapshot(date_from=date_from, date_to=date_to, sucursal=sucursal)
+    empresa_ids = _get_empresa_ids(request) or None
+    snapshot = build_financial_period_snapshot(date_from=date_from, date_to=date_to, sucursal=sucursal, empresa_ids=empresa_ids)
+    economic_snapshot = build_economic_period_snapshot(date_from=date_from, date_to=date_to, sucursal=sucursal, empresa_ids=empresa_ids)
 
     sections = [
         {
@@ -374,7 +394,7 @@ def dashboard(request):
         },
     ]
 
-    sucursales = Sucursal.objects.all()
+    sucursales = _filter_sucursal_qs(request, Sucursal.objects.all())
 
     return render(
         request,
@@ -640,6 +660,9 @@ def cuentas_bancarias_list(request):
     _require_treasury_admin(request)
     form = BankAccountFilterForm(request.GET or None)
     queryset = CuentaBancaria.objects.order_by("banco", "nombre")
+    empresa_ids = _get_empresa_ids(request)
+    if empresa_ids:
+        queryset = queryset.filter(sucursal__empresa_id__in=empresa_ids)
     if form.is_valid():
         q = (form.cleaned_data.get("q") or "").strip()
         active = form.cleaned_data.get("activa")
@@ -745,6 +768,9 @@ def cuentas_por_pagar_list(request):
     queryset = CuentaPorPagar.objects.select_related("proveedor", "categoria", "categoria__rubro_operativo").order_by(
         "fecha_vencimiento", "proveedor__razon_social"
     )
+    empresa_ids = _get_empresa_ids(request)
+    if empresa_ids:
+        queryset = queryset.filter(sucursal__empresa_id__in=empresa_ids)
     if form.is_valid():
         q = (form.cleaned_data.get("q") or "").strip()
         proveedor = form.cleaned_data.get("proveedor")
@@ -952,6 +978,9 @@ def compromisos_especiales_list(request):
         "fecha_compromiso",
         "id",
     )
+    empresa_ids = _get_empresa_ids(request)
+    if empresa_ids:
+        queryset = queryset.filter(sucursal__empresa_id__in=empresa_ids)
     if form.is_valid():
         tipo = form.cleaned_data.get("tipo")
         estado = form.cleaned_data.get("estado")
@@ -1104,6 +1133,9 @@ def pagos_list(request):
     queryset = PagoTesoreria.objects.select_related("cuenta_por_pagar__proveedor", "cuenta_bancaria").order_by(
         "-fecha_pago", "-id"
     )
+    empresa_ids = _get_empresa_ids(request)
+    if empresa_ids:
+        queryset = queryset.filter(cuenta_por_pagar__sucursal__empresa_id__in=empresa_ids)
     if form.is_valid():
         q = (form.cleaned_data.get("q") or "").strip()
         medio_pago = form.cleaned_data.get("medio_pago")
@@ -1335,7 +1367,10 @@ def bank_movements_list(request):
         "categoria",
         "proveedor",
     )
-    
+    empresa_ids = _get_empresa_ids(request)
+    if empresa_ids:
+        movements = movements.filter(cuenta_bancaria__sucursal__empresa_id__in=empresa_ids)
+
     if filter_form.is_valid():
         q = filter_form.cleaned_data.get("q")
         account = filter_form.cleaned_data.get("cuenta_bancaria")
@@ -1509,7 +1544,10 @@ def pos_batches_list(request):
     _require_treasury_admin(request)
     filter_form = PosBatchFilterForm(request.GET)
     batches = LotePOS.objects.all().select_related("cuenta_bancaria", "creado_por")
-    
+    empresa_ids = _get_empresa_ids(request)
+    if empresa_ids:
+        batches = batches.filter(cuenta_bancaria__sucursal__empresa_id__in=empresa_ids)
+
     if filter_form.is_valid():
         q = filter_form.cleaned_data.get("q")
         account = filter_form.cleaned_data.get("cuenta_bancaria")
@@ -1575,7 +1613,10 @@ def card_accreditations_list(request):
     _require_treasury_admin(request)
     filter_form = CardAccreditationFilterForm(request.GET)
     accreditations = AcreditacionTarjeta.objects.all().select_related("movimiento_bancario__cuenta_bancaria", "lote_pos")
-    
+    empresa_ids = _get_empresa_ids(request)
+    if empresa_ids:
+        accreditations = accreditations.filter(movimiento_bancario__cuenta_bancaria__sucursal__empresa_id__in=empresa_ids)
+
     if filter_form.is_valid():
         canal = filter_form.cleaned_data.get("canal")
         account = filter_form.cleaned_data.get("cuenta_bancaria")
@@ -1702,8 +1743,9 @@ def disponibilidades_report(request):
         year, month = today.year, today.month
         sucursal = None
 
-    snapshot = build_disponibilidades_snapshot(year, month, sucursal=sucursal)
-    
+    empresa_ids = _get_empresa_ids(request) or None
+    snapshot = build_disponibilidades_snapshot(year, month, sucursal=sucursal, empresa_ids=empresa_ids)
+
     return render(request, "treasury/disponibilidades_report.html", {
         "form": form,
         "snapshot": snapshot,
@@ -1718,7 +1760,9 @@ def central_cash_movements(request):
     from cashops.models import Sucursal
     sucursal_id = request.GET.get("sucursal")
     movements = MovimientoCajaCentral.objects.all().select_related("pago_tesoreria", "creado_por", "caja_central__sucursal")
-    
+    empresa_ids = _get_empresa_ids(request)
+    if empresa_ids:
+        movements = movements.filter(caja_central__sucursal__empresa_id__in=empresa_ids)
     if sucursal_id:
         movements = movements.filter(caja_central__sucursal_id=sucursal_id)
     

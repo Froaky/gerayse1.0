@@ -1106,7 +1106,7 @@ def _central_cash_balance_until(*, reference_date: date, sucursal=None) -> Decim
     return (sums["ingresos"] or Decimal("0.00")) - (sums["egresos"] or Decimal("0.00"))
 
 
-def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=None) -> dict:
+def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=None, empresa_ids=None) -> dict:
     if date_to < date_from:
         raise ValidationError({"fecha_hasta": "La fecha hasta no puede ser anterior a la fecha desde."})
 
@@ -1137,6 +1137,9 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
     if sucursal is not None:
         sales = sales.filter(caja__sucursal=sucursal)
         expenses = expenses.filter(caja__sucursal=sucursal)
+    elif empresa_ids:
+        sales = sales.filter(caja__sucursal__empresa_id__in=empresa_ids)
+        expenses = expenses.filter(caja__sucursal__empresa_id__in=empresa_ids)
 
     sales_rows = list(
         sales.annotate(
@@ -1329,7 +1332,7 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
     }
 
 
-def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=None) -> dict:
+def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=None, empresa_ids=None) -> dict:
     if date_to < date_from:
         raise ValidationError({"fecha_hasta": "La fecha hasta no puede ser anterior a la fecha desde."})
 
@@ -1342,6 +1345,8 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     ).exclude(tipo=MovimientoCaja.Tipo.APERTURA)
     if sucursal is not None:
         cash_movements = cash_movements.filter(caja__sucursal=sucursal)
+    elif empresa_ids:
+        cash_movements = cash_movements.filter(caja__sucursal__empresa_id__in=empresa_ids)
 
     cash_totals = cash_movements.aggregate(
         ingresos=Sum("monto", filter=Q(sentido=MovimientoCaja.Sentido.INGRESO)),
@@ -1353,6 +1358,8 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     bank_movements = MovimientoBancario.objects.filter(fecha__gte=date_from, fecha__lte=date_to)
     if sucursal is not None:
         bank_movements = bank_movements.filter(cuenta_bancaria__sucursal=sucursal)
+    elif empresa_ids:
+        bank_movements = bank_movements.filter(cuenta_bancaria__sucursal__empresa_id__in=empresa_ids)
 
     bank_totals = bank_movements.aggregate(
         creditos=Sum("monto", filter=Q(tipo=MovimientoBancario.Tipo.CREDITO)),
@@ -1364,6 +1371,8 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     bank_accounts = CuentaBancaria.objects.filter(activa=True)
     if sucursal is not None:
         bank_accounts = bank_accounts.filter(sucursal=sucursal)
+    elif empresa_ids:
+        bank_accounts = bank_accounts.filter(sucursal__empresa_id__in=empresa_ids)
 
     bank_balances = []
     total_bank_balance = Decimal("0.00")
@@ -1386,6 +1395,8 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     )
     if sucursal is not None:
         pending_payables = pending_payables.filter(sucursal=sucursal)
+    elif empresa_ids:
+        pending_payables = pending_payables.filter(sucursal__empresa_id__in=empresa_ids)
 
     reference_date = date_to
     red_threshold = reference_date + timedelta(days=4)
@@ -1402,11 +1413,15 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     )
     if sucursal is not None:
         digital_sales = digital_sales.filter(caja__sucursal=sucursal)
+    elif empresa_ids:
+        digital_sales = digital_sales.filter(caja__sucursal__empresa_id__in=empresa_ids)
     digital_sales_total = digital_sales.aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
 
     accreditations = AcreditacionTarjeta.objects.filter(_accreditation_scope_query(date_from=date_from, date_to=date_to))
     if sucursal is not None:
         accreditations = accreditations.filter(movimiento_bancario__cuenta_bancaria__sucursal=sucursal)
+    elif empresa_ids:
+        accreditations = accreditations.filter(movimiento_bancario__cuenta_bancaria__sucursal__empresa_id__in=empresa_ids)
 
     accredited_net = accreditations.aggregate(total=Sum("movimiento_bancario__monto"))["total"] or Decimal("0.00")
     accreditation_discounts = (
@@ -1414,11 +1429,7 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
         or Decimal("0.00")
     )
     accredited_gross = accredited_net + accreditation_discounts
-
-    bank_acreditacion_total = bank_movements.aggregate(
-        total=Sum("monto", filter=Q(tipo=MovimientoBancario.Tipo.CREDITO, clase=MovimientoBancario.Clase.ACREDITACION))
-    )["total"] or Decimal("0.00")
-    pending_accreditation_total = bank_acreditacion_total - digital_sales_total
+    pending_accreditation_total = digital_sales_total - accredited_gross
 
     recent_movements = bank_movements.select_related("cuenta_bancaria", "categoria", "proveedor").order_by(
         "-fecha", "-id"
@@ -1426,6 +1437,8 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     recent_batches = LotePOS.objects.filter(fecha_lote__gte=date_from, fecha_lote__lte=date_to)
     if sucursal is not None:
         recent_batches = recent_batches.filter(cuenta_bancaria__sucursal=sucursal)
+    elif empresa_ids:
+        recent_batches = recent_batches.filter(cuenta_bancaria__sucursal__empresa_id__in=empresa_ids)
     recent_batches = recent_batches.select_related("cuenta_bancaria").order_by("-fecha_lote", "-id")[:5]
 
     recent_payments = PagoTesoreria.objects.filter(
@@ -1435,6 +1448,8 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     )
     if sucursal is not None:
         recent_payments = recent_payments.filter(cuenta_por_pagar__sucursal=sucursal)
+    elif empresa_ids:
+        recent_payments = recent_payments.filter(cuenta_por_pagar__sucursal__empresa_id__in=empresa_ids)
     recent_payments = recent_payments.select_related("cuenta_por_pagar__proveedor", "cuenta_bancaria").order_by(
         "-fecha_pago", "-id"
     )[:10]
@@ -1686,7 +1701,7 @@ def register_egreso_tesoreria(
     return _save_instance(movement)
 
 
-def build_disponibilidades_snapshot(year: int, month: int, sucursal=None) -> dict:
+def build_disponibilidades_snapshot(year: int, month: int, sucursal=None, empresa_ids=None) -> dict:
     """
     US-5.2: Calculates consolidated or branch-specific liquidity in a period.
     """
@@ -1735,6 +1750,8 @@ def build_disponibilidades_snapshot(year: int, month: int, sucursal=None) -> dic
     movements_cash = MovimientoCajaCentral.objects.filter(fecha__range=(first_day, last_day))
     if sucursal:
         movements_cash = movements_cash.filter(caja_central__sucursal=sucursal)
+    elif empresa_ids:
+        movements_cash = movements_cash.filter(caja_central__sucursal__empresa_id__in=empresa_ids)
     
     cash_in = movements_cash.filter(tipo__in=[
         MovimientoCajaCentral.Tipo.INGRESO_CAJA,
@@ -1755,6 +1772,8 @@ def build_disponibilidades_snapshot(year: int, month: int, sucursal=None) -> dic
     bank_accounts = CuentaBancaria.objects.filter(activa=True)
     if sucursal:
         bank_accounts = bank_accounts.filter(sucursal=sucursal)
+    elif empresa_ids:
+        bank_accounts = bank_accounts.filter(sucursal__empresa_id__in=empresa_ids)
         
     accounts_info = []
     total_bancos_final = Decimal("0.00")

@@ -1777,7 +1777,7 @@ class EP12EmpresasTests(CashopsTestCase):
             reverse("cashops:set_empresa_activa"),
             {"empresa_id": self.empresa_a.pk, "next": reverse("cashops:dashboard")},
         )
-        self.assertEqual(self.client.session.get("empresa_activa_id"), self.empresa_a.pk)
+        self.assertEqual(self.client.session.get("empresa_ids"), [self.empresa_a.pk])
 
     def test_dashboard_filters_sucursales_by_empresa_activa(self):
         self.client.force_login(self.admin)
