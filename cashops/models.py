@@ -261,6 +261,35 @@ class RubroOperativo(models.Model):
         return self.nombre
 
 
+class CanalIngreso(models.Model):
+    codigo = models.CharField(max_length=40, unique=True)
+    nombre = models.CharField(max_length=100)
+    impacta_saldo_caja = models.BooleanField(default=False)
+    excluir_de_totales = models.BooleanField(
+        default=False,
+        help_text="Si está activo, los ingresos de este canal NO se suman al total de ventas digitales ni al efectivo.",
+    )
+    es_sistema = models.BooleanField(default=False)
+    activo = models.BooleanField(default=True)
+    orden = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ["orden", "nombre"]
+
+    def clean(self) -> None:
+        if self.codigo:
+            self.codigo = self.codigo.strip().upper()
+        if not self.codigo:
+            raise ValidationError({"codigo": "El código es obligatorio."})
+        if self.nombre:
+            self.nombre = self.nombre.strip()
+        if not self.nombre:
+            raise ValidationError({"nombre": "El nombre es obligatorio."})
+
+    def __str__(self) -> str:
+        return self.nombre
+
+
 class Producto(models.Model):
     nombre = models.CharField(max_length=120)
     rubro = models.ForeignKey(RubroOperativo, on_delete=models.PROTECT, related_name="productos")
@@ -351,7 +380,7 @@ class MovimientoCaja(models.Model):
         EGRESO = "EGRESO", "Egreso"
 
     caja = models.ForeignKey(Caja, on_delete=models.PROTECT, related_name="movimientos")
-    tipo = models.CharField(max_length=40, choices=Tipo.choices)
+    tipo = models.CharField(max_length=40)
     sentido = models.CharField(max_length=10, choices=Sentido.choices)
     monto = models.DecimalField(max_digits=14, decimal_places=2)
     impacta_saldo_caja = models.BooleanField(default=True)

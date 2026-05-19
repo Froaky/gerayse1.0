@@ -1110,17 +1110,15 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
     if date_to < date_from:
         raise ValidationError({"fecha_hasta": "La fecha hasta no puede ser anterior a la fecha desde."})
 
-    from cashops.models import MovimientoCaja, RubroOperativo
+    from cashops.models import CanalIngreso, MovimientoCaja, RubroOperativo
+    from cashops.services import get_income_channel_map
 
     period_from = _first_day_of_month(date_from)
     period_to = _first_day_of_month(date_to)
     month_starts = _month_starts_between(period_from, period_to)
-    sale_query = Q(tipo__in=[
-        MovimientoCaja.Tipo.VENTA_TARJETA,
-        MovimientoCaja.Tipo.VENTA_TRANSFERENCIA,
-        MovimientoCaja.Tipo.VENTA_PEDIDOSYA,
-        MovimientoCaja.Tipo.VENTA_QR,
-    ]) | Q(
+    _all_income_codes = list(get_income_channel_map().keys())
+    _digital_codes = [c for c in _all_income_codes if c != MovimientoCaja.Tipo.INGRESO_EFECTIVO]
+    sale_query = Q(tipo__in=_digital_codes) | Q(
         tipo=MovimientoCaja.Tipo.INGRESO_EFECTIVO,
         rubro_operativo__isnull=False,
     )

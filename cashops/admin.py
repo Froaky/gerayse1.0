@@ -3,6 +3,7 @@ from django.contrib import admin
 from .models import (
     AlertaOperativa,
     Caja,
+    CanalIngreso,
     CierreCaja,
     Empresa,
     Justificacion,
@@ -27,6 +28,19 @@ class SucursalAdmin(admin.ModelAdmin):
 class EmpresaAdmin(admin.ModelAdmin):
     list_display = ("nombre",)
     search_fields = ("nombre",)
+
+
+@admin.register(CanalIngreso)
+class CanalIngresoAdmin(admin.ModelAdmin):
+    list_display = ("codigo", "nombre", "impacta_saldo_caja", "es_sistema", "activo", "orden")
+    list_filter = ("activo", "es_sistema", "impacta_saldo_caja")
+    search_fields = ("codigo", "nombre")
+    readonly_fields = ("codigo", "es_sistema")
+
+    def has_delete_permission(self, request, obj=None):
+        if obj and obj.es_sistema:
+            return False
+        return super().has_delete_permission(request, obj)
 
 
 @admin.register(Turno)

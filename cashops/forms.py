@@ -5,7 +5,7 @@ from django import forms
 from django.contrib.auth import get_user_model
 from django.db.models import Q
 
-from .models import Caja, Empresa, LimiteRubroOperativo, MovimientoCaja, RubroOperativo, Sucursal, Transferencia, Turno
+from .models import CanalIngreso, Caja, Empresa, LimiteRubroOperativo, MovimientoCaja, RubroOperativo, Sucursal, Transferencia, Turno
 from .permissions import can_assign_box_to_user, is_cashops_admin
 from .services import CLOSING_DIFF_THRESHOLD, MAX_OPERATIONAL_LIMIT_PERCENTAGE
 
@@ -247,16 +247,7 @@ class GastoRapidoForm(forms.Form):
 
 
 class VentaGeneralForm(forms.Form):
-    tipo_venta = forms.ChoiceField(
-        choices=[
-            (MovimientoCaja.Tipo.INGRESO_EFECTIVO, "Efectivo"),
-            (MovimientoCaja.Tipo.VENTA_TARJETA, "Tarjeta (POS)"),
-            (MovimientoCaja.Tipo.VENTA_TRANSFERENCIA, "Transferencia"),
-            (MovimientoCaja.Tipo.VENTA_PEDIDOSYA, "PedidosYa"),
-            (MovimientoCaja.Tipo.VENTA_QR, "QR / MercadoPago"),
-        ],
-        label="Medio de ingreso",
-    )
+    tipo_venta = forms.ChoiceField(choices=[], label="Medio de ingreso")
     rubro = forms.ModelChoiceField(
         queryset=RubroOperativo.objects.filter(activo=True, es_sistema=False),
         label="Rubro",
@@ -276,6 +267,8 @@ class VentaGeneralForm(forms.Form):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        canales = CanalIngreso.objects.filter(activo=True).order_by("orden")
+        self.fields["tipo_venta"].choices = [(c.codigo, c.nombre) for c in canales]
         for field in self.fields.values():
             if isinstance(field.widget, forms.Select):
                 field.widget.attrs.setdefault("class", "input select")
@@ -427,6 +420,28 @@ class RubroOperativoForm(forms.ModelForm):
         if queryset.exists():
             raise forms.ValidationError("Ya existe un rubro con ese nombre.")
         return nombre
+
+
+class CanalIngresoForm(forms.ModelForm):
+    class Meta:
+        model = CanalIngreso
+        fields = ["nombre", "orden", "impacta_saldo_caja", "excluir_de_totales"]
+        widgets = {
+            "nombre": forms.TextInput(attrs={"placeholder": "Ej: Rappi, Depósito, Billetera virtual..."}),
+            "orden": forms.NumberInput(attrs={"placeholder": "0"}),
+        }
+        labels = {
+            "impacta_saldo_caja": "Impacta saldo físico de caja",
+            "excluir_de_totales": "Excluir de totales de ventas digitales",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            if isinstance(field.widget, forms.CheckboxInput):
+                field.widget.attrs.setdefault("class", "checkbox")
+            else:
+                field.widget.attrs.setdefault("class", "input")
 
 
 class LimiteRubroOperativoForm(forms.ModelForm):

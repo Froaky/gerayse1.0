@@ -1,0 +1,49 @@
+{% extends "cashops/layout.html" %}
+{% block title %}Canales de Ingreso | Gerayse{% endblock %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Canales de ingreso</h1>
+        <p class="muted">Medios de cobro disponibles al registrar una venta. Solo los activos aparecen en el formulario.</p>
+      </div>
+      <a class="button" href="{% url 'cashops:canal_ingreso_create' %}">Nuevo canal</a>
+    </div>
+    <div class="list" style="margin-top:16px;">
+      {% for canal in canales %}
+        <article class="list-item">
+          <div class="row">
+            <div>
+              <strong>{{ canal.nombre }}</strong>
+              <span class="muted" style="margin-left:8px; font-size:0.85em;">{{ canal.codigo }}</span>
+            </div>
+            {% if canal.es_sistema %}
+              <span class="badge-muted">Sistema</span>
+            {% elif canal.activo %}
+              <span class="badge badge-success">Activo</span>
+            {% else %}
+              <span class="badge-muted">Inactivo</span>
+            {% endif %}
+          </div>
+          <div class="muted" style="margin-top:4px; font-size:0.85em;">
+            {% if canal.impacta_saldo_caja %}Impacta saldo físico{% else %}No impacta saldo físico{% endif %}
+            &nbsp;·&nbsp; Orden: {{ canal.orden }}
+          </div>
+          {% if not canal.es_sistema %}
+            <div class="list-actions">
+              <a class="button-secondary" href="{% url 'cashops:canal_ingreso_update' canal.id %}">Editar</a>
+              <form method="post" action="{% url 'cashops:canal_ingreso_toggle' canal.id %}">
+                {% csrf_token %}
+                <button class="button-secondary" type="submit">
+                  {% if canal.activo %}Desactivar{% else %}Activar{% endif %}
+                </button>
+              </form>
+            </div>
+          {% endif %}
+        </article>
+      {% empty %}
+        <p class="muted">No hay canales configurados.</p>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

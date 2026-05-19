@@ -11,6 +11,7 @@ from django.utils import timezone
 from .models import (
     AlertaOperativa,
     Caja,
+    CanalIngreso,
     CierreCaja,
     Justificacion,
     LimiteRubroOperativo,
@@ -43,13 +44,12 @@ OPERATIONAL_ALERT_SCOPE_POLICY_RULES = (
     "Diferencia grave se registra solo a nivel caja porque nace de un cierre concreto.",
     "El filtro de alcance es de lectura: no altera el motor ni consolida registros persistidos.",
 )
-MANAGEMENT_INCOME_TYPES = {
-    MovimientoCaja.Tipo.INGRESO_EFECTIVO: "Efectivo",
-    MovimientoCaja.Tipo.VENTA_TARJETA: "Tarjeta",
-    MovimientoCaja.Tipo.VENTA_TRANSFERENCIA: "Transferencia",
-    MovimientoCaja.Tipo.VENTA_PEDIDOSYA: "PedidosYa",
-    MovimientoCaja.Tipo.VENTA_QR: "QR / MercadoPago",
-}
+def get_income_channel_map() -> dict[str, str]:
+    return {c.codigo: c.nombre for c in CanalIngreso.objects.filter(activo=True).order_by("orden")}
+
+
+def _get_active_channels() -> list:
+    return list(CanalIngreso.objects.filter(activo=True).order_by("orden"))
 
 
 @dataclass(frozen=True)
@@ -437,16 +437,26 @@ def build_operational_control_snapshot(
     status_order = {"ROJO": 0, "AMARILLO": 1, "VERDE": 2, "SIN_LIMITE": 3}
     items.sort(key=lambda item: (status_order[item["estado"]], item["rubro"].nombre.lower()))
 
-    _non_cash_types = [t for t in MANAGEMENT_INCOME_TYPES if t != MovimientoCaja.Tipo.INGRESO_EFECTIVO]
-    ventas_rows = movement_qs.filter(tipo__in=_non_cash_types).values("tipo").annotate(total=Sum("monto"))
+    _channels = _get_active_channels()
+    _channel_by_codigo = {c.codigo: c for c in _channels}
+    _non_cash_tipos = [c.codigo for c in _channels if c.codigo != MovimientoCaja.Tipo.INGRESO_EFECTIVO]
+    ventas_rows = movement_qs.filter(tipo__in=_non_cash_tipos).values("tipo").annotate(total=Sum("monto"))
     ventas_por_canal = sorted(
         [
-            {"label": MANAGEMENT_INCOME_TYPES[row["tipo"]], "tipo": row["tipo"], "total": row["total"] or Decimal("0.00")}
+            {
+                "label": _channel_by_codigo[row["tipo"]].nombre if row["tipo"] in _channel_by_codigo else row["tipo"],
+                "tipo": row["tipo"],
+                "total": row["total"] or Decimal("0.00"),
+                "excluir_de_totales": _channel_by_codigo[row["tipo"]].excluir_de_totales if row["tipo"] in _channel_by_codigo else False,
+            }
             for row in ventas_rows
         ],
         key=lambda v: v["label"],
     )
-    total_ventas_digitales = sum((v["total"] for v in ventas_por_canal), Decimal("0.00"))
+    total_ventas_digitales = sum(
+        (v["total"] for v in ventas_por_canal if not v["excluir_de_totales"]),
+        Decimal("0.00"),
+    )
     ingreso_efectivo_total = (
         movement_qs.filter(tipo=MovimientoCaja.Tipo.INGRESO_EFECTIVO).aggregate(total=Sum("monto"))["total"]
         or Decimal("0.00")
@@ -573,16 +583,26 @@ def build_operational_period_summary(*, date_from: date, date_to: date, sucursal
     status_order = {"ROJO": 0, "AMARILLO": 1, "VERDE": 2, "SIN_LIMITE": 3}
     items.sort(key=lambda item: (status_order[item["estado"]], item["rubro"].nombre.lower()))
 
-    _non_cash_types = [t for t in MANAGEMENT_INCOME_TYPES if t != MovimientoCaja.Tipo.INGRESO_EFECTIVO]
-    ventas_rows = movement_qs.filter(tipo__in=_non_cash_types).values("tipo").annotate(total=Sum("monto"))
+    _channels = _get_active_channels()
+    _channel_by_codigo = {c.codigo: c for c in _channels}
+    _non_cash_tipos = [c.codigo for c in _channels if c.codigo != MovimientoCaja.Tipo.INGRESO_EFECTIVO]
+    ventas_rows = movement_qs.filter(tipo__in=_non_cash_tipos).values("tipo").annotate(total=Sum("monto"))
     ventas_por_canal = sorted(
         [
-            {"label": MANAGEMENT_INCOME_TYPES[row["tipo"]], "tipo": row["tipo"], "total": row["total"] or Decimal("0.00")}
+            {
+                "label": _channel_by_codigo[row["tipo"]].nombre if row["tipo"] in _channel_by_codigo else row["tipo"],
+                "tipo": row["tipo"],
+                "total": row["total"] or Decimal("0.00"),
+                "excluir_de_totales": _channel_by_codigo[row["tipo"]].excluir_de_totales if row["tipo"] in _channel_by_codigo else False,
+            }
             for row in ventas_rows
         ],
         key=lambda v: v["label"],
     )
-    total_ventas_digitales = sum((v["total"] for v in ventas_por_canal), Decimal("0.00"))
+    total_ventas_digitales = sum(
+        (v["total"] for v in ventas_por_canal if not v["excluir_de_totales"]),
+        Decimal("0.00"),
+    )
     ingreso_efectivo_total = (
         movement_qs.filter(tipo=MovimientoCaja.Tipo.INGRESO_EFECTIVO).aggregate(total=Sum("monto"))["total"]
         or Decimal("0.00")
@@ -631,8 +651,10 @@ def build_management_daily_matrix(*, date_from: date, date_to: date, sucursal: S
     elif empresa_ids:
         movement_qs = movement_qs.filter(caja__sucursal__empresa_id__in=empresa_ids)
 
+    _channels = _get_active_channels()
+    _income_codigos = [c.codigo for c in _channels]
     income_rows = (
-        movement_qs.filter(tipo__in=MANAGEMENT_INCOME_TYPES.keys())
+        movement_qs.filter(tipo__in=_income_codigos)
         .values("caja__fecha_operativa", "tipo")
         .annotate(total=Sum("monto"))
     )
@@ -642,8 +664,8 @@ def build_management_daily_matrix(*, date_from: date, date_to: date, sucursal: S
         .annotate(total=Sum("monto"))
     )
 
-    channel_keys = list(MANAGEMENT_INCOME_TYPES.keys())
-    channel_labels = [{"key": key, "label": MANAGEMENT_INCOME_TYPES[key]} for key in channel_keys]
+    channel_keys = _income_codigos
+    channel_labels = [{"key": c.codigo, "label": c.nombre, "excluir_de_totales": c.excluir_de_totales} for c in _channels]
     rubro_ids = set()
     rubro_names = {}
     for row in expense_rows:
@@ -1059,15 +1081,16 @@ def register_general_sale(
     if rubro is None:
         raise ValidationError({"rubro": "El rubro es obligatorio para registrar la venta."})
 
-    # Solo las ventas en efectivo impactan el saldo fisico de la caja
-    impacta_saldo = tipo_venta == MovimientoCaja.Tipo.INGRESO_EFECTIVO
+    canal = CanalIngreso.objects.filter(codigo=tipo_venta, activo=True).first()
+    if not canal:
+        raise ValidationError({"tipo_venta": "Canal de ingreso no válido."})
 
     movement = _create_movement(
         caja=caja,
         tipo=tipo_venta,
         sentido=MovimientoCaja.Sentido.INGRESO,
         monto=monto,
-        impacta_saldo_caja=impacta_saldo,
+        impacta_saldo_caja=canal.impacta_saldo_caja,
         categoria=rubro.nombre,
         observacion=observacion,
         rubro_operativo=rubro,

@@ -15,6 +15,7 @@ from django.views.decorators.http import require_http_methods
 
 from .forms import (
     CajaAperturaForm,
+    CanalIngresoForm,
     CierreCajaForm,
     EmpresaForm,
     IngresoEfectivoForm,
@@ -27,7 +28,7 @@ from .forms import (
     TransferenciaEntreSucursalesForm,
     VentaGeneralForm,
 )
-from .models import Caja, CierreCaja, Empresa, LimiteRubroOperativo, RubroOperativo, Sucursal, Turno
+from .models import CanalIngreso, Caja, CierreCaja, Empresa, LimiteRubroOperativo, RubroOperativo, Sucursal, Turno
 from .permissions import ensure_cashops_read, ensure_cashops_write, ensure_config_read, ensure_config_write
 from .services import (
     BRANCH_TRANSFER_DISABLED_REASON,
@@ -1256,6 +1257,102 @@ def set_empresas_activas(request):
     request.session.pop("empresa_activa_id", None)
     next_url = request.POST.get("next") or reverse("cashops:dashboard")
     return redirect(next_url)
+
+
+# --- Canales de ingreso ---
+
+@login_required
+def canal_ingreso_list(request):
+    _require_config_read(request)
+    canales = CanalIngreso.objects.all()
+    return render(request, "cashops/canal_ingreso_list.html", {"canales": canales})
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def canal_ingreso_create(request):
+    _require_config_write(request)
+    form = CanalIngresoForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        canal = form.save(commit=False)
+        canal.es_sistema = False
+        canal.activo = True
+        canal.codigo = canal.nombre.upper().replace(" ", "_")
+        try:
+            canal.full_clean()
+            canal.save()
+        except Exception as error:
+            _handle_operation_error(form, error, "No se pudo guardar el canal.")
+        else:
+            messages.success(request, f"Canal {canal.nombre} creado.")
+            url = reverse("cashops:canal_ingreso_list")
+            return _hx_redirect(url) if _is_htmx(request) else redirect(url)
+
+    return _render_form(
+        request,
+        "cashops/form_page.html",
+        "cashops/partials/form_card.html",
+        {
+            "title": "Nuevo canal de ingreso",
+            "subtitle": "Agrega un nuevo medio de cobro para registrar ventas.",
+            "form": form,
+            "submit_label": "Guardar canal",
+            "back_url": reverse("cashops:canal_ingreso_list"),
+            "form_action": reverse("cashops:canal_ingreso_create"),
+        },
+        status=400 if request.method == "POST" and not form.is_valid() else 200,
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def canal_ingreso_update(request, canal_id: int):
+    _require_config_write(request)
+    canal = get_object_or_404(CanalIngreso, pk=canal_id)
+    if canal.es_sistema:
+        raise PermissionDenied("Los canales del sistema no se pueden editar desde esta pantalla.")
+    form = CanalIngresoForm(request.POST or None, instance=canal)
+    if request.method == "POST" and form.is_valid():
+        try:
+            canal = form.save()
+        except IntegrityError as error:
+            _handle_operation_error(form, error, "No se pudo actualizar el canal.")
+        else:
+            messages.success(request, f"Canal {canal.nombre} actualizado.")
+            url = reverse("cashops:canal_ingreso_list")
+            return _hx_redirect(url) if _is_htmx(request) else redirect(url)
+
+    return _render_form(
+        request,
+        "cashops/form_page.html",
+        "cashops/partials/form_card.html",
+        {
+            "title": f"Editar canal: {canal.nombre}",
+            "subtitle": "Podes renombrar o reordenar el canal.",
+            "form": form,
+            "submit_label": "Guardar cambios",
+            "back_url": reverse("cashops:canal_ingreso_list"),
+            "form_action": reverse("cashops:canal_ingreso_update", args=[canal.pk]),
+        },
+        status=400 if request.method == "POST" and not form.is_valid() else 200,
+    )
+
+
+@login_required
+@require_http_methods(["POST"])
+def canal_ingreso_toggle(request, canal_id: int):
+    _require_config_write(request)
+    canal = get_object_or_404(CanalIngreso, pk=canal_id)
+    if canal.es_sistema:
+        raise PermissionDenied("Los canales del sistema no se pueden activar ni desactivar manualmente.")
+    canal.activo = not canal.activo
+    canal.save(update_fields=["activo"])
+    messages.success(
+        request,
+        f"Canal {canal.nombre} {'activado' if canal.activo else 'desactivado'}.",
+    )
+    url = reverse("cashops:canal_ingreso_list")
+    return _hx_redirect(url) if _is_htmx(request) else redirect(url)
 
 
 # --- Reinicio de datos operativos (solo para entornos de prueba) ---
