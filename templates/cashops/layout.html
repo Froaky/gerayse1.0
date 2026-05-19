@@ -342,6 +342,7 @@
                     <a class="nav-menu__item" href="{% url 'cashops:empresa_list' %}">Empresas</a>
                     <a class="nav-menu__item" href="{% url 'cashops:sucursal_list' %}">Sucursales</a>
                     <a class="nav-menu__item" href="{% url 'cashops:turno_list' %}">Turnos</a>
+                    <a class="nav-menu__item" href="{% url 'cashops:canal_ingreso_list' %}">Medios de ingreso</a>
                   {% endif %}
                   {% if request.user.can_read_users %}
                     <a class="nav-menu__item" href="{% url 'users:user_list' %}">Usuarios</a>
