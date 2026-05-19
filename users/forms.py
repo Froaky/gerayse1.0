@@ -11,7 +11,7 @@ def _apply_operational_classes(form: forms.BaseForm) -> None:
     for field in form.fields.values():
         if isinstance(field.widget, forms.Select):
             field.widget.attrs.setdefault("class", "input select")
-        elif isinstance(field.widget, forms.CheckboxInput):
+        elif isinstance(field.widget, (forms.CheckboxInput, forms.CheckboxSelectMultiple)):
             field.widget.attrs.setdefault("class", "")
         else:
             field.widget.attrs.setdefault("class", "input")

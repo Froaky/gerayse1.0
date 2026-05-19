@@ -249,6 +249,66 @@
         .row { flex-direction: column; align-items: flex-start; }
         .row .list-actions { width: 100%; }
       }
+      /* ── Checkbox simple (BooleanField): fila label ↔ checkbox ── */
+      .field:has(> input[type="checkbox"]) {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px 12px;
+        padding: 11px 12px;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        background: var(--panel-soft);
+      }
+      .field:has(> input[type="checkbox"]) > label {
+        flex: 1;
+        cursor: pointer;
+        margin: 0;
+      }
+      .field:has(> input[type="checkbox"]) > input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        min-height: unset;
+        padding: 0;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        accent-color: var(--accent);
+        flex-shrink: 0;
+      }
+      .field:has(> input[type="checkbox"]) > small { width: 100%; order: 3; }
+      /* ── CheckboxSelectMultiple: lista de opciones ── */
+      .field ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        overflow: hidden;
+      }
+      .field ul li + li { border-top: 1px solid var(--line); }
+      .field ul li label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        cursor: pointer;
+        font-weight: 500;
+        transition: background 0.1s;
+      }
+      .field ul li label:hover { background: rgba(255, 255, 255, 0.04); }
+      .field ul li input[type="checkbox"] {
+        width: 15px;
+        height: 15px;
+        min-height: unset;
+        padding: 0;
+        border: none;
+        background: transparent;
+        flex-shrink: 0;
+        cursor: pointer;
+        accent-color: var(--accent);
+      }
     </style>
   </head>
   <body>
