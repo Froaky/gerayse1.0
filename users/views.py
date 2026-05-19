@@ -184,6 +184,7 @@ def _render_user_detail(request, target_user, access_form=None, status=200):
             "first_access_url": first_access_url,
             "can_delete": target_user.pk != request.user.pk,
             "can_edit_permissions": request.user.has_module_permission(PermissionModule.USERS, "write"),
+            "empresas_del_usuario": list(target_user.empresas_permitidas.order_by("nombre")),
         },
         status=status,
     )

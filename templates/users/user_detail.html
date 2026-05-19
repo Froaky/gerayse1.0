@@ -28,6 +28,20 @@
         <strong>{{ target_user.sucursal_base.nombre|default:"No fija" }}</strong>
       </div>
       <div class="summary">
+        <small class="muted">Empresa principal</small>
+        <strong>{{ target_user.empresa_principal.nombre|default:"No configurada" }}</strong>
+      </div>
+      <div class="summary">
+        <small class="muted">Acceso a empresas</small>
+        <strong>
+          {% if empresas_del_usuario %}
+            {% for e in empresas_del_usuario %}{{ e.nombre }}{% if not forloop.last %}, {% endif %}{% endfor %}
+          {% else %}
+            Sin restricción
+          {% endif %}
+        </strong>
+      </div>
+      <div class="summary">
         <small class="muted">Password</small>
         <strong>{% if target_user.must_change_password %}Debe cambiar{% else %}Propia{% endif %}</strong>
       </div>

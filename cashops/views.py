@@ -1231,9 +1231,13 @@ def set_empresa_activa(request):
     if empresa_id:
         try:
             eid = int(empresa_id)
-            Empresa.objects.get(pk=eid, activa=True)
-            request.session["empresa_ids"] = [eid]
-            request.session.pop("empresa_activa_id", None)
+            permitidas_ids = set(request.user.empresas_permitidas.values_list("pk", flat=True))
+            if permitidas_ids and eid not in permitidas_ids:
+                pass
+            else:
+                Empresa.objects.get(pk=eid, activa=True)
+                request.session["empresa_ids"] = [eid]
+                request.session.pop("empresa_activa_id", None)
         except (Empresa.DoesNotExist, TypeError, ValueError):
             pass
     next_url = request.POST.get("next") or reverse("cashops:dashboard")
@@ -1244,11 +1248,16 @@ def set_empresa_activa(request):
 @require_http_methods(["POST"])
 def set_empresas_activas(request):
     """Guarda en sesión la lista de empresas seleccionadas (multi-empresa)."""
+    user = request.user
+    permitidas_ids = set(user.empresas_permitidas.values_list("pk", flat=True))
+
     raw_ids = request.POST.getlist("empresa_ids")
     empresa_ids = []
     for v in raw_ids:
         try:
             eid = int(v)
+            if permitidas_ids and eid not in permitidas_ids:
+                continue
             if Empresa.objects.filter(pk=eid, activa=True).exists():
                 empresa_ids.append(eid)
         except (TypeError, ValueError):

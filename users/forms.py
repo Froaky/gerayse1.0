@@ -1,7 +1,7 @@
 from django import forms
 from django.contrib.auth import get_user_model
 from django.db.models import Q
-from cashops.models import Sucursal
+from cashops.models import Empresa, Sucursal
 from .models import Role
 
 User = get_user_model()
@@ -42,6 +42,13 @@ class PersonalForm(forms.ModelForm):
         required=False,
         help_text="En altas funciona como contrasena default. El usuario debera cambiarla al primer ingreso.",
     )
+    empresas_permitidas = forms.ModelMultipleChoiceField(
+        queryset=Empresa.objects.filter(activa=True).order_by("nombre"),
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        label="Empresas con acceso",
+        help_text="Vacio = sin restriccion (ve todas las empresas).",
+    )
 
     class Meta:
         model = User
@@ -55,6 +62,8 @@ class PersonalForm(forms.ModelForm):
             "role",
             "usuario_fijo",
             "sucursal_base",
+            "empresa_principal",
+            "empresas_permitidas",
             "is_active",
         ]
         labels = {
@@ -65,6 +74,7 @@ class PersonalForm(forms.ModelForm):
             "role": "Rol / Permisos",
             "usuario_fijo": "Usuario fijo",
             "sucursal_base": "Sucursal base",
+            "empresa_principal": "Empresa principal",
             "is_active": "Usuario activo",
         }
         widgets = {
@@ -75,11 +85,17 @@ class PersonalForm(forms.ModelForm):
             "telefono": forms.TextInput(attrs={"placeholder": "387-..."}),
             "email": forms.EmailInput(attrs={"placeholder": "juan@example.com"}),
         }
+        help_texts = {
+            "empresa_principal": "Se selecciona automaticamente al iniciar sesion.",
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["sucursal_base"].queryset = Sucursal.objects.filter(activa=True).order_by("nombre")
         self.fields["role"].queryset = _role_queryset_for_instance(self.instance)
+        self.fields["empresa_principal"].queryset = Empresa.objects.filter(activa=True).order_by("nombre")
+        if self.instance.pk:
+            self.fields["empresas_permitidas"].initial = self.instance.empresas_permitidas.all()
         _apply_operational_classes(self)
         _configure_fixed_user_target(self)
 
@@ -91,6 +107,10 @@ class PersonalForm(forms.ModelForm):
             cleaned_data["sucursal_base"] = None
         if not self.instance.pk and not cleaned_data.get("password"):
             self.add_error("password", "La contrasena es obligatoria para nuevos usuarios.")
+        principal = cleaned_data.get("empresa_principal")
+        permitidas = cleaned_data.get("empresas_permitidas")
+        if principal and permitidas and principal not in permitidas:
+            self.add_error("empresa_principal", "La empresa principal debe estar entre las empresas con acceso.")
         return cleaned_data
 
     def save(self, commit=True):
@@ -101,33 +121,49 @@ class PersonalForm(forms.ModelForm):
             user.must_change_password = True
         if commit:
             user.save()
+            self.save_m2m()
         return user
 
 
 class UserAccessForm(forms.ModelForm):
+    empresas_permitidas = forms.ModelMultipleChoiceField(
+        queryset=Empresa.objects.filter(activa=True).order_by("nombre"),
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        label="Empresas con acceso",
+        help_text="Vacio = sin restriccion (ve todas las empresas).",
+    )
+
     class Meta:
         model = User
         fields = [
             "role",
             "usuario_fijo",
             "sucursal_base",
+            "empresa_principal",
+            "empresas_permitidas",
             "is_active",
         ]
         labels = {
             "role": "Rol / permisos",
             "usuario_fijo": "Usuario fijo",
             "sucursal_base": "Sucursal base",
+            "empresa_principal": "Empresa principal",
             "is_active": "Usuario activo",
         }
         help_texts = {
             "role": "El rol define permisos default; la ficha del usuario puede tener ajustes puntuales.",
             "usuario_fijo": "Si esta activo, el usuario queda asociado a una sucursal base.",
+            "empresa_principal": "Se selecciona automaticamente al iniciar sesion.",
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["role"].queryset = _role_queryset_for_instance(self.instance)
         self.fields["sucursal_base"].queryset = Sucursal.objects.filter(activa=True).order_by("nombre")
+        self.fields["empresa_principal"].queryset = Empresa.objects.filter(activa=True).order_by("nombre")
+        if self.instance.pk:
+            self.fields["empresas_permitidas"].initial = self.instance.empresas_permitidas.all()
         _apply_operational_classes(self)
         _configure_fixed_user_target(self)
 
@@ -137,7 +173,18 @@ class UserAccessForm(forms.ModelForm):
             self.add_error("sucursal_base", "La sucursal base es obligatoria para un usuario fijo.")
         if not cleaned_data.get("usuario_fijo"):
             cleaned_data["sucursal_base"] = None
+        principal = cleaned_data.get("empresa_principal")
+        permitidas = cleaned_data.get("empresas_permitidas")
+        if principal and permitidas and principal not in permitidas:
+            self.add_error("empresa_principal", "La empresa principal debe estar entre las empresas con acceso.")
         return cleaned_data
+
+    def save(self, commit=True):
+        user = super().save(commit=False)
+        if commit:
+            user.save()
+            self.save_m2m()
+        return user
 
 
 class RoleForm(forms.ModelForm):

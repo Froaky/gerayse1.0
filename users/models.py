@@ -57,7 +57,20 @@ class User(AbstractUser):
         blank=True,
         related_name="usuarios_base",
     )
-
+    empresa_principal = models.ForeignKey(
+        "cashops.Empresa",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="usuarios_principales",
+        verbose_name="Empresa principal",
+    )
+    empresas_permitidas = models.ManyToManyField(
+        "cashops.Empresa",
+        blank=True,
+        related_name="usuarios_con_acceso",
+        verbose_name="Empresas con acceso",
+    )
 
     class Meta:
         verbose_name = "user"
@@ -67,6 +80,9 @@ class User(AbstractUser):
         super().clean()
         if self.usuario_fijo and not self.sucursal_base_id:
             raise ValidationError({"sucursal_base": "La sucursal base es obligatoria para un usuario fijo."})
+
+    def get_empresas_permitidas_ids(self) -> set[int]:
+        return set(self.empresas_permitidas.values_list("pk", flat=True))
 
     @property
     def normalized_role_code(self) -> str:
