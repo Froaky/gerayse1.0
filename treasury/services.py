@@ -800,6 +800,7 @@ def create_bank_movement(
     concepto: str,
     clase: str | None = None,
     categoria: CategoriaCuentaPagar = None,
+    rubro_operativo=None,
     proveedor: Proveedor = None,
     sucursal_gasto=None,
     referencia: str = "",
@@ -817,6 +818,7 @@ def create_bank_movement(
         concepto=concepto,
         clase=clase or _infer_bank_movement_class(tipo=tipo, origen=origen, payment=pago_tesoreria),
         categoria=categoria,
+        rubro_operativo=rubro_operativo,
         proveedor=proveedor,
         sucursal_gasto=sucursal_gasto,
         referencia=referencia,
@@ -836,6 +838,7 @@ def update_bank_movement(
     concepto: str,
     clase: str | None = None,
     categoria: CategoriaCuentaPagar = None,
+    rubro_operativo=None,
     proveedor: Proveedor = None,
     referencia: str = "",
     observaciones: str = "",
@@ -848,6 +851,7 @@ def update_bank_movement(
     if clase:
         movement.clase = clase
     movement.categoria = categoria
+    movement.rubro_operativo = rubro_operativo
     movement.proveedor = proveedor
     movement.referencia = referencia
     movement.observaciones = observaciones
@@ -1007,6 +1011,7 @@ def link_payment_to_bank_movement(
     )
     bank_movement.proveedor = payment.cuenta_por_pagar.proveedor
     bank_movement.categoria = payment.cuenta_por_pagar.categoria
+    bank_movement.rubro_operativo = payment.cuenta_por_pagar.categoria.rubro_operativo
     bank_movement.actualizado_por = actor
     bank_movement.save()
 

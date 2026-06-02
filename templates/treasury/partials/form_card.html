@@ -34,7 +34,7 @@
     {% endfor %}
     <div class="row mt-8">
       <span class="muted">Formulario reusable para alta y edicion.</span>
-      <button class="button" type="submit">{{ submit_label }}</button>
+      <button class="button" type="submit">{{ submit_label|default:"Guardar" }}</button>
     </div>
   </form>
   {% if form.conditional_bank_account %}

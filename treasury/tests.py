@@ -1490,8 +1490,9 @@ class TreasuryViewTests(TreasuryTestCase):
                 "cuenta_bancaria": self.bank_account.pk,
                 "tipo": MovimientoBancario.Tipo.DEBITO,
                 "clase": MovimientoBancario.Clase.IMPUESTO,
-                "categoria": self.category.pk,
+                "rubro_operativo": self.rubro_servicios.pk,
                 "proveedor": "",
+                "sucursal_gasto": self.sucursal.pk,
                 "fecha": timezone.localdate(),
                 "monto": "85.00",
                 "concepto": "ARCA abril",
@@ -1503,7 +1504,112 @@ class TreasuryViewTests(TreasuryTestCase):
         self.assertEqual(response.status_code, 302)
         movement = MovimientoBancario.objects.get(referencia="IMP-85")
         self.assertEqual(movement.clase, MovimientoBancario.Clase.IMPUESTO)
-        self.assertEqual(movement.categoria, self.category)
+        self.assertIsNone(movement.categoria)
+        self.assertEqual(movement.rubro_operativo, self.rubro_servicios)
+        self.assertEqual(movement.sucursal_gasto, self.sucursal)
+        self.assertRedirects(response, reverse("treasury:bank_movements_detail", args=[movement.pk]))
+
+    def test_bank_movement_create_form_uses_rubro_and_visible_submit(self):
+        RubroOperativo.objects.create(nombre="Rubro inactivo", activo=False)
+        RubroOperativo.objects.create(nombre="Rubro sistema", es_sistema=True)
+
+        response = self.client.get(reverse("treasury:bank_movements_create"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Guardar movimiento")
+        self.assertContains(response, ">Rubro<", html=False)
+        self.assertContains(response, self.rubro_servicios.nombre)
+        self.assertNotContains(response, "Rubro / categoria")
+        self.assertNotContains(response, "Rubro inactivo")
+        self.assertNotContains(response, "Rubro sistema")
+
+    def test_bank_movement_create_requires_rubro_for_classified_debit(self):
+        response = self.client.post(
+            reverse("treasury:bank_movements_create"),
+            {
+                "cuenta_bancaria": self.bank_account.pk,
+                "tipo": MovimientoBancario.Tipo.DEBITO,
+                "clase": MovimientoBancario.Clase.IMPUESTO,
+                "rubro_operativo": "",
+                "proveedor": "",
+                "sucursal_gasto": self.sucursal.pk,
+                "fecha": timezone.localdate(),
+                "monto": "85.00",
+                "concepto": "ARCA sin rubro",
+                "referencia": "IMP-SIN-RUBRO",
+                "observaciones": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "El rubro es obligatorio para este tipo de movimiento.")
+        self.assertFalse(MovimientoBancario.objects.filter(referencia="IMP-SIN-RUBRO").exists())
+
+    def test_bank_movement_list_finds_by_amount_and_sucursal_gasto(self):
+        create_bank_movement(
+            cuenta_bancaria=self.bank_account,
+            tipo=MovimientoBancario.Tipo.DEBITO,
+            clase=MovimientoBancario.Clase.IMPUESTO,
+            rubro_operativo=self.rubro_servicios,
+            sucursal_gasto=self.sucursal,
+            fecha=timezone.localdate(),
+            monto=Decimal("345.67"),
+            concepto="Transferencia Coca alquiler",
+            referencia="TR-COCA",
+            actor=self.admin,
+        )
+        create_bank_movement(
+            cuenta_bancaria=self.bank_account,
+            tipo=MovimientoBancario.Tipo.DEBITO,
+            clase=MovimientoBancario.Clase.IMPUESTO,
+            rubro_operativo=self.rubro_servicios,
+            fecha=timezone.localdate(),
+            monto=Decimal("100.00"),
+            concepto="Otro movimiento",
+            referencia="TR-OTRA",
+            actor=self.admin,
+        )
+
+        response = self.client.get(
+            reverse("treasury:bank_movements_list"),
+            {"q": "345.67", "sucursal": self.sucursal.pk},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Transferencia Coca alquiler")
+        self.assertContains(response, "Rubro: Servicios")
+        self.assertNotContains(response, "Otro movimiento")
+
+    def test_bank_movement_list_keeps_legacy_category_visible(self):
+        legacy_category = CategoriaCuentaPagar.objects.create(
+            nombre="Categoria legacy banco",
+            activo=True,
+            creado_por=self.admin,
+        )
+        create_bank_movement(
+            cuenta_bancaria=self.bank_account,
+            tipo=MovimientoBancario.Tipo.DEBITO,
+            clase=MovimientoBancario.Clase.IMPUESTO,
+            categoria=legacy_category,
+            fecha=timezone.localdate(),
+            monto=Decimal("90.00"),
+            concepto="Debito legacy",
+            referencia="LEG-BANCO",
+            actor=self.admin,
+        )
+
+        response = self.client.get(reverse("treasury:bank_movements_list"), {"q": "LEG-BANCO"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Debito legacy")
+        self.assertContains(response, "Categoria legacy banco (legacy)")
+
+    def test_bank_movement_list_empty_filter_shows_filter_context_actions(self):
+        response = self.client.get(reverse("treasury:bank_movements_list"), {"q": "sin-resultados"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "No hay movimientos bancarios para los filtros aplicados.")
+        self.assertContains(response, "Limpiar")
 
     def test_grouped_accreditation_create_persists_period_metadata(self):
         response = self.client.post(

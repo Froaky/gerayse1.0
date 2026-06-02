@@ -957,8 +957,10 @@ class MovimientoBancario(models.Model):
             self.Clase.IMPUESTO,
             self.Clase.COMISION_BANCARIA,
             self.Clase.TRANSFERENCIA_TERCEROS,
-        } and not self.categoria_id:
-            errors["categoria"] = "El rubro o categoria es obligatorio para este tipo de movimiento."
+        } and not self.rubro_operativo_id and not self.categoria_id:
+            errors["rubro_operativo"] = "El rubro es obligatorio para este tipo de movimiento."
+        if self.rubro_operativo_id and (not self.rubro_operativo.activo or self.rubro_operativo.es_sistema):
+            errors["rubro_operativo"] = "El rubro debe estar activo y no puede ser de sistema."
         if self.clase in {
             self.Clase.CHEQUE,
             self.Clase.ECHEQ,

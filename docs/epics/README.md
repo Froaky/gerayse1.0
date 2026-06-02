@@ -18,7 +18,7 @@ Estado actual:
 - `EP-07`: impuestos, planes y autorizaciones. Implementada.
 - `EP-08`: ajustes operativos de caja y sucursales. Implementada. Cerrada 2026-04-28 tras completar US-8.8 a US-8.13.
 - `EP-09`: usuarios operativos y datos minimos. Reabierta: gestion operativa de usuarios, roles y permisos por modulo implementados; pendiente granularidad por sucursal/empresa/lugar (`US-9.11`).
-- `EP-10`: situacion financiera y alertas consolidadas. Implementada.
+- `EP-10`: situacion financiera y alertas consolidadas. Implementada. Cerrada 2026-06-02 tras completar rubros operativos en movimientos bancarios, visibilidad post-alta y boton principal con etiqueta.
 - `EP-11`: rentabilidad y situacion economica. Implementada.
 - `EP-12`: empresas, contexto activo y navegacion. Implementada. Cerrada 2026-04-28.
 

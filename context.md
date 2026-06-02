@@ -1,6 +1,6 @@
 # Context
 
-Last updated: 2026-04-30
+Last updated: 2026-06-02
 
 ## Product Snapshot
 
@@ -57,6 +57,13 @@ Last updated: 2026-04-30
 ## Current Session
 
 ### Objective
+
+- 2026-06-02 backlog update from user feedback:
+  - In bank movement creation, the Rubro/Categoria selector does not show rubros already loaded in the rubros master.
+  - User wants bank movement UI to say Rubro only, not Categoria.
+  - A bank transfer reportedly registered under "Coca" but the selected bank-movement section/list showed no records.
+  - Screenshot shows the bank movement form has a bottom-right submit button with no visible text.
+  - Runtime implementation completed for `US-10.8`, `US-10.9`, and `US-10.10`.
 
 - 2026-05-14 users slice:
   - Build an operational `Usuarios` management view from the Config menu.
@@ -227,6 +234,28 @@ Last updated: 2026-04-30
 - `treasury/migrations/0016_ep07_special_commitments.py`
 
 ### Changes Applied
+
+- 2026-06-02 EP-10 implementation slice completed:
+  - `US-10.8`, `US-10.9`, and `US-10.10` are marked done.
+  - Bank movement creation now uses active non-system `RubroOperativo` options and labels the field `Rubro`.
+  - Bank movement domain validation requires rubro or legacy category for classified debit classes; new manual form persists `rubro_operativo`.
+  - Existing legacy bank movements with `CategoriaCuentaPagar` remain visible and show the legacy category name.
+  - Bank movement list search now supports concept, reference, and exact amount; sucursal filter includes both bank-account branch and debit expense branch.
+  - Company active filtering includes account branch and debit expense branch when available.
+  - After manual bank movement creation, the user is redirected to the movement detail for immediate confirmation.
+  - Reusable treasury form submit button now defaults to visible `Guardar`; bank movement creation passes `Guardar movimiento`.
+  - Files touched: `treasury/models.py`, `treasury/forms.py`, `treasury/services.py`, `treasury/views.py`, `treasury/tests.py`, `templates/treasury/partials/form_card.html`, `templates/treasury/partials/list_items.html`, `docs/epics/EP-10-situacion-financiera-y-alertas-consolidadas.md`, `docs/epics/README.md`, `context.md`.
+  - Decision for "Coca" report: treat visibility through persisted bank account, account branch, debit expense branch, and active company context; no new company-specific selector was introduced.
+
+- 2026-06-02 bank movement backlog update:
+  - Reopened `EP-10` in `docs/epics/README.md` because user feedback exposed pending bank-movement UX/data issues.
+  - Added pending `US-10.8`, `US-10.9`, and `US-10.10` to `docs/epics/EP-10-situacion-financiera-y-alertas-consolidadas.md`.
+  - Functional scope captured:
+    - bank movement creation must select active operational rubros, not only treasury categories
+    - bank movement UI should say `Rubro` instead of `Rubro / categoria` or `Categoria`
+    - a newly registered transfer must remain visible in the expected account/sucursal/company selection
+    - the form submit button must show a visible action label
+  - Later resolved in the EP-10 implementation slice: visibility uses bank account, account branch, debit expense branch and active company context.
 
 - External GitHub profile:
   - created and pushed `README.md` to `https://github.com/Froaky/Froaky`
@@ -581,6 +610,9 @@ Last updated: 2026-04-30
   - `.venv\Scripts\python.exe -m compileall cashops treasury` after EP-06/EP-07 closure slice
   - `.venv\Scripts\python.exe -m compileall treasury` after treasury view cleanup
   - `git diff --check` after EP-06/EP-07 closure slice and view cleanup
+  - `py -3.14 manage.py test treasury.tests.TreasuryViewTests -v 1` with `PYTHONPATH=.venv\Lib\site-packages` after EP-10 movement-rubro slice: 23 tests OK
+  - `py -3.14 manage.py test treasury.tests treasury.tests_ep05 -v 1` with `PYTHONPATH=.venv\Lib\site-packages` after EP-10 movement-rubro slice: 61 tests OK, 1 skipped
+  - `py -3.14 -m compileall treasury` after EP-10 movement-rubro slice passed
 - Not run:
   - application tests for the 2026-04-29 treasury-expense backlog update, because only epic markdown and context were changed
   - application tests for the 2026-04-28 backlog update, because only epic markdown and context were changed
@@ -593,6 +625,8 @@ Last updated: 2026-04-30
   - application tests for the new skill files, because they only add skill metadata and instructions
   - application tests for the backlog-normalization pass on `docs/epics`, because no runtime code changed in this slice
   - application tests for `docs/portfolio-gerayse.md`, because this task only added descriptive documentation
+  - `.venv\Scripts\python.exe ...` commands for EP-10 movement-rubro slice because `.venv\Scripts\python.exe` points to missing `C:\Python312\python.exe`; workaround was `py -3.14` plus venv `site-packages`
+  - `py -3.14 manage.py makemigrations --check` remains red on pre-existing treasury drift wanting `treasury\migrations\0018_alter_movimientocajacentral_tipo.py`; EP-10 movement-rubro slice did not add schema changes
 - Treasury status after this session:
   - supplier create/update flow works again
   - payable create/update flow works again
@@ -628,7 +662,8 @@ Last updated: 2026-04-30
   - residual risk: no hay integracion externa fiscal/contable ni liquidacion formal de sueldos; el alcance queda como control operativo interno sobre `CuentaPorPagar`
   - key refs: `treasury/models.py`, `treasury/forms.py`, `treasury/services.py`, `treasury/views.py`, `treasury/admin.py`, `treasury/migrations/0016_ep07_special_commitments.py`, `treasury/tests.py`
 - EP-10 review snapshot after first slice:
-  - done: dashboard financiero por periodo y sucursal, visibilidad de caja fuerte general, banco y total consolidado, buckets de vencimientos, lectura de acreditaciones pendientes, taxonomia dura de movimientos bancarios y carga diaria o agrupada de acreditaciones con guardrails de duplicado
+  - done: dashboard financiero por periodo y sucursal, visibilidad de caja fuerte general, banco y total consolidado, buckets de vencimientos, lectura de acreditaciones pendientes, taxonomia dura de movimientos bancarios, carga diaria o agrupada de acreditaciones con guardrails de duplicado, rubros operativos en alta de movimientos bancarios, visibilidad post-alta y boton principal con etiqueta
+  - closed again 2026-06-02 after completing `US-10.8`, `US-10.9`, and `US-10.10`
   - residual risk: la taxonomia nueva se apoya en `CategoriaCuentaPagar` como rubro operativo-financiero compartido; si negocio exige un maestro de rubros bancarios separado, eso seria una nueva capa de modelado y no un bug del slice actual
   - key refs: `treasury/models.py`, `treasury/forms.py`, `treasury/services.py`, `treasury/views.py`, `treasury/migrations/0012_acreditaciontarjeta_modo_registro_and_more.py`, `treasury/tests.py`
 - EP-11 review snapshot after third slice:
@@ -668,6 +703,7 @@ Last updated: 2026-04-30
 - Next EP-07 candidates in order:
   - `EP-07` quedo funcionalmente cerrado; posibles mejoras futuras: integracion fiscal externa, documentos adjuntos formales y circuito especifico de liquidacion de sueldos
 - Next EP-10 candidates in order:
-  - `EP-10` quedo funcionalmente cerrado; sostenerlo con regresion si se toca tesoreria
+  - EP-10 is closed again after `US-10.8`, `US-10.9`, and `US-10.10`.
+  - If production confirms "Coca" means a different selector than account branch, expense branch or active company context, add a new follow-up story before changing filters again.
 - Next EP-11 candidates in order:
   - `EP-11` quedo funcionalmente cerrado; solo queda como posible mejora futura un comando de migracion asistida para categorias legacy sin rubro si negocio quiere limpiar historicos

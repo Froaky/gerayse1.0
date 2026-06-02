@@ -474,7 +474,7 @@ class BankMovementForm(TreasuryStyledFormMixin, forms.ModelForm):
             "cuenta_bancaria",
             "tipo",
             "clase",
-            "categoria",
+            "rubro_operativo",
             "proveedor",
             "sucursal_gasto",
             "fecha",
@@ -494,16 +494,17 @@ class BankMovementForm(TreasuryStyledFormMixin, forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["cuenta_bancaria"].queryset = CuentaBancaria.objects.filter(activa=True).order_by("banco", "nombre")
-        self.fields["categoria"].queryset = CategoriaCuentaPagar.objects.filter(activo=True).order_by("nombre")
+        self.fields["rubro_operativo"].queryset = RubroOperativo.objects.filter(activo=True, es_sistema=False).order_by("nombre")
         self.fields["proveedor"].queryset = Proveedor.objects.filter(activo=True).order_by("razon_social")
         self.fields["sucursal_gasto"].queryset = Sucursal.objects.filter(activa=True).order_by("nombre")
-        self.fields["categoria"].required = False
+        self.fields["rubro_operativo"].required = False
         self.fields["proveedor"].required = False
         self.fields["sucursal_gasto"].required = False
         self.fields["sucursal_gasto"].label = "Sucursal"
         self.fields["sucursal_gasto"].empty_label = "Sin asignar"
         self.fields["clase"].label = "Tipo financiero"
-        self.fields["categoria"].label = "Rubro / categoria"
+        self.fields["rubro_operativo"].label = "Rubro"
+        self.fields["rubro_operativo"].empty_label = "Sin asignar"
         tipo_actual = self.data.get(self.add_prefix("tipo")) if self.is_bound else None
         self.show_sucursal_field = tipo_actual == MovimientoBancario.Tipo.DEBITO or not tipo_actual
         self.conditional_sucursal = True

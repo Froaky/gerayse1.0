@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import markdown; print\\('markdown ok'\\)\")",
+      "Bash(pip list *)",
+      "Bash(pip install *)",
+      "Bash(python md_to_pdf.py)",
+      "Bash(python -c \"import xhtml2pdf; print\\('ok'\\)\")",
+      "Bash(python -c \"import os; s=os.path.getsize\\('c:/Users/MateoCoca/Documents/REPOS/gerayse/MANUAL_USUARIO.pdf'\\); print\\(f'{s/1024:.0f} KB'\\)\")",
+      "Bash(git commit -m ' *)",
+      "Bash(xargs grep -l \"tipo\\\\|Tipo\")",
+      "Bash(xargs grep -l \"class.*Ingreso\\\\|class.*Canal\")",
+      "Bash(python manage.py makemigrations cashops --name \"add_canalingreso_model\")",
+      "Bash(python manage.py migrate cashops)",
+      "Bash(python manage.py check --deploy)",
+      "Bash(python manage.py showmigrations cashops)",
+      "Bash(python -c \"from cashops.services import get_income_channel_map; print\\(get_income_channel_map\\(\\)\\)\")",
+      "Bash(python manage.py shell -c \"from cashops.services import get_income_channel_map; print\\(get_income_channel_map\\(\\)\\)\")",
+      "Bash(python manage.py shell -c ' *)",
+      "Bash(python manage.py makemigrations cashops --name \"canalingreso_excluir_de_totales\")",
+      "Bash(python manage.py makemigrations users --name \"user_empresa_principal_y_permitidas\")",
+      "Bash(python manage.py migrate users)",
+      "Bash(python manage.py showmigrations users)",
+      "Bash(findstr /n \"select input\" static\\\\css\\\\gerayse.css)",
+      "Bash(powershell -Command \"Select-String -Path 'static\\\\css\\\\gerayse.css' -Pattern 'select|\\\\.input' | Select-Object -First 20\")",
+      "Bash(powershell -Command \"\\(Get-Content 'static\\\\css\\\\gerayse.css'\\) | Select-String 'select|input|\\\\.input' | Select-Object -First 30\")",
+      "Bash(powershell -Command \"\\(Get-Content 'static\\\\css\\\\gerayse.css'\\) | Select-String '^\\\\.' | Select-Object -First 50\")",
+      "Bash(powershell -Command \"\\(Get-Content 'static\\\\css\\\\gerayse.css'\\) | Select-String '^\\\\.' | Select-Object -Last 50\")",
+      "Bash(powershell -Command \"Get-Content 'static\\\\css\\\\gerayse.css' | Measure-Object -Line\")",
+      "Bash(git commit -m 'feat: agregar Medios de ingreso al menu Config del navbar *)",
+      "Read(//c/Users/MateoCoca/.claude/projects/c--Users-MateoCoca-Documents-REPOS-gerayse/memory/**)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\MateoCoca\\.claude\\projects\\c--Users-MateoCoca-Documents-REPOS-gerayse\\memory"
+    ]
+  }
+}

@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -266,6 +266,16 @@ def _category_item(category: CategoriaCuentaPagar) -> dict:
         "badge_class": badge_class,
         "meta": "",
     }
+
+
+def _bank_movement_rubro_label(movement: MovimientoBancario) -> str:
+    if movement.rubro_operativo_id:
+        return movement.rubro_operativo.nombre
+    if movement.categoria_id:
+        if movement.categoria.rubro_operativo_id:
+            return movement.categoria.rubro_label
+        return f"{movement.categoria.nombre} (legacy)"
+    return "No aplica"
 
 
 def _bank_account_item(bank_account: CuentaBancaria) -> dict:
@@ -1362,14 +1372,21 @@ def bank_movements_list(request):
     filter_form = BankMovementFilterForm(request.GET)
     movements = MovimientoBancario.objects.all().select_related(
         "cuenta_bancaria",
+        "cuenta_bancaria__sucursal",
         "pago_tesoreria",
         "creado_por",
         "categoria",
+        "categoria__rubro_operativo",
+        "rubro_operativo",
         "proveedor",
+        "sucursal_gasto",
     )
     empresa_ids = _get_empresa_ids(request)
     if empresa_ids:
-        movements = movements.filter(cuenta_bancaria__sucursal__empresa_id__in=empresa_ids)
+        movements = movements.filter(
+            Q(cuenta_bancaria__sucursal__empresa_id__in=empresa_ids)
+            | Q(sucursal_gasto__empresa_id__in=empresa_ids)
+        )
 
     if filter_form.is_valid():
         q = filter_form.cleaned_data.get("q")
@@ -1381,7 +1398,12 @@ def bank_movements_list(request):
         sucursal = filter_form.cleaned_data.get("sucursal")
         
         if q:
-            movements = movements.filter(Q(concepto__icontains=q) | Q(referencia__icontains=q))
+            search_filter = Q(concepto__icontains=q) | Q(referencia__icontains=q)
+            try:
+                search_filter |= Q(monto=Decimal(q.replace(",", ".")))
+            except (InvalidOperation, ValueError):
+                pass
+            movements = movements.filter(search_filter)
         if account:
             movements = movements.filter(cuenta_bancaria=account)
         if tipo:
@@ -1393,7 +1415,7 @@ def bank_movements_list(request):
         if dt:
             movements = movements.filter(fecha__lte=dt)
         if sucursal:
-            movements = movements.filter(cuenta_bancaria__sucursal=sucursal)
+            movements = movements.filter(Q(cuenta_bancaria__sucursal=sucursal) | Q(sucursal_gasto=sucursal))
 
     items = []
     for m in movements[:50]:
@@ -1405,7 +1427,7 @@ def bank_movements_list(request):
             "href": reverse("treasury:bank_movements_detail", args=[m.pk]),
             "meta": (
                 f"Origen: {m.get_origen_display()} | Ref: {m.referencia or '-'}"
-                f" | Rubro: {m.categoria.nombre if m.categoria_id else '-'}"
+                f" | Rubro: {_bank_movement_rubro_label(m)}"
             ),
         })
 
@@ -1414,6 +1436,7 @@ def bank_movements_list(request):
         "subtitle": "Egresos e ingresos reales en cuentas bancarias",
         "filter_form": filter_form,
         "items": items,
+        "empty_message": "No hay movimientos bancarios para los filtros aplicados.",
         "create_url": reverse("treasury:bank_movements_create"),
         "create_label": "Nuevo movimiento"
     })
@@ -1425,9 +1448,9 @@ def bank_movements_create(request):
         form = BankMovementForm(request.POST)
         if form.is_valid():
             try:
-                create_bank_movement(**form.cleaned_data, actor=request.user)
+                movement = create_bank_movement(**form.cleaned_data, actor=request.user)
                 messages.success(request, "Movimiento registrado correctamente.")
-                return redirect("treasury:bank_movements_list")
+                return redirect("treasury:bank_movements_detail", movement.pk)
             except ValidationError as error:
                 _handle_operation_error(form, error, "No se pudo registrar el movimiento bancario.")
     else:
@@ -1436,7 +1459,9 @@ def bank_movements_create(request):
     return render(request, "treasury/form_page.html", {
         "title": "Registrar Movimiento Bancario",
         "form": form,
-        "back_url": reverse("treasury:bank_movements_list")
+        "submit_label": "Guardar movimiento",
+        "back_url": reverse("treasury:bank_movements_list"),
+        "form_action": reverse("treasury:bank_movements_create"),
     })
 
 @login_required
@@ -1449,7 +1474,10 @@ def bank_movements_detail(request, pk):
             "creado_por",
             "actualizado_por",
             "categoria",
+            "categoria__rubro_operativo",
+            "rubro_operativo",
             "proveedor",
+            "sucursal_gasto",
         ),
         pk=pk,
     )
@@ -1460,7 +1488,7 @@ def bank_movements_detail(request, pk):
         {"label": "Tipo", "value": movement.get_tipo_display()},
         {"label": "Tipo financiero", "value": movement.get_clase_display()},
         {"label": "Monto", "value": _money(movement.monto)},
-        {"label": "Rubro / categoria", "value": movement.categoria.nombre if movement.categoria_id else "No aplica"},
+        {"label": "Rubro", "value": _bank_movement_rubro_label(movement)},
         {"label": "Proveedor", "value": movement.proveedor.razon_social if movement.proveedor_id else "No aplica"},
         {"label": "Sucursal", "value": movement.sucursal_gasto.nombre if movement.sucursal_gasto_id else "Sin asignar"},
         {"label": "Concepto", "value": movement.concepto},
