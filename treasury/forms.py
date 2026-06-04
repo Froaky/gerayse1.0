@@ -814,11 +814,17 @@ class DisponibilidadesFilterForm(TreasuryStyledFormMixin, forms.Form):
         empty_label="Todas las sucursales (Consolidado)"
     )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, empresa_ids=None, **kwargs):
         super().__init__(*args, **kwargs)
         today = timezone.localdate()
         self.fields["year"].initial = today.year
         self.fields["month"].initial = today.month
+        if empresa_ids:
+            self.fields["sucursal"].queryset = Sucursal.objects.filter(
+                empresa_id__in=empresa_ids
+            ).order_by("nombre")
+        else:
+            self.fields["sucursal"].queryset = Sucursal.objects.all().order_by("nombre")
         self._apply_input_classes()
 
 

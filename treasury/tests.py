@@ -1114,6 +1114,62 @@ class TreasuryViewTests(TreasuryTestCase):
         self.assertContains(response, "Proveedor Uno SA")
         self.assertNotContains(response, "Otro proveedor")
 
+    def test_disponibilidades_report_exposes_reset_and_company_scoped_global_cash(self):
+        empresa = Empresa.objects.create(nombre="Empresa Vista Disponibilidades")
+        self.sucursal.empresa = empresa
+        self.sucursal.save(update_fields=["empresa"])
+        self.bank_account.sucursal = self.sucursal
+        self.bank_account.save(update_fields=["sucursal"])
+        period_day = timezone.datetime(2026, 6, 5).date()
+        register_central_cash_movement(
+            tipo=MovimientoCajaCentral.Tipo.APORTE,
+            monto=Decimal("400.00"),
+            concepto="Saldo junio",
+            fecha=period_day,
+            actor=self.admin,
+        )
+        register_central_cash_movement(
+            tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
+            monto=Decimal("100.00"),
+            concepto="Egreso junio",
+            fecha=period_day,
+            actor=self.admin,
+        )
+        session = self.client.session
+        session["empresa_ids"] = [empresa.pk]
+        session.save()
+
+        response = self.client.get(reverse("treasury:disponibilidades"), {"year": 2026, "month": 6})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["snapshot"]["saldo_final_efectivo"], Decimal("300.00"))
+        self.assertContains(response, "Reiniciar datos")
+        self.assertContains(response, reverse("cashops:reset_operational_data"))
+
+    def test_disponibilidades_sucursal_filter_respects_selected_companies(self):
+        empresa_a = Empresa.objects.create(nombre="Empresa Disponibilidades A")
+        empresa_b = Empresa.objects.create(nombre="Empresa Disponibilidades B")
+        self.sucursal.empresa = empresa_a
+        self.sucursal.save(update_fields=["empresa"])
+        other_branch = Sucursal.objects.create(
+            nombre="Sucursal Otra Empresa",
+            codigo="SOE",
+            razon_social="Empresa Disponibilidades B",
+            empresa=empresa_b,
+        )
+        session = self.client.session
+        session["empresa_ids"] = [empresa_a.pk]
+        session.save()
+
+        response = self.client.get(
+            reverse("treasury:disponibilidades"),
+            {"year": 2026, "month": 6, "sucursal": other_branch.pk},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("sucursal", response.context["form"].errors)
+        self.assertNotIn(other_branch, response.context["form"].fields["sucursal"].queryset)
+
     def test_supplier_create_persists_record(self):
         response = self.client.post(
             reverse("treasury:proveedores_create"),

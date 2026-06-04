@@ -1081,10 +1081,15 @@ def build_bank_reconciliation_snapshot(
     }
 
 
-def _central_cash_balance_until(*, reference_date: date, sucursal=None) -> Decimal:
+def _central_cash_balance_until(*, reference_date: date, sucursal=None, empresa_ids=None) -> Decimal:
     movements = MovimientoCajaCentral.objects.filter(fecha__lte=reference_date)
     if sucursal is not None:
         movements = movements.filter(caja_central__sucursal=sucursal)
+    elif empresa_ids:
+        movements = movements.filter(
+            Q(caja_central__sucursal__empresa_id__in=empresa_ids)
+            | Q(caja_central__sucursal__isnull=True)
+        )
     sums = movements.aggregate(
         ingresos=Sum(
             "monto",
@@ -1102,6 +1107,7 @@ def _central_cash_balance_until(*, reference_date: date, sucursal=None) -> Decim
             filter=Q(
                 tipo__in=[
                     MovimientoCajaCentral.Tipo.EGRESO_PAGO,
+                    MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
                     MovimientoCajaCentral.Tipo.DEPOSITO_BANCO,
                     MovimientoCajaCentral.Tipo.AJUSTE_NEGATIVO,
                 ]
@@ -1457,7 +1463,11 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
         "-fecha_pago", "-id"
     )[:10]
 
-    central_cash_total = _central_cash_balance_until(reference_date=reference_date, sucursal=sucursal)
+    central_cash_total = _central_cash_balance_until(
+        reference_date=reference_date,
+        sucursal=sucursal,
+        empresa_ids=empresa_ids,
+    )
 
     return {
         "date_from": date_from,
@@ -1754,7 +1764,10 @@ def build_disponibilidades_snapshot(year: int, month: int, sucursal=None, empres
     if sucursal:
         movements_cash = movements_cash.filter(caja_central__sucursal=sucursal)
     elif empresa_ids:
-        movements_cash = movements_cash.filter(caja_central__sucursal__empresa_id__in=empresa_ids)
+        movements_cash = movements_cash.filter(
+            Q(caja_central__sucursal__empresa_id__in=empresa_ids)
+            | Q(caja_central__sucursal__isnull=True)
+        )
     
     cash_in = movements_cash.filter(tipo__in=[
         MovimientoCajaCentral.Tipo.INGRESO_CAJA,
@@ -1765,6 +1778,7 @@ def build_disponibilidades_snapshot(year: int, month: int, sucursal=None, empres
     
     cash_out = movements_cash.filter(tipo__in=[
         MovimientoCajaCentral.Tipo.EGRESO_PAGO,
+        MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
         MovimientoCajaCentral.Tipo.DEPOSITO_BANCO,
         MovimientoCajaCentral.Tipo.AJUSTE_NEGATIVO
     ]).aggregate(total=Sum("monto"))["total"] or Decimal("0.00")

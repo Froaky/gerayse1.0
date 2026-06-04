@@ -59,6 +59,9 @@
                     {{ form.year }}
                 </div>
                 <button type="submit" class="button">Filtrar</button>
+                {% if reset_url %}
+                    <a href="{{ reset_url }}" class="button-secondary" style="border-color:rgba(184,90,96,0.45); color:var(--danger);">Reiniciar datos</a>
+                {% endif %}
             </form>
         </div>
     </div>

@@ -5,8 +5,9 @@ from django.contrib.auth import get_user_model
 from treasury.models import (
     CajaCentral, MovimientoCajaCentral, CierreMensualTesoreria,
     CuentaPorPagar, Proveedor, CategoriaCuentaPagar, PagoTesoreria,
-    CuentaBancaria
+    CuentaBancaria, MovimientoBancario
 )
+from cashops.models import Empresa, Sucursal
 from treasury.services import (
     register_cash_payment, register_central_cash_movement,
     build_disponibilidades_snapshot, close_treasury_month,
@@ -88,6 +89,58 @@ class EP05DisponibilidadesTests(TestCase):
         snapshot = build_disponibilidades_snapshot(today.year, today.month)
         self.assertEqual(snapshot["saldo_final_efectivo"], Decimal("1000.00"))
         self.assertEqual(snapshot["total_consolidado"], Decimal("1000.00"))
+
+    def test_snapshot_with_company_context_includes_global_central_cash_and_admin_expenses(self):
+        empresa = Empresa.objects.create(nombre="Empresa Disponibilidades")
+        sucursal = Sucursal.objects.create(
+            codigo="DISP",
+            nombre="Sucursal Disponibilidades",
+            razon_social="Empresa Disponibilidades",
+            empresa=empresa,
+        )
+        self.bank_account.sucursal = sucursal
+        self.bank_account.save(update_fields=["sucursal"])
+        period_day = timezone.datetime(2026, 6, 10).date()
+        register_central_cash_movement(
+            tipo=MovimientoCajaCentral.Tipo.APORTE,
+            monto=Decimal("700.00"),
+            concepto="Saldo inicial junio",
+            fecha=period_day,
+            actor=self.user,
+        )
+        register_central_cash_movement(
+            tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
+            monto=Decimal("150.00"),
+            concepto="Gasto administrativo",
+            fecha=period_day,
+            actor=self.user,
+        )
+        MovimientoBancario.objects.create(
+            cuenta_bancaria=self.bank_account,
+            tipo=MovimientoBancario.Tipo.CREDITO,
+            clase=MovimientoBancario.Clase.OTRO_INGRESO,
+            fecha=period_day,
+            monto=Decimal("300.00"),
+            concepto="Ingreso banco",
+            creado_por=self.user,
+        )
+        MovimientoBancario.objects.create(
+            cuenta_bancaria=self.bank_account,
+            tipo=MovimientoBancario.Tipo.DEBITO,
+            clase=MovimientoBancario.Clase.OTRO_EGRESO,
+            fecha=period_day,
+            monto=Decimal("40.00"),
+            concepto="Egreso banco",
+            creado_por=self.user,
+        )
+
+        snapshot = build_disponibilidades_snapshot(2026, 6, empresa_ids=[empresa.pk])
+
+        self.assertEqual(snapshot["cash_in"], Decimal("700.00"))
+        self.assertEqual(snapshot["cash_out"], Decimal("150.00"))
+        self.assertEqual(snapshot["saldo_final_efectivo"], Decimal("550.00"))
+        self.assertEqual(snapshot["total_bancos_final"], Decimal("260.00"))
+        self.assertEqual(snapshot["total_consolidado"], Decimal("810.00"))
 
     def test_close_treasury_month(self):
         today = timezone.localdate()

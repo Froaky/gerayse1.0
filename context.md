@@ -18,6 +18,11 @@ Last updated: 2026-06-02
 
 ## Important Domain Notes
 
+- Standing rule reaffirmed 2026-06-04: companies are isolated by default.
+  - Every company-scoped view, form, service, dashboard and report must respect the selected company context.
+  - The selected context can include one or more companies through `empresa_ids`.
+  - Branches belong to one company; branch filters, selectable branches, boxes, accounts, debts, payments, bank movements and totals must not cross into unselected companies.
+  - Any new work touching `empresa` or `sucursal` must check list visibility, form querysets, direct URL access, service validation and tests for cross-company leakage.
 - `CuentaPorPagar` is the source of debt state.
 - Payments must be registered through domain services, not by direct model save.
 - Partial and full payment status is derived from registered non-annulled payments.
@@ -57,6 +62,25 @@ Last updated: 2026-06-02
 ## Current Session
 
 ### Objective
+
+- 2026-06-04 disponibilidades fix requested from WhatsApp report:
+  - User reports `Flujo de Disponibilidades` shows `$0,00` and "no toma lo que esta cargado".
+  - Business expectation: disponibilidades should say current cash in caja central, current bank money, and consolidated availability.
+  - User approved implementation of the fix and asked to expose/reset button with explicit destructive confirmation and a list of deleted data.
+  - Implemented:
+    - `build_disponibilidades_snapshot()` now includes global/legacy `CajaCentral` movements when company context is selected, so central cash loaded without branch is not hidden.
+    - cash outflow now subtracts `MovimientoCajaCentral.Tipo.EGRESO_ADMIN`, matching `CajaCentral.saldo_actual`.
+    - financial dashboard helper `_central_cash_balance_until()` now also subtracts `EGRESO_ADMIN` and respects selected companies while including global/legacy central cash.
+    - Disponibilidades branch filter now restricts sucursales to selected companies.
+    - `Detalle de movimientos` for central cash includes global/legacy central cash under selected company context.
+    - Disponibilidades page now exposes `Reiniciar datos`.
+    - reset confirmation lists all operational/financial data it deletes before final confirmation.
+  - Files touched: `treasury/services.py`, `treasury/views.py`, `treasury/forms.py`, `templates/treasury/disponibilidades_report.html`, `templates/cashops/reset_confirm.html`, `treasury/tests_ep05.py`, `treasury/tests.py`, `cashops/tests.py`, `context.md`.
+  - Validation:
+    - `py -3.14 -m compileall treasury cashops` with `PYTHONPATH=.venv\Lib\site-packages` passed.
+    - Focused tests passed: `treasury.tests_ep05.EP05DisponibilidadesTests`, two `TreasuryViewTests` disponibilidad tests, and reset confirmation test.
+    - `py -3.14 manage.py test treasury.tests treasury.tests_ep05 -v 1` passed: 64 tests OK, 1 skipped.
+    - Broad `cashops.tests.CashopsViewTests` run remains red on unrelated existing bug: `management_matrix_export` calls missing `MovimientoCaja.get_tipo_display()`.
 
 - 2026-06-02 backlog update from user feedback:
   - In bank movement creation, the Rubro/Categoria selector does not show rubros already loaded in the rubros master.

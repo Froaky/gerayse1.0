@@ -1052,6 +1052,19 @@ class CashopsViewTests(CashopsTestCase):
 
         self.assertEqual(response.status_code, 200)
 
+    def test_reset_confirmation_lists_operational_and_financial_data_to_delete(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("cashops:reset_operational_data"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Se eliminaria lo siguiente")
+        self.assertContains(response, "Todas las cajas y sus movimientos")
+        self.assertContains(response, "Todos los movimientos bancarios")
+        self.assertContains(response, "Todas las acreditaciones de tarjeta, descuentos y lotes POS")
+        self.assertContains(response, "Todas las cuentas por pagar y pagos de tesoreria")
+        self.assertContains(response, "Todos los cierres mensuales de tesoreria")
+
     def test_regular_user_gets_403_for_foreign_box_close(self):
         self.client.force_login(self.operator)
 

@@ -1760,7 +1760,8 @@ def bank_reconciliation(request):
 @login_required
 def disponibilidades_report(request):
     _require_treasury_admin(request)
-    form = DisponibilidadesFilterForm(request.GET or None)
+    empresa_ids = _get_empresa_ids(request) or None
+    form = DisponibilidadesFilterForm(request.GET or None, empresa_ids=empresa_ids)
     
     if form.is_valid():
         year = int(form.cleaned_data["year"])
@@ -1771,14 +1772,14 @@ def disponibilidades_report(request):
         year, month = today.year, today.month
         sucursal = None
 
-    empresa_ids = _get_empresa_ids(request) or None
     snapshot = build_disponibilidades_snapshot(year, month, sucursal=sucursal, empresa_ids=empresa_ids)
 
     return render(request, "treasury/disponibilidades_report.html", {
         "form": form,
         "snapshot": snapshot,
         "title": "Flujo de Disponibilidades",
-        "subtitle": f"Consolidado de Efectivo y Bancos - {snapshot['first_day']:%m/%Y}" if not sucursal else f"Sucursal: {sucursal.nombre} - {snapshot['first_day']:%m/%Y}"
+        "subtitle": f"Consolidado de Efectivo y Bancos - {snapshot['first_day']:%m/%Y}" if not sucursal else f"Sucursal: {sucursal.nombre} - {snapshot['first_day']:%m/%Y}",
+        "reset_url": reverse("cashops:reset_operational_data"),
     })
 
 
@@ -1790,7 +1791,10 @@ def central_cash_movements(request):
     movements = MovimientoCajaCentral.objects.all().select_related("pago_tesoreria", "creado_por", "caja_central__sucursal")
     empresa_ids = _get_empresa_ids(request)
     if empresa_ids:
-        movements = movements.filter(caja_central__sucursal__empresa_id__in=empresa_ids)
+        movements = movements.filter(
+            Q(caja_central__sucursal__empresa_id__in=empresa_ids)
+            | Q(caja_central__sucursal__isnull=True)
+        )
     if sucursal_id:
         movements = movements.filter(caja_central__sucursal_id=sucursal_id)
     
