@@ -1231,6 +1231,26 @@ class CashopsViewTests(CashopsTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Egreso por rubro")
         self.assertContains(response, "Guardar egreso")
+        self.assertContains(response, "Observacion")
+        self.assertNotContains(response, "Detalle corto")
+
+    def test_expense_view_registers_without_short_detail_or_observation(self):
+        self.client.force_login(self.operator)
+
+        response = self.client.post(
+            reverse("cashops:box_expense", args=[self.owned_box.pk]),
+            {
+                "rubro_operativo": self.rubro_insumos.pk,
+                "monto": "90.00",
+                "observacion": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        movement = MovimientoCaja.objects.get(caja=self.owned_box, monto=Decimal("90.00"))
+        self.assertEqual(movement.rubro_operativo, self.rubro_insumos)
+        self.assertEqual(movement.categoria, self.rubro_insumos.nombre)
+        self.assertEqual(movement.observacion, "")
 
     def test_admin_can_manage_operational_category_list(self):
         self.client.force_login(self.admin)

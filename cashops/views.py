@@ -866,7 +866,7 @@ def register_expense_view(request, box_id: int):
                 caja=box,
                 monto=form.cleaned_data["monto"],
                 rubro_operativo=form.cleaned_data["rubro_operativo"],
-                categoria=form.cleaned_data["categoria"],
+                categoria=form.cleaned_data["rubro_operativo"].nombre,
                 observacion=form.cleaned_data["observacion"],
                 sucursal_destino=form.cleaned_data.get("sucursal_destino"),
                 creado_por=request.user,

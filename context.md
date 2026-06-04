@@ -63,6 +63,11 @@ Last updated: 2026-06-02
 
 ### Objective
 
+- 2026-06-04 cashops expense form cleanup:
+  - User asked to remove `Detalle corto` from `Egreso por rubro`.
+  - `Observacion` remains visible and optional.
+  - Implementation direction: keep internal `MovimientoCaja.categoria` populated from selected rubro name for legacy/report compatibility.
+
 - 2026-06-04 disponibilidades fix requested from WhatsApp report:
   - User reports `Flujo de Disponibilidades` shows `$0,00` and "no toma lo que esta cargado".
   - Business expectation: disponibilidades should say current cash in caja central, current bank money, and consolidated availability.

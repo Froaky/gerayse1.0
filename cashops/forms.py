@@ -172,15 +172,11 @@ class GastoRapidoForm(forms.Form):
         min_value=Decimal("0.01"),
         widget=forms.NumberInput(attrs={"step": "0.01", "placeholder": "0.00"}),
     )
-    categoria = forms.CharField(
-        max_length=80,
-        label="Detalle corto",
-        widget=forms.TextInput(attrs={"placeholder": "Compra menor, viatico, insumo..."}),
-    )
     observacion = forms.CharField(
         max_length=255,
+        label="Observacion",
         required=False,
-        widget=forms.Textarea(attrs={"placeholder": "Detalle breve"}),
+        widget=forms.Textarea(attrs={"placeholder": "Observacion opcional"}),
     )
     pago_otra_sucursal = forms.BooleanField(
         required=False,
