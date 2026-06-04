@@ -541,6 +541,36 @@ class CashopsServiceTests(CashopsTestCase):
         self.assertEqual(summary["total_egresos"], Decimal("50.00"))
         self.assertEqual(summary["saldo_neto"], Decimal("120.00"))
         self.assertEqual(summary["scope_label"], self.branch_a.nombre)
+        self.assertEqual(summary["saldo_efectivo_cajas_abiertas"], Decimal("620.00"))
+        self.assertEqual(summary["cajas_abiertas_count"], 2)
+
+    def test_period_summary_open_cash_balance_can_be_negative(self):
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("0.00"),
+            actor=self.operator,
+        )
+        register_expense(
+            caja=caja,
+            monto=Decimal("90.00"),
+            rubro_operativo=self.rubro_insumos,
+            categoria="Insumos",
+            observacion="Egreso sin fondos",
+            actor=self.operator,
+        )
+
+        summary = build_operational_period_summary(
+            date_from=self.fecha_op,
+            date_to=self.fecha_op,
+            sucursal=self.branch_a,
+        )
+
+        self.assertEqual(summary["saldo_neto"], Decimal("-90.00"))
+        self.assertEqual(summary["saldo_efectivo_cajas_abiertas"], Decimal("-90.00"))
+        self.assertEqual(summary["cajas_abiertas_count"], 1)
 
     def test_management_daily_matrix_aggregates_channels_rubros_and_days(self):
         caja = open_box(
@@ -1384,6 +1414,54 @@ class CashopsViewTests(CashopsTestCase):
         self.assertContains(response, "$50")
         self.assertContains(response, "Saldo neto")
         self.assertContains(response, "$150")
+
+    def test_dashboard_global_scope_shows_negative_open_cash_balance(self):
+        empresa = Empresa.objects.create(nombre="NEGATIVA SRL")
+        branch = Sucursal.objects.create(
+            codigo="NEG",
+            nombre="Sucursal Negativa",
+            razon_social="NEGATIVA SRL",
+            empresa=empresa,
+        )
+        turno = Turno.objects.create(
+            empresa=empresa,
+            tipo=Turno.Tipo.MANANA,
+            creado_por=self.admin,
+        )
+        caja = open_box(
+            user=self.operator,
+            turno=turno,
+            sucursal=branch,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("0.00"),
+            actor=self.admin,
+        )
+        register_expense(
+            caja=caja,
+            monto=Decimal("90.00"),
+            rubro_operativo=self.rubro_insumos,
+            categoria="Insumos",
+            observacion="Egreso sin fondos",
+            actor=self.operator,
+        )
+        session = self.client.session
+        session["empresa_ids"] = [empresa.pk]
+        session.save()
+        self.client.force_login(self.admin)
+
+        response = self.client.get(
+            reverse("cashops:dashboard"),
+            {
+                "scope": "global",
+                "fecha_desde": self.fecha_op.isoformat(),
+                "fecha_hasta": self.fecha_op.isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["dashboard_snapshot"]["saldo_efectivo_cajas_abiertas"], Decimal("-90.00"))
+        self.assertContains(response, "Efectivo en cajas abiertas")
+        self.assertContains(response, "$-90,00")
 
     def test_management_matrix_view_and_export_are_admin_only_and_traceable(self):
         register_general_sale(

@@ -67,6 +67,11 @@ Last updated: 2026-06-02
   - User asked to remove `Detalle corto` from `Egreso por rubro`.
   - `Observacion` remains visible and optional.
   - Implementation direction: keep internal `MovimientoCaja.categoria` populated from selected rubro name for legacy/report compatibility.
+- 2026-06-04 cashops dashboard cash-balance clarification:
+  - User reported caja/local can show negative cash after an expense, but general view did not reflect it clearly.
+  - Decision: do not change expense behavior; add explicit `Efectivo en cajas abiertas` metric for global/branch scopes.
+  - This metric sums `Caja.saldo_esperado` for open boxes in the selected company/branch scope, including negative balances.
+  - It stays separate from `Total operativo`, which remains the rubro/gastos control base.
 
 - 2026-06-04 disponibilidades fix requested from WhatsApp report:
   - User reports `Flujo de Disponibilidades` shows `$0,00` and "no toma lo que esta cargado".

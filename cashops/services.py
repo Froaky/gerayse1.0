@@ -182,6 +182,21 @@ def build_box_control_scope(*, caja: Caja) -> OperationalControlScope:
     )
 
 
+def _open_boxes_for_operational_scope(*, sucursal: Sucursal | None = None, empresa_ids: list[int] | None = None):
+    boxes = Caja.objects.select_related("sucursal", "turno", "usuario").filter(estado=Caja.Estado.ABIERTA)
+    if sucursal is not None:
+        boxes = boxes.filter(sucursal=sucursal)
+    elif empresa_ids:
+        boxes = boxes.filter(sucursal__empresa_id__in=empresa_ids)
+    return boxes
+
+
+def _open_boxes_cash_balance(*, sucursal: Sucursal | None = None, empresa_ids: list[int] | None = None) -> tuple[Decimal, int]:
+    boxes = list(_open_boxes_for_operational_scope(sucursal=sucursal, empresa_ids=empresa_ids))
+    total = sum((box.saldo_esperado for box in boxes), Decimal("0.00"))
+    return total, len(boxes)
+
+
 def _movement_scope_filter(scope: OperationalControlScope) -> Q:
     query = Q(caja__fecha_operativa=scope.fecha_operativa)
     if scope.kind == "CAJA" and scope.caja is not None:
@@ -607,6 +622,10 @@ def build_operational_period_summary(*, date_from: date, date_to: date, sucursal
         movement_qs.filter(tipo=MovimientoCaja.Tipo.INGRESO_EFECTIVO).aggregate(total=Sum("monto"))["total"]
         or Decimal("0.00")
     )
+    saldo_efectivo_cajas_abiertas, cajas_abiertas_count = _open_boxes_cash_balance(
+        sucursal=sucursal,
+        empresa_ids=empresa_ids,
+    )
 
     return {
         "scope_kind": "SUCURSAL" if sucursal is not None else "GLOBAL",
@@ -626,6 +645,8 @@ def build_operational_period_summary(*, date_from: date, date_to: date, sucursal
         "total_ventas_digitales": total_ventas_digitales,
         "ingreso_efectivo_total": ingreso_efectivo_total,
         "saldo_efectivo_caja": None,
+        "saldo_efectivo_cajas_abiertas": saldo_efectivo_cajas_abiertas,
+        "cajas_abiertas_count": cajas_abiertas_count,
         "items": items,
         "active_alerts": [],
         "active_alert_count": 0,

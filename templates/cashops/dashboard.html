@@ -120,6 +120,13 @@
           <span class="muted">Saldo neto</span>
           <strong>${{ dashboard_snapshot.saldo_neto }}</strong>
         </div>
+        {% if dashboard_snapshot.is_period_summary %}
+          <div class="summary">
+            <span class="muted">Efectivo en cajas abiertas</span>
+            <strong>${{ dashboard_snapshot.saldo_efectivo_cajas_abiertas }}</strong>
+            <small class="muted">{{ dashboard_snapshot.cajas_abiertas_count }} caja{% if dashboard_snapshot.cajas_abiertas_count != 1 %}s{% endif %} abierta{% if dashboard_snapshot.cajas_abiertas_count != 1 %}s{% endif %}</small>
+          </div>
+        {% endif %}
         <div class="summary">
           <span class="muted">Alertas activas</span>
           <strong>{{ dashboard_snapshot.active_alert_count }}</strong>
