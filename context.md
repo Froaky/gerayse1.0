@@ -1,6 +1,6 @@
 # Context
 
-Last updated: 2026-06-02
+Last updated: 2026-06-05
 
 ## Product Snapshot
 
@@ -69,9 +69,12 @@ Last updated: 2026-06-02
   - Implementation direction: keep internal `MovimientoCaja.categoria` populated from selected rubro name for legacy/report compatibility.
 - 2026-06-04 cashops dashboard cash-balance clarification:
   - User reported caja/local can show negative cash after an expense, but general view did not reflect it clearly.
-  - Decision: do not change expense behavior; add explicit `Efectivo en cajas abiertas` metric for global/branch scopes.
-  - This metric sums `Caja.saldo_esperado` for open boxes in the selected company/branch scope, including negative balances.
+  - Decision: do not change expense behavior; add explicit `Resultado real de cajas` metric for global/branch period scopes.
+  - This metric sums `saldo_fisico` for closed boxes and `Caja.saldo_esperado` for open boxes in the selected company/branch scope, including negative balances.
   - It stays separate from `Total operativo`, which remains the rubro/gastos control base.
+  - Closing a box with negative physical balance now creates an audited negative central-cash adjustment so caja fuerte central reflects the real deficit.
+  - Migration `cashops.0018_backfill_negative_closures_to_central_cash` backfills existing closed boxes with negative physical balance into central cash as `AJUSTE_NEGATIVO`.
+  - Validation: focused cashops service/view tests for open negative, closed negative, central-cash negative adjustment and dashboard display passed.
 
 - 2026-06-04 disponibilidades fix requested from WhatsApp report:
   - User reports `Flujo de Disponibilidades` shows `$0,00` and "no toma lo que esta cargado".

@@ -122,9 +122,9 @@
         </div>
         {% if dashboard_snapshot.is_period_summary %}
           <div class="summary">
-            <span class="muted">Efectivo en cajas abiertas</span>
-            <strong>${{ dashboard_snapshot.saldo_efectivo_cajas_abiertas }}</strong>
-            <small class="muted">{{ dashboard_snapshot.cajas_abiertas_count }} caja{% if dashboard_snapshot.cajas_abiertas_count != 1 %}s{% endif %} abierta{% if dashboard_snapshot.cajas_abiertas_count != 1 %}s{% endif %}</small>
+            <span class="muted">Resultado real de cajas</span>
+            <strong>${{ dashboard_snapshot.saldo_real_cajas_periodo }}</strong>
+            <small class="muted">{{ dashboard_snapshot.cajas_periodo_count }} caja{% if dashboard_snapshot.cajas_periodo_count != 1 %}s{% endif %} del periodo</small>
           </div>
         {% endif %}
         <div class="summary">

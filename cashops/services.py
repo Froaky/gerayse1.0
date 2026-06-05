@@ -182,8 +182,17 @@ def build_box_control_scope(*, caja: Caja) -> OperationalControlScope:
     )
 
 
-def _open_boxes_for_operational_scope(*, sucursal: Sucursal | None = None, empresa_ids: list[int] | None = None):
-    boxes = Caja.objects.select_related("sucursal", "turno", "usuario").filter(estado=Caja.Estado.ABIERTA)
+def _period_boxes_for_operational_scope(
+    *,
+    date_from: date,
+    date_to: date,
+    sucursal: Sucursal | None = None,
+    empresa_ids: list[int] | None = None,
+):
+    boxes = Caja.objects.select_related("sucursal", "turno", "usuario", "cierre").filter(
+        fecha_operativa__gte=date_from,
+        fecha_operativa__lte=date_to,
+    )
     if sucursal is not None:
         boxes = boxes.filter(sucursal=sucursal)
     elif empresa_ids:
@@ -191,9 +200,30 @@ def _open_boxes_for_operational_scope(*, sucursal: Sucursal | None = None, empre
     return boxes
 
 
-def _open_boxes_cash_balance(*, sucursal: Sucursal | None = None, empresa_ids: list[int] | None = None) -> tuple[Decimal, int]:
-    boxes = list(_open_boxes_for_operational_scope(sucursal=sucursal, empresa_ids=empresa_ids))
-    total = sum((box.saldo_esperado for box in boxes), Decimal("0.00"))
+def _period_boxes_cash_balance(
+    *,
+    date_from: date,
+    date_to: date,
+    sucursal: Sucursal | None = None,
+    empresa_ids: list[int] | None = None,
+) -> tuple[Decimal, int]:
+    boxes = list(
+        _period_boxes_for_operational_scope(
+            date_from=date_from,
+            date_to=date_to,
+            sucursal=sucursal,
+            empresa_ids=empresa_ids,
+        )
+    )
+    total = sum(
+        (
+            box.cierre.saldo_fisico
+            if hasattr(box, "cierre")
+            else box.saldo_esperado
+            for box in boxes
+        ),
+        Decimal("0.00"),
+    )
     return total, len(boxes)
 
 
@@ -622,7 +652,9 @@ def build_operational_period_summary(*, date_from: date, date_to: date, sucursal
         movement_qs.filter(tipo=MovimientoCaja.Tipo.INGRESO_EFECTIVO).aggregate(total=Sum("monto"))["total"]
         or Decimal("0.00")
     )
-    saldo_efectivo_cajas_abiertas, cajas_abiertas_count = _open_boxes_cash_balance(
+    saldo_real_cajas_periodo, cajas_periodo_count = _period_boxes_cash_balance(
+        date_from=date_from,
+        date_to=date_to,
         sucursal=sucursal,
         empresa_ids=empresa_ids,
     )
@@ -645,8 +677,8 @@ def build_operational_period_summary(*, date_from: date, date_to: date, sucursal
         "total_ventas_digitales": total_ventas_digitales,
         "ingreso_efectivo_total": ingreso_efectivo_total,
         "saldo_efectivo_caja": None,
-        "saldo_efectivo_cajas_abiertas": saldo_efectivo_cajas_abiertas,
-        "cajas_abiertas_count": cajas_abiertas_count,
+        "saldo_real_cajas_periodo": saldo_real_cajas_periodo,
+        "cajas_periodo_count": cajas_periodo_count,
         "items": items,
         "active_alerts": [],
         "active_alert_count": 0,
@@ -1332,7 +1364,7 @@ def close_box(
     caja_ref.cerrada_en = caja.cerrada_en
     caja_ref.cerrada_por = caja.cerrada_por
 
-    if saldo_fisico > 0 and caja.sucursal_id:
+    if saldo_fisico != 0 and caja.sucursal_id:
         from django.apps import apps
         CajaCentral = apps.get_model("treasury", "CajaCentral")
         MovimientoCajaCentral = apps.get_model("treasury", "MovimientoCajaCentral")
@@ -1343,12 +1375,23 @@ def close_box(
                 nombre=f"Caja Central {caja.sucursal.nombre}",
                 activo=True,
             )
+        if saldo_fisico > 0:
+            central_type = "INGRESO_CAJA"
+            central_amount = saldo_fisico
+            central_concept = f"Cierre caja #{caja.id}"
+            central_observations = ""
+        else:
+            central_type = "AJUSTE_NEGATIVO"
+            central_amount = abs(saldo_fisico)
+            central_concept = f"Cierre caja #{caja.id} - saldo negativo"
+            central_observations = "Saldo fisico negativo informado al cierre de caja."
         MovimientoCajaCentral.objects.create(
             caja_central=caja_central,
             fecha=caja.fecha_operativa,
-            tipo="INGRESO_CAJA",
-            monto=saldo_fisico,
-            concepto=f"Cierre caja #{caja.id}",
+            tipo=central_type,
+            monto=central_amount,
+            concepto=central_concept,
+            observaciones=central_observations,
             creado_por=actor,
         )
 

@@ -541,8 +541,8 @@ class CashopsServiceTests(CashopsTestCase):
         self.assertEqual(summary["total_egresos"], Decimal("50.00"))
         self.assertEqual(summary["saldo_neto"], Decimal("120.00"))
         self.assertEqual(summary["scope_label"], self.branch_a.nombre)
-        self.assertEqual(summary["saldo_efectivo_cajas_abiertas"], Decimal("620.00"))
-        self.assertEqual(summary["cajas_abiertas_count"], 2)
+        self.assertEqual(summary["saldo_real_cajas_periodo"], Decimal("620.00"))
+        self.assertEqual(summary["cajas_periodo_count"], 2)
 
     def test_period_summary_open_cash_balance_can_be_negative(self):
         caja = open_box(
@@ -569,8 +569,36 @@ class CashopsServiceTests(CashopsTestCase):
         )
 
         self.assertEqual(summary["saldo_neto"], Decimal("-90.00"))
-        self.assertEqual(summary["saldo_efectivo_cajas_abiertas"], Decimal("-90.00"))
-        self.assertEqual(summary["cajas_abiertas_count"], 1)
+        self.assertEqual(summary["saldo_real_cajas_periodo"], Decimal("-90.00"))
+        self.assertEqual(summary["cajas_periodo_count"], 1)
+
+    def test_period_summary_includes_negative_closed_box_balance(self):
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("0.00"),
+            actor=self.operator,
+        )
+        register_expense(
+            caja=caja,
+            monto=Decimal("90.00"),
+            rubro_operativo=self.rubro_insumos,
+            categoria="Insumos",
+            observacion="Egreso sin fondos",
+            actor=self.operator,
+        )
+        close_box(caja=caja, saldo_fisico=Decimal("-90.00"), cerrado_por=self.operator, actor=self.operator)
+
+        summary = build_operational_period_summary(
+            date_from=self.fecha_op,
+            date_to=self.fecha_op,
+            sucursal=self.branch_a,
+        )
+
+        self.assertEqual(summary["saldo_real_cajas_periodo"], Decimal("-90.00"))
+        self.assertEqual(summary["cajas_periodo_count"], 1)
 
     def test_management_daily_matrix_aggregates_channels_rubros_and_days(self):
         caja = open_box(
@@ -1044,6 +1072,34 @@ class CashopsServiceTests(CashopsTestCase):
         self.assertEqual(AlertaOperativa.objects.count(), 1)
         self.assertTrue(hasattr(cierre, "justificacion"))
 
+    def test_close_box_with_negative_physical_balance_reduces_central_cash(self):
+        from treasury.models import CajaCentral, MovimientoCajaCentral
+
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("0.00"),
+            actor=self.operator,
+        )
+        register_expense(
+            caja=caja,
+            monto=Decimal("90.00"),
+            rubro_operativo=self.rubro_insumos,
+            categoria="Insumos",
+            observacion="Egreso sin fondos",
+            actor=self.operator,
+        )
+
+        close_box(caja=caja, saldo_fisico=Decimal("-90.00"), cerrado_por=self.operator, actor=self.operator)
+
+        central_box = CajaCentral.objects.get(sucursal=self.branch_a)
+        central_movement = MovimientoCajaCentral.objects.get(caja_central=central_box)
+        self.assertEqual(central_movement.tipo, MovimientoCajaCentral.Tipo.AJUSTE_NEGATIVO)
+        self.assertEqual(central_movement.monto, Decimal("90.00"))
+        self.assertEqual(central_box.saldo_actual, Decimal("-90.00"))
+
 
 class CashopsViewTests(CashopsTestCase):
     def setUp(self):
@@ -1459,8 +1515,8 @@ class CashopsViewTests(CashopsTestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.context["dashboard_snapshot"]["saldo_efectivo_cajas_abiertas"], Decimal("-90.00"))
-        self.assertContains(response, "Efectivo en cajas abiertas")
+        self.assertEqual(response.context["dashboard_snapshot"]["saldo_real_cajas_periodo"], Decimal("-90.00"))
+        self.assertContains(response, "Resultado real de cajas")
         self.assertContains(response, "$-90,00")
 
     def test_management_matrix_view_and_export_are_admin_only_and_traceable(self):
