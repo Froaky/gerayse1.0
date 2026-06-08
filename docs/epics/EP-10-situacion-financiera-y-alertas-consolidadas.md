@@ -14,6 +14,7 @@ Unificar la lectura financiera diaria entre cajas, tesoreria y bancos para tener
 - limpieza de la palabra categoria en el flujo de movimientos bancarios cuando el dato esperado sea rubro
 - carga de acreditaciones por dia o por periodo
 - alerta de acreditaciones pendientes
+- lectura consolidada de acreditaciones sin reparto por sucursal
 - vista total de disponibilidades
 - alertas de vencimientos
 
@@ -30,8 +31,10 @@ Unificar la lectura financiera diaria entre cajas, tesoreria y bancos para tener
 - una venta digital, una acreditacion bancaria y un gasto bancario no son el mismo hecho
 - la situacion financiera debe separar efectivo, banco y pendientes
 - una acreditacion pendiente se calcula por diferencia entre ventas digitales y acreditaciones registradas a la fecha del periodo
+- las acreditaciones bancarias o de tarjeta no se discriminan por sucursal en la disponibilidad porque el dinero ingresado es un fondo comun
 - la alerta de acreditacion pendiente debe incluir aclaracion sobre costos de servicio e impuestos cuando corresponda
 - toda salida bancaria debe quedar clasificada por tipo y, si aplica, por rubro y proveedor
+- los egresos financieros o administrativos deben poder imputarse a sucursal cuando el gasto corresponda a una unidad operativa
 - los rubros cargados en el maestro operativo deben estar disponibles para clasificar movimientos bancarios cuando el usuario de tesoreria deba elegir un rubro
 - en movimientos bancarios la UI debe hablar de rubro, no de categoria, salvo que se este administrando compatibilidad historica
 - un movimiento bancario registrado correctamente debe aparecer luego en la lista o filtro correspondiente a la misma cuenta, sucursal, empresa activa o seleccion usada por el usuario
@@ -99,7 +102,8 @@ Para detectar rapido cuando lo vendido digitalmente no llego al banco
 Criterios:
 - calculo por periodo
 - total general de todas las sucursales
-- posibilidad de vista por sucursal
+- no discrimina acreditaciones por sucursal en la disponibilidad, porque el ingreso bancario se lee como fondo comun
+- si el origen de la venta digital tuvo sucursal, ese dato puede quedar como referencia operativa, pero no divide el dinero acreditado por sucursal
 - mensaje aclaratorio sobre deducir costos de servicio e impuestos de Payway u operador equivalente
 
 ### [x] US-10.6 Disponibilidades totales
@@ -166,6 +170,20 @@ Criterios:
 - la accion secundaria de volver o cancelar queda diferenciada de la accion principal
 - la evidencia visual cubre pantallas desktop y mobile para evitar botones sin etiqueta
 
+### [ ] US-10.11 Acreditaciones consolidadas sin reparto por sucursal
+
+Como administracion
+Quiero que las acreditaciones bancarias se lean como ingreso consolidado
+Para no dividir por sucursal dinero que entra a una disponibilidad comun
+
+Criterios:
+- las acreditaciones registradas aparecen en disponibilidad/banco como ingreso consolidado de la empresa o cuenta correspondiente
+- un filtro por sucursal no reparte ni prorratea el importe acreditado entre locales
+- si una venta digital de origen tenia sucursal, ese dato queda disponible como referencia operativa pero no cambia la lectura financiera del dinero acreditado
+- las alertas de acreditaciones pendientes siguen mostrando el pendiente general del periodo
+- la pantalla diferencia esta regla de los egresos, que si pueden imputarse y consultarse por sucursal cuando el gasto corresponde a una unidad operativa
+- los tests deben cubrir que una acreditacion no desaparece ni cambia de monto por seleccionar una sucursal
+
 ## Dependencias
 
 - EP-03 tesoreria central base
@@ -183,6 +201,7 @@ Criterios:
 6. alinear movimientos bancarios con rubros operativos y retirar el texto categoria del flujo de alta
 7. corregir filtros o contexto para que una transferencia recien registrada sea visible en la seleccion esperada
 8. validar que el boton principal del formulario siempre tenga etiqueta visible
+9. ajustar lectura de acreditaciones para que sea consolidada y no se reparta por sucursal
 
 ## Criterio de cierre
 
@@ -190,3 +209,4 @@ Criterios:
 - las acreditaciones pendientes dejan de calcularse a mano
 - la situacion financiera consolidada sale del sistema con filtros por periodo y sucursal
 - tesoreria puede cargar una transferencia bancaria con rubro operativo, verla inmediatamente en el contexto correcto y entender la accion principal del formulario sin botones vacios
+- las acreditaciones se leen como ingreso comun y los egresos mantienen imputacion por sucursal cuando corresponda

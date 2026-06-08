@@ -15,13 +15,15 @@ Replicar el libro mensual de `efectivo` y `banco` que hoy se administra en `FLUJ
 - carga inicial visible de caja fuerte central
 - egresos administrativos de tesoreria separados de caja operativa
 - formulario de egreso administrativo con origen, rubro, sucursal y periodo de imputacion
+- detalle de egresos administrativos con sucursal visible en el libro de efectivo central
+- totales de ingresos y egresos de caja fuerte central por periodo
 
 ## No incluye todavia
 
 - proyeccion de caja futura
 - conciliacion bancaria avanzada
 - cierre contable formal
-- cierre mensual separado por sucursal para tesoreria
+- cierre mensual contable separado por sucursal para tesoreria
 - egresos operativos de sucursal, cubiertos por `EP-08`
 
 ## Reglas de negocio
@@ -36,6 +38,8 @@ Replicar el libro mensual de `efectivo` y `banco` que hoy se administra en `FLUJ
 - si un egreso administrativo sale en efectivo, no debe pedir ni validar cuenta bancaria
 - si un egreso administrativo sale de banco, debe exigir cuenta bancaria
 - todo egreso administrativo debe poder imputarse a una sucursal y a un periodo de pago cuando corresponda
+- el libro de efectivo central debe permitir reconocer a que sucursal corresponde cada egreso administrativo cuando ese dato existe
+- los totales por periodo de caja fuerte central se calculan desde movimientos reales, no desde saldos tipeados manualmente
 
 ## User Stories
 
@@ -156,10 +160,38 @@ Criterios:
 - un egreso en efectivo reduce caja fuerte central y no impacta libro bancario
 - un egreso bancario impacta la cuenta bancaria seleccionada y no reduce caja fuerte central
 
+### [x] US-5.10 Libro central con sucursal visible en egresos administrativos
+
+Como administracion
+Quiero ver la sucursal asociada a cada egreso administrativo en el libro de efectivo central
+Para reconocer rapidamente a que local o unidad corresponde el gasto sin abrir cada comprobante
+
+Criterios:
+- [x] cada egreso administrativo de tesoreria muestra fecha, concepto, importe, rubro y sucursal cuando fue imputado a una sucursal
+- [x] si el egreso no tiene sucursal por dato legacy, el detalle lo marca como `sin sucursal imputada` sin ocultarlo
+- [x] la sucursal visible respeta el contexto de empresa activa y no mezcla sucursales de empresas no seleccionadas
+- [x] el detalle mantiene la diferencia entre egresos de caja fuerte central y egresos bancarios
+- [x] la vista permite auditar el usuario o referencia del movimiento desde el detalle disponible
+
+### [x] US-5.11 Totales de caja fuerte central por periodo
+
+Como administracion
+Quiero ver al pie del libro de efectivo central los ingresos y egresos del periodo filtrado
+Para controlar rapidamente cuanto entro y cuanto salio de tesoreria sin recalcularlo a mano
+
+Criterios:
+- [x] el libro de efectivo central muestra total de ingresos del periodo, total de egresos del periodo y saldo resultante
+- [x] los totales respetan el rango de fechas o periodo seleccionado
+- [x] los egresos administrativos en efectivo reducen el total de egresos del periodo
+- [x] los movimientos bancarios no se suman al libro de efectivo central
+- [x] si se filtra por empresa o sucursal, el criterio queda visible y los totales respetan ese alcance
+- [x] los totales se pueden reconstruir desde los movimientos listados en el mismo filtro
+
 ## Dependencias
 
 - EP-03 y EP-04 cerradas
 - EP-08 para caja operativa, ventas por canal y egresos por rubro de sucursal
+- EP-12 para contexto de empresa y sucursales disponibles
 
 ## Orden tecnico sugerido
 
@@ -172,6 +204,8 @@ Criterios:
 7. reforzar carga inicial visible de caja fuerte central
 8. separar egresos administrativos de tesoreria respecto de caja operativa
 9. ajustar formulario de egreso administrativo para origen efectivo/banco y periodo de imputacion
+10. mostrar sucursal imputada en detalle de egresos administrativos del libro central
+11. agregar totales de ingresos y egresos de caja fuerte central por periodo filtrado
 
 ## Criterio de cierre
 
@@ -181,3 +215,4 @@ Criterios:
 - los egresos de tesoreria no se confunden con egresos operativos de sucursal
 - un egreso administrativo en efectivo se puede guardar sin cuenta bancaria
 - los egresos administrativos quedan imputados por rubro, sucursal y periodo
+- el libro de efectivo central permite ver sucursal y totales de ingresos/egresos por periodo sin planilla auxiliar

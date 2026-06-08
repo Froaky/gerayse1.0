@@ -17,6 +17,8 @@ Simplificar la operatoria diaria de cajas para que registren solo lo que realmen
 - apertura de caja con importes claros y persistencia verificable
 - carga diaria por canal de venta y egresos operativos desde la caja
 - dashboard de caja con saldo efectivo y ventas a acreditar discriminadas
+- correccion auditada de ventas, importes y egresos ya cargados en una caja
+- control de cajas cargadas por fecha, turno y sucursal
 
 ## No incluye todavia
 
@@ -42,6 +44,9 @@ Simplificar la operatoria diaria de cajas para que registren solo lo que realmen
 - una caja no puede abrirse con un turno o sucursal que no correspondan al contexto elegido por el operador
 - el saldo neto operativo puede mostrar resultado total, pero no debe ocultar cuanto queda en efectivo fisico
 - las ventas por tarjeta, debito, credito, QR o billetera deben verse separadas del efectivo disponible en caja
+- una carga de caja ya guardada solo puede corregirse con motivo obligatorio y trazabilidad de valor anterior y valor nuevo
+- corregir una carga no debe duplicar ventas, egresos ni movimientos de caja
+- administracion debe poder comprobar por fecha, turno y sucursal que cajas esperadas ya fueron cargadas
 
 ## User Stories
 
@@ -219,6 +224,35 @@ Criterios:
 - los movimientos recientes permiten reconocer de que canal viene cada venta
 - los tests deben cubrir que una venta en efectivo y una venta por tarjeta no se mezclan como saldo efectivo
 
+### [ ] US-8.14 Correccion auditada de cargas de caja
+
+Como administracion
+Quiero modificar una venta, importe o egreso operativo ya cargado en una caja
+Para corregir errores de tipeo detectados despues de comparar el sistema con el papel o el cierre real
+
+Criterios:
+- se puede corregir una carga de caja existente sin borrar la trazabilidad original
+- la correccion exige motivo obligatorio y usuario responsable
+- el sistema guarda valor anterior, valor nuevo, fecha y hora de la correccion
+- si se corrige una venta por canal, el total de ventas y el saldo efectivo se recalculan segun el canal afectado
+- si se corrige un egreso operativo por rubro, el saldo de caja y el total por rubro se recalculan sin duplicar movimientos
+- no se puede corregir una caja cerrada sin permiso de administracion o sin flujo de reapertura/correccion definido
+- la pantalla muestra que el movimiento fue corregido y permite auditar el historial de cambios
+
+### [ ] US-8.15 Control de cajas cargadas por fecha, turno y sucursal
+
+Como administracion
+Quiero ver que cajas estan cargadas por dia, turno y sucursal
+Para confirmar que no falta ninguna caja antes de revisar ventas o diferencias
+
+Criterios:
+- existe una vista o filtro donde se pueda consultar una fecha operativa puntual
+- la vista muestra cajas cargadas por sucursal y turno, incluyendo `Turno Manana` y `Turno Tarde`
+- cada caja muestra numero o identificador, usuario responsable, estado, total de ventas por canal y saldo efectivo
+- si una sucursal esperada no tiene caja cargada para un turno, la vista lo deja visible como faltante o sin carga
+- los identificadores correlativos no son el unico dato para reconocer la caja; tambien se ve fecha, turno y sucursal
+- el filtro respeta empresa activa y permisos por sucursal cuando apliquen
+
 ## Dependencias
 
 - EP-01 caja operativa base
@@ -239,6 +273,8 @@ Criterios:
 9. discriminar importes de apertura y carga diaria por canal
 10. reforzar coherencia sucursal-turno-caja
 11. separar visualmente saldo efectivo, ventas por canal y neto operativo en dashboard
+12. habilitar correcciones auditadas de cargas ya guardadas
+13. agregar control de cajas cargadas por fecha, turno y sucursal
 
 ## Criterio de cierre
 
@@ -250,3 +286,5 @@ Criterios:
 - la apertura de caja guarda de forma verificable o muestra errores accionables
 - la carga diaria permite explicar ventas por canal, efectivo fisico y egresos operativos sin ambiguedad
 - el dashboard de caja no hace pasar ventas a acreditar como efectivo disponible
+- administracion puede corregir errores de carga sin perder auditoria ni recalcular a mano
+- administracion puede saber por fecha, turno y sucursal que cajas estan cargadas y cuales faltan

@@ -56,6 +56,7 @@ from .services import (
     register_central_cash_movement,
     register_cheque_payment,
     register_echeq_payment,
+    register_egreso_tesoreria,
     register_payable,
     register_special_commitment,
     register_transfer_payment,
@@ -1169,6 +1170,46 @@ class TreasuryViewTests(TreasuryTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("sucursal", response.context["form"].errors)
         self.assertNotIn(other_branch, response.context["form"].fields["sucursal"].queryset)
+
+    def test_central_cash_book_shows_admin_expense_imputation_and_period_totals(self):
+        empresa = Empresa.objects.create(nombre="Empresa Libro Central")
+        self.sucursal.empresa = empresa
+        self.sucursal.save(update_fields=["empresa"])
+        period_day = timezone.datetime(2026, 6, 7).date()
+        register_central_cash_movement(
+            tipo=MovimientoCajaCentral.Tipo.APORTE,
+            monto=Decimal("500.00"),
+            concepto="Aporte junio",
+            fecha=period_day,
+            actor=self.admin,
+        )
+        register_egreso_tesoreria(
+            fuente="CAJA_CENTRAL",
+            fecha=period_day,
+            monto=Decimal("120.00"),
+            concepto="Alquiler local",
+            rubro=self.rubro_servicios,
+            sucursal=self.sucursal,
+            periodo=period_day.replace(day=1),
+            actor=self.admin,
+        )
+        session = self.client.session
+        session["empresa_ids"] = [empresa.pk]
+        session.save()
+
+        response = self.client.get(
+            reverse("treasury:central_cash_list"),
+            {"year": 2026, "month": 6, "sucursal": self.sucursal.pk},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Ingresos: $ 0,00")
+        self.assertContains(response, "Egresos: $ 120,00")
+        self.assertContains(response, "Alquiler local")
+        self.assertContains(response, f"Sucursal: {self.sucursal.nombre}")
+        self.assertContains(response, f"Rubro: {self.rubro_servicios.nombre}")
+        self.assertContains(response, "Periodo: 06/2026")
+        self.assertContains(response, "Usuario: admin-treasury")
 
     def test_supplier_create_persists_record(self):
         response = self.client.post(

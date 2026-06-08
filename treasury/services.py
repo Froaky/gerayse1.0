@@ -1081,36 +1081,53 @@ def build_bank_reconciliation_snapshot(
     }
 
 
-def _central_cash_balance_until(*, reference_date: date, sucursal=None, empresa_ids=None) -> Decimal:
-    movements = MovimientoCajaCentral.objects.filter(fecha__lte=reference_date)
+CENTRAL_CASH_IN_TYPES = [
+    MovimientoCajaCentral.Tipo.INGRESO_CAJA,
+    MovimientoCajaCentral.Tipo.APORTE,
+    MovimientoCajaCentral.Tipo.RETIRO_BANCO,
+    MovimientoCajaCentral.Tipo.AJUSTE_POSITIVO,
+]
+
+CENTRAL_CASH_OUT_TYPES = [
+    MovimientoCajaCentral.Tipo.EGRESO_PAGO,
+    MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
+    MovimientoCajaCentral.Tipo.DEPOSITO_BANCO,
+    MovimientoCajaCentral.Tipo.AJUSTE_NEGATIVO,
+]
+
+
+def scope_central_cash_movements(movements, *, sucursal=None, empresa_ids=None):
     if sucursal is not None:
-        movements = movements.filter(caja_central__sucursal=sucursal)
-    elif empresa_ids:
-        movements = movements.filter(
-            Q(caja_central__sucursal__empresa_id__in=empresa_ids)
-            | Q(caja_central__sucursal__isnull=True)
+        return movements.filter(
+            Q(caja_central__sucursal=sucursal)
+            | Q(tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN, sucursal_gasto=sucursal)
         )
+    if empresa_ids:
+        return movements.filter(
+            Q(caja_central__sucursal__empresa_id__in=empresa_ids)
+            | Q(caja_central__sucursal__isnull=True, sucursal_gasto__isnull=True)
+            | Q(caja_central__sucursal__isnull=True, sucursal_gasto__empresa_id__in=empresa_ids)
+        )
+    return movements
+
+
+def _central_cash_balance_until(*, reference_date: date, sucursal=None, empresa_ids=None) -> Decimal:
+    movements = scope_central_cash_movements(
+        MovimientoCajaCentral.objects.filter(fecha__lte=reference_date),
+        sucursal=sucursal,
+        empresa_ids=empresa_ids,
+    )
     sums = movements.aggregate(
         ingresos=Sum(
             "monto",
             filter=Q(
-                tipo__in=[
-                    MovimientoCajaCentral.Tipo.INGRESO_CAJA,
-                    MovimientoCajaCentral.Tipo.APORTE,
-                    MovimientoCajaCentral.Tipo.RETIRO_BANCO,
-                    MovimientoCajaCentral.Tipo.AJUSTE_POSITIVO,
-                ]
+                tipo__in=CENTRAL_CASH_IN_TYPES
             ),
         ),
         egresos=Sum(
             "monto",
             filter=Q(
-                tipo__in=[
-                    MovimientoCajaCentral.Tipo.EGRESO_PAGO,
-                    MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
-                    MovimientoCajaCentral.Tipo.DEPOSITO_BANCO,
-                    MovimientoCajaCentral.Tipo.AJUSTE_NEGATIVO,
-                ]
+                tipo__in=CENTRAL_CASH_OUT_TYPES
             ),
         ),
     )
@@ -1760,28 +1777,15 @@ def build_disponibilidades_snapshot(year: int, month: int, sucursal=None, empres
                     saldos_iniciales_bancarios[acc_id] = str(Decimal(saldos_iniciales_bancarios.get(acc_id, "0.00")) + Decimal(balance))
 
     # 2. Cash Flow in Period
-    movements_cash = MovimientoCajaCentral.objects.filter(fecha__range=(first_day, last_day))
-    if sucursal:
-        movements_cash = movements_cash.filter(caja_central__sucursal=sucursal)
-    elif empresa_ids:
-        movements_cash = movements_cash.filter(
-            Q(caja_central__sucursal__empresa_id__in=empresa_ids)
-            | Q(caja_central__sucursal__isnull=True)
-        )
+    movements_cash = scope_central_cash_movements(
+        MovimientoCajaCentral.objects.filter(fecha__range=(first_day, last_day)),
+        sucursal=sucursal,
+        empresa_ids=empresa_ids,
+    )
     
-    cash_in = movements_cash.filter(tipo__in=[
-        MovimientoCajaCentral.Tipo.INGRESO_CAJA,
-        MovimientoCajaCentral.Tipo.APORTE,
-        MovimientoCajaCentral.Tipo.RETIRO_BANCO,
-        MovimientoCajaCentral.Tipo.AJUSTE_POSITIVO
-    ]).aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
+    cash_in = movements_cash.filter(tipo__in=CENTRAL_CASH_IN_TYPES).aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
     
-    cash_out = movements_cash.filter(tipo__in=[
-        MovimientoCajaCentral.Tipo.EGRESO_PAGO,
-        MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
-        MovimientoCajaCentral.Tipo.DEPOSITO_BANCO,
-        MovimientoCajaCentral.Tipo.AJUSTE_NEGATIVO
-    ]).aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
+    cash_out = movements_cash.filter(tipo__in=CENTRAL_CASH_OUT_TYPES).aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
     
     saldo_final_efectivo = saldo_inicial_efectivo + cash_in - cash_out
 

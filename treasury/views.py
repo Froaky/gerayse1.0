@@ -4,7 +4,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -72,6 +72,8 @@ from .services import (
     build_special_commitments_snapshot,
     build_supplier_history_snapshot,
     build_treasury_dashboard_snapshot,
+    CENTRAL_CASH_IN_TYPES,
+    CENTRAL_CASH_OUT_TYPES,
     close_treasury_month,
     create_bank_account,
     create_bank_movement,
@@ -92,6 +94,7 @@ from .services import (
     register_payable,
     register_special_commitment,
     register_transfer_payment,
+    scope_central_cash_movements,
     toggle_bank_account,
     toggle_payable_category,
     toggle_supplier,
@@ -1786,41 +1789,81 @@ def disponibilidades_report(request):
 @login_required
 def central_cash_movements(request):
     _require_treasury_admin(request)
-    from cashops.models import Sucursal
-    sucursal_id = request.GET.get("sucursal")
-    movements = MovimientoCajaCentral.objects.all().select_related("pago_tesoreria", "creado_por", "caja_central__sucursal")
     empresa_ids = _get_empresa_ids(request)
-    if empresa_ids:
-        movements = movements.filter(
-            Q(caja_central__sucursal__empresa_id__in=empresa_ids)
-            | Q(caja_central__sucursal__isnull=True)
-        )
-    if sucursal_id:
-        movements = movements.filter(caja_central__sucursal_id=sucursal_id)
+    form = DisponibilidadesFilterForm(request.GET or None, empresa_ids=empresa_ids)
+    if form.is_valid():
+        year = int(form.cleaned_data["year"])
+        month = int(form.cleaned_data["month"])
+        sucursal = form.cleaned_data.get("sucursal")
+    else:
+        today = timezone.localdate()
+        year, month = today.year, today.month
+        sucursal = None
+
+    first_day = timezone.datetime(year, month, 1).date()
+    if month == 12:
+        next_month = timezone.datetime(year + 1, 1, 1).date()
+    else:
+        next_month = timezone.datetime(year, month + 1, 1).date()
+    last_day = next_month - timezone.timedelta(days=1)
+
+    movements = scope_central_cash_movements(
+        MovimientoCajaCentral.objects.filter(fecha__range=(first_day, last_day)).select_related(
+            "pago_tesoreria",
+            "creado_por",
+            "caja_central__sucursal",
+            "rubro_operativo",
+            "sucursal_gasto",
+        ),
+        sucursal=sucursal,
+        empresa_ids=empresa_ids,
+    )
+    totals = movements.aggregate(
+        ingresos=Sum("monto", filter=Q(tipo__in=CENTRAL_CASH_IN_TYPES)),
+        egresos=Sum("monto", filter=Q(tipo__in=CENTRAL_CASH_OUT_TYPES)),
+    )
+    total_ingresos = totals["ingresos"] or Decimal("0.00")
+    total_egresos = totals["egresos"] or Decimal("0.00")
     
     items = []
     for m in movements[:100]:
-        badge_class = "badge-success" if m.monto > 0 else "badge-danger" # logic depends on type
         # Simplistic: INGRESO/APORTE/RETIRO_BANCO are positive for cash
-        if m.tipo in [MovimientoCajaCentral.Tipo.INGRESO_CAJA, MovimientoCajaCentral.Tipo.APORTE, MovimientoCajaCentral.Tipo.RETIRO_BANCO, MovimientoCajaCentral.Tipo.AJUSTE_POSITIVO]:
+        if m.tipo in CENTRAL_CASH_IN_TYPES:
             badge_class = "badge-success"
             prefix = "+"
         else:
             badge_class = "badge-danger"
             prefix = "-"
-            
+
+        sucursal_label = "sin sucursal imputada"
+        if m.sucursal_gasto_id:
+            sucursal_label = m.sucursal_gasto.nombre
+        elif m.caja_central.sucursal_id:
+            sucursal_label = m.caja_central.sucursal.nombre
+        rubro_label = m.rubro_operativo.nombre if m.rubro_operativo_id else "sin rubro"
+        periodo_label = f"{m.periodo_pago:%m/%Y}" if m.periodo_pago else "sin periodo"
+        usuario_label = m.creado_por.get_username() if m.creado_por_id else "sin usuario"
+
         items.append({
             "title": f"{m.get_tipo_display()}",
             "subtitle": f"{m.fecha:%d/%m/%Y} - {m.concepto}",
             "badge": f"{prefix}{_money(m.monto)}",
             "badge_class": badge_class,
-            "meta": m.observaciones or f"Registrado por {m.creado_por}"
+            "meta": (
+                f"Sucursal: {sucursal_label} | Rubro: {rubro_label} | "
+                f"Periodo: {periodo_label} | Usuario: {usuario_label}"
+            ),
         })
         
     caja = get_or_create_default_caja_central()
+    subtitle = (
+        f"Periodo {first_day:%m/%Y}. Ingresos: {_money(total_ingresos)}. "
+        f"Egresos: {_money(total_egresos)}. Saldo actual: {_money(caja.saldo_actual)}."
+    )
     return render(request, "treasury/list_page.html", {
         "title": "Libro de Efectivo Central",
-        "subtitle": f"Saldo actual: ${caja.saldo_actual:,.2f} — Historial de ingresos y egresos de la caja fuerte central.",
+        "filter_form": form,
+        "subtitle": subtitle,
         "items": items,
         "actions": [
             {"label": "Cargar saldo inicial", "href": reverse("treasury:carga_inicial_caja_central"), "kind": "secondary"},

@@ -116,9 +116,26 @@
                     <strong>{{ snapshot.saldo_final_efectivo|money }}</strong>
                 </div>
             </div>
+            <div class="summary" style="margin-top: 10px;">
+                <div class="data-row">
+                    <span>Total ingresos caja central</span>
+                    <strong class="has-text-success">{{ snapshot.cash_in|money }}</strong>
+                </div>
+                <div class="data-row">
+                    <span>Total egresos caja central</span>
+                    <strong class="has-text-danger">{{ snapshot.cash_out|money }}</strong>
+                </div>
+                <div class="data-row">
+                    <span>Alcance del periodo</span>
+                    <strong>
+                        {{ snapshot.first_day|date:"d/m/Y" }} - {{ snapshot.last_day|date:"d/m/Y" }}
+                        {% if snapshot.sucursal %} | {{ snapshot.sucursal.nombre }}{% else %} | Consolidado{% endif %}
+                    </strong>
+                </div>
+            </div>
         </div>
         <div class="list-actions" style="justify-content: flex-end; margin-top: 20px;">
-            <a href="{% url 'treasury:central_cash_list' %}" class="button-secondary">Detalle de movimientos</a>
+            <a href="{% url 'treasury:central_cash_list' %}?year={{ snapshot.year }}&month={{ snapshot.month }}{% if snapshot.sucursal %}&sucursal={{ snapshot.sucursal.pk }}{% endif %}" class="button-secondary">Detalle de movimientos</a>
         </div>
     </div>
 

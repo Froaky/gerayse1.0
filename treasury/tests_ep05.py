@@ -7,11 +7,12 @@ from treasury.models import (
     CuentaPorPagar, Proveedor, CategoriaCuentaPagar, PagoTesoreria,
     CuentaBancaria, MovimientoBancario
 )
-from cashops.models import Empresa, Sucursal
+from cashops.models import Empresa, RubroOperativo, Sucursal
 from treasury.services import (
     register_cash_payment, register_central_cash_movement,
     build_disponibilidades_snapshot, close_treasury_month,
-    register_arqueo, get_or_create_default_caja_central
+    register_arqueo, get_or_create_default_caja_central,
+    register_egreso_tesoreria,
 )
 
 User = get_user_model()
@@ -141,6 +142,66 @@ class EP05DisponibilidadesTests(TestCase):
         self.assertEqual(snapshot["saldo_final_efectivo"], Decimal("550.00"))
         self.assertEqual(snapshot["total_bancos_final"], Decimal("260.00"))
         self.assertEqual(snapshot["total_consolidado"], Decimal("810.00"))
+
+    def test_snapshot_branch_scope_uses_admin_expense_imputation_without_bank_movements(self):
+        empresa_a = Empresa.objects.create(nombre="Empresa EP05 A")
+        empresa_b = Empresa.objects.create(nombre="Empresa EP05 B")
+        sucursal_a = Sucursal.objects.create(
+            codigo="E5A",
+            nombre="Sucursal EP05 A",
+            razon_social="Empresa EP05 A",
+            empresa=empresa_a,
+        )
+        sucursal_b = Sucursal.objects.create(
+            codigo="E5B",
+            nombre="Sucursal EP05 B",
+            razon_social="Empresa EP05 B",
+            empresa=empresa_b,
+        )
+        rubro = RubroOperativo.objects.create(nombre="Almacen")
+        period_day = timezone.datetime(2026, 6, 12).date()
+        register_central_cash_movement(
+            tipo=MovimientoCajaCentral.Tipo.APORTE,
+            monto=Decimal("1000.00"),
+            concepto="Aporte sucursal",
+            fecha=period_day,
+            actor=self.user,
+        )
+        register_egreso_tesoreria(
+            fuente="CAJA_CENTRAL",
+            fecha=period_day,
+            monto=Decimal("250.00"),
+            concepto="Gasto imputado A",
+            rubro=rubro,
+            sucursal=sucursal_a,
+            periodo=period_day.replace(day=1),
+            actor=self.user,
+        )
+        register_egreso_tesoreria(
+            fuente="CAJA_CENTRAL",
+            fecha=period_day,
+            monto=Decimal("90.00"),
+            concepto="Gasto imputado B",
+            rubro=rubro,
+            sucursal=sucursal_b,
+            periodo=period_day.replace(day=1),
+            actor=self.user,
+        )
+        MovimientoBancario.objects.create(
+            cuenta_bancaria=self.bank_account,
+            tipo=MovimientoBancario.Tipo.DEBITO,
+            clase=MovimientoBancario.Clase.OTRO_EGRESO,
+            fecha=period_day,
+            monto=Decimal("80.00"),
+            concepto="Egreso banco fuera libro efectivo",
+            creado_por=self.user,
+        )
+
+        snapshot = build_disponibilidades_snapshot(2026, 6, sucursal=sucursal_a, empresa_ids=[empresa_a.pk])
+
+        self.assertEqual(snapshot["cash_in"], Decimal("0.00"))
+        self.assertEqual(snapshot["cash_out"], Decimal("250.00"))
+        self.assertEqual(snapshot["saldo_final_efectivo"], Decimal("-250.00"))
 
     def test_close_treasury_month(self):
         today = timezone.localdate()

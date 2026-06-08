@@ -1,6 +1,6 @@
 # Context
 
-Last updated: 2026-06-05
+Last updated: 2026-06-08
 
 ## Product Snapshot
 
@@ -60,6 +60,60 @@ Last updated: 2026-06-05
   - changes touching money, debt, permissions, migrations, dashboards or operational controls require proportional tests
 
 ## Current Session
+
+### EP-05 Runtime Slice 2026-06-08
+
+- User asked to advance pending US/EP work.
+- Selected next implementable slice: `EP-05` `US-5.10` + `US-5.11`.
+- Goal: central-cash availability book should show administrative expense branch/rubro detail and period income/expense totals derived from listed central-cash movements.
+- Scope guardrail: do not mix bank movements into central-cash totals; keep branch filters constrained by active company context.
+- Implemented:
+  - central-cash movement scope now includes `EGRESO_ADMIN` by `sucursal_gasto` when filtering by sucursal.
+  - company-scoped central-cash queries include global/legacy movements only when they are not imputable to another selected-out company.
+  - central-cash list now filters by year/month/sucursal, shows period income/expense totals, and exposes branch, rubro, period and user metadata per movement.
+  - disponibilidades report shows central-cash income/expense totals and links to the filtered central-cash detail.
+- Files touched: `treasury/services.py`, `treasury/views.py`, `templates/treasury/disponibilidades_report.html`, `treasury/tests.py`, `treasury/tests_ep05.py`, `docs/epics/EP-05-flujo-de-disponibilidades.md`, `docs/epics/README.md`, `context.md`.
+- Validation:
+  - `C:\Users\theco\AppData\Local\Programs\Python\Python313\python.exe -m compileall treasury` with `PYTHONPATH=.venv\Lib\site-packages` passed.
+  - Focused tests passed with Python 3.13 + venv site-packages: `treasury.tests_ep05.EP05DisponibilidadesTests`, `treasury.tests.TreasuryViewTests.test_central_cash_book_shows_admin_expense_imputation_and_period_totals`, and `treasury.tests.TreasuryViewTests.test_disponibilidades_report_exposes_reset_and_company_scoped_global_cash`.
+  - Broader treasury regression passed: `C:\Users\theco\AppData\Local\Programs\Python\Python313\python.exe manage.py test treasury.tests treasury.tests_ep05 -v 1` with `PYTHONPATH=.venv\Lib\site-packages`: 66 tests OK, 1 skipped.
+  - Post-cleanup focused recheck passed: branch-scope service test and central-cash book view test.
+  - `git diff --check` passed with only CRLF normalization warnings.
+- Known unrelated validation issue: `manage.py makemigrations --check` still reports existing treasury drift for `treasury\migrations\0018_alter_movimientocajacentral_tipo.py`; this slice did not change models.
+
+### Backlog Intake 2026-06-08
+
+- User feedback from WhatsApp splits into pending backlog for:
+  - reassigning historical administrative/operational expenses from old branch `EB1` to the new bakery/pastry branch without losing audit trail
+  - correcting already loaded caja sales/amounts after typing errors, with reason and before/after traceability
+  - listing loaded cajas by date, shift and branch so administration can confirm every expected `TM`/`TT` caja was entered
+  - fixing economic/disponibilidad readings so treasury-paid expenses show by branch/rubro/period and central-cash book details show branch plus period totals
+  - excluding panification billing from the general sales base when it is an internal/special branch flow, per user note
+- Scope decision: update existing epics `EP-05`, `EP-08`, and `EP-11`; no runtime behavior changed in this intake.
+- Backlog files updated:
+  - `docs/epics/EP-05-flujo-de-disponibilidades.md`: added `US-5.10` and `US-5.11`.
+  - `docs/epics/EP-08-ajustes-operativos-de-caja-y-sucursales.md`: added `US-8.14` and `US-8.15`.
+  - `docs/epics/EP-11-rentabilidad-y-situacion-economica.md`: added `US-11.7`, `US-11.8`, and `US-11.9`.
+  - `docs/epics/README.md`: reopened EP-05, EP-08 and EP-11 status lines.
+- Validation: reviewed diff and story numbering with `rg`; application tests not run because only markdown backlog changed.
+- Follow-up requirement: economic rubro totals need drilldown. If `Almacen` shows `$100.000`, administration must see the source lines that compose that amount, with origin, date, sucursal, provider/concept and amount.
+- Scope decision: add this as `EP-11` backlog, because it explains economic rubro totals and traceability of the profitability view.
+- Backlog files updated for follow-up:
+  - `docs/epics/EP-11-rentabilidad-y-situacion-economica.md`: added `US-11.10`.
+  - `docs/epics/README.md`: EP-11 pending range now includes `US-11.10`.
+- Business clarification: bank/card accreditations are not discriminated by branch because incoming money is a common pool; branch discrimination is required for expenses/egresos.
+- Scope decision: adjust EP-10 accreditation wording to avoid branch-level accreditation promises; keep branch-level egreso visibility in EP-05/EP-11.
+- Backlog files updated for accreditation clarification:
+  - `docs/epics/EP-10-situacion-financiera-y-alertas-consolidadas.md`: added pending `US-10.11` and removed branch-discrimination expectation from accreditation pending criteria.
+  - `docs/epics/EP-11-rentabilidad-y-situacion-economica.md`: clarified that branch discrimination applies to expenses/gastos/debt, not common bank accreditations.
+  - `docs/epics/README.md`: reopened EP-10 for `US-10.11`.
+
+### Pull Resolution 2026-06-08
+
+- `git pull --ff-only` was blocked because local staged `.claude/settings.local.json` would be overwritten by the remote tracked version.
+- Preserved the local pre-pull file in `stash@{0}` with message `preserve local claude settings before pull`.
+- Fast-forwarded `main` from `1c4ef5d` to `59ac8c0`; branch is now aligned with `origin/main`.
+- Decision: keep the remote `.claude/settings.local.json` in the working tree to avoid reintroducing the same pull blocker.
 
 ### Objective
 
