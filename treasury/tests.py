@@ -840,6 +840,98 @@ class TreasuryServiceTests(TreasuryTestCase):
         self.assertEqual(snapshot["accredited_net"], Decimal("100.00"))
         self.assertEqual(snapshot["pending_accreditation_total"], Decimal("0.00"))
 
+    def test_financial_period_snapshot_keeps_accreditations_consolidated_for_branch_view(self):
+        empresa = Empresa.objects.create(nombre="Empresa Acreditacion Consolidada")
+        branch_a = Sucursal.objects.create(
+            codigo="EAC-A",
+            nombre="Sucursal Acreditacion A",
+            razon_social="Empresa Acreditacion Consolidada",
+            empresa=empresa,
+        )
+        branch_b = Sucursal.objects.create(
+            codigo="EAC-B",
+            nombre="Sucursal Acreditacion B",
+            razon_social="Empresa Acreditacion Consolidada",
+            empresa=empresa,
+        )
+        account_b = create_bank_account(
+            nombre="Cuenta Acreditacion B",
+            banco="Banco Acreditacion",
+            tipo_cuenta=CuentaBancaria.Tipo.CUENTA_CORRIENTE,
+            numero_cuenta="ACR-002",
+            sucursal=branch_b,
+            actor=self.admin,
+        )
+        turno = Turno.objects.create(empresa=empresa, tipo=Turno.Tipo.MANANA, creado_por=self.admin)
+        box_a = open_box(
+            user=self.operator,
+            turno=turno,
+            sucursal=branch_a,
+            fecha_operativa=timezone.localdate(),
+            monto_inicial=Decimal("0.00"),
+            actor=self.admin,
+        )
+        box_b = open_box(
+            user=self.admin,
+            turno=turno,
+            sucursal=branch_b,
+            fecha_operativa=timezone.localdate(),
+            monto_inicial=Decimal("0.00"),
+            actor=self.admin,
+        )
+        register_card_sale(caja=box_a, monto=Decimal("200.00"), actor=self.operator)
+        register_card_sale(caja=box_b, monto=Decimal("100.00"), actor=self.admin)
+        register_card_accreditation(
+            cuenta_bancaria=account_b,
+            fecha_acreditacion=timezone.localdate(),
+            monto_neto=Decimal("300.00"),
+            canal="Payway",
+            referencia_externa="ACC-CONSOLIDADA",
+            actor=self.admin,
+        )
+
+        branch_snapshot = build_financial_period_snapshot(
+            date_from=timezone.localdate(),
+            date_to=timezone.localdate(),
+            sucursal=branch_a,
+            empresa_ids=[empresa.pk],
+        )
+
+        self.assertEqual(branch_snapshot["digital_sales_total"], Decimal("300.00"))
+        self.assertEqual(branch_snapshot["accredited_net"], Decimal("300.00"))
+        self.assertEqual(branch_snapshot["pending_accreditation_total"], Decimal("0.00"))
+
+    def test_financial_period_snapshot_includes_central_cash_expense_imputed_to_branch(self):
+        empresa = Empresa.objects.create(nombre="Empresa Egreso Central")
+        branch = Sucursal.objects.create(
+            codigo="EGC",
+            nombre="Sucursal Egreso Central",
+            razon_social="Empresa Egreso Central",
+            empresa=empresa,
+        )
+        rubro = RubroOperativo.objects.create(nombre="Servicios Central")
+        register_egreso_tesoreria(
+            fuente=EgresoTesoreriaForm.FUENTE_CAJA,
+            fecha=timezone.localdate(),
+            monto=Decimal("85.00"),
+            concepto="Egreso central imputado",
+            rubro=rubro,
+            sucursal=branch,
+            periodo=timezone.localdate().replace(day=1),
+            actor=self.admin,
+        )
+
+        branch_snapshot = build_financial_period_snapshot(
+            date_from=timezone.localdate(),
+            date_to=timezone.localdate(),
+            sucursal=branch,
+            empresa_ids=[empresa.pk],
+        )
+
+        self.assertEqual(branch_snapshot["central_cash_expense_period"], Decimal("85.00"))
+        self.assertEqual(branch_snapshot["central_cash_net_period"], Decimal("-85.00"))
+        self.assertEqual(branch_snapshot["central_cash_total"], Decimal("-85.00"))
+
     def test_economic_period_snapshot_groups_sales_cash_expense_and_period_debt_by_rubro(self):
         branch = Sucursal.objects.create(codigo="SUC-E", nombre="Sucursal Economica", razon_social="Economica SRL")
         empresa = Empresa.objects.create(nombre="Empresa Economica Snapshot")
@@ -924,6 +1016,100 @@ class TreasuryServiceTests(TreasuryTestCase):
         self.assertEqual(admin_item["total_expense"], Decimal("200.00"))
         self.assertEqual(admin_item["expense_ratio_over_sales"], Decimal("26.67"))
         self.assertEqual(ventas_item["sales_total"], Decimal("500.00"))
+
+    def test_economic_period_snapshot_includes_treasury_expenses_by_branch_rubro_and_period(self):
+        empresa = Empresa.objects.create(nombre="Empresa Economica Tesoreria")
+        branch = Sucursal.objects.create(
+            codigo="ECO-T",
+            nombre="Sucursal Economica Tesoreria",
+            razon_social="Empresa Economica Tesoreria",
+            empresa=empresa,
+        )
+        rubro = RubroOperativo.objects.create(nombre="Servicios Tesoreria")
+        account = create_bank_account(
+            nombre="Cuenta Economica Tesoreria",
+            banco="Banco Economico",
+            tipo_cuenta=CuentaBancaria.Tipo.CUENTA_CORRIENTE,
+            numero_cuenta="ECO-001",
+            sucursal=branch,
+            actor=self.admin,
+        )
+        turno = Turno.objects.create(empresa=empresa, tipo=Turno.Tipo.MANANA, creado_por=self.admin)
+        box = open_box(
+            user=self.operator,
+            turno=turno,
+            sucursal=branch,
+            fecha_operativa=timezone.datetime(2026, 5, 15).date(),
+            monto_inicial=Decimal("0.00"),
+            actor=self.admin,
+        )
+        from cashops.models import MovimientoCaja
+
+        MovimientoCaja.objects.create(
+            caja=box,
+            tipo=MovimientoCaja.Tipo.INGRESO_EFECTIVO,
+            sentido=MovimientoCaja.Sentido.INGRESO,
+            monto=Decimal("1000.00"),
+            impacta_saldo_caja=True,
+            categoria="Venta rubro tesoreria",
+            rubro_operativo=rubro,
+            creado_por=self.operator,
+        )
+        register_expense(
+            caja=box,
+            monto=Decimal("50.00"),
+            rubro_operativo=rubro,
+            categoria="Gasto caja",
+            observacion="Caja del periodo",
+            actor=self.operator,
+        )
+        register_egreso_tesoreria(
+            fuente=EgresoTesoreriaForm.FUENTE_CAJA,
+            fecha=timezone.datetime(2026, 5, 16).date(),
+            monto=Decimal("120.00"),
+            concepto="Egreso central economico",
+            rubro=rubro,
+            sucursal=branch,
+            periodo=timezone.datetime(2026, 5, 1).date(),
+            actor=self.admin,
+        )
+        register_egreso_tesoreria(
+            fuente=EgresoTesoreriaForm.FUENTE_BANCO,
+            cuenta_bancaria=account,
+            fecha=timezone.datetime(2026, 5, 17).date(),
+            monto=Decimal("80.00"),
+            concepto="Egreso banco economico",
+            rubro=rubro,
+            sucursal=branch,
+            periodo=timezone.datetime(2026, 5, 1).date(),
+            actor=self.admin,
+        )
+        MovimientoCajaCentral.objects.create(
+            caja_central=CajaCentral.objects.create(nombre="Caja incompleta"),
+            fecha=timezone.datetime(2026, 5, 18).date(),
+            tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
+            monto=Decimal("40.00"),
+            concepto="Egreso sin imputacion completa",
+            creado_por=self.admin,
+        )
+
+        snapshot = build_economic_period_snapshot(
+            date_from=timezone.datetime(2026, 5, 1).date(),
+            date_to=timezone.datetime(2026, 5, 31).date(),
+            sucursal=branch,
+            empresa_ids=[empresa.pk],
+        )
+
+        item = next(current for current in snapshot["items"] if current["rubro_nombre"] == "Servicios Tesoreria")
+        self.assertEqual(snapshot["sales_total"], Decimal("1000.00"))
+        self.assertEqual(snapshot["cash_expense_total"], Decimal("50.00"))
+        self.assertEqual(snapshot["treasury_expense_total"], Decimal("200.00"))
+        self.assertEqual(snapshot["economic_result"], Decimal("750.00"))
+        self.assertEqual(item["cash_expense_total"], Decimal("50.00"))
+        self.assertEqual(item["treasury_expense_total"], Decimal("200.00"))
+        self.assertEqual(item["total_expense"], Decimal("250.00"))
+        self.assertEqual(snapshot["treasury_unmapped_expenses_total"], Decimal("40.00"))
+        self.assertEqual(snapshot["treasury_unmapped_expenses_count"], 1)
 
     def test_economic_period_snapshot_applies_branch_objective_over_global(self):
         branch = Sucursal.objects.create(codigo="SUC-O", nombre="Sucursal Objetivos", razon_social="Objetivos SRL")
@@ -1807,6 +1993,16 @@ class TreasuryViewTests(TreasuryTestCase):
             ],
             actor=self.admin,
         )
+        register_egreso_tesoreria(
+            fuente=EgresoTesoreriaForm.FUENTE_CAJA,
+            fecha=timezone.localdate(),
+            monto=Decimal("45.00"),
+            concepto="Egreso central dashboard",
+            rubro=rubro,
+            sucursal=branch,
+            periodo=timezone.localdate().replace(day=1),
+            actor=self.admin,
+        )
         register_payable(
             sucursal=branch,
             proveedor=self.supplier,
@@ -1837,13 +2033,17 @@ class TreasuryViewTests(TreasuryTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Situacion financiera por periodo")
         self.assertContains(response, "Situacion economica y rentabilidad")
+        self.assertContains(response, "Gasto tesoreria")
         self.assertContains(response, "Resultado economico")
         self.assertContains(response, "Objetivo parametrizado")
         self.assertContains(response, "Desvio vs objetivo")
         self.assertContains(response, "Dashboard Rubro")
         self.assertContains(response, "Caja fuerte general")
+        self.assertContains(response, "Egresos caja fuerte")
+        self.assertContains(response, "Tesoreria central imputada al alcance")
         self.assertContains(response, "Pendiente de acreditacion")
         self.assertContains(response, "Vence hoy")
         self.assertContains(response, "$ 120,00")
         self.assertContains(response, "$ 30,00")
         self.assertContains(response, "$ 150,00")
+        self.assertContains(response, "$ 45,00")

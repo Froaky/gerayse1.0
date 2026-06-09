@@ -61,6 +61,41 @@ Last updated: 2026-06-08
 
 ## Current Session
 
+### EP-10 Runtime Slice 2026-06-08
+
+- User asked to keep advancing pending stories.
+- Selected next implementable slice: `EP-10` `US-10.11` + `US-10.12`.
+- Goal: financial dashboard should treat card/bank accreditations as consolidated common money while branch views include central-cash expenses imputable to that branch.
+- Scope guardrail: do not derive debt from bank/accreditation records; do not duplicate central-cash expenses as operational cash movements.
+- Implemented:
+  - `build_financial_period_snapshot()` now calculates digital sales/accreditations as consolidated by selected company/period, not by selected branch.
+  - Branch financial views now expose `central_cash_income_period`, `central_cash_expense_period`, and `central_cash_net_period` using central-cash movement scope with `sucursal_gasto`.
+  - Treasury dashboard shows `Egresos caja fuerte` and explains that accreditations are common consolidated money while egresos remain imputable by branch.
+  - `EP-10` `US-10.11` and `US-10.12` marked done; `docs/epics/README.md` marks `EP-10` implemented again.
+- Files touched: `treasury/services.py`, `templates/treasury/dashboard.html`, `treasury/tests.py`, `docs/epics/EP-10-situacion-financiera-y-alertas-consolidadas.md`, `docs/epics/README.md`, `context.md`.
+- Validation:
+  - `C:\Users\theco\AppData\Local\Programs\Python\Python313\python.exe -m compileall treasury` with `PYTHONPATH=.venv\Lib\site-packages` passed.
+  - Focused EP-10 tests passed: consolidated accreditation branch view, central-cash branch expense, and dashboard branch view.
+  - Broader treasury regression passed: `C:\Users\theco\AppData\Local\Programs\Python\Python313\python.exe manage.py test treasury.tests treasury.tests_ep05 -v 1` with `PYTHONPATH=.venv\Lib\site-packages`: 68 tests OK, 1 skipped.
+  - `git diff --check` passed with only CRLF normalization warnings.
+
+### EP-11 Runtime Slice 2026-06-08
+
+- Continuing pending work after EP-10.
+- Selected slice: `EP-11` `US-11.7`.
+- Goal: economic snapshot should include administrative treasury expenses paid from central cash/bank when they have rubro, sucursal and periodo, without duplicating operational cash expenses or payable debt.
+- Formula decision: treasury expenses enter by `MovimientoCajaCentral.periodo_pago`/`MovimientoBancario.periodo_pago`, grouped by `rubro_operativo`; operational caja expenses and debt remain separate components.
+- Implemented:
+  - `build_economic_period_snapshot()` now includes treasury expenses from central cash admin expenses and bank debits when rubro, sucursal and period are present.
+  - Economic dashboard shows `Gasto tesoreria` separately from operational cash expense and period debt.
+  - Incomplete treasury expenses are exposed as pending imputation totals/counts and excluded from rubro totals until sucursal/rubro/period are complete.
+  - `EP-11` `US-11.7` marked done; remaining EP-11 backlog is `US-11.8` to `US-11.10`.
+- Files touched: `treasury/services.py`, `templates/treasury/dashboard.html`, `treasury/tests.py`, `docs/epics/EP-11-rentabilidad-y-situacion-economica.md`, `docs/epics/README.md`, `context.md`.
+- Validation:
+  - Focused EP-11 tests passed: economic snapshot includes treasury expenses and dashboard branch view renders `Gasto tesoreria`.
+  - Broader treasury regression passed after EP-11: `C:\Users\theco\AppData\Local\Programs\Python\Python313\python.exe manage.py test treasury.tests treasury.tests_ep05 -v 1` with `PYTHONPATH=.venv\Lib\site-packages`: 69 tests OK, 1 skipped.
+  - `git diff --check` passed with only CRLF normalization warnings.
+
 ### EP-05 Runtime Slice 2026-06-08
 
 - User asked to advance pending US/EP work.
@@ -107,6 +142,13 @@ Last updated: 2026-06-08
   - `docs/epics/EP-10-situacion-financiera-y-alertas-consolidadas.md`: added pending `US-10.11` and removed branch-discrimination expectation from accreditation pending criteria.
   - `docs/epics/EP-11-rentabilidad-y-situacion-economica.md`: clarified that branch discrimination applies to expenses/gastos/debt, not common bank accreditations.
   - `docs/epics/README.md`: reopened EP-10 for `US-10.11`.
+- New user feedback: add an option in Banco to enter an initial bank balance; also, branch-specific financial/economic views must include central-cash expenses imputed to that branch, not only consolidated totals.
+- Scope decision: add `US-4.8` for bank initial balances and `US-10.12` for branch-specific financial reading of central-cash expenses; strengthen `US-11.7` for economic reading.
+- Backlog files updated for latest feedback:
+  - `docs/epics/EP-04-bancos-y-conciliacion.md`: added `US-4.8`.
+  - `docs/epics/EP-10-situacion-financiera-y-alertas-consolidadas.md`: added `US-10.12`.
+  - `docs/epics/EP-11-rentabilidad-y-situacion-economica.md`: strengthened `US-11.7` criteria.
+  - `docs/epics/README.md`: reopened EP-04 and expanded EP-10 pending scope.
 
 ### Pull Resolution 2026-06-08
 

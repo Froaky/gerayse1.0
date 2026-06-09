@@ -1191,6 +1191,73 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
         for row in expenses.values("rubro_operativo").annotate(total=Sum("monto"))
     }
 
+    central_treasury_expenses = MovimientoCajaCentral.objects.filter(
+        tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
+        periodo_pago__gte=period_from,
+        periodo_pago__lte=period_to,
+        rubro_operativo__isnull=False,
+        sucursal_gasto__isnull=False,
+    )
+    bank_treasury_expenses = MovimientoBancario.objects.filter(
+        tipo=MovimientoBancario.Tipo.DEBITO,
+        periodo_pago__gte=period_from,
+        periodo_pago__lte=period_to,
+        rubro_operativo__isnull=False,
+        sucursal_gasto__isnull=False,
+    )
+    if sucursal is not None:
+        central_treasury_expenses = central_treasury_expenses.filter(sucursal_gasto=sucursal)
+        bank_treasury_expenses = bank_treasury_expenses.filter(sucursal_gasto=sucursal)
+    elif empresa_ids:
+        central_treasury_expenses = central_treasury_expenses.filter(sucursal_gasto__empresa_id__in=empresa_ids)
+        bank_treasury_expenses = bank_treasury_expenses.filter(sucursal_gasto__empresa_id__in=empresa_ids)
+
+    treasury_expense_total = (
+        (central_treasury_expenses.aggregate(total=Sum("monto"))["total"] or Decimal("0.00"))
+        + (bank_treasury_expenses.aggregate(total=Sum("monto"))["total"] or Decimal("0.00"))
+    )
+    treasury_expense_by_rubro = {}
+    for row in central_treasury_expenses.values("rubro_operativo").annotate(total=Sum("monto")):
+        rubro_id = row["rubro_operativo"]
+        treasury_expense_by_rubro[rubro_id] = treasury_expense_by_rubro.get(rubro_id, Decimal("0.00")) + (
+            row["total"] or Decimal("0.00")
+        )
+    for row in bank_treasury_expenses.values("rubro_operativo").annotate(total=Sum("monto")):
+        rubro_id = row["rubro_operativo"]
+        treasury_expense_by_rubro[rubro_id] = treasury_expense_by_rubro.get(rubro_id, Decimal("0.00")) + (
+            row["total"] or Decimal("0.00")
+        )
+
+    pending_central_treasury_expenses = MovimientoCajaCentral.objects.filter(
+        tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
+        fecha__gte=date_from,
+        fecha__lte=date_to,
+    ).filter(Q(rubro_operativo__isnull=True) | Q(sucursal_gasto__isnull=True) | Q(periodo_pago__isnull=True))
+    pending_bank_treasury_expenses = MovimientoBancario.objects.filter(
+        tipo=MovimientoBancario.Tipo.DEBITO,
+        fecha__gte=date_from,
+        fecha__lte=date_to,
+    ).filter(Q(rubro_operativo__isnull=True) | Q(sucursal_gasto__isnull=True) | Q(periodo_pago__isnull=True))
+    if sucursal is not None:
+        pending_central_treasury_expenses = pending_central_treasury_expenses.filter(
+            Q(sucursal_gasto=sucursal) | Q(sucursal_gasto__isnull=True)
+        )
+        pending_bank_treasury_expenses = pending_bank_treasury_expenses.filter(
+            Q(sucursal_gasto=sucursal) | Q(sucursal_gasto__isnull=True)
+        )
+    elif empresa_ids:
+        pending_central_treasury_expenses = pending_central_treasury_expenses.filter(
+            Q(sucursal_gasto__empresa_id__in=empresa_ids) | Q(sucursal_gasto__isnull=True)
+        )
+        pending_bank_treasury_expenses = pending_bank_treasury_expenses.filter(
+            Q(sucursal_gasto__empresa_id__in=empresa_ids) | Q(sucursal_gasto__isnull=True)
+        )
+    treasury_unmapped_expenses_total = (
+        (pending_central_treasury_expenses.aggregate(total=Sum("monto"))["total"] or Decimal("0.00"))
+        + (pending_bank_treasury_expenses.aggregate(total=Sum("monto"))["total"] or Decimal("0.00"))
+    )
+    treasury_unmapped_expenses_count = pending_central_treasury_expenses.count() + pending_bank_treasury_expenses.count()
+
     period_payables = CuentaPorPagar.objects.exclude(
         estado=CuentaPorPagar.Estado.ANULADA
     ).filter(
@@ -1231,7 +1298,12 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
             "name": row["categoria__rubro_operativo__nombre"] or "Rubro",
         }
 
-    rubro_ids = set(sales_by_rubro.keys()) | set(cash_expense_by_rubro.keys()) | set(debt_by_rubro.keys())
+    rubro_ids = (
+        set(sales_by_rubro.keys())
+        | set(cash_expense_by_rubro.keys())
+        | set(treasury_expense_by_rubro.keys())
+        | set(debt_by_rubro.keys())
+    )
     rubros = {
         rubro.pk: rubro
         for rubro in RubroOperativo.objects.filter(pk__in=rubro_ids)
@@ -1251,8 +1323,9 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
         rubro = rubros.get(rubro_id)
         debt_item = debt_by_rubro.get(rubro_id, {})
         expense_cash = cash_expense_by_rubro.get(rubro_id, Decimal("0.00"))
+        expense_treasury = treasury_expense_by_rubro.get(rubro_id, Decimal("0.00"))
         expense_debt = debt_item.get("debt_total", Decimal("0.00"))
-        total_expense = expense_cash + expense_debt
+        total_expense = expense_cash + expense_treasury + expense_debt
         sales_total_rubro = sales_by_rubro.get(rubro_id, Decimal("0.00"))
         expense_ratio = (
             ((total_expense * Decimal("100.00")) / sales_total).quantize(Decimal("0.01"))
@@ -1294,6 +1367,7 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
                 "rubro_nombre": rubro.nombre if rubro is not None else "Sin rubro",
                 "sales_total": sales_total_rubro,
                 "cash_expense_total": expense_cash,
+                "treasury_expense_total": expense_treasury,
                 "debt_total": expense_debt,
                 "debt_pending": debt_item.get("debt_pending", Decimal("0.00")),
                 "payables_count": debt_item.get("count", 0),
@@ -1310,7 +1384,7 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
         )
     items.sort(key=lambda item: (-item["total_expense"], item["rubro_nombre"].lower()))
 
-    economic_result = sales_total - cash_expense_total - debt_period_total
+    economic_result = sales_total - cash_expense_total - treasury_expense_total - debt_period_total
     margin_pct = (
         ((economic_result * Decimal("100.00")) / sales_total).quantize(Decimal("0.01"))
         if sales_total > 0
@@ -1338,6 +1412,7 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
         "sucursal": sucursal,
         "sales_total": sales_total,
         "cash_expense_total": cash_expense_total,
+        "treasury_expense_total": treasury_expense_total,
         "debt_period_total": debt_period_total,
         "debt_pending_total": debt_pending_total,
         "economic_result": economic_result,
@@ -1355,6 +1430,8 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
         "unmapped_payables_total": unmapped_payables_total,
         "unmapped_payables_pending": unmapped_payables_pending,
         "unmapped_payables_count": unmapped_payables_count,
+        "treasury_unmapped_expenses_total": treasury_unmapped_expenses_total,
+        "treasury_unmapped_expenses_count": treasury_unmapped_expenses_count,
     }
 
 
@@ -1432,22 +1509,24 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     green_payables = pending_payables.filter(fecha_vencimiento__gte=yellow_threshold)
     all_pending_payables = pending_payables.select_related("proveedor", "categoria", "categoria__rubro_operativo")
 
+    accreditation_empresa_ids = empresa_ids
+    if not accreditation_empresa_ids and sucursal is not None and sucursal.empresa_id:
+        accreditation_empresa_ids = [sucursal.empresa_id]
+
     digital_sales = MovimientoCaja.objects.filter(
         caja__fecha_operativa__gte=date_from,
         caja__fecha_operativa__lte=date_to,
         tipo=MovimientoCaja.Tipo.VENTA_TARJETA,
     )
-    if sucursal is not None:
-        digital_sales = digital_sales.filter(caja__sucursal=sucursal)
-    elif empresa_ids:
-        digital_sales = digital_sales.filter(caja__sucursal__empresa_id__in=empresa_ids)
+    if accreditation_empresa_ids:
+        digital_sales = digital_sales.filter(caja__sucursal__empresa_id__in=accreditation_empresa_ids)
     digital_sales_total = digital_sales.aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
 
     accreditations = AcreditacionTarjeta.objects.filter(_accreditation_scope_query(date_from=date_from, date_to=date_to))
-    if sucursal is not None:
-        accreditations = accreditations.filter(movimiento_bancario__cuenta_bancaria__sucursal=sucursal)
-    elif empresa_ids:
-        accreditations = accreditations.filter(movimiento_bancario__cuenta_bancaria__sucursal__empresa_id__in=empresa_ids)
+    if accreditation_empresa_ids:
+        accreditations = accreditations.filter(
+            movimiento_bancario__cuenta_bancaria__sucursal__empresa_id__in=accreditation_empresa_ids
+        )
 
     accredited_net = accreditations.aggregate(total=Sum("movimiento_bancario__monto"))["total"] or Decimal("0.00")
     accreditation_discounts = (
@@ -1485,6 +1564,17 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
         sucursal=sucursal,
         empresa_ids=empresa_ids,
     )
+    central_cash_period_movements = scope_central_cash_movements(
+        MovimientoCajaCentral.objects.filter(fecha__gte=date_from, fecha__lte=date_to),
+        sucursal=sucursal,
+        empresa_ids=empresa_ids,
+    )
+    central_cash_period_totals = central_cash_period_movements.aggregate(
+        ingresos=Sum("monto", filter=Q(tipo__in=CENTRAL_CASH_IN_TYPES)),
+        egresos=Sum("monto", filter=Q(tipo__in=CENTRAL_CASH_OUT_TYPES)),
+    )
+    central_cash_income_period = central_cash_period_totals["ingresos"] or Decimal("0.00")
+    central_cash_expense_period = central_cash_period_totals["egresos"] or Decimal("0.00")
 
     return {
         "date_from": date_from,
@@ -1497,6 +1587,9 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
         "bank_credits": bank_credits,
         "bank_debits": bank_debits,
         "bank_net": bank_credits - bank_debits,
+        "central_cash_income_period": central_cash_income_period,
+        "central_cash_expense_period": central_cash_expense_period,
+        "central_cash_net_period": central_cash_income_period - central_cash_expense_period,
         "bank_balances": bank_balances,
         "total_bank_balance": total_bank_balance,
         "central_cash_total": central_cash_total,

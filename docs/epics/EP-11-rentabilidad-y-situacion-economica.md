@@ -116,19 +116,20 @@ Criterios:
 - la migracion funcional no rompe consultas existentes
 - la compatibilidad legacy queda explicita mientras existan categorias historicas sin migrar
 
-### [ ] US-11.7 Egresos de tesoreria en situacion economica por sucursal
+### [x] US-11.7 Egresos de tesoreria en situacion economica por sucursal
 
 Como direccion
 Quiero que la situacion economica tome los egresos administrativos pagados desde tesoreria
 Para ver el gasto real por sucursal, rubro y periodo aunque el dinero haya salido de caja fuerte central
 
 Criterios:
-- los egresos de tesoreria con rubro, sucursal y periodo se incorporan al gasto real de la situacion economica
-- el desglose de cada sucursal muestra gastos por rubro pagados desde tesoreria cuando corresponden al periodo filtrado
-- los egresos operativos de caja y los egresos de tesoreria no se duplican si representan hechos distintos
-- los egresos sin sucursal, rubro o periodo quedan visibles como pendientes de imputacion y no se ocultan silenciosamente
-- el dashboard muestra una explicacion o detalle que permita distinguir gastos de caja operativa, deuda del periodo y egresos de tesoreria
-- el calculo respeta empresa activa, sucursal filtrada y rango de periodo seleccionado
+- [x] los egresos de tesoreria con rubro, sucursal y periodo se incorporan al gasto real de la situacion economica
+- [x] el desglose de cada sucursal muestra gastos por rubro pagados desde tesoreria cuando corresponden al periodo filtrado
+- [x] si el consolidado general toma un egreso de caja fuerte central, la vista economica particular de la sucursal imputada tambien debe tomarlo para el mismo periodo
+- [x] los egresos operativos de caja y los egresos de tesoreria no se duplican si representan hechos distintos
+- [x] los egresos sin sucursal, rubro o periodo quedan visibles como pendientes de imputacion y no se ocultan silenciosamente
+- [x] el dashboard muestra una explicacion o detalle que permita distinguir gastos de caja operativa, deuda del periodo y egresos de tesoreria
+- [x] el calculo respeta empresa activa, sucursal filtrada y rango de periodo seleccionado
 
 ### [ ] US-11.8 Reimputacion auditada de gastos historicos por sucursal y rubro
 

@@ -105,6 +105,11 @@
         <small class="muted">Periodo seleccionado</small>
       </div>
       <div class="summary">
+        <span class="muted">Egresos caja fuerte</span>
+        <strong>{{ snapshot.central_cash_expense_period|money }}</strong>
+        <small class="muted">Tesoreria central imputada al alcance</small>
+      </div>
+      <div class="summary">
         <span class="muted">Banco creditos</span>
         <strong>{{ snapshot.bank_credits|money }}</strong>
         <small class="muted">Ingresos bancarios del periodo</small>
@@ -140,6 +145,11 @@
         <span class="muted">Gasto caja</span>
         <strong>{{ economic_snapshot.cash_expense_total|money }}</strong>
         <small class="muted">Egresos operativos cargados por rubro</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Gasto tesoreria</span>
+        <strong>{{ economic_snapshot.treasury_expense_total|money }}</strong>
+        <small class="muted">Egresos administrativos imputados por rubro y sucursal</small>
       </div>
       <div class="summary">
         <span class="muted">Deuda del periodo</span>
@@ -190,13 +200,20 @@
         Se mantiene visible por compatibilidad legacy, pero queda fuera de la lectura economica consolidada y de la comparacion contra objetivo por rubro.
       </p>
     {% endif %}
+    {% if economic_snapshot.treasury_unmapped_expenses_count %}
+      <p class="muted mt-16">
+        Hay {{ economic_snapshot.treasury_unmapped_expenses_count }} egreso{{ economic_snapshot.treasury_unmapped_expenses_count|pluralize }}
+        de tesoreria pendiente{{ economic_snapshot.treasury_unmapped_expenses_count|pluralize }} de imputacion por {{ economic_snapshot.treasury_unmapped_expenses_total|money }}.
+        No se suma al gasto economico por rubro hasta tener sucursal, rubro y periodo.
+      </p>
+    {% endif %}
     <div class="list mt-16">
       {% for item in economic_snapshot.items %}
         <div class="list-item">
           <div class="row">
             <div>
               <strong>{{ item.rubro_nombre }}</strong>
-              <div class="muted mt-16">Ventas {{ item.sales_total|money }} - Gasto caja {{ item.cash_expense_total|money }} - Deuda {{ item.debt_total|money }}</div>
+              <div class="muted mt-16">Ventas {{ item.sales_total|money }} - Gasto caja {{ item.cash_expense_total|money }} - Gasto tesoreria {{ item.treasury_expense_total|money }} - Deuda {{ item.debt_total|money }}</div>
             </div>
             {% if item.has_objective %}
               <span class="badge {% if item.deviation_amount <= 0 %}badge-success{% else %}badge-danger{% endif %}">{{ item.deviation_amount|money }}</span>
@@ -247,7 +264,7 @@
           <small class="muted">Neto mas descuentos informados</small>
         </div>
       </div>
-      <p class="muted mt-16">Pendiente de acreditacion = creditos de acreditacion bancaria cargados en el periodo menos ventas tarjeta. Negativo indica que hay ventas pendientes de acreditar por el banco. Positivo indica que el banco acredito mas de lo vendido.</p>
+      <p class="muted mt-16">Pendiente de acreditacion = ventas tarjeta del periodo menos acreditado bruto. Las acreditaciones se leen como fondo comun consolidado; el filtro de sucursal no prorratea ese ingreso. Negativo indica que el banco acredito mas de lo vendido.</p>
     </div>
 
     <div class="card">

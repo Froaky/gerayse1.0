@@ -16,6 +16,7 @@ Unificar la lectura financiera diaria entre cajas, tesoreria y bancos para tener
 - alerta de acreditaciones pendientes
 - lectura consolidada de acreditaciones sin reparto por sucursal
 - vista total de disponibilidades
+- egresos de caja fuerte central imputados en vistas particulares por sucursal
 - alertas de vencimientos
 
 ## No incluye todavia
@@ -35,6 +36,7 @@ Unificar la lectura financiera diaria entre cajas, tesoreria y bancos para tener
 - la alerta de acreditacion pendiente debe incluir aclaracion sobre costos de servicio e impuestos cuando corresponda
 - toda salida bancaria debe quedar clasificada por tipo y, si aplica, por rubro y proveedor
 - los egresos financieros o administrativos deben poder imputarse a sucursal cuando el gasto corresponda a una unidad operativa
+- un egreso de caja fuerte central imputado a una sucursal debe afectar la vista financiera particular de esa sucursal en el periodo correspondiente, aunque el dinero haya salido de tesoreria central
 - los rubros cargados en el maestro operativo deben estar disponibles para clasificar movimientos bancarios cuando el usuario de tesoreria deba elegir un rubro
 - en movimientos bancarios la UI debe hablar de rubro, no de categoria, salvo que se este administrando compatibilidad historica
 - un movimiento bancario registrado correctamente debe aparecer luego en la lista o filtro correspondiente a la misma cuenta, sucursal, empresa activa o seleccion usada por el usuario
@@ -170,19 +172,34 @@ Criterios:
 - la accion secundaria de volver o cancelar queda diferenciada de la accion principal
 - la evidencia visual cubre pantallas desktop y mobile para evitar botones sin etiqueta
 
-### [ ] US-10.11 Acreditaciones consolidadas sin reparto por sucursal
+### [x] US-10.11 Acreditaciones consolidadas sin reparto por sucursal
 
 Como administracion
 Quiero que las acreditaciones bancarias se lean como ingreso consolidado
 Para no dividir por sucursal dinero que entra a una disponibilidad comun
 
 Criterios:
-- las acreditaciones registradas aparecen en disponibilidad/banco como ingreso consolidado de la empresa o cuenta correspondiente
-- un filtro por sucursal no reparte ni prorratea el importe acreditado entre locales
-- si una venta digital de origen tenia sucursal, ese dato queda disponible como referencia operativa pero no cambia la lectura financiera del dinero acreditado
-- las alertas de acreditaciones pendientes siguen mostrando el pendiente general del periodo
-- la pantalla diferencia esta regla de los egresos, que si pueden imputarse y consultarse por sucursal cuando el gasto corresponde a una unidad operativa
-- los tests deben cubrir que una acreditacion no desaparece ni cambia de monto por seleccionar una sucursal
+- [x] las acreditaciones registradas aparecen en disponibilidad/banco como ingreso consolidado de la empresa o cuenta correspondiente
+- [x] un filtro por sucursal no reparte ni prorratea el importe acreditado entre locales
+- [x] si una venta digital de origen tenia sucursal, ese dato queda disponible como referencia operativa pero no cambia la lectura financiera del dinero acreditado
+- [x] las alertas de acreditaciones pendientes siguen mostrando el pendiente general del periodo
+- [x] la pantalla diferencia esta regla de los egresos, que si pueden imputarse y consultarse por sucursal cuando el gasto corresponde a una unidad operativa
+- [x] los tests deben cubrir que una acreditacion no desaparece ni cambia de monto por seleccionar una sucursal
+
+### [x] US-10.12 Egresos de caja fuerte central en vista financiera por sucursal
+
+Como administracion
+Quiero que la situacion financiera particular de una sucursal tome los egresos de caja fuerte central imputados a esa sucursal
+Para leer el resultado financiero real del local, no solo el consolidado general
+
+Criterios:
+- [x] un egreso administrativo pagado desde caja fuerte central con sucursal y periodo aparece en la vista financiera de esa sucursal
+- [x] el mismo egreso sigue reduciendo la caja fuerte central general, sin duplicarse como egreso de caja operativa
+- [x] el consolidado general y la vista particular por sucursal muestran importes consistentes para el mismo periodo
+- [x] el detalle del egreso permite ver origen `caja fuerte central`, sucursal imputada, rubro, concepto, importe y fecha
+- [x] si el egreso no tiene sucursal o periodo, queda visible como pendiente de imputacion y no entra silenciosamente en una sucursal
+- [x] el filtro por empresa activa no mezcla egresos de sucursales fuera del contexto seleccionado
+- [x] los tests deben cubrir que un egreso central imputado a una sucursal afecta el total particular de esa sucursal
 
 ## Dependencias
 
@@ -202,6 +219,7 @@ Criterios:
 7. corregir filtros o contexto para que una transferencia recien registrada sea visible en la seleccion esperada
 8. validar que el boton principal del formulario siempre tenga etiqueta visible
 9. ajustar lectura de acreditaciones para que sea consolidada y no se reparta por sucursal
+10. incorporar egresos de caja fuerte central imputados a vistas financieras particulares por sucursal
 
 ## Criterio de cierre
 
@@ -210,3 +228,4 @@ Criterios:
 - la situacion financiera consolidada sale del sistema con filtros por periodo y sucursal
 - tesoreria puede cargar una transferencia bancaria con rubro operativo, verla inmediatamente en el contexto correcto y entender la accion principal del formulario sin botones vacios
 - las acreditaciones se leen como ingreso comun y los egresos mantienen imputacion por sucursal cuando corresponda
+- el estado financiero particular de una sucursal incluye egresos de caja fuerte central imputados a esa sucursal y periodo

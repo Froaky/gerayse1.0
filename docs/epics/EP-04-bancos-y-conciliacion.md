@@ -12,6 +12,7 @@ Llevar al sistema lo que hoy se controla en el lado `MAPOGO - BANCO` y en los ci
 - retenciones y descuentos
 - relacion pago tesoreria vs banco
 - conciliacion simple de ventas y acreditaciones
+- carga inicial auditada de saldo bancario por cuenta
 
 ## No incluye todavia
 
@@ -27,6 +28,7 @@ Llevar al sistema lo que hoy se controla en el lado `MAPOGO - BANCO` y en los ci
 - toda acreditacion debe poder vincularse al menos a un canal u operador
 - los descuentos bancarios deben quedar separados del neto acreditado
 - un pago de tesoreria con impacto bancario debe tener reflejo bancario trazable
+- el saldo inicial bancario se carga por cuenta bancaria y debe quedar auditado; no reemplaza movimientos reales posteriores
 - hasta nueva decision de negocio, la conciliacion bancaria se opera de forma manual asistida por el sistema y no por matching automatico
 
 ## User Stories
@@ -115,6 +117,21 @@ Para controlar acreditaciones, debitos y diferencias desde una sola lectura
 - [x] Descuentos y retenciones
 - [x] Diferencias de conciliacion
 
+### [ ] US-4.8 Saldo inicial bancario por cuenta
+
+Como tesoreria
+Quiero cargar o ajustar el saldo inicial de una cuenta bancaria desde la parte de banco
+Para empezar la lectura bancaria desde un saldo real sin inventar movimientos manuales
+
+Criterios:
+- cada cuenta bancaria permite registrar un saldo inicial con fecha de referencia
+- la carga exige cuenta bancaria, fecha, importe, usuario y motivo
+- el saldo inicial queda visible en el libro o dashboard bancario como punto de partida del periodo
+- el saldo inicial no se mezcla con acreditaciones, transferencias ni egresos reales
+- si se corrige el saldo inicial, queda auditado valor anterior, valor nuevo, usuario, fecha y motivo
+- el sistema evita que existan saldos iniciales ambiguos para la misma cuenta y fecha de referencia
+- los totales bancarios posteriores se calculan desde saldo inicial mas movimientos reales del periodo
+
 ## Dependencias
 
 - EP-03 cerrada
@@ -128,9 +145,11 @@ Para controlar acreditaciones, debitos y diferencias desde una sola lectura
 4. vincular pagos de tesoreria con debitos bancarios
 5. resolver conciliacion simple de venta, lote y banco
 6. cerrar dashboard bancario del periodo
+7. agregar carga inicial auditada de saldo bancario por cuenta
 
 ## Criterio de cierre
 
 - la parte bancaria del Excel de disponibilidades debe reconstruirse sin carga paralela
 - una acreditacion y sus descuentos quedan explicados desde el sistema
 - ya se puede detectar diferencia entre venta, lote y acreditacion
+- tesoreria puede iniciar una cuenta bancaria con saldo real auditado sin cargar un movimiento ficticio

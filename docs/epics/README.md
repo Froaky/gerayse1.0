@@ -12,14 +12,14 @@ Estado actual:
 - `EP-01`: caja operativa, movimientos y cierres. Implementada.
 - `EP-02`: alertas y semaforos operativos. Implementada.
 - `EP-03`: tesoreria central base. Implementada.
-- `EP-04`: bancos y conciliacion. Implementada.
+- `EP-04`: bancos y conciliacion. Reabierta: implementada hasta US-4.7; pendiente saldo inicial bancario por cuenta (`US-4.8`).
 - `EP-05`: flujo de disponibilidades. Implementada.
 - `EP-06`: control de gestion y alertas. Implementada.
 - `EP-07`: impuestos, planes y autorizaciones. Implementada.
 - `EP-08`: ajustes operativos de caja y sucursales. Reabierta: implementada hasta US-8.13; pendiente correccion auditada de cargas de caja y control de cajas cargadas por fecha/turno/sucursal (`US-8.14`, `US-8.15`).
 - `EP-09`: usuarios operativos y datos minimos. Reabierta: gestion operativa de usuarios, roles y permisos por modulo implementados; pendiente granularidad por sucursal/empresa/lugar (`US-9.11`).
-- `EP-10`: situacion financiera y alertas consolidadas. Reabierta: implementada hasta US-10.10; pendiente lectura consolidada de acreditaciones sin reparto por sucursal (`US-10.11`).
-- `EP-11`: rentabilidad y situacion economica. Reabierta: implementada hasta US-11.6; pendiente incorporar egresos de tesoreria por sucursal/rubro/periodo, reimputar gastos historicos, excluir ventas especiales de la base general y desglosar totales por rubro (`US-11.7` a `US-11.10`).
+- `EP-10`: situacion financiera y alertas consolidadas. Implementada.
+- `EP-11`: rentabilidad y situacion economica. Reabierta: implementada hasta US-11.7; pendiente reimputar gastos historicos, excluir ventas especiales de la base general y desglosar totales por rubro (`US-11.8` a `US-11.10`).
 - `EP-12`: empresas, contexto activo y navegacion. Implementada. Cerrada 2026-04-28.
 
 Especialista sugerido por epica:
