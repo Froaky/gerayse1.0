@@ -214,6 +214,11 @@
             <div>
               <strong>{{ item.rubro_nombre }}</strong>
               <div class="muted mt-16">Ventas {{ item.sales_total|money }} - Gasto caja {{ item.cash_expense_total|money }} - Gasto tesoreria {{ item.treasury_expense_total|money }} - Deuda {{ item.debt_total|money }}</div>
+              {% if item.rubro %}
+                <div class="mt-16">
+                  <a class="button-secondary" href="{% url 'treasury:economic_rubro_detail' item.rubro.pk %}?fecha_desde={{ economic_snapshot.date_from|date:'Y-m-d' }}&fecha_hasta={{ economic_snapshot.date_to|date:'Y-m-d' }}{% if selected_sucursal %}&sucursal={{ selected_sucursal.pk }}{% endif %}">Ver composicion</a>
+                </div>
+              {% endif %}
             </div>
             {% if item.has_objective %}
               <span class="badge {% if item.deviation_amount <= 0 %}badge-success{% else %}badge-danger{% endif %}">{{ item.deviation_amount|money }}</span>

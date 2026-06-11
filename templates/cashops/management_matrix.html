@@ -45,6 +45,12 @@
         <span class="muted">Ingresos</span>
         <strong>${{ matrix.total_income }}</strong>
       </div>
+      {% if matrix.excluded_channels %}
+        <div class="summary">
+          <span class="muted">Facturacion separada</span>
+          <strong>${{ matrix.total_excluded_income }}</strong>
+        </div>
+      {% endif %}
       <div class="summary">
         <span class="muted">Egresos</span>
         <strong>${{ matrix.total_expense }}</strong>
@@ -58,6 +64,17 @@
         <strong>{{ matrix.days|length }}</strong>
       </div>
     </div>
+    {% if matrix.excluded_channels %}
+      <div class="summary-grid" style="margin-top:12px;">
+        {% for channel in matrix.excluded_channels %}
+          <div class="summary">
+            <span class="muted">{{ channel.display_label }}</span>
+            <strong>${{ channel.total }}</strong>
+            <small class="muted">no suma en ingresos de sucursal</small>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
   </section>
 
   <section class="card" style="margin-top:16px; overflow:auto;">

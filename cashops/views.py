@@ -224,7 +224,7 @@ def _default_month_range():
     return first_day, next_month - timezone.timedelta(days=1)
 
 
-def _parse_management_matrix_filters(request):
+def _parse_management_matrix_filters(request, empresa_ids=None):
     default_from, default_to = _default_month_range()
     date_from = parse_date(request.GET.get("fecha_desde") or "") or default_from
     date_to = parse_date(request.GET.get("fecha_hasta") or "") or default_to
@@ -235,7 +235,10 @@ def _parse_management_matrix_filters(request):
     sucursal_id = request.GET.get("sucursal")
     if sucursal_id:
         try:
-            sucursal = Sucursal.objects.get(pk=int(sucursal_id), activa=True)
+            sucursal_qs = Sucursal.objects.filter(activa=True)
+            if empresa_ids:
+                sucursal_qs = sucursal_qs.filter(empresa_id__in=empresa_ids)
+            sucursal = sucursal_qs.get(pk=int(sucursal_id))
         except (Sucursal.DoesNotExist, TypeError, ValueError):
             sucursal = None
     return date_from, date_to, sucursal
@@ -410,7 +413,7 @@ def alert_panel(request):
 def management_matrix(request):
     _require_config_read(request)
     empresa_ids = _get_empresa_ids(request)
-    date_from, date_to, sucursal = _parse_management_matrix_filters(request)
+    date_from, date_to, sucursal = _parse_management_matrix_filters(request, empresa_ids=empresa_ids)
     matrix = build_management_daily_matrix(
         date_from=date_from,
         date_to=date_to,
@@ -436,8 +439,14 @@ def management_matrix(request):
 @login_required
 def management_matrix_export(request):
     _require_config_read(request)
-    date_from, date_to, sucursal = _parse_management_matrix_filters(request)
-    matrix = build_management_daily_matrix(date_from=date_from, date_to=date_to, sucursal=sucursal)
+    empresa_ids = _get_empresa_ids(request)
+    date_from, date_to, sucursal = _parse_management_matrix_filters(request, empresa_ids=empresa_ids)
+    matrix = build_management_daily_matrix(
+        date_from=date_from,
+        date_to=date_to,
+        sucursal=sucursal,
+        empresa_ids=empresa_ids if empresa_ids else None,
+    )
     filename_scope = sucursal.codigo if sucursal else "global"
     response = HttpResponse(content_type="text/csv")
     response["Content-Disposition"] = (
@@ -452,14 +461,14 @@ def management_matrix_export(request):
         ["Fecha"]
         + [channel["label"] for channel in matrix["channels"]]
         + [f"Egreso {rubro['nombre']}" for rubro in matrix["rubros"]]
-        + ["Ingresos", "Egresos", "Resultado"]
+        + ["Facturacion separada", "Ingresos", "Egresos", "Resultado"]
     )
     for day in matrix["days"]:
         writer.writerow(
             [day["date"].isoformat()]
             + [day["income_by_channel"][channel["key"]] for channel in matrix["channels"]]
             + [day["expense_by_rubro"][rubro["id"]] for rubro in matrix["rubros"]]
-            + [day["total_income"], day["total_expense"], day["net_result"]]
+            + [day["total_excluded_income"], day["total_income"], day["total_expense"], day["net_result"]]
         )
     writer.writerow([])
     writer.writerow(["Detalle trazable"])
@@ -471,7 +480,7 @@ def management_matrix_export(request):
                 movement.caja.fecha_operativa.isoformat(),
                 movement.caja.sucursal.nombre,
                 movement.caja_id,
-                movement.get_tipo_display(),
+                movement.get_tipo_display() if hasattr(movement, "get_tipo_display") else movement.tipo,
                 movement.get_sentido_display(),
                 movement.rubro_operativo.nombre if movement.rubro_operativo_id else "",
                 movement.monto,

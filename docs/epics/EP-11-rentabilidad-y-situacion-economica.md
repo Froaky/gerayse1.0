@@ -160,7 +160,7 @@ Criterios:
 - la regla de exclusion no afecta el efectivo fisico, las acreditaciones ni la trazabilidad de caja
 - la configuracion evita excluir ventas por error sin permiso administrativo
 
-### [ ] US-11.10 Desglose trazable de totales por rubro
+### [x] US-11.10 Desglose trazable de totales por rubro
 
 Como administracion
 Quiero abrir el detalle de un rubro de la situacion economica

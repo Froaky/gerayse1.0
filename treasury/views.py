@@ -67,6 +67,7 @@ from .services import (
     annul_payment,
     build_bank_reconciliation_snapshot,
     build_economic_period_snapshot,
+    build_economic_rubro_detail,
     build_disponibilidades_snapshot,
     build_financial_period_snapshot,
     build_special_commitments_snapshot,
@@ -355,6 +356,7 @@ def dashboard(request):
         request.GET or None,
         initial={"fecha_desde": first_day_of_month, "fecha_hasta": today},
     )
+    filter_form.fields["sucursal"].queryset = _filter_sucursal_qs(request, Sucursal.objects.all())
     if filter_form.is_valid():
         sucursal = filter_form.cleaned_data.get("sucursal")
         date_from = filter_form.cleaned_data.get("fecha_desde") or first_day_of_month
@@ -425,6 +427,62 @@ def dashboard(request):
             "recent_batches": snapshot["recent_batches"],
             "recent_movements": snapshot["recent_movements"],
             "money": _money,
+        },
+    )
+
+
+@login_required
+def economic_rubro_detail(request, rubro_id):
+    _require_treasury_admin(request)
+    from cashops.models import RubroOperativo, Sucursal
+
+    today = timezone.localdate()
+    first_day_of_month = today.replace(day=1)
+    get_object_or_404(RubroOperativo, pk=rubro_id)
+    filter_form = TreasuryDashboardFilterForm(
+        request.GET or None,
+        initial={"fecha_desde": first_day_of_month, "fecha_hasta": today},
+    )
+    filter_form.fields["sucursal"].queryset = _filter_sucursal_qs(request, Sucursal.objects.all())
+    if filter_form.is_valid():
+        sucursal = filter_form.cleaned_data.get("sucursal")
+        date_from = filter_form.cleaned_data.get("fecha_desde") or first_day_of_month
+        date_to = filter_form.cleaned_data.get("fecha_hasta") or today
+    else:
+        sucursal = None
+        date_from = first_day_of_month
+        date_to = today
+
+    empresa_ids = _get_empresa_ids(request) or None
+    detail = build_economic_rubro_detail(
+        rubro_id=rubro_id,
+        date_from=date_from,
+        date_to=date_to,
+        sucursal=sucursal,
+        empresa_ids=empresa_ids,
+    )
+    summary = build_economic_period_snapshot(
+        date_from=date_from,
+        date_to=date_to,
+        sucursal=sucursal,
+        empresa_ids=empresa_ids,
+    )
+    summary_item = next(
+        (item for item in summary["items"] if item["rubro"] and item["rubro"].pk == detail["rubro"].pk),
+        None,
+    )
+    back_url = f"{reverse('treasury:dashboard')}?fecha_desde={date_from.isoformat()}&fecha_hasta={date_to.isoformat()}"
+    if sucursal is not None:
+        back_url += f"&sucursal={sucursal.pk}"
+
+    return render(
+        request,
+        "treasury/economic_rubro_detail.html",
+        {
+            "detail": detail,
+            "summary_item": summary_item,
+            "filter_form": filter_form,
+            "back_url": back_url,
         },
     )
 

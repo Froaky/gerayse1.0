@@ -1,0 +1,101 @@
+{% extends "treasury/layout.html" %}
+{% load treasury_tags %}
+{% block title %}Composicion de {{ detail.rubro.nombre }} | Tesoreria | Gerayse{% endblock %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Composicion de {{ detail.rubro.nombre }}</h1>
+        <p class="muted">
+          Detalle de egresos de caja y deudas imputadas al periodo economico
+          {{ detail.period_from|date:"m/Y" }} a {{ detail.period_to|date:"m/Y" }}.
+        </p>
+      </div>
+      <a class="button-secondary" href="{{ back_url }}">Volver al dashboard</a>
+    </div>
+
+    <form method="get" class="stack" style="margin-top:16px;">
+      <div class="summary-grid">
+        {% for field in filter_form.visible_fields %}
+          <div class="field">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+          </div>
+        {% endfor %}
+      </div>
+      <div class="list-actions">
+        <button class="button" type="submit">Actualizar detalle</button>
+        <a class="button-secondary" href="{% url 'treasury:economic_rubro_detail' detail.rubro.pk %}">Limpiar</a>
+      </div>
+    </form>
+  </section>
+
+  <section class="card" style="margin-top:16px;">
+    <div class="summary-grid">
+      <div class="summary">
+        <span class="muted">Total explicado</span>
+        <strong>{{ detail.total|money }}</strong>
+        <small class="muted">{{ detail.items_count }} registro{{ detail.items_count|pluralize }}</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Egresos de caja</span>
+        <strong>{{ detail.cash_expense_total|money }}</strong>
+        <small class="muted">Movimientos operativos registrados</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Gasto tesoreria</span>
+        <strong>{{ detail.treasury_expense_total|money }}</strong>
+        <small class="muted">Egresos administrativos imputados</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Deuda imputada</span>
+        <strong>{{ detail.debt_total|money }}</strong>
+        <small class="muted">Total de obligaciones del periodo</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Pendiente de deuda</span>
+        <strong>{{ detail.debt_pending_total|money }}</strong>
+        <small class="muted">Parte aun no cancelada</small>
+      </div>
+      {% if summary_item %}
+        <div class="summary">
+          <span class="muted">Total del resumen</span>
+          <strong>{{ summary_item.total_expense|money }}</strong>
+          <small class="muted">Debe coincidir con el total explicado</small>
+        </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="card" style="margin-top:16px;">
+    <div class="row">
+      <div>
+        <h2>Registros incluidos</h2>
+        <p class="muted">Cada fila forma parte del total mostrado para este rubro.</p>
+      </div>
+      <span class="badge">{{ detail.items_count }}</span>
+    </div>
+    <div class="list" style="margin-top:16px;">
+      {% for item in detail.items %}
+        <div class="list-item">
+          <div class="row">
+            <div>
+              <strong>{{ item.reference }}</strong>
+              <div class="muted mt-16">
+                {{ item.date|date:"d/m/Y" }} - {{ item.origin }}
+                - {% if item.sucursal %}{{ item.sucursal.nombre }}{% else %}Sin sucursal{% endif %}
+              </div>
+            </div>
+            <span class="badge">{{ item.status }}</span>
+          </div>
+          <div class="muted mt-16">
+            Importe {{ item.amount|money }}
+            {% if item.pending_amount is not None %} - Pendiente {{ item.pending_amount|money }}{% endif %}
+          </div>
+        </div>
+      {% empty %}
+        <p class="muted">No hay egresos ni deudas imputadas a este rubro para el periodo seleccionado.</p>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

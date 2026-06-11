@@ -14,6 +14,7 @@ from .forms import CajaAperturaForm, VentaGeneralForm
 from .models import (
     AlertaOperativa,
     Caja,
+    CanalIngreso,
     CierreCaja,
     Empresa,
     LimiteRubroOperativo,
@@ -544,6 +545,66 @@ class CashopsServiceTests(CashopsTestCase):
         self.assertEqual(summary["saldo_real_cajas_periodo"], Decimal("620.00"))
         self.assertEqual(summary["cajas_periodo_count"], 2)
 
+    def test_excluded_income_channel_is_reported_separately_from_branch_totals(self):
+        CanalIngreso.objects.update_or_create(
+            codigo="PANIFICACION",
+            defaults={
+                "nombre": "PANIFICACION",
+                "impacta_saldo_caja": False,
+                "excluir_de_totales": True,
+                "activo": True,
+                "orden": 10,
+            },
+        )
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("0.00"),
+            actor=self.operator,
+        )
+        register_general_sale(
+            caja=caja,
+            monto=Decimal("100.00"),
+            tipo_venta=MovimientoCaja.Tipo.INGRESO_EFECTIVO,
+            rubro=self.rubro_insumos,
+            observacion="Venta operativa",
+            actor=self.operator,
+        )
+        register_general_sale(
+            caja=caja,
+            monto=Decimal("300.00"),
+            tipo_venta="PANIFICACION",
+            rubro=self.rubro_insumos,
+            observacion="Facturacion panificacion",
+            actor=self.operator,
+        )
+        register_expense(
+            caja=caja,
+            monto=Decimal("40.00"),
+            rubro_operativo=self.rubro_viaticos,
+            categoria="Viatico",
+            observacion="Egreso operativo",
+            actor=self.operator,
+        )
+
+        snapshot = build_operational_control_snapshot(
+            build_branch_control_scope(fecha_operativa=self.fecha_op, sucursal=self.branch_a)
+        )
+        summary = build_operational_period_summary(
+            date_from=self.fecha_op,
+            date_to=self.fecha_op,
+            sucursal=self.branch_a,
+        )
+
+        for report in (snapshot, summary):
+            self.assertEqual(report["total_ingresos"], Decimal("100.00"))
+            self.assertEqual(report["total_ingresos_excluidos"], Decimal("300.00"))
+            self.assertEqual(report["saldo_neto"], Decimal("60.00"))
+            self.assertEqual(report["ventas_excluidas_por_canal"][0]["display_label"], "Ventas facturacion de PANIFICACION")
+            self.assertEqual(report["ventas_excluidas_por_canal"][0]["total"], Decimal("300.00"))
+
     def test_period_summary_open_cash_balance_can_be_negative(self):
         caja = open_box(
             user=self.operator,
@@ -668,6 +729,57 @@ class CashopsServiceTests(CashopsTestCase):
         self.assertEqual(matrix["total_income"], Decimal("240.00"))
         self.assertEqual(matrix["total_expense"], Decimal("50.00"))
         self.assertEqual(len(list(matrix["detail_movements"])), 4)
+
+    def test_management_daily_matrix_excludes_panificacion_from_income_totals(self):
+        CanalIngreso.objects.update_or_create(
+            codigo="PANIFICACION",
+            defaults={
+                "nombre": "PANIFICACION",
+                "impacta_saldo_caja": False,
+                "excluir_de_totales": True,
+                "activo": True,
+                "orden": 10,
+            },
+        )
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("0.00"),
+            actor=self.operator,
+        )
+        register_general_sale(
+            caja=caja,
+            monto=Decimal("100.00"),
+            tipo_venta=MovimientoCaja.Tipo.INGRESO_EFECTIVO,
+            rubro=self.rubro_insumos,
+            observacion="Venta operativa",
+            actor=self.operator,
+        )
+        register_general_sale(
+            caja=caja,
+            monto=Decimal("300.00"),
+            tipo_venta="PANIFICACION",
+            rubro=self.rubro_insumos,
+            observacion="Facturacion panificacion",
+            actor=self.operator,
+        )
+
+        matrix = build_management_daily_matrix(
+            date_from=self.fecha_op,
+            date_to=self.fecha_op,
+            sucursal=self.branch_a,
+        )
+
+        day = matrix["days"][0]
+        self.assertEqual(day["income_by_channel"]["PANIFICACION"], Decimal("300.00"))
+        self.assertEqual(day["total_income"], Decimal("100.00"))
+        self.assertEqual(day["total_excluded_income"], Decimal("300.00"))
+        self.assertEqual(matrix["total_income"], Decimal("100.00"))
+        self.assertEqual(matrix["total_excluded_income"], Decimal("300.00"))
+        self.assertEqual(matrix["excluded_channels"][0]["display_label"], "Ventas facturacion de PANIFICACION")
+        self.assertEqual(matrix["excluded_channels"][0]["total"], Decimal("300.00"))
 
     def test_operational_overview_prefers_branch_limit_and_marks_exceeded_category(self):
         LimiteRubroOperativo.objects.create(
@@ -1518,6 +1630,51 @@ class CashopsViewTests(CashopsTestCase):
         self.assertEqual(response.context["dashboard_snapshot"]["saldo_real_cajas_periodo"], Decimal("-90.00"))
         self.assertContains(response, "Resultado real de cajas")
         self.assertContains(response, "$-90,00")
+
+    def test_dashboard_shows_panificacion_as_separate_excluded_income(self):
+        CanalIngreso.objects.update_or_create(
+            codigo="PANIFICACION",
+            defaults={
+                "nombre": "PANIFICACION",
+                "impacta_saldo_caja": False,
+                "excluir_de_totales": True,
+                "activo": True,
+                "orden": 10,
+            },
+        )
+        register_general_sale(
+            caja=self.owned_box,
+            monto=Decimal("100.00"),
+            tipo_venta=MovimientoCaja.Tipo.INGRESO_EFECTIVO,
+            rubro=self.rubro_insumos,
+            observacion="Venta operativa",
+            actor=self.operator,
+        )
+        register_general_sale(
+            caja=self.owned_box,
+            monto=Decimal("300.00"),
+            tipo_venta="PANIFICACION",
+            rubro=self.rubro_insumos,
+            observacion="Facturacion panificacion",
+            actor=self.operator,
+        )
+        self.client.force_login(self.admin)
+
+        response = self.client.get(
+            reverse("cashops:dashboard"),
+            {
+                "scope": "branch",
+                "sucursal": self.branch_a.pk,
+                "fecha_desde": self.fecha_op.isoformat(),
+                "fecha_hasta": self.fecha_op.isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["dashboard_snapshot"]["total_ingresos"], Decimal("100.00"))
+        self.assertEqual(response.context["dashboard_snapshot"]["total_ingresos_excluidos"], Decimal("300.00"))
+        self.assertContains(response, "Ventas facturacion de PANIFICACION")
+        self.assertContains(response, "no suma en ingresos de sucursal")
 
     def test_management_matrix_view_and_export_are_admin_only_and_traceable(self):
         register_general_sale(

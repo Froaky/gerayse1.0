@@ -1266,6 +1266,11 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
     )
     if sucursal is not None:
         period_payables = period_payables.filter(sucursal=sucursal)
+    elif empresa_ids:
+        period_payables = period_payables.filter(
+            Q(sucursal__empresa_id__in=empresa_ids)
+            | Q(sucursal__isnull=True)
+        )
 
     mapped_period_payables = period_payables.filter(categoria__rubro_operativo__isnull=False)
     debt_period_total = mapped_period_payables.aggregate(total=Sum("importe_total"))["total"] or Decimal("0.00")
@@ -1432,6 +1437,150 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
         "unmapped_payables_count": unmapped_payables_count,
         "treasury_unmapped_expenses_total": treasury_unmapped_expenses_total,
         "treasury_unmapped_expenses_count": treasury_unmapped_expenses_count,
+    }
+
+
+def build_economic_rubro_detail(*, rubro_id: int, date_from: date, date_to: date, sucursal=None, empresa_ids=None) -> dict:
+    if date_to < date_from:
+        raise ValidationError({"fecha_hasta": "La fecha hasta no puede ser anterior a la fecha desde."})
+
+    from cashops.models import MovimientoCaja, RubroOperativo
+
+    period_from = _first_day_of_month(date_from)
+    period_to = _first_day_of_month(date_to)
+    rubro = RubroOperativo.objects.get(pk=rubro_id)
+
+    cash_expenses = MovimientoCaja.objects.filter(
+        caja__fecha_operativa__gte=date_from,
+        caja__fecha_operativa__lte=date_to,
+        tipo=MovimientoCaja.Tipo.GASTO,
+        rubro_operativo=rubro,
+    ).select_related("caja", "caja__sucursal")
+    if sucursal is not None:
+        cash_expenses = cash_expenses.filter(caja__sucursal=sucursal)
+    elif empresa_ids:
+        cash_expenses = cash_expenses.filter(caja__sucursal__empresa_id__in=empresa_ids)
+
+    central_treasury_expenses = MovimientoCajaCentral.objects.filter(
+        tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
+        periodo_pago__gte=period_from,
+        periodo_pago__lte=period_to,
+        rubro_operativo=rubro,
+        sucursal_gasto__isnull=False,
+    ).select_related("sucursal_gasto")
+    bank_treasury_expenses = MovimientoBancario.objects.filter(
+        tipo=MovimientoBancario.Tipo.DEBITO,
+        periodo_pago__gte=period_from,
+        periodo_pago__lte=period_to,
+        rubro_operativo=rubro,
+        sucursal_gasto__isnull=False,
+    ).select_related("sucursal_gasto", "cuenta_bancaria")
+    if sucursal is not None:
+        central_treasury_expenses = central_treasury_expenses.filter(sucursal_gasto=sucursal)
+        bank_treasury_expenses = bank_treasury_expenses.filter(sucursal_gasto=sucursal)
+    elif empresa_ids:
+        central_treasury_expenses = central_treasury_expenses.filter(sucursal_gasto__empresa_id__in=empresa_ids)
+        bank_treasury_expenses = bank_treasury_expenses.filter(sucursal_gasto__empresa_id__in=empresa_ids)
+
+    payables = CuentaPorPagar.objects.exclude(
+        estado=CuentaPorPagar.Estado.ANULADA
+    ).filter(
+        periodo_referencia__gte=period_from,
+        periodo_referencia__lte=period_to,
+        categoria__rubro_operativo=rubro,
+    ).select_related("proveedor", "categoria", "sucursal")
+    if sucursal is not None:
+        payables = payables.filter(sucursal=sucursal)
+    elif empresa_ids:
+        payables = payables.filter(
+            Q(sucursal__empresa_id__in=empresa_ids)
+            | Q(sucursal__isnull=True)
+        )
+
+    items = []
+    cash_total = Decimal("0.00")
+    for movement in cash_expenses.order_by("caja__fecha_operativa", "id"):
+        cash_total += movement.monto
+        items.append(
+            {
+                "date": movement.caja.fecha_operativa,
+                "origin": "Egreso de caja",
+                "reference": movement.observacion or movement.categoria or f"Movimiento #{movement.pk}",
+                "sucursal": movement.caja.sucursal,
+                "status": "Registrado",
+                "amount": movement.monto,
+                "source": "cash_expense",
+            }
+        )
+
+    treasury_total = Decimal("0.00")
+    for movement in central_treasury_expenses.order_by("periodo_pago", "fecha", "id"):
+        treasury_total += movement.monto
+        items.append(
+            {
+                "date": movement.fecha,
+                "origin": "Egreso tesoreria caja central",
+                "reference": movement.concepto or f"Movimiento caja central #{movement.pk}",
+                "sucursal": movement.sucursal_gasto,
+                "status": "Imputado",
+                "amount": movement.monto,
+                "source": "central_treasury_expense",
+            }
+        )
+    for movement in bank_treasury_expenses.order_by("periodo_pago", "fecha", "id"):
+        treasury_total += movement.monto
+        reference_bits = [movement.concepto]
+        if movement.cuenta_bancaria_id:
+            reference_bits.append(movement.cuenta_bancaria.nombre)
+        items.append(
+            {
+                "date": movement.fecha,
+                "origin": "Egreso tesoreria banco",
+                "reference": " - ".join(bit for bit in reference_bits if bit) or f"Movimiento bancario #{movement.pk}",
+                "sucursal": movement.sucursal_gasto,
+                "status": "Imputado",
+                "amount": movement.monto,
+                "source": "bank_treasury_expense",
+            }
+        )
+
+    debt_total = Decimal("0.00")
+    debt_pending_total = Decimal("0.00")
+    for payable in payables.order_by("periodo_referencia", "fecha_vencimiento", "id"):
+        debt_total += payable.importe_total
+        debt_pending_total += payable.saldo_pendiente
+        reference_bits = [payable.proveedor.razon_social, payable.concepto]
+        if payable.referencia_comprobante:
+            reference_bits.append(payable.referencia_comprobante)
+        items.append(
+            {
+                "date": payable.periodo_referencia,
+                "origin": "Deuda del periodo",
+                "reference": " - ".join(reference_bits),
+                "sucursal": payable.sucursal,
+                "status": payable.urgency_label if payable.estado_visible == "VENCIDA" else payable.get_estado_display(),
+                "amount": payable.importe_total,
+                "pending_amount": payable.saldo_pendiente,
+                "source": "period_payable",
+            }
+        )
+
+    items.sort(key=lambda item: (item["date"], item["origin"], item["reference"]))
+    total = cash_total + treasury_total + debt_total
+    return {
+        "rubro": rubro,
+        "date_from": date_from,
+        "date_to": date_to,
+        "period_from": period_from,
+        "period_to": period_to,
+        "sucursal": sucursal,
+        "items": items,
+        "cash_expense_total": cash_total,
+        "treasury_expense_total": treasury_total,
+        "debt_total": debt_total,
+        "debt_pending_total": debt_pending_total,
+        "total": total,
+        "items_count": len(items),
     }
 
 

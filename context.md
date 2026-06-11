@@ -1,6 +1,6 @@
 # Context
 
-Last updated: 2026-06-08
+Last updated: 2026-06-11
 
 ## Product Snapshot
 
@@ -171,6 +171,34 @@ Last updated: 2026-06-08
   - Closing a box with negative physical balance now creates an audited negative central-cash adjustment so caja fuerte central reflects the real deficit.
   - Migration `cashops.0018_backfill_negative_closures_to_central_cash` backfills existing closed boxes with negative physical balance into central cash as `AJUSTE_NEGATIVO`.
   - Validation: focused cashops service/view tests for open negative, closed negative, central-cash negative adjustment and dashboard display passed.
+- 2026-06-05 cashops PANIFICACION exclusion rule:
+  - User reported branch sales totals were including `PANIFICACION` invoicing sales.
+  - Rule: any income channel with `CanalIngreso.excluir_de_totales=True` must not add to main branch/global `Ingresos`, matrix daily income totals or operative net result.
+  - Excluded channel amounts remain visible as separate calculation using label `Ventas facturacion de {CANAL}`.
+  - `PANIFICACION` already uses `excluir_de_totales=True`; services now enforce that flag generically instead of hardcoding one channel.
+  - Management matrix export now respects selected company context and uses raw movement type if no display helper exists.
+  - Validation: focused service/view/matrix/export tests for excluded income and existing neighboring totals passed.
+- 2026-06-11 backlog follow-up for economic view detail:
+  - User reported a missing functional capability: from the economic/rentability reading they cannot see the breakdown of why a rubro total such as `Almacen` is composed by that amount.
+  - Backlog decision after rebase: use `EP-11` `US-11.10 Desglose trazable de totales por rubro` because remote `US-11.7` is already assigned to treasury-paid expenses in economic reading.
+  - Scope of the story: for the active period and sucursal filters, the system must let administracion open a rubro and see the movements/debts included in that total, with date, origin, reference/concept, state and amount; the detail total must match the summary total exactly.
+  - User-facing impact when implemented: users will be able to explain each rubro total from the system without rebuilding the composition manually in Excel or by checking isolated records.
+- 2026-06-11 EP-11 implementation in progress:
+  - Targeting `US-11.10` as the next missing story.
+  - Planned slice: service detail by rubro, dashboard link, detail view/template, tests proving detail totals match the economic summary.
+- 2026-06-11 EP-11 `US-11.10` implemented:
+  - Added rubro composition detail for the treasury economic/rentability reading.
+  - The dashboard now links each economic rubro to a detail page preserving period and sucursal filters.
+  - Detail lists included cash expenses, treasury-paid expenses and period payables with date, origin, reference/concept, branch, status, amount and pending debt where applicable.
+  - The detail total is derived from the same sources as the summary: `MovimientoCaja` gastos by rubro, imputable `MovimientoCajaCentral`/`MovimientoBancario` treasury expenses and non-annulled `CuentaPorPagar.importe_total` for the economic period.
+  - Fixed economic period payable aggregation to respect selected company context when no specific sucursal is selected, preventing cross-company debt leakage while preserving legacy/global payables without sucursal.
+  - Files touched: `treasury/services.py`, `treasury/views.py`, `treasury/urls.py`, `templates/treasury/dashboard.html`, `templates/treasury/economic_rubro_detail.html`, `treasury/tests.py`, `docs/epics/EP-11-rentabilidad-y-situacion-economica.md`, `docs/epics/README.md`, `context.md`.
+  - Validation:
+    - `py -3.14 manage.py test treasury.tests.TreasuryServiceTests treasury.tests.TreasuryViewTests -v 1` with `PYTHONPATH=.venv\Lib\site-packages` passed after rebase conflict resolution: 59 tests OK.
+    - `py -3.14 -m compileall treasury` with `PYTHONPATH=.venv\Lib\site-packages` passed.
+    - `py -3.14 manage.py test treasury.tests treasury.tests_ep05 -v 1` with `PYTHONPATH=.venv\Lib\site-packages` passed: 67 tests OK, 1 skipped.
+    - `git diff --check` passed with only CRLF working-copy warnings.
+    - `py -3.14 manage.py makemigrations --check` remains red on pre-existing treasury drift wanting `treasury\migrations\0018_alter_movimientocajacentral_tipo.py`; this slice did not add schema changes.
 
 - 2026-06-04 disponibilidades fix requested from WhatsApp report:
   - User reports `Flujo de Disponibilidades` shows `$0,00` and "no toma lo que esta cargado".
@@ -351,6 +379,8 @@ Last updated: 2026-06-08
 - `docs/epics/EP-09-usuarios-operativos-y-datos-minimos.md`
 - `docs/epics/EP-10-situacion-financiera-y-alertas-consolidadas.md`
 - `docs/epics/EP-11-rentabilidad-y-situacion-economica.md`
+- `docs/epics/README.md`
+- `context.md`
 - `docs/epics/EP-12-empresas-contexto-y-navegacion.md`
 - `treasury/admin.py`
 - `treasury/models.py`
@@ -701,6 +731,9 @@ Last updated: 2026-06-08
   - defined `usuario fijo` as preferred operational assignment rather than a hard lock, leaving the future model/UI cut implementable
 - `docs/epics/EP-11-rentabilidad-y-situacion-economica.md`
   - tightened pending stories so objective history, period-based comparison and legacy-category compatibility are explicit
+  - reopened the epic with `US-11.7` so the rentability/economic view must expose the breakdown of each rubro total and not only the consolidated amount
+- `docs/epics/README.md`
+  - marked `EP-11` as reopened because the consolidated view exists but still lacks the rubro-composition detail requested by the user
 
 ### Validation Results
 
@@ -755,6 +788,7 @@ Last updated: 2026-06-08
   - application tests after the `treasury/views.py` text-normalization pass, because this slice only adjusted UI labels/separators and did not change business behavior
   - application tests for `docs/engineering-guidelines.md` and `README.md`, because this task only added repository documentation and no runtime behavior changed
   - application tests for the new epic docs, because this task only added backlog markdown
+  - application tests for the 2026-06-11 `US-11.7` backlog update, because this task only changed epic markdown and project memory
   - application tests for the new skill files, because they only add skill metadata and instructions
   - application tests for the backlog-normalization pass on `docs/epics`, because no runtime code changed in this slice
   - application tests for `docs/portfolio-gerayse.md`, because this task only added descriptive documentation
@@ -839,4 +873,5 @@ Last updated: 2026-06-08
   - EP-10 is closed again after `US-10.8`, `US-10.9`, and `US-10.10`.
   - If production confirms "Coca" means a different selector than account branch, expense branch or active company context, add a new follow-up story before changing filters again.
 - Next EP-11 candidates in order:
-  - `EP-11` quedo funcionalmente cerrado; solo queda como posible mejora futura un comando de migracion asistida para categorias legacy sin rubro si negocio quiere limpiar historicos
+  - `EP-11` quedo funcionalmente cerrada otra vez tras `US-11.7`.
+  - reevaluar si hace falta un comando de migracion asistida para categorias legacy sin rubro si negocio quiere limpiar historicos

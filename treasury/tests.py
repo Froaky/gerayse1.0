@@ -43,6 +43,7 @@ from .permissions import is_treasury_admin
 from .services import (
     annul_payment,
     build_economic_period_snapshot,
+    build_economic_rubro_detail,
     build_financial_period_snapshot,
     build_special_commitments_snapshot,
     build_supplier_history_snapshot,
@@ -1111,6 +1112,152 @@ class TreasuryServiceTests(TreasuryTestCase):
         self.assertEqual(snapshot["treasury_unmapped_expenses_total"], Decimal("40.00"))
         self.assertEqual(snapshot["treasury_unmapped_expenses_count"], 1)
 
+    def test_economic_rubro_detail_matches_summary_total_for_selected_period_and_branch(self):
+        empresa = Empresa.objects.create(nombre="Empresa Detalle Economico")
+        branch = Sucursal.objects.create(
+            codigo="SUC-DET",
+            nombre="Sucursal Detalle",
+            razon_social="Detalle SRL",
+            empresa=empresa,
+        )
+        rubro = RubroOperativo.objects.create(nombre="Almacen")
+        category = create_payable_category(
+            nombre="Compras Almacen",
+            rubro_operativo=rubro,
+            actor=self.admin,
+        )
+        account = create_bank_account(
+            nombre="Cuenta Detalle Economico",
+            banco="Banco Detalle",
+            tipo_cuenta=CuentaBancaria.Tipo.CUENTA_CORRIENTE,
+            numero_cuenta="DET-001",
+            sucursal=branch,
+            actor=self.admin,
+        )
+        turno = Turno.objects.create(
+            empresa=empresa,
+            tipo=Turno.Tipo.MANANA,
+            creado_por=self.admin,
+        )
+        box = open_box(
+            user=self.operator,
+            turno=turno,
+            sucursal=branch,
+            fecha_operativa=timezone.datetime(2026, 5, 12).date(),
+            monto_inicial=Decimal("0.00"),
+            actor=self.admin,
+        )
+        register_expense(
+            caja=box,
+            monto=Decimal("45.00"),
+            rubro_operativo=rubro,
+            categoria="Almacen",
+            observacion="Compra de insumos",
+            actor=self.operator,
+        )
+        register_egreso_tesoreria(
+            fuente=EgresoTesoreriaForm.FUENTE_BANCO,
+            cuenta_bancaria=account,
+            fecha=timezone.datetime(2026, 5, 13).date(),
+            monto=Decimal("25.00"),
+            concepto="Egreso tesoreria detalle",
+            rubro=rubro,
+            sucursal=branch,
+            periodo=timezone.datetime(2026, 5, 1).date(),
+            actor=self.admin,
+        )
+        register_payable(
+            sucursal=branch,
+            proveedor=self.supplier,
+            categoria=category,
+            concepto="Factura de almacen",
+            referencia_comprobante="FAC-ALM-1",
+            fecha_emision=timezone.datetime(2026, 5, 1).date(),
+            fecha_vencimiento=timezone.datetime(2026, 5, 20).date(),
+            periodo_referencia=timezone.datetime(2026, 5, 1).date(),
+            importe_total=Decimal("155.00"),
+            actor=self.admin,
+        )
+
+        summary = build_economic_period_snapshot(
+            date_from=timezone.datetime(2026, 5, 1).date(),
+            date_to=timezone.datetime(2026, 5, 31).date(),
+            sucursal=branch,
+        )
+        detail = build_economic_rubro_detail(
+            rubro_id=rubro.pk,
+            date_from=timezone.datetime(2026, 5, 1).date(),
+            date_to=timezone.datetime(2026, 5, 31).date(),
+            sucursal=branch,
+        )
+
+        summary_item = next(item for item in summary["items"] if item["rubro"] == rubro)
+        self.assertEqual(detail["cash_expense_total"], Decimal("45.00"))
+        self.assertEqual(detail["treasury_expense_total"], Decimal("25.00"))
+        self.assertEqual(detail["debt_total"], Decimal("155.00"))
+        self.assertEqual(detail["total"], summary_item["total_expense"])
+        self.assertEqual(detail["total"], Decimal("225.00"))
+        self.assertCountEqual(
+            [item["origin"] for item in detail["items"]],
+            ["Egreso de caja", "Egreso tesoreria banco", "Deuda del periodo"],
+        )
+        debt_item = next(item for item in detail["items"] if item["origin"] == "Deuda del periodo")
+        self.assertIn("FAC-ALM-1", debt_item["reference"])
+
+    def test_economic_period_snapshot_filters_payables_by_selected_company_context(self):
+        empresa_visible = Empresa.objects.create(nombre="Empresa Visible Economica")
+        empresa_oculta = Empresa.objects.create(nombre="Empresa Oculta Economica")
+        branch_visible = Sucursal.objects.create(
+            codigo="SUC-VIS",
+            nombre="Sucursal Visible Economica",
+            razon_social="Visible SRL",
+            empresa=empresa_visible,
+        )
+        branch_hidden = Sucursal.objects.create(
+            codigo="SUC-HID",
+            nombre="Sucursal Oculta Economica",
+            razon_social="Oculta SRL",
+            empresa=empresa_oculta,
+        )
+        rubro = RubroOperativo.objects.create(nombre="Servicios Empresa")
+        category = create_payable_category(
+            nombre="Servicios Empresa",
+            rubro_operativo=rubro,
+            actor=self.admin,
+        )
+        register_payable(
+            sucursal=branch_visible,
+            proveedor=self.supplier,
+            categoria=category,
+            concepto="Deuda visible",
+            fecha_emision=timezone.datetime(2026, 5, 1).date(),
+            fecha_vencimiento=timezone.datetime(2026, 5, 20).date(),
+            periodo_referencia=timezone.datetime(2026, 5, 1).date(),
+            importe_total=Decimal("100.00"),
+            actor=self.admin,
+        )
+        register_payable(
+            sucursal=branch_hidden,
+            proveedor=self.supplier,
+            categoria=category,
+            concepto="Deuda oculta",
+            fecha_emision=timezone.datetime(2026, 5, 1).date(),
+            fecha_vencimiento=timezone.datetime(2026, 5, 20).date(),
+            periodo_referencia=timezone.datetime(2026, 5, 1).date(),
+            importe_total=Decimal("900.00"),
+            actor=self.admin,
+        )
+
+        snapshot = build_economic_period_snapshot(
+            date_from=timezone.datetime(2026, 5, 1).date(),
+            date_to=timezone.datetime(2026, 5, 31).date(),
+            empresa_ids=[empresa_visible.pk],
+        )
+
+        self.assertEqual(snapshot["debt_period_total"], Decimal("100.00"))
+        item = next(item for item in snapshot["items"] if item["rubro"] == rubro)
+        self.assertEqual(item["debt_total"], Decimal("100.00"))
+
     def test_economic_period_snapshot_applies_branch_objective_over_global(self):
         branch = Sucursal.objects.create(codigo="SUC-O", nombre="Sucursal Objetivos", razon_social="Objetivos SRL")
         empresa = Empresa.objects.create(nombre="Empresa Objetivos Snapshot")
@@ -2047,3 +2194,78 @@ class TreasuryViewTests(TreasuryTestCase):
         self.assertContains(response, "$ 30,00")
         self.assertContains(response, "$ 150,00")
         self.assertContains(response, "$ 45,00")
+        self.assertContains(response, "Ver composicion")
+
+    def test_economic_rubro_detail_view_explains_dashboard_total(self):
+        empresa = Empresa.objects.create(nombre="Empresa Vista Detalle Economico")
+        branch = Sucursal.objects.create(
+            codigo="SUC-VDE",
+            nombre="Sucursal Vista Detalle",
+            razon_social="Vista Detalle SRL",
+            empresa=empresa,
+        )
+        rubro = RubroOperativo.objects.create(nombre="Almacen Vista")
+        category = create_payable_category(
+            nombre="Almacen Vista",
+            rubro_operativo=rubro,
+            actor=self.admin,
+        )
+        turno = Turno.objects.create(
+            empresa=empresa,
+            tipo=Turno.Tipo.MANANA,
+            creado_por=self.admin,
+        )
+        box = open_box(
+            user=self.operator,
+            turno=turno,
+            sucursal=branch,
+            fecha_operativa=timezone.datetime(2026, 5, 9).date(),
+            monto_inicial=Decimal("0.00"),
+            actor=self.admin,
+        )
+        register_expense(
+            caja=box,
+            monto=Decimal("70.00"),
+            rubro_operativo=rubro,
+            categoria="Almacen",
+            observacion="Compra mostrador",
+            actor=self.operator,
+        )
+        register_payable(
+            sucursal=branch,
+            proveedor=self.supplier,
+            categoria=category,
+            concepto="Factura almacen vista",
+            fecha_emision=timezone.datetime(2026, 5, 1).date(),
+            fecha_vencimiento=timezone.datetime(2026, 5, 20).date(),
+            periodo_referencia=timezone.datetime(2026, 5, 1).date(),
+            importe_total=Decimal("130.00"),
+            actor=self.admin,
+        )
+
+        dashboard_response = self.client.get(
+            reverse("treasury:dashboard"),
+            {
+                "sucursal": branch.pk,
+                "fecha_desde": "2026-05-01",
+                "fecha_hasta": "2026-05-31",
+            },
+        )
+        detail_response = self.client.get(
+            reverse("treasury:economic_rubro_detail", args=[rubro.pk]),
+            {
+                "sucursal": branch.pk,
+                "fecha_desde": "2026-05-01",
+                "fecha_hasta": "2026-05-31",
+            },
+        )
+
+        self.assertEqual(dashboard_response.status_code, 200)
+        self.assertContains(dashboard_response, "Almacen Vista")
+        self.assertContains(dashboard_response, "Ver composicion")
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertContains(detail_response, "Composicion de Almacen Vista")
+        self.assertContains(detail_response, "Compra mostrador")
+        self.assertContains(detail_response, "Factura almacen vista")
+        self.assertContains(detail_response, "$ 200,00")
+        self.assertContains(detail_response, "Debe coincidir con el total explicado")

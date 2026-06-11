@@ -7,6 +7,7 @@ app_name = "treasury"
 urlpatterns = [
     path("", views.index, name="index"),
     path("dashboard/", views.dashboard, name="dashboard"),
+    path("economica/rubros/<int:rubro_id>/", views.economic_rubro_detail, name="economic_rubro_detail"),
     path("proveedores/", views.proveedores_list, name="proveedores_list"),
     path("proveedores/nuevo/", views.proveedores_create, name="proveedores_create"),
     path("proveedores/<int:supplier_id>/", views.proveedores_detail, name="proveedores_detail"),

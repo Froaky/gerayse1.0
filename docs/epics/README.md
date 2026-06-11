@@ -19,7 +19,7 @@ Estado actual:
 - `EP-08`: ajustes operativos de caja y sucursales. Reabierta: implementada hasta US-8.13; pendiente correccion auditada de cargas de caja y control de cajas cargadas por fecha/turno/sucursal (`US-8.14`, `US-8.15`).
 - `EP-09`: usuarios operativos y datos minimos. Reabierta: gestion operativa de usuarios, roles y permisos por modulo implementados; pendiente granularidad por sucursal/empresa/lugar (`US-9.11`).
 - `EP-10`: situacion financiera y alertas consolidadas. Implementada.
-- `EP-11`: rentabilidad y situacion economica. Reabierta: implementada hasta US-11.7; pendiente reimputar gastos historicos, excluir ventas especiales de la base general y desglosar totales por rubro (`US-11.8` a `US-11.10`).
+- `EP-11`: rentabilidad y situacion economica. Reabierta: implementada hasta US-11.7 y US-11.10; pendiente reimputar gastos historicos y excluir ventas especiales de la base general (`US-11.8`, `US-11.9`).
 - `EP-12`: empresas, contexto activo y navegacion. Implementada. Cerrada 2026-04-28.
 
 Especialista sugerido por epica:

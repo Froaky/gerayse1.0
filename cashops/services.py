@@ -52,6 +52,40 @@ def _get_active_channels() -> list:
     return list(CanalIngreso.objects.filter(activo=True).order_by("orden"))
 
 
+def _excluded_income_channel_codes(channels: list[CanalIngreso]) -> list[str]:
+    return [channel.codigo for channel in channels if channel.excluir_de_totales]
+
+
+def _included_income_filter(excluded_channel_codes: list[str]) -> Q:
+    income_filter = Q(sentido=MovimientoCaja.Sentido.INGRESO)
+    if excluded_channel_codes:
+        income_filter &= ~Q(tipo__in=excluded_channel_codes)
+    return income_filter
+
+
+def _excluded_income_by_channel(movement_qs, channels: list[CanalIngreso]) -> list[dict]:
+    excluded_channels = {channel.codigo: channel for channel in channels if channel.excluir_de_totales}
+    if not excluded_channels:
+        return []
+    rows = (
+        movement_qs.filter(tipo__in=excluded_channels.keys(), sentido=MovimientoCaja.Sentido.INGRESO)
+        .values("tipo")
+        .annotate(total=Sum("monto"))
+    )
+    return sorted(
+        [
+            {
+                "label": excluded_channels[row["tipo"]].nombre,
+                "tipo": row["tipo"],
+                "total": row["total"] or Decimal("0.00"),
+                "display_label": f"Ventas facturacion de {excluded_channels[row['tipo']].nombre.upper()}",
+            }
+            for row in rows
+        ],
+        key=lambda item: item["label"],
+    )
+
+
 @dataclass(frozen=True)
 class OperationalControlScope:
     kind: str
@@ -411,8 +445,10 @@ def build_operational_control_snapshot(
     movement_qs = MovimientoCaja.objects.filter(_movement_scope_filter(scope)).exclude(
         tipo=MovimientoCaja.Tipo.APERTURA
     )
+    _channels = _get_active_channels()
+    _excluded_income_codes = _excluded_income_channel_codes(_channels)
     totals = movement_qs.aggregate(
-        total_ingresos=Sum("monto", filter=Q(sentido=MovimientoCaja.Sentido.INGRESO)),
+        total_ingresos=Sum("monto", filter=_included_income_filter(_excluded_income_codes)),
         total_egresos=Sum("monto", filter=Q(sentido=MovimientoCaja.Sentido.EGRESO)),
     )
     expense_qs = movement_qs.filter(tipo=MovimientoCaja.Tipo.GASTO)
@@ -482,10 +518,13 @@ def build_operational_control_snapshot(
     status_order = {"ROJO": 0, "AMARILLO": 1, "VERDE": 2, "SIN_LIMITE": 3}
     items.sort(key=lambda item: (status_order[item["estado"]], item["rubro"].nombre.lower()))
 
-    _channels = _get_active_channels()
     _channel_by_codigo = {c.codigo: c for c in _channels}
     _non_cash_tipos = [c.codigo for c in _channels if c.codigo != MovimientoCaja.Tipo.INGRESO_EFECTIVO]
-    ventas_rows = movement_qs.filter(tipo__in=_non_cash_tipos).values("tipo").annotate(total=Sum("monto"))
+    ventas_rows = (
+        movement_qs.filter(tipo__in=_non_cash_tipos, sentido=MovimientoCaja.Sentido.INGRESO)
+        .values("tipo")
+        .annotate(total=Sum("monto"))
+    )
     ventas_por_canal = sorted(
         [
             {
@@ -502,6 +541,8 @@ def build_operational_control_snapshot(
         (v["total"] for v in ventas_por_canal if not v["excluir_de_totales"]),
         Decimal("0.00"),
     )
+    ventas_excluidas_por_canal = _excluded_income_by_channel(movement_qs, _channels)
+    total_ingresos_excluidos = sum((v["total"] for v in ventas_excluidas_por_canal), Decimal("0.00"))
     ingreso_efectivo_total = (
         movement_qs.filter(tipo=MovimientoCaja.Tipo.INGRESO_EFECTIVO).aggregate(total=Sum("monto"))["total"]
         or Decimal("0.00")
@@ -523,6 +564,8 @@ def build_operational_control_snapshot(
         "saldo_neto": (totals["total_ingresos"] or Decimal("0.00")) - (totals["total_egresos"] or Decimal("0.00")),
         "ventas_por_canal": ventas_por_canal,
         "total_ventas_digitales": total_ventas_digitales,
+        "ventas_excluidas_por_canal": ventas_excluidas_por_canal,
+        "total_ingresos_excluidos": total_ingresos_excluidos,
         "ingreso_efectivo_total": ingreso_efectivo_total,
         "saldo_efectivo_caja": saldo_efectivo_caja,
         "items": items,
@@ -548,8 +591,10 @@ def build_operational_period_summary(*, date_from: date, date_to: date, sucursal
     elif empresa_ids:
         movement_qs = movement_qs.filter(caja__sucursal__empresa_id__in=empresa_ids)
 
+    _channels = _get_active_channels()
+    _excluded_income_codes = _excluded_income_channel_codes(_channels)
     totals = movement_qs.aggregate(
-        total_ingresos=Sum("monto", filter=Q(sentido=MovimientoCaja.Sentido.INGRESO)),
+        total_ingresos=Sum("monto", filter=_included_income_filter(_excluded_income_codes)),
         total_egresos=Sum("monto", filter=Q(sentido=MovimientoCaja.Sentido.EGRESO)),
     )
     expense_qs = movement_qs.filter(tipo=MovimientoCaja.Tipo.GASTO)
@@ -628,10 +673,13 @@ def build_operational_period_summary(*, date_from: date, date_to: date, sucursal
     status_order = {"ROJO": 0, "AMARILLO": 1, "VERDE": 2, "SIN_LIMITE": 3}
     items.sort(key=lambda item: (status_order[item["estado"]], item["rubro"].nombre.lower()))
 
-    _channels = _get_active_channels()
     _channel_by_codigo = {c.codigo: c for c in _channels}
     _non_cash_tipos = [c.codigo for c in _channels if c.codigo != MovimientoCaja.Tipo.INGRESO_EFECTIVO]
-    ventas_rows = movement_qs.filter(tipo__in=_non_cash_tipos).values("tipo").annotate(total=Sum("monto"))
+    ventas_rows = (
+        movement_qs.filter(tipo__in=_non_cash_tipos, sentido=MovimientoCaja.Sentido.INGRESO)
+        .values("tipo")
+        .annotate(total=Sum("monto"))
+    )
     ventas_por_canal = sorted(
         [
             {
@@ -648,6 +696,8 @@ def build_operational_period_summary(*, date_from: date, date_to: date, sucursal
         (v["total"] for v in ventas_por_canal if not v["excluir_de_totales"]),
         Decimal("0.00"),
     )
+    ventas_excluidas_por_canal = _excluded_income_by_channel(movement_qs, _channels)
+    total_ingresos_excluidos = sum((v["total"] for v in ventas_excluidas_por_canal), Decimal("0.00"))
     ingreso_efectivo_total = (
         movement_qs.filter(tipo=MovimientoCaja.Tipo.INGRESO_EFECTIVO).aggregate(total=Sum("monto"))["total"]
         or Decimal("0.00")
@@ -675,6 +725,8 @@ def build_operational_period_summary(*, date_from: date, date_to: date, sucursal
         "saldo_neto": (totals["total_ingresos"] or Decimal("0.00")) - (totals["total_egresos"] or Decimal("0.00")),
         "ventas_por_canal": ventas_por_canal,
         "total_ventas_digitales": total_ventas_digitales,
+        "ventas_excluidas_por_canal": ventas_excluidas_por_canal,
+        "total_ingresos_excluidos": total_ingresos_excluidos,
         "ingreso_efectivo_total": ingreso_efectivo_total,
         "saldo_efectivo_caja": None,
         "saldo_real_cajas_periodo": saldo_real_cajas_periodo,
@@ -706,8 +758,10 @@ def build_management_daily_matrix(*, date_from: date, date_to: date, sucursal: S
 
     _channels = _get_active_channels()
     _income_codigos = [c.codigo for c in _channels]
+    _included_income_codigos = [c.codigo for c in _channels if not c.excluir_de_totales]
+    _excluded_income_codigos = _excluded_income_channel_codes(_channels)
     income_rows = (
-        movement_qs.filter(tipo__in=_income_codigos)
+        movement_qs.filter(tipo__in=_income_codigos, sentido=MovimientoCaja.Sentido.INGRESO)
         .values("caja__fecha_operativa", "tipo")
         .annotate(total=Sum("monto"))
     )
@@ -719,6 +773,15 @@ def build_management_daily_matrix(*, date_from: date, date_to: date, sucursal: S
 
     channel_keys = _income_codigos
     channel_labels = [{"key": c.codigo, "label": c.nombre, "excluir_de_totales": c.excluir_de_totales} for c in _channels]
+    excluded_channel_labels = [
+        {
+            "key": c.codigo,
+            "label": c.nombre,
+            "display_label": f"Ventas facturacion de {c.nombre.upper()}",
+        }
+        for c in _channels
+        if c.excluir_de_totales
+    ]
     rubro_ids = set()
     rubro_names = {}
     for row in expense_rows:
@@ -741,13 +804,16 @@ def build_management_daily_matrix(*, date_from: date, date_to: date, sucursal: S
     days = []
     current = date_from
     total_income = Decimal("0.00")
+    total_excluded_income = Decimal("0.00")
     total_expense = Decimal("0.00")
     while current <= date_to:
         income_by_channel = {key: incomes_by_day[current][key] for key in channel_keys}
         expense_by_rubro = {item["id"]: expenses_by_day[current][item["id"]] for item in rubros}
-        day_income = sum(income_by_channel.values(), Decimal("0.00"))
+        day_income = sum((income_by_channel[key] for key in _included_income_codigos), Decimal("0.00"))
+        day_excluded_income = sum((income_by_channel[key] for key in _excluded_income_codigos), Decimal("0.00"))
         day_expense = sum(expense_by_rubro.values(), Decimal("0.00"))
         total_income += day_income
+        total_excluded_income += day_excluded_income
         total_expense += day_expense
         days.append(
             {
@@ -755,8 +821,10 @@ def build_management_daily_matrix(*, date_from: date, date_to: date, sucursal: S
                 "income_by_channel": income_by_channel,
                 "expense_by_rubro": expense_by_rubro,
                 "income_values": [income_by_channel[key] for key in channel_keys],
+                "excluded_income_values": [income_by_channel[item["key"]] for item in excluded_channel_labels],
                 "expense_values": [expense_by_rubro[item["id"]] for item in rubros],
                 "total_income": day_income,
+                "total_excluded_income": day_excluded_income,
                 "total_expense": day_expense,
                 "net_result": day_income - day_expense,
             }
@@ -764,16 +832,25 @@ def build_management_daily_matrix(*, date_from: date, date_to: date, sucursal: S
         current += timedelta(days=1)
 
     detail_movements = movement_qs.order_by("caja__fecha_operativa", "caja_id", "id")
+    excluded_channel_totals = [
+        {
+            **channel,
+            "total": sum((day["income_by_channel"][channel["key"]] for day in days), Decimal("0.00")),
+        }
+        for channel in excluded_channel_labels
+    ]
 
     return {
         "date_from": date_from,
         "date_to": date_to,
         "sucursal": sucursal,
         "channels": channel_labels,
+        "excluded_channels": excluded_channel_totals,
         "rubros": rubros,
         "days": days,
         "detail_movements": detail_movements,
         "total_income": total_income,
+        "total_excluded_income": total_excluded_income,
         "total_expense": total_expense,
         "net_result": total_income - total_expense,
     }

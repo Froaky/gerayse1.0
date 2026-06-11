@@ -132,6 +132,17 @@
           <strong>{{ dashboard_snapshot.active_alert_count }}</strong>
         </div>
       </div>
+      {% if dashboard_snapshot.ventas_excluidas_por_canal %}
+        <div class="summary-grid" style="margin-top:12px;">
+          {% for venta_excluida in dashboard_snapshot.ventas_excluidas_por_canal %}
+            <div class="summary">
+              <span class="muted">{{ venta_excluida.display_label }}</span>
+              <strong>${{ venta_excluida.total }}</strong>
+              <small class="muted">no suma en ingresos de sucursal</small>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
     </section>
 
     {% if selected_box %}
