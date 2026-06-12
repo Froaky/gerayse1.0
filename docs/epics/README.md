@@ -16,7 +16,7 @@ Estado actual:
 - `EP-05`: flujo de disponibilidades. Implementada.
 - `EP-06`: control de gestion y alertas. Implementada.
 - `EP-07`: impuestos, planes y autorizaciones. Implementada.
-- `EP-08`: ajustes operativos de caja y sucursales. Reabierta: implementada hasta US-8.13; pendiente correccion auditada de cargas de caja y control de cajas cargadas por fecha/turno/sucursal (`US-8.14`, `US-8.15`).
+- `EP-08`: ajustes operativos de caja y sucursales. Reabierta: implementada hasta `US-8.13` y `US-8.16` a `US-8.18`; pendiente correccion auditada de cargas y control explicito de cajas faltantes por fecha/turno/sucursal (`US-8.14`, `US-8.15`).
 - `EP-09`: usuarios operativos y datos minimos. Reabierta: gestion operativa de usuarios, roles y permisos por modulo implementados; pendiente granularidad por sucursal/empresa/lugar (`US-9.11`).
 - `EP-10`: situacion financiera y alertas consolidadas. Implementada.
 - `EP-11`: rentabilidad y situacion economica. Reabierta: implementada hasta US-11.7 y US-11.10; pendiente reimputar gastos historicos y excluir ventas especiales de la base general (`US-11.8`, `US-11.9`).

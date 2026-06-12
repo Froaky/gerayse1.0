@@ -44,6 +44,179 @@ OPERATIONAL_ALERT_SCOPE_POLICY_RULES = (
     "Diferencia grave se registra solo a nivel caja porque nace de un cierre concreto.",
     "El filtro de alcance es de lectura: no altera el motor ni consolida registros persistidos.",
 )
+
+MOVEMENT_TYPE_LABELS = {
+    MovimientoCaja.Tipo.APERTURA: "Apertura",
+    MovimientoCaja.Tipo.INGRESO_EFECTIVO: "Cobro en efectivo",
+    MovimientoCaja.Tipo.GASTO: "Egreso operativo",
+    MovimientoCaja.Tipo.VENTA_TARJETA: "Venta tarjeta (POS)",
+    MovimientoCaja.Tipo.VENTA_TRANSFERENCIA: "Venta transferencia",
+    MovimientoCaja.Tipo.VENTA_PEDIDOSYA: "Venta PedidosYa",
+    MovimientoCaja.Tipo.VENTA_QR: "Venta QR / MercadoPago",
+    MovimientoCaja.Tipo.TRANSFERENCIA_SALIDA: "Traspaso salida",
+    MovimientoCaja.Tipo.TRANSFERENCIA_ENTRADA: "Traspaso entrada",
+    MovimientoCaja.Tipo.TRANSFERENCIA_SUCURSAL_SALIDA: "Transferencia sucursal salida",
+    MovimientoCaja.Tipo.TRANSFERENCIA_SUCURSAL_ENTRADA: "Transferencia sucursal entrada",
+    MovimientoCaja.Tipo.AJUSTE_CIERRE: "Ajuste de cierre",
+}
+BOX_BREAKDOWN_EXCLUDED_TYPES = {
+    MovimientoCaja.Tipo.APERTURA,
+    MovimientoCaja.Tipo.TRANSFERENCIA_ENTRADA,
+    MovimientoCaja.Tipo.TRANSFERENCIA_SUCURSAL_ENTRADA,
+    MovimientoCaja.Tipo.TRANSFERENCIA_SALIDA,
+    MovimientoCaja.Tipo.TRANSFERENCIA_SUCURSAL_SALIDA,
+    MovimientoCaja.Tipo.AJUSTE_CIERRE,
+}
+
+
+def get_cash_movement_type_label(tipo: str, channel_map: dict[str, str] | None = None) -> str:
+    if channel_map and tipo in channel_map:
+        return channel_map[tipo]
+    return MOVEMENT_TYPE_LABELS.get(tipo, tipo.replace("_", " ").title())
+
+
+def build_box_sales_breakdown(movements) -> dict:
+    channel_map = get_income_channel_map()
+    grouped_totals = defaultdict(lambda: Decimal("0.00"))
+    breakdown_movements = []
+    total = Decimal("0.00")
+
+    for movement in movements:
+        if movement.sentido != MovimientoCaja.Sentido.INGRESO:
+            continue
+        if movement.tipo in BOX_BREAKDOWN_EXCLUDED_TYPES:
+            continue
+        label = get_cash_movement_type_label(movement.tipo, channel_map)
+        movement.tipo_label = label
+        grouped_totals[(movement.tipo, label, movement.impacta_saldo_caja)] += movement.monto
+        total += movement.monto
+        breakdown_movements.append(movement)
+
+    groups = [
+        {
+            "tipo": tipo,
+            "label": label,
+            "impacta_saldo_caja": impacta_saldo_caja,
+            "total": amount,
+        }
+        for (tipo, label, impacta_saldo_caja), amount in grouped_totals.items()
+    ]
+    groups.sort(key=lambda item: (item["impacta_saldo_caja"] is False, item["label"]))
+
+    return {
+        "total": total,
+        "groups": groups,
+        "movements": sorted(breakdown_movements, key=lambda movement: (movement.creado_en, movement.pk), reverse=True),
+    }
+
+
+def describe_box_follow_up(caja: Caja, movements) -> dict:
+    post_opening_movements = [movement for movement in movements if movement.tipo != MovimientoCaja.Tipo.APERTURA]
+    last_movement = movements[0] if movements else None
+    last_activity_at = caja.cerrada_en or (last_movement.creado_en if last_movement else caja.abierta_en)
+
+    if caja.estado == Caja.Estado.CERRADA:
+        return {
+            "label": "Cerrada",
+            "badge_class": "badge-muted",
+            "detail": "Caja cerrada y disponible solo para consulta.",
+            "last_activity_at": last_activity_at,
+            "post_opening_count": len(post_opening_movements),
+        }
+    if not post_opening_movements:
+        return {
+            "label": "Abierta sin movimientos",
+            "badge_class": "badge-warning",
+            "detail": "Se abrio la caja pero no registra cargas posteriores a la apertura.",
+            "last_activity_at": last_activity_at,
+            "post_opening_count": 0,
+        }
+    return {
+        "label": "Carga en curso",
+        "badge_class": "badge-success",
+        "detail": "La caja sigue abierta y ya tiene movimientos cargados.",
+        "last_activity_at": last_activity_at,
+        "post_opening_count": len(post_opening_movements),
+    }
+
+
+def build_box_activity_timeline(caja: Caja, movements) -> list[dict]:
+    channel_map = get_income_channel_map()
+    events = [
+        {
+            "timestamp": caja.abierta_en,
+            "kind": "APERTURA",
+            "badge_class": "badge",
+            "badge_label": "Apertura",
+            "title": "Caja abierta",
+            "detail": f"Apertura de caja para {caja.sucursal.nombre} en {caja.turno.get_tipo_display()}.",
+            "user_label": str(caja.usuario),
+            "amount": caja.monto_inicial,
+        }
+    ]
+
+    for movement in movements:
+        if movement.tipo == MovimientoCaja.Tipo.APERTURA:
+            continue
+        detail_parts = []
+        if movement.rubro_operativo_id:
+            detail_parts.append(f"Rubro {movement.rubro_operativo.nombre}")
+        elif movement.categoria:
+            detail_parts.append(movement.categoria)
+        if movement.observacion:
+            detail_parts.append(movement.observacion)
+        if movement.transferencia_id:
+            detail_parts.append(f"Transferencia #{movement.transferencia_id}")
+        events.append(
+            {
+                "timestamp": movement.creado_en,
+                "kind": "MOVIMIENTO",
+                "badge_class": "badge-danger" if movement.sentido == MovimientoCaja.Sentido.EGRESO else "badge-success",
+                "badge_label": movement.get_sentido_display(),
+                "title": get_cash_movement_type_label(movement.tipo, channel_map),
+                "detail": " - ".join(detail_parts) if detail_parts else "Movimiento operativo registrado.",
+                "user_label": str(movement.creado_por) if movement.creado_por else "Sin usuario",
+                "amount": movement.monto,
+            }
+        )
+
+    cierre = getattr(caja, "cierre", None)
+    if cierre is not None:
+        events.append(
+            {
+                "timestamp": cierre.cerrado_en,
+                "kind": "CIERRE",
+                "badge_class": "badge-muted",
+                "badge_label": "Cierre",
+                "title": "Caja cerrada",
+                "detail": (
+                    f"Saldo esperado ${cierre.saldo_esperado} - "
+                    f"saldo fisico ${cierre.saldo_fisico} - "
+                    f"diferencia ${cierre.diferencia}."
+                ),
+                "user_label": str(cierre.cerrado_por) if cierre.cerrado_por else "Sin usuario",
+                "amount": cierre.saldo_fisico,
+            }
+        )
+        justificacion = getattr(cierre, "justificacion", None)
+        if justificacion is not None:
+            events.append(
+                {
+                    "timestamp": justificacion.creado_en,
+                    "kind": "JUSTIFICACION",
+                    "badge_class": "badge-warning",
+                    "badge_label": "Justificacion",
+                    "title": "Justificacion de cierre",
+                    "detail": justificacion.motivo,
+                    "user_label": str(justificacion.creado_por) if justificacion.creado_por else "Sin usuario",
+                    "amount": None,
+                }
+            )
+
+    events.sort(key=lambda event: event["timestamp"], reverse=True)
+    return events
+
+
 def get_income_channel_map() -> dict[str, str]:
     return {c.codigo: c.nombre for c in CanalIngreso.objects.filter(activo=True).order_by("orden")}
 

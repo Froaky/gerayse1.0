@@ -2,7 +2,7 @@
   {% for movement in movements %}
     <article class="list-item">
       <div class="row">
-        <strong>{{ movement.get_tipo_display }}</strong>
+        <strong>{% firstof movement.tipo_label movement.get_tipo_display movement.tipo %}</strong>
         <span class="badge {% if movement.sentido == 'EGRESO' %}badge-danger{% endif %}">
           {{ movement.get_sentido_display }}
         </span>

@@ -19,6 +19,9 @@ Simplificar la operatoria diaria de cajas para que registren solo lo que realmen
 - dashboard de caja con saldo efectivo y ventas a acreditar discriminadas
 - correccion auditada de ventas, importes y egresos ya cargados en una caja
 - control de cajas cargadas por fecha, turno y sucursal
+- seguimiento del avance de carga de cada caja abierta o cerrada
+- desglose trazable de ventas y totales operativos visibles
+- historial auditable de hitos y cambios relevantes de cada caja
 
 ## No incluye todavia
 
@@ -47,6 +50,9 @@ Simplificar la operatoria diaria de cajas para que registren solo lo que realmen
 - una carga de caja ya guardada solo puede corregirse con motivo obligatorio y trazabilidad de valor anterior y valor nuevo
 - corregir una carga no debe duplicar ventas, egresos ni movimientos de caja
 - administracion debe poder comprobar por fecha, turno y sucursal que cajas esperadas ya fueron cargadas
+- una caja abierta o cerrada debe poder localizarse por sucursal, fecha operativa, turno y estado para retomar o auditar la carga
+- todo total operativo de ventas visible en caja o en sus listados debe poder explicarse desde sus movimientos componentes
+- cada caja debe conservar un historial legible de apertura, cargas, correcciones, cierre y reaperturas o cambios relevantes si existieran
 
 ## User Stories
 
@@ -253,6 +259,49 @@ Criterios:
 - los identificadores correlativos no son el unico dato para reconocer la caja; tambien se ve fecha, turno y sucursal
 - el filtro respeta empresa activa y permisos por sucursal cuando apliquen
 
+### [x] US-8.16 Seguimiento completo del avance de carga por caja
+
+Como administracion
+Quiero ver que cajas estan abiertas, cerradas o quedaron a medio cargar y hasta que fecha operativa llegaron
+Para saber donde continuar la carga y tener seguimiento completo de lo que ya se registro y de lo que falta cerrar
+
+Criterios:
+- existe una vista de seguimiento de cajas con filtros por una sucursal o varias sucursales, rango de fecha operativa, turno y estado
+- la vista incluye cajas abiertas y cerradas, no solo las activas del dia
+- cada caja muestra al menos sucursal, fecha operativa, turno, usuario responsable, estado, fecha y hora de ultima carga o actualizacion
+- una caja abierta o incompleta puede retomarse desde esa vista para continuar la carga sin buscarla manualmente
+- una caja cerrada puede consultarse en modo lectura con su resumen y movimientos registrados
+- la vista permite identificar rapidamente en que punto se interrumpio una carga, por ejemplo si quedo abierta sin cierre o si no tuvo movimientos despues de la apertura
+- el seguimiento respeta empresa activa y no mezcla cajas de sucursales fuera del contexto permitido
+
+### [x] US-8.17 Desglose trazable de ventas y totales operativos de caja
+
+Como administracion
+Quiero abrir la composicion de una venta total o de un total operativo visible de caja
+Para entender de que movimientos y canales esta compuesto lo cargado sin revisar registros sueltos
+
+Criterios:
+- desde un total visible de caja, sucursal o listado operativo se puede abrir el detalle de su composicion para los filtros activos
+- el desglose muestra los movimientos que componen la venta o total operativo, discriminados al menos por canal, fecha operativa, caja, sucursal, turno, usuario e importe
+- si la vista muestra total de ventas, ventas por canal, efectivo o ventas a acreditar, cada total debe poder explicarse sin mezclar conceptos incompatibles
+- el total del desglose coincide exactamente con el total visible del resumen o listado desde el que se abre
+- si hubo correcciones sobre una carga, el detalle permite reconocer que ese movimiento fue corregido o ajustado
+- el desglose respeta empresa activa, sucursal, turno, estado de caja y rango de fechas seleccionados
+
+### [x] US-8.18 Historial auditable de actividad por caja
+
+Como administracion
+Quiero ver el historial de actividad de una caja
+Para reconstruir que se cargo, quien lo cargo, en que orden y en que momento se interrumpio o cerro la operatoria
+
+Criterios:
+- cada caja tiene una vista de historial o bitacora con sus hitos principales, incluyendo apertura, cargas de ventas, cargas de egresos, correcciones, cierre y reapertura si existiera
+- cada hito muestra fecha y hora, usuario, tipo de accion y referencia suficiente para entender que cambio se produjo
+- si una caja quedo a medio cargar, el historial permite reconocer cual fue la ultima accion registrada antes de la interrupcion
+- si una caja fue corregida despues, el historial distingue claramente la carga original de la correccion posterior
+- una caja cerrada conserva el mismo historial en modo consulta sin perder trazabilidad
+- el historial respeta empresa activa, sucursal y permisos de lectura aplicables
+
 ## Dependencias
 
 - EP-01 caja operativa base
@@ -275,6 +324,9 @@ Criterios:
 11. separar visualmente saldo efectivo, ventas por canal y neto operativo en dashboard
 12. habilitar correcciones auditadas de cargas ya guardadas
 13. agregar control de cajas cargadas por fecha, turno y sucursal
+14. agregar seguimiento de avance para cajas abiertas, cerradas o incompletas
+15. agregar desglose trazable de ventas y totales operativos visibles
+16. agregar historial auditable de actividad por caja
 
 ## Criterio de cierre
 
@@ -288,3 +340,6 @@ Criterios:
 - el dashboard de caja no hace pasar ventas a acreditar como efectivo disponible
 - administracion puede corregir errores de carga sin perder auditoria ni recalcular a mano
 - administracion puede saber por fecha, turno y sucursal que cajas estan cargadas y cuales faltan
+- administracion puede ubicar una caja abierta, cerrada o incompleta y retomar la carga o auditar lo ya registrado
+- cualquier total operativo de ventas visible puede abrirse y reconciliarse contra sus movimientos componentes
+- administracion puede reconstruir el recorrido completo de una caja desde su apertura hasta su cierre o ultima actividad registrada

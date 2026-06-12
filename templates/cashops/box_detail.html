@@ -1,0 +1,145 @@
+{% extends "cashops/layout.html" %}
+{% block title %}Caja #{{ box.id }} | Gerayse{% endblock %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Caja #{{ box.id }}</h1>
+        <p class="muted">{{ box.sucursal.nombre }} · {{ box.turno.get_tipo_display }} · {{ box.fecha_operativa|date:"d/m/Y" }}</p>
+      </div>
+      <div class="list-actions">
+        <a class="button-secondary" href="{{ tracking_url }}">Seguimiento</a>
+        {% if box.estado == "ABIERTA" %}
+          <a class="button" href="{{ resume_url }}">Retomar carga</a>
+        {% else %}
+          <a class="button-secondary" href="{{ resume_url }}">Ver en dashboard</a>
+        {% endif %}
+      </div>
+    </div>
+    <div class="summary-grid mt-16">
+      <div class="summary">
+        <span class="muted">Estado</span>
+        <strong>{{ follow_up.label }}</strong>
+        <small class="muted">{{ follow_up.detail }}</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Responsable</span>
+        <strong>{{ box.usuario }}</strong>
+      </div>
+      <div class="summary">
+        <span class="muted">Ultima actividad</span>
+        <strong>{{ follow_up.last_activity_at|date:"d/m/Y H:i" }}</strong>
+      </div>
+      <div class="summary">
+        <span class="muted">Saldo efectivo</span>
+        <strong>${{ box.saldo_esperado }}</strong>
+      </div>
+      <div class="summary">
+        <span class="muted">Ventas e ingresos cargados</span>
+        <strong>${{ sales_breakdown.total }}</strong>
+      </div>
+      <div class="summary">
+        <span class="muted">Movimientos posteriores a apertura</span>
+        <strong>{{ follow_up.post_opening_count }}</strong>
+      </div>
+    </div>
+  </section>
+
+  <section id="ventas" class="card mt-16">
+    <div class="row">
+      <div>
+        <h2>Composicion de ventas e ingresos</h2>
+        <p class="muted">Desglose de los movimientos que componen el total operativo visible para esta caja.</p>
+      </div>
+      <span class="badge-muted">${{ sales_breakdown.total }}</span>
+    </div>
+    {% if sales_breakdown.groups %}
+      <div class="summary-grid mt-16">
+        {% for group in sales_breakdown.groups %}
+          <div class="summary">
+            <span class="muted">{{ group.label }}</span>
+            <strong>${{ group.total }}</strong>
+            <small class="muted">
+              {% if group.impacta_saldo_caja %}
+                impacta efectivo fisico
+              {% else %}
+                no impacta efectivo fisico
+              {% endif %}
+            </small>
+          </div>
+        {% endfor %}
+      </div>
+      <div class="list mt-16">
+        {% for movement in sales_breakdown.movements %}
+          <article class="list-item">
+            <div class="row">
+              <strong>{{ movement.tipo_label }}</strong>
+              <span class="badge {% if movement.impacta_saldo_caja %}badge-success{% else %}badge-muted{% endif %}">
+                {% if movement.impacta_saldo_caja %}Efectivo{% else %}A acreditar{% endif %}
+              </span>
+            </div>
+            <div class="summary-grid mt-12">
+              <div class="summary">
+                <span class="muted">Importe</span>
+                <strong>${{ movement.monto }}</strong>
+              </div>
+              <div class="summary">
+                <span class="muted">Usuario</span>
+                <strong>{% firstof movement.creado_por "Sin usuario" %}</strong>
+              </div>
+              <div class="summary">
+                <span class="muted">Fecha y hora</span>
+                <strong>{{ movement.creado_en|date:"d/m/Y H:i" }}</strong>
+              </div>
+            </div>
+            {% if movement.rubro_operativo %}
+              <div class="muted mt-8">Rubro: {{ movement.rubro_operativo.nombre }}</div>
+            {% endif %}
+            {% if movement.observacion %}
+              <div class="muted mt-8">{{ movement.observacion }}</div>
+            {% endif %}
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted mt-16">No hay ventas o ingresos operativos registrados para esta caja.</p>
+    {% endif %}
+  </section>
+
+  <section class="card mt-16">
+    <div class="row">
+      <h2>Todos los movimientos</h2>
+      <span class="badge-muted">{{ movements|length }} registros</span>
+    </div>
+    {% include "cashops/partials/movement_list.html" with movements=movements %}
+  </section>
+
+  <section id="historial" class="card mt-16">
+    <div class="row">
+      <div>
+        <h2>Historial de actividad</h2>
+        <p class="muted">Bitacora de apertura, cargas, correcciones futuras, cierre y ultima actividad registrada.</p>
+      </div>
+      {% if latest_event %}
+        <span class="badge-muted">Ultima actividad {{ latest_event.timestamp|date:"d/m/Y H:i" }}</span>
+      {% endif %}
+    </div>
+    <div class="list mt-16">
+      {% for event in timeline %}
+        <article class="list-item">
+          <div class="row">
+            <strong>{{ event.title }}</strong>
+            <span class="badge {{ event.badge_class }}">{{ event.badge_label }}</span>
+          </div>
+          <div class="muted mt-8">{{ event.timestamp|date:"d/m/Y H:i" }} · {{ event.user_label }}</div>
+          <div class="mt-8">{{ event.detail }}</div>
+          {% if event.amount is not None %}
+            <div class="muted mt-8">Importe relacionado: ${{ event.amount }}</div>
+          {% endif %}
+        </article>
+      {% empty %}
+        <p class="muted">No hay actividad registrada para esta caja.</p>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

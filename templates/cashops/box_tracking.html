@@ -1,0 +1,107 @@
+{% extends "cashops/layout.html" %}
+{% block title %}Seguimiento de cajas | Gerayse{% endblock %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Seguimiento de cajas</h1>
+        <p class="muted">Ubica cajas abiertas, cerradas o incompletas y retoma la carga donde se haya interrumpido.</p>
+      </div>
+      <a class="button-secondary" href="{% url 'cashops:dashboard' %}">Volver a caja</a>
+    </div>
+    <form method="get" class="stack" style="margin-top:16px;">
+      <div class="summary-grid">
+        <div class="field">
+          <label for="id_estado">Estado</label>
+          <select id="id_estado" class="select" name="estado">
+            <option value="todas" {% if status_filter == "todas" %}selected{% endif %}>Todas</option>
+            <option value="abiertas" {% if status_filter == "abiertas" %}selected{% endif %}>Abiertas</option>
+            <option value="cerradas" {% if status_filter == "cerradas" %}selected{% endif %}>Cerradas</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="id_fecha_desde">Fecha operativa desde</label>
+          <input id="id_fecha_desde" class="input" type="date" name="fecha_desde" value="{{ fecha_desde }}">
+        </div>
+        <div class="field">
+          <label for="id_fecha_hasta">Fecha operativa hasta</label>
+          <input id="id_fecha_hasta" class="input" type="date" name="fecha_hasta" value="{{ fecha_hasta }}">
+        </div>
+      </div>
+      {% if sucursales %}
+        <div class="field">
+          <label for="id_sucursal">Sucursales</label>
+          <select id="id_sucursal" class="select" name="sucursal" multiple size="{{ sucursales|length|add:'0' }}">
+            {% for sucursal in sucursales %}
+              <option value="{{ sucursal.id }}" {% if sucursal.id in selected_branch_ids %}selected{% endif %}>{{ sucursal.nombre }}</option>
+            {% endfor %}
+          </select>
+          <small class="muted">Puedes elegir una o varias sucursales para ver el seguimiento conjunto.</small>
+        </div>
+      {% endif %}
+      <div class="row">
+        <span class="muted">{{ rows|length }} caja{% if rows|length != 1 %}s{% endif %} encontradas</span>
+        <button class="button" type="submit">Aplicar filtros</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card mt-16">
+    <div class="row">
+      <h2>Listado de cajas</h2>
+      <span class="badge-muted">abiertas, cerradas e incompletas</span>
+    </div>
+    <div class="list" style="margin-top:16px;">
+      {% for row in rows %}
+        <article class="list-item">
+          <div class="row">
+            <div>
+              <strong>Caja #{{ row.box.id }}</strong>
+              <div class="muted mt-8">{{ row.box.sucursal.nombre }} · {{ row.box.turno.get_tipo_display }} · {{ row.box.fecha_operativa|date:"d/m/Y" }}</div>
+            </div>
+            <span class="badge {{ row.follow_up.badge_class }}">{{ row.follow_up.label }}</span>
+          </div>
+          <div class="summary-grid mt-12">
+            <div class="summary">
+              <span class="muted">Responsable</span>
+              <strong>{{ row.box.usuario }}</strong>
+            </div>
+            <div class="summary">
+              <span class="muted">Ultima actividad</span>
+              <strong>{{ row.follow_up.last_activity_at|date:"d/m/Y H:i" }}</strong>
+            </div>
+            <div class="summary">
+              <span class="muted">Ventas cargadas</span>
+              <strong>${{ row.sales_breakdown.total }}</strong>
+            </div>
+            <div class="summary">
+              <span class="muted">Saldo efectivo</span>
+              <strong>${{ row.box.saldo_esperado }}</strong>
+            </div>
+          </div>
+          {% if row.sales_breakdown.groups %}
+            <div class="summary-grid mt-12">
+              {% for group in row.sales_breakdown.groups %}
+                <div class="summary">
+                  <span class="muted">{{ group.label }}</span>
+                  <strong>${{ group.total }}</strong>
+                </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+          <p class="muted mt-12">{{ row.follow_up.detail }}</p>
+          <div class="list-actions">
+            {% if row.box.estado == "ABIERTA" %}
+              <a class="button" href="{{ row.resume_url }}">Retomar carga</a>
+            {% endif %}
+            <a class="button-secondary" href="{{ row.detail_url }}">Ver detalle</a>
+            <a class="button-secondary" href="{{ row.detail_url }}#ventas">Ver composicion</a>
+            <a class="button-secondary" href="{{ row.detail_url }}#historial">Ver historial</a>
+          </div>
+        </article>
+      {% empty %}
+        <p class="muted">No hay cajas para los filtros seleccionados.</p>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

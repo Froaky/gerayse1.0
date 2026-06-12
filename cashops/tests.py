@@ -1281,6 +1281,111 @@ class CashopsViewTests(CashopsTestCase):
         self.assertContains(response, "Global")
         self.assertNotContains(response, "Caja activa")
 
+    def test_tracking_view_lists_open_and_closed_boxes_for_admin(self):
+        register_cash_income(
+            caja=self.owned_box,
+            monto=Decimal("125.00"),
+            categoria="Mostrador",
+            observacion="Cobro efectivo",
+            creado_por=self.operator,
+            actor=self.operator,
+        )
+        register_general_sale(
+            caja=self.owned_box,
+            monto=Decimal("80.00"),
+            tipo_venta=MovimientoCaja.Tipo.VENTA_QR,
+            rubro=self.rubro_insumos,
+            observacion="QR",
+            creado_por=self.operator,
+            actor=self.operator,
+        )
+        close_box(caja=self.foreign_box, saldo_fisico=Decimal("800.00"), cerrado_por=self.admin, actor=self.admin)
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("cashops:box_tracking"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Seguimiento de cajas")
+        self.assertContains(response, f"Caja #{self.owned_box.pk}")
+        self.assertContains(response, f"Caja #{self.foreign_box.pk}")
+        self.assertContains(response, "Carga en curso")
+        self.assertContains(response, "Cerrada")
+        self.assertContains(response, "Efectivo")
+
+    def test_tracking_view_status_filter_hides_closed_boxes(self):
+        close_box(caja=self.foreign_box, saldo_fisico=Decimal("800.00"), cerrado_por=self.admin, actor=self.admin)
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("cashops:box_tracking"), {"estado": "abiertas"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f"Caja #{self.owned_box.pk}")
+        self.assertNotContains(response, f"Caja #{self.foreign_box.pk}")
+
+    def test_regular_tracking_view_hides_foreign_boxes(self):
+        self.client.force_login(self.operator)
+
+        response = self.client.get(reverse("cashops:box_tracking"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f"Caja #{self.owned_box.pk}")
+        self.assertNotContains(response, f"Caja #{self.foreign_box.pk}")
+
+    def test_box_detail_shows_sales_breakdown_and_history(self):
+        register_cash_income(
+            caja=self.owned_box,
+            monto=Decimal("125.00"),
+            categoria="Mostrador",
+            observacion="Cobro efectivo",
+            creado_por=self.operator,
+            actor=self.operator,
+        )
+        register_general_sale(
+            caja=self.owned_box,
+            monto=Decimal("80.00"),
+            tipo_venta=MovimientoCaja.Tipo.VENTA_QR,
+            rubro=self.rubro_insumos,
+            observacion="QR",
+            creado_por=self.operator,
+            actor=self.operator,
+        )
+        self.client.force_login(self.operator)
+
+        response = self.client.get(reverse("cashops:box_detail", args=[self.owned_box.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Composicion de ventas e ingresos")
+        self.assertContains(response, "Efectivo")
+        self.assertContains(response, "Historial de actividad")
+        self.assertContains(response, "Caja abierta")
+        self.assertContains(response, "Retomar carga")
+
+    def test_closed_box_detail_keeps_history_in_read_only_mode(self):
+        register_cash_income(
+            caja=self.owned_box,
+            monto=Decimal("40.00"),
+            categoria="Mostrador",
+            observacion="Antes del cierre",
+            creado_por=self.operator,
+            actor=self.operator,
+        )
+        close_box(caja=self.owned_box, saldo_fisico=Decimal("1040.00"), cerrado_por=self.operator, actor=self.operator)
+        self.client.force_login(self.operator)
+
+        response = self.client.get(reverse("cashops:box_detail", args=[self.owned_box.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Caja cerrada")
+        self.assertContains(response, "consulta")
+        self.assertContains(response, "Historial de actividad")
+
+    def test_regular_user_gets_403_for_foreign_box_detail(self):
+        self.client.force_login(self.operator)
+
+        response = self.client.get(reverse("cashops:box_detail", args=[self.foreign_box.pk]))
+
+        self.assertEqual(response.status_code, 403)
+
     def test_regular_dashboard_hides_foreign_box(self):
         self.client.force_login(self.operator)
 

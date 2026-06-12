@@ -1,6 +1,6 @@
 # Context
 
-Last updated: 2026-06-11
+Last updated: 2026-06-12
 
 ## Product Snapshot
 
@@ -60,6 +60,44 @@ Last updated: 2026-06-11
   - changes touching money, debt, permissions, migrations, dashboards or operational controls require proportional tests
 
 ## Current Session
+
+### Backlog Intake 2026-06-12
+
+- New user feedback:
+  - user wants to see the composition of sales from the system whenever a total sale is shown, instead of inferring it from isolated records
+  - user also wants a complete tracking view of loaded cajas: by sucursal, one or many sucursales, operational date, status, and point where the load was left unfinished so they can continue it
+  - closed cajas must remain visible in listings, not only active/open ones
+- Scope decision:
+  - keep this intake in `EP-08` because both requests are operational caja traceability, not treasury financial reading and not economic rubro composition
+  - explicit assumption: `composicion de la venta` here means drilldown of operational sales/totals shown in caja views or listings; economic rubro composition is already covered by `EP-11` `US-11.10`
+- Backlog files updated:
+  - `docs/epics/EP-08-ajustes-operativos-de-caja-y-sucursales.md`: added `US-8.16`, `US-8.17` and `US-8.18`, and strengthened epic scope/rules/closure for caja follow-up, sales composition drilldown and caja activity history
+  - `docs/epics/README.md`: expanded `EP-08` pending scope to `US-8.14` through `US-8.18`
+- Validation:
+  - reviewed numbering and epic fit; application tests not run because this intake only changed backlog markdown and project memory
+
+### EP-08 Runtime Slice 2026-06-12
+
+- Continued after backlog intake to implement the caja follow-up slice.
+- Implemented:
+  - new `Seguimiento de cajas` view with filters by one or many sucursales, operational date range and estado, showing open and closed cajas in the active company context
+  - each caja row now shows responsible user, last activity, loaded sales total, cash balance and quick actions to retake, inspect composition or review history
+  - new caja detail view with sales/income breakdown, full movement list and auditable activity timeline from opening to closing or latest activity
+  - dashboard now links to tracking and to the detailed caja view; selected caja shows `Ventas cargadas` with direct drilldown to composition
+  - movement labels in caja templates now render meaningful names for seeded channels and operational movement types
+- Scope decision:
+  - `US-8.16`, `US-8.17` and `US-8.18` are implemented
+  - `US-8.15` stays pending because the current tracking view lists real loaded cajas but does not yet surface explicit expected-missing cajas by turno/sucursal
+- Files touched:
+  - `cashops/services.py`, `cashops/views.py`, `cashops/urls.py`, `cashops/tests.py`
+  - `templates/cashops/dashboard.html`, `templates/cashops/layout.html`, `templates/cashops/partials/movement_list.html`
+  - `templates/cashops/box_tracking.html`, `templates/cashops/box_detail.html`
+  - `docs/epics/EP-08-ajustes-operativos-de-caja-y-sucursales.md`, `docs/epics/README.md`, `context.md`
+- Validation:
+  - `py -3.14 manage.py test cashops.tests.CashopsViewTests -v 1` with `PYTHONPATH=.venv\Lib\site-packages` passed: 44 tests OK
+  - `py -3.14 manage.py test cashops.tests -v 1` with `PYTHONPATH=.venv\Lib\site-packages` passed: 90 tests OK
+  - `py -3.14 -m compileall cashops` with `PYTHONPATH=.venv\Lib\site-packages` passed
+  - `git diff --check` returned only CRLF working-copy warnings
 
 ### EP-10 Runtime Slice 2026-06-08
 
@@ -727,6 +765,11 @@ Last updated: 2026-06-11
 - `docs/epics/EP-08-ajustes-operativos-de-caja-y-sucursales.md`
   - made explicit that carry-overs/unifications do not cross branches and require an auditable reason
   - tightened `US-8.3` so the simplification target is implementable without guessing
+  - added `US-8.16` for follow-up/continuation of cajas by sucursal, date, state and last activity
+  - added `US-8.17` for drilldown of visible sales and operational totals from caja views/lists
+  - added `US-8.18` for an auditable caja timeline showing opening, loads, corrections, closing and interruption point
+- `docs/epics/README.md`
+  - expanded `EP-08` reopened scope from `US-8.14`/`US-8.15` to `US-8.14` through `US-8.18`
 - `docs/epics/EP-09-usuarios-operativos-y-datos-minimos.md`
   - defined `usuario fijo` as preferred operational assignment rather than a hard lock, leaving the future model/UI cut implementable
 - `docs/epics/EP-11-rentabilidad-y-situacion-economica.md`
@@ -788,6 +831,7 @@ Last updated: 2026-06-11
   - application tests after the `treasury/views.py` text-normalization pass, because this slice only adjusted UI labels/separators and did not change business behavior
   - application tests for `docs/engineering-guidelines.md` and `README.md`, because this task only added repository documentation and no runtime behavior changed
   - application tests for the new epic docs, because this task only added backlog markdown
+  - application tests for the 2026-06-12 EP-08 backlog update, because this task only changed epic markdown and project memory
   - application tests for the 2026-06-11 `US-11.7` backlog update, because this task only changed epic markdown and project memory
   - application tests for the new skill files, because they only add skill metadata and instructions
   - application tests for the backlog-normalization pass on `docs/epics`, because no runtime code changed in this slice
@@ -810,6 +854,7 @@ Last updated: 2026-06-11
 - EP-08 review snapshot:
   - implemented: quick path principal enfocado en ingresos, egreso como acceso secundario, detalle minimo de movimientos, venta por rubro sin `producto`, arrastre auditado entre cajas de la misma sucursal incluso entre turnos o dias
   - reopened 2026-04-28: pending `US-8.13` to avoid mixing physical cash balance with card/QR/debit/credit/wallet/app sales in the caja dashboard
+  - reopened scope expanded 2026-06-12 and then partially closed: `US-8.16`, `US-8.17` and `US-8.18` now implemented; pending `US-8.14` for audited corrections and `US-8.15` for explicit missing-caja control by turno/sucursal
   - guardrails: sigue bloqueado el cruce entre sucursales y el dominio rechaza arrastres fuera de la misma sucursal
   - key refs: `cashops/models.py`, `cashops/forms.py`, `cashops/services.py`, `cashops/views.py`, `templates/cashops/dashboard.html`, `templates/cashops/sucursal_list.html`
 - EP-12 initial scope:
@@ -867,6 +912,9 @@ Last updated: 2026-06-11
 - Use `testing-riguroso-extremo` when a slice changes business rules, money, permissions, migrations, commands, or when a story should not be marked done without hard test evidence.
 - Next EP-06 candidates in order:
   - `EP-06` quedo funcionalmente cerrado; posible mejora futura: export XLSX con formato similar a la matriz original si negocio lo pide
+- Next EP-08 candidates in order:
+  - implementar `US-8.14` para correccion auditada de ventas, importes y egresos ya cargados
+  - implementar `US-8.15` para marcar explicitamente cajas faltantes esperadas por turno/sucursal, no solo las ya cargadas
 - Next EP-07 candidates in order:
   - `EP-07` quedo funcionalmente cerrado; posibles mejoras futuras: integracion fiscal externa, documentos adjuntos formales y circuito especifico de liquidacion de sueldos
 - Next EP-10 candidates in order:

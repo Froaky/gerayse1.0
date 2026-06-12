@@ -35,10 +35,13 @@
         <h3>Vista actual</h3>
         <p class="muted">El semaforo, KPIs y alertas cambian segun la vista seleccionada.</p>
       </div>
-      {% if is_cashops_admin %}
-        <a class="button-secondary" href="{% url 'cashops:alert_panel' %}">Panel de alertas</a>
-        <a class="button-secondary" href="{% url 'cashops:management_matrix' %}">Matriz diaria</a>
-      {% endif %}
+      <div class="list-actions">
+        <a class="button-secondary" href="{% url 'cashops:box_tracking' %}">Seguimiento de cajas</a>
+        {% if is_cashops_admin %}
+          <a class="button-secondary" href="{% url 'cashops:alert_panel' %}">Panel de alertas</a>
+          <a class="button-secondary" href="{% url 'cashops:management_matrix' %}">Matriz diaria</a>
+        {% endif %}
+      </div>
     </div>
     <div class="list-actions">
       {% if is_cashops_admin %}
@@ -177,6 +180,11 @@
               <span class="muted">Sucursal</span>
               <strong>{{ selected_box.sucursal.nombre }}</strong>
             </div>
+            <a class="summary" href="{% url 'cashops:box_detail' selected_box.id %}#ventas">
+              <span class="muted">Ventas cargadas</span>
+              <strong>${{ selected_box_sales_breakdown.total }}</strong>
+              <small class="muted">ver composicion</small>
+            </a>
           </div>
           {% if dashboard_snapshot.ventas_por_canal %}
             <div style="margin-top:12px;">
@@ -193,6 +201,10 @@
           {% endif %}
           {% if selected_box.estado == 'ABIERTA' %}
             <div class="action-grid" style="margin-top:16px;">
+              <a class="action-card" href="{% url 'cashops:box_detail' selected_box.id %}">
+                <span>Ver detalle completo</span>
+                <small>historial, ventas y movimientos</small>
+              </a>
               <a class="action-card" href="{% url 'cashops:register_sale' selected_box.id %}">
                 <span>Registrar venta</span>
                 <small>tarjeta, QR, PedidosYa o transferencia</small>
@@ -212,6 +224,13 @@
               <a class="action-card" href="{% url 'cashops:box_close' selected_box.id %}">
                 <span>Cerrar caja</span>
                 <small>saldo fisico y validacion</small>
+              </a>
+            </div>
+          {% else %}
+            <div class="action-grid" style="margin-top:16px;">
+              <a class="action-card" href="{% url 'cashops:box_detail' selected_box.id %}">
+                <span>Ver detalle completo</span>
+                <small>consulta y auditoria de la caja cerrada</small>
               </a>
             </div>
           {% endif %}

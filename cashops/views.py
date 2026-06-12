@@ -5,7 +5,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError
-from django.db.models import Count, Q
+from django.db.models import Count, Prefetch, Q
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -28,13 +28,14 @@ from .forms import (
     TransferenciaEntreSucursalesForm,
     VentaGeneralForm,
 )
-from .models import CanalIngreso, Caja, CierreCaja, Empresa, LimiteRubroOperativo, RubroOperativo, Sucursal, Turno
+from .models import CanalIngreso, Caja, CierreCaja, Empresa, LimiteRubroOperativo, MovimientoCaja, RubroOperativo, Sucursal, Turno
 from .permissions import ensure_cashops_read, ensure_cashops_write, ensure_config_read, ensure_config_write
 from .services import (
     BRANCH_TRANSFER_DISABLED_REASON,
     CLOSING_DIFF_THRESHOLD,
     OPERATIONAL_ALERT_SCOPE_POLICY,
     OPERATIONAL_ALERT_SCOPE_POLICY_RULES,
+    build_box_activity_timeline,
     build_alert_panel_queryset,
     build_box_control_scope,
     build_branch_control_scope,
@@ -42,7 +43,11 @@ from .services import (
     build_management_daily_matrix,
     build_operational_control_snapshot,
     build_operational_period_summary,
+    build_box_sales_breakdown,
     close_box,
+    describe_box_follow_up,
+    get_cash_movement_type_label,
+    get_income_channel_map,
     open_box,
     register_cash_income,
     register_general_sale,
@@ -69,6 +74,14 @@ def _owned_open_boxes(request):
             return queryset.filter(sucursal__empresa_id__in=empresa_ids)
         return queryset
     return queryset.filter(usuario=request.user)
+
+
+def _box_movements_prefetch():
+    return Prefetch(
+        "movimientos",
+        queryset=MovimientoCaja.objects.select_related("creado_por", "rubro_operativo", "transferencia").order_by("-creado_en", "-id"),
+        to_attr="prefetched_movements",
+    )
 
 
 def _get_box_for_request(request, box_id: int):
@@ -328,11 +341,18 @@ def dashboard(request):
     dashboard_snapshot = scope_context["snapshot"]
 
     recent_movements = []
+    selected_box_sales_breakdown = {"total": Decimal("0.00"), "groups": [], "movements": []}
     if selected_box is not None:
         recent_movements = (
             selected_box.movimientos.select_related("transferencia", "creado_por", "rubro_operativo")
             .order_by("-creado_en", "-id")[:20]
         )
+        selected_box_sales_breakdown = build_box_sales_breakdown(
+            selected_box.movimientos.select_related("creado_por", "rubro_operativo", "transferencia").order_by("-creado_en", "-id")
+        )
+        channel_map = get_income_channel_map()
+        for movement in recent_movements:
+            movement.tipo_label = get_cash_movement_type_label(movement.tipo, channel_map)
 
     is_admin = scope_context["is_admin"]
 
@@ -341,6 +361,7 @@ def dashboard(request):
         "selected_branch": scope_context["selected_branch"],
         "open_boxes": boxes.filter(estado=Caja.Estado.ABIERTA),
         "recent_movements": recent_movements,
+        "selected_box_sales_breakdown": selected_box_sales_breakdown,
         "turnos_disponibles": Turno.objects.select_related("empresa").all() if is_admin else [],
         "sucursales": _sucursales_for_dashboard(request).filter(activa=True) if is_admin else [],
         "dashboard_scope": scope_context["scope_name"],
@@ -352,6 +373,105 @@ def dashboard(request):
         "is_cashops_admin": is_admin,
     }
     return render(request, "cashops/dashboard.html", context)
+
+
+@login_required
+def box_tracking_view(request):
+    _require_cashops_read(request)
+    empresa_ids = _get_empresa_ids(request)
+    sucursales = _sucursales_for_dashboard(request).filter(activa=True).order_by("nombre")
+    selected_branch_ids = []
+    for raw_id in request.GET.getlist("sucursal"):
+        try:
+            selected_branch_ids.append(int(raw_id))
+        except (TypeError, ValueError):
+            continue
+
+    status_filter = (request.GET.get("estado") or "todas").lower()
+    date_from = parse_date(request.GET.get("fecha_desde") or "")
+    date_to = parse_date(request.GET.get("fecha_hasta") or "")
+
+    boxes = (
+        _boxes_for_request(request)
+        .select_related("sucursal", "turno", "usuario", "cerrada_por")
+        .prefetch_related(_box_movements_prefetch(), "cierre__justificacion")
+        .order_by("-fecha_operativa", "-abierta_en", "-id")
+    )
+    if selected_branch_ids:
+        boxes = boxes.filter(sucursal_id__in=selected_branch_ids)
+    if date_from:
+        boxes = boxes.filter(fecha_operativa__gte=date_from)
+    if date_to:
+        boxes = boxes.filter(fecha_operativa__lte=date_to)
+    if status_filter == "abiertas":
+        boxes = boxes.filter(estado=Caja.Estado.ABIERTA)
+    elif status_filter == "cerradas":
+        boxes = boxes.filter(estado=Caja.Estado.CERRADA)
+
+    rows = []
+    for box in boxes:
+        movements = list(getattr(box, "prefetched_movements", []))
+        sales_breakdown = build_box_sales_breakdown(movements)
+        follow_up = describe_box_follow_up(box, movements)
+        rows.append(
+            {
+                "box": box,
+                "movements": movements,
+                "sales_breakdown": sales_breakdown,
+                "follow_up": follow_up,
+                "resume_url": f"{reverse('cashops:dashboard')}?scope=box&box={box.pk}",
+                "detail_url": reverse("cashops:box_detail", args=[box.pk]),
+            }
+        )
+
+    return render(
+        request,
+        "cashops/box_tracking.html",
+        {
+            "title": "Seguimiento de cajas",
+            "rows": rows,
+            "sucursales": sucursales,
+            "selected_branch_ids": selected_branch_ids,
+            "status_filter": status_filter,
+            "fecha_desde": request.GET.get("fecha_desde", ""),
+            "fecha_hasta": request.GET.get("fecha_hasta", ""),
+            "empresa_ids": empresa_ids,
+        },
+    )
+
+
+@login_required
+def box_detail_view(request, box_id: int):
+    _require_cashops_read(request)
+    box = _get_box_for_request(request, box_id)
+    box = (
+        Caja.objects.select_related("sucursal", "turno", "usuario", "cerrada_por")
+        .prefetch_related(_box_movements_prefetch(), "cierre__justificacion")
+        .get(pk=box.pk)
+    )
+    movements = list(getattr(box, "prefetched_movements", []))
+    sales_breakdown = build_box_sales_breakdown(movements)
+    follow_up = describe_box_follow_up(box, movements)
+    timeline = build_box_activity_timeline(box, movements)
+    latest_event = timeline[0] if timeline else None
+    channel_map = get_income_channel_map()
+    for movement in movements:
+        movement.tipo_label = get_cash_movement_type_label(movement.tipo, channel_map)
+
+    return render(
+        request,
+        "cashops/box_detail.html",
+        {
+            "box": box,
+            "movements": movements,
+            "sales_breakdown": sales_breakdown,
+            "follow_up": follow_up,
+            "timeline": timeline,
+            "latest_event": latest_event,
+            "resume_url": f"{reverse('cashops:dashboard')}?scope=box&box={box.pk}",
+            "tracking_url": reverse("cashops:box_tracking"),
+        },
+    )
 
 
 @login_required
