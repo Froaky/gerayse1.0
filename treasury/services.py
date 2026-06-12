@@ -813,6 +813,22 @@ def _bank_accreditation_movement_scope_query(*, date_from: date, date_to: date) 
     )
 
 
+def _bank_account_empresa_scope_query(empresa_ids) -> Q:
+    """
+    Company scope for bank accounts used by treasury dashboards.
+
+    Bank accounts can be left without branch because real bank movements are
+    consolidated and not always discriminated by branch. If the user has an
+    active company scope, include both accounts linked to that company's
+    branches and global accounts without branch.
+    """
+    return Q(sucursal__empresa_id__in=empresa_ids) | Q(sucursal__isnull=True)
+
+
+def _bank_movement_empresa_scope_query(empresa_ids) -> Q:
+    return Q(cuenta_bancaria__sucursal__empresa_id__in=empresa_ids) | Q(cuenta_bancaria__sucursal__isnull=True)
+
+
 def create_bank_movement(
     *,
     cuenta_bancaria: CuentaBancaria,
@@ -1633,7 +1649,7 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     if sucursal is not None:
         bank_movements = bank_movements.filter(cuenta_bancaria__sucursal=sucursal)
     elif empresa_ids:
-        bank_movements = bank_movements.filter(cuenta_bancaria__sucursal__empresa_id__in=empresa_ids)
+        bank_movements = bank_movements.filter(_bank_movement_empresa_scope_query(empresa_ids))
 
     bank_totals = bank_movements.aggregate(
         creditos=Sum("monto", filter=Q(tipo=MovimientoBancario.Tipo.CREDITO)),
@@ -1646,7 +1662,7 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     if sucursal is not None:
         bank_accounts = bank_accounts.filter(sucursal=sucursal)
     elif empresa_ids:
-        bank_accounts = bank_accounts.filter(sucursal__empresa_id__in=empresa_ids)
+        bank_accounts = bank_accounts.filter(_bank_account_empresa_scope_query(empresa_ids))
 
     bank_balances = []
     total_bank_balance = Decimal("0.00")
@@ -1699,7 +1715,7 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     ).filter(_bank_accreditation_movement_scope_query(date_from=date_from, date_to=date_to))
     if accreditation_empresa_ids:
         bank_accreditation_movements = bank_accreditation_movements.filter(
-            cuenta_bancaria__sucursal__empresa_id__in=accreditation_empresa_ids
+            _bank_movement_empresa_scope_query(accreditation_empresa_ids)
         )
 
     bank_accreditation_movements = bank_accreditation_movements.distinct()
@@ -2066,7 +2082,7 @@ def build_disponibilidades_snapshot(year: int, month: int, sucursal=None, empres
     if sucursal:
         bank_accounts = bank_accounts.filter(sucursal=sucursal)
     elif empresa_ids:
-        bank_accounts = bank_accounts.filter(sucursal__empresa_id__in=empresa_ids)
+        bank_accounts = bank_accounts.filter(_bank_account_empresa_scope_query(empresa_ids))
         
     accounts_info = []
     total_bancos_final = Decimal("0.00")

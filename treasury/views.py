@@ -1446,6 +1446,7 @@ def bank_movements_list(request):
     if empresa_ids:
         movements = movements.filter(
             Q(cuenta_bancaria__sucursal__empresa_id__in=empresa_ids)
+            | Q(cuenta_bancaria__sucursal__isnull=True)
             | Q(sucursal_gasto__empresa_id__in=empresa_ids)
         )
 
