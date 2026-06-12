@@ -789,6 +789,54 @@ class TreasuryServiceTests(TreasuryTestCase):
         self.assertEqual(branch_snapshot["total_bank_balance"], Decimal("430.00"))
         self.assertEqual(branch_snapshot["pending_total"], Decimal("240.00"))
 
+    def test_financial_period_snapshot_uses_manual_bank_accreditation_movements(self):
+        empresa = Empresa.objects.create(nombre="Empresa Movimiento Manual")
+        branch = Sucursal.objects.create(
+            codigo="MAN-ACC",
+            nombre="Sucursal Movimiento Manual",
+            razon_social="Empresa Movimiento Manual",
+            empresa=empresa,
+        )
+        branch_account = create_bank_account(
+            nombre="Cuenta Manual Acreditacion",
+            banco="Banco Manual",
+            tipo_cuenta=CuentaBancaria.Tipo.CUENTA_CORRIENTE,
+            numero_cuenta="MAN-001",
+            sucursal=branch,
+            actor=self.admin,
+        )
+        turno = Turno.objects.create(empresa=empresa, tipo=Turno.Tipo.MANANA, creado_por=self.admin)
+        box = open_box(
+            user=self.operator,
+            turno=turno,
+            sucursal=branch,
+            fecha_operativa=timezone.localdate(),
+            monto_inicial=Decimal("0.00"),
+            actor=self.admin,
+        )
+        register_card_sale(caja=box, monto=Decimal("250.00"), actor=self.operator)
+        create_bank_movement(
+            cuenta_bancaria=branch_account,
+            tipo=MovimientoBancario.Tipo.CREDITO,
+            clase=MovimientoBancario.Clase.ACREDITACION,
+            fecha=timezone.localdate(),
+            monto=Decimal("180.00"),
+            concepto="Acreditacion cargada desde Tesoreria",
+            actor=self.admin,
+        )
+
+        snapshot = build_financial_period_snapshot(
+            date_from=timezone.localdate(),
+            date_to=timezone.localdate(),
+            sucursal=branch,
+            empresa_ids=[empresa.pk],
+        )
+
+        self.assertEqual(snapshot["digital_sales_total"], Decimal("250.00"))
+        self.assertEqual(snapshot["accredited_net"], Decimal("180.00"))
+        self.assertEqual(snapshot["accredited_gross"], Decimal("180.00"))
+        self.assertEqual(snapshot["pending_accreditation_total"], Decimal("70.00"))
+
     def test_financial_period_snapshot_uses_grouped_accreditation_coverage_period(self):
         branch = Sucursal.objects.create(codigo="SUC-P", nombre="Sucursal Periodo", razon_social="Periodo SRL")
         empresa = Empresa.objects.create(nombre="Empresa Periodo Snapshot")

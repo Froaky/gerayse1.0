@@ -791,6 +791,28 @@ def _accreditation_scope_query(*, date_from: date, date_to: date) -> Q:
     )
 
 
+def _bank_accreditation_movement_scope_query(*, date_from: date, date_to: date) -> Q:
+    """
+    Scope used by the dashboard for card-sale accreditation follow-up.
+
+    The dashboard compares card sales from cash boxes against bank credits
+    registered in Treasury as accreditation movements. Those credits can be
+    created directly as bank movements, without an AcreditacionTarjeta record,
+    because real bank accreditations enter consolidated by lot and are not
+    discriminated by branch or box.
+
+    Existing AcreditacionTarjeta records are still supported, including grouped
+    records that cover a sales period even when the bank movement date is later.
+    """
+    return Q(fecha__gte=date_from, fecha__lte=date_to) | Q(
+        acreditacion_tarjeta__modo_registro=AcreditacionTarjeta.ModoRegistro.PERIODO,
+        acreditacion_tarjeta__periodo_desde__isnull=False,
+        acreditacion_tarjeta__periodo_hasta__isnull=False,
+        acreditacion_tarjeta__periodo_desde__gte=date_from,
+        acreditacion_tarjeta__periodo_hasta__lte=date_to,
+    )
+
+
 def create_bank_movement(
     *,
     cuenta_bancaria: CuentaBancaria,
@@ -1671,15 +1693,23 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
         digital_sales = digital_sales.filter(caja__sucursal__empresa_id__in=accreditation_empresa_ids)
     digital_sales_total = digital_sales.aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
 
-    accreditations = AcreditacionTarjeta.objects.filter(_accreditation_scope_query(date_from=date_from, date_to=date_to))
+    bank_accreditation_movements = MovimientoBancario.objects.filter(
+        tipo=MovimientoBancario.Tipo.CREDITO,
+        clase=MovimientoBancario.Clase.ACREDITACION,
+    ).filter(_bank_accreditation_movement_scope_query(date_from=date_from, date_to=date_to))
     if accreditation_empresa_ids:
-        accreditations = accreditations.filter(
-            movimiento_bancario__cuenta_bancaria__sucursal__empresa_id__in=accreditation_empresa_ids
+        bank_accreditation_movements = bank_accreditation_movements.filter(
+            cuenta_bancaria__sucursal__empresa_id__in=accreditation_empresa_ids
         )
 
-    accredited_net = accreditations.aggregate(total=Sum("movimiento_bancario__monto"))["total"] or Decimal("0.00")
+    bank_accreditation_movements = bank_accreditation_movements.distinct()
+    accredited_net = bank_accreditation_movements.aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
+
+    linked_accreditations = AcreditacionTarjeta.objects.filter(
+        movimiento_bancario__in=bank_accreditation_movements
+    )
     accreditation_discounts = (
-        DescuentoAcreditacion.objects.filter(acreditacion__in=accreditations).aggregate(total=Sum("monto"))["total"]
+        DescuentoAcreditacion.objects.filter(acreditacion__in=linked_accreditations).aggregate(total=Sum("monto"))["total"]
         or Decimal("0.00")
     )
     accredited_gross = accredited_net + accreditation_discounts

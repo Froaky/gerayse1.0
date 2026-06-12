@@ -243,7 +243,7 @@
       <div class="row">
         <div>
           <h2>Acreditaciones y pendientes</h2>
-          <p class="muted">Lectura del periodo para ventas digitales registradas y acreditaciones bancarias.</p>
+          <p class="muted">Lectura del periodo para ventas digitales registradas y movimientos bancarios de acreditacion cargados en Tesoreria.</p>
         </div>
         <span class="badge badge-warning">{{ snapshot.reference_date|date:"d/m/Y" }}</span>
       </div>
@@ -256,12 +256,12 @@
         <div class="summary">
           <span class="muted">Acreditado neto</span>
           <strong>{{ snapshot.accredited_net|money }}</strong>
-          <small class="muted">Neto recibido en banco</small>
+          <small class="muted">Neto recibido en banco segun movimientos de Tesoreria</small>
         </div>
         <div class="summary">
           <span class="muted">Descuentos</span>
           <strong>{{ snapshot.accreditation_discounts|money }}</strong>
-          <small class="muted">Comisiones, IIBB y otros descuentos cargados</small>
+          <small class="muted">Comisiones, IIBB y otros descuentos asociados si fueron informados</small>
         </div>
         <div class="summary">
           <span class="muted">Acreditado bruto</span>
@@ -269,7 +269,7 @@
           <small class="muted">Neto mas descuentos informados</small>
         </div>
       </div>
-      <p class="muted mt-16">Pendiente de acreditacion = ventas tarjeta del periodo menos acreditado bruto. Las acreditaciones se leen como fondo comun consolidado; el filtro de sucursal no prorratea ese ingreso. Negativo indica que el banco acredito mas de lo vendido.</p>
+      <p class="muted mt-16">Pendiente de acreditacion = ventas tarjeta del periodo menos acreditaciones bancarias registradas en Tesoreria. Las acreditaciones se leen como fondo comun consolidado; no se relacionan uno a uno con caja ni se prorratean por sucursal. Negativo indica que el banco acredito mas de lo vendido.</p>
     </div>
 
     <div class="card">
