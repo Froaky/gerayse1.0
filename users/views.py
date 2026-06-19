@@ -14,7 +14,7 @@ from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.views.decorators.http import require_POST
 
-from .forms import PersonalForm, RoleForm, UserAccessForm
+from .forms import OwnProfileForm, PersonalForm, RoleForm, UserAccessForm
 from .models import PermissionModule, Role, RolePermission, UserPermission
 
 User = get_user_model()
@@ -25,16 +25,16 @@ PERMISSION_MODULE_META = {
         "scope": "Cajas, apertura, movimientos, ingresos, egresos, traspasos y cierre operativo.",
     },
     PermissionModule.CONFIG: {
-        "label": "Configuracion",
+        "label": "Configuración",
         "scope": "Rubros, limites, empresas, sucursales, turnos y reinicio de datos.",
     },
     PermissionModule.TREASURY: {
-        "label": "Tesoreria",
+        "label": "Tesorería",
         "scope": "Proveedores, deudas, pagos, bancos, caja central y reportes.",
     },
     PermissionModule.USERS: {
         "label": "Usuarios",
-        "scope": "Alta, edicion, roles, permisos, archivo, baja y links de primer ingreso.",
+        "scope": "Alta, edición, roles, permisos, archivo, baja y links de primer ingreso.",
     },
 }
 
@@ -56,7 +56,7 @@ class GerayseLoginView(LoginView):
         form.fields["password"].widget.attrs.update(
             {
                 "class": "app-input",
-                "placeholder": "Contrasena",
+                "placeholder": "Contraseña",
                 "autocomplete": "current-password",
             }
         )
@@ -95,6 +95,15 @@ def _ensure_users_permission(request, action: str) -> None:
 def _style_password_form(form) -> None:
     for field in form.fields.values():
         field.widget.attrs.setdefault("class", "app-input")
+    if "old_password" in form.fields:
+        form.fields["old_password"].label = "Contraseña actual"
+        form.fields["old_password"].widget.attrs.setdefault("placeholder", "Contraseña actual")
+    if "new_password1" in form.fields:
+        form.fields["new_password1"].label = "Contraseña nueva"
+        form.fields["new_password1"].widget.attrs.setdefault("placeholder", "Contraseña nueva")
+    if "new_password2" in form.fields:
+        form.fields["new_password2"].label = "Confirmar contraseña nueva"
+        form.fields["new_password2"].widget.attrs.setdefault("placeholder", "Confirmar contraseña nueva")
 
 
 def _display_name(user) -> str:
@@ -238,7 +247,7 @@ def user_create(request):
         request,
         {
             "title": "Nuevo Usuario",
-            "subtitle": "Carga los datos de acceso, rol operativo y contrasena default.",
+            "subtitle": "Carga los datos de acceso, rol operativo y contraseña default.",
             "form": form,
             "submit_label": "Crear usuario",
             "back_url": reverse("users:user_list"),
@@ -263,7 +272,7 @@ def user_update(request, user_id: int):
         request,
         {
             "title": f"Editar Usuario: {_display_name(target_user)}",
-            "subtitle": "Actualiza identidad operativa, rol y contrasena si corresponde.",
+            "subtitle": "Actualiza identidad operativa, rol y contraseña si corresponde.",
             "form": form,
             "submit_label": "Actualizar usuario",
             "back_url": reverse("users:user_detail", args=[target_user.pk]),
@@ -284,7 +293,7 @@ def user_detail(request, user_id: int):
             role = access_form.cleaned_data.get("role")
             is_active = access_form.cleaned_data.get("is_active")
             if target_user.pk == request.user.pk and not is_active:
-                access_form.add_error("is_active", "No podes archivar tu propio usuario.")
+                access_form.add_error("is_active", "No podés archivar tu propio usuario.")
             if target_user.pk == request.user.pk and not request.user.is_superuser:
                 has_user_override = UserPermission.objects.filter(
                     user=target_user,
@@ -292,7 +301,7 @@ def user_detail(request, user_id: int):
                     can_write=True,
                 ).exists()
                 if not _role_grants_permission(role, PermissionModule.USERS, "write") and not has_user_override:
-                    access_form.add_error("role", "No podes quitarte tu propio acceso a usuarios.")
+                    access_form.add_error("role", "No podés quitarte tu propio acceso a usuarios.")
         if access_form.is_valid():
             access_form.save()
             messages.success(request, f"Permisos de {_display_name(target_user)} actualizados.")
@@ -310,7 +319,7 @@ def user_archive(request, user_id: int):
 
     target_user = get_object_or_404(User, pk=user_id)
     if target_user.pk == request.user.pk:
-        messages.error(request, "No podes archivar tu propio usuario.")
+        messages.error(request, "No podés archivar tu propio usuario.")
         return redirect("users:user_detail", target_user.pk)
     target_user.is_active = False
     target_user.save(update_fields=["is_active"])
@@ -337,13 +346,13 @@ def user_delete(request, user_id: int):
 
     target_user = get_object_or_404(User, pk=user_id)
     if target_user.pk == request.user.pk:
-        messages.error(request, "No podes eliminar tu propio usuario.")
+        messages.error(request, "No podés eliminar tu propio usuario.")
         return redirect("users:user_detail", target_user.pk)
     user_label = _display_name(target_user)
     try:
         target_user.delete()
     except ProtectedError:
-        messages.error(request, "No se puede eliminar porque tiene operacion asociada. Archivarlo conserva la trazabilidad.")
+        messages.error(request, "No se puede eliminar porque tiene operación asociada. Archivarlo conserva la trazabilidad.")
         return redirect("users:user_detail", target_user.pk)
     messages.success(request, f"Usuario {user_label} eliminado.")
     return redirect("users:user_list")
@@ -354,7 +363,7 @@ def user_delete(request, user_id: int):
 def user_permission_toggle(request, user_id: int, module: str, action: str):
     _ensure_users_permission(request, "write")
     if module not in PermissionModule.values or action not in {"read", "write"}:
-        raise PermissionDenied("Permiso invalido.")
+        raise PermissionDenied("Permiso inválido.")
 
     target_user = get_object_or_404(User, pk=user_id)
     current_read, current_write, _ = target_user.configured_permission_values(module)
@@ -379,7 +388,7 @@ def user_permission_toggle(request, user_id: int, module: str, action: str):
     if target_user.pk == request.user.pk and not request.user.is_superuser:
         new_value = permission.can_write if action == "write" else permission.can_read
         if not _target_user_has_users_write_after_toggle(target_user, module, action, new_value):
-            messages.error(request, "No podes quitarte tu propio permiso para gestionar usuarios.")
+            messages.error(request, "No podés quitarte tu propio permiso para gestionar usuarios.")
             return redirect("users:user_detail", target_user.pk)
 
     permission.save()
@@ -412,13 +421,13 @@ def role_create(request):
     if request.method == "POST" and form.is_valid():
         role = form.save()
         role.ensure_permission_rows()
-        messages.success(request, f"Rol {role.name} creado. Configura sus permisos default.")
+        messages.success(request, f"Rol {role.name} creado. Configurá sus permisos default.")
         return redirect("users:role_detail", role.pk)
     return _render_form(
         request,
         {
             "title": "Nuevo rol",
-            "subtitle": "Define el nombre del rol. Sus permisos default se configuran al guardar.",
+            "subtitle": "Definí el nombre del rol. Sus permisos default se configuran al guardar.",
             "form": form,
             "submit_label": "Crear rol",
             "back_url": reverse("users:role_list"),
@@ -456,13 +465,13 @@ def role_detail(request, role_id: int):
 def role_permission_toggle(request, role_id: int, module: str, action: str):
     _ensure_users_permission(request, "write")
     if module not in PermissionModule.values or action not in {"read", "write"}:
-        raise PermissionDenied("Permiso invalido.")
+        raise PermissionDenied("Permiso inválido.")
     role = get_object_or_404(Role, pk=role_id)
     permission, _ = RolePermission.objects.get_or_create(role=role, module=module)
 
     current_value = permission.can_write if action == "write" else permission.can_read
     if request.user.role_id == role.pk and module == PermissionModule.USERS and current_value and not request.user.is_superuser:
-        messages.error(request, "No podes quitar permisos de usuarios al rol con el que estas operando.")
+        messages.error(request, "No podés quitar permisos de usuarios al rol con el que estás operando.")
         return redirect("users:role_detail", role.pk)
 
     if action == "read":
@@ -479,6 +488,41 @@ def role_permission_toggle(request, role_id: int, module: str, action: str):
 
 
 @login_required
+def account_settings(request):
+    profile_form = OwnProfileForm(instance=request.user)
+    password_form = PasswordChangeForm(request.user)
+    _style_password_form(password_form)
+
+    if request.method == "POST" and request.POST.get("form_kind") == "profile":
+        profile_form = OwnProfileForm(request.POST, instance=request.user)
+        if profile_form.is_valid():
+            profile_form.save()
+            messages.success(request, "Tus datos fueron actualizados.")
+            return redirect("users:account_settings")
+        _style_password_form(password_form)
+    elif request.method == "POST" and request.POST.get("form_kind") == "password":
+        password_form = PasswordChangeForm(request.user, request.POST)
+        _style_password_form(password_form)
+        if password_form.is_valid():
+            user = password_form.save()
+            user.must_change_password = False
+            user.save(update_fields=["must_change_password"])
+            update_session_auth_hash(request, user)
+            messages.success(request, "Contraseña actualizada.")
+            return redirect("users:account_settings")
+
+    return render(
+        request,
+        "users/account_settings.html",
+        {
+            "profile_form": profile_form,
+            "password_form": password_form,
+        },
+        status=400 if request.method == "POST" else 200,
+    )
+
+
+@login_required
 def password_change_required(request):
     if not getattr(request.user, "must_change_password", False) and request.method == "GET":
         return redirect("cashops:dashboard")
@@ -490,7 +534,7 @@ def password_change_required(request):
         user.must_change_password = False
         user.save(update_fields=["must_change_password"])
         update_session_auth_hash(request, user)
-        messages.success(request, "Contrasena actualizada. Ya podes operar con tu usuario.")
+        messages.success(request, "Contraseña actualizada. Ya podés operar con tu usuario.")
         return redirect("cashops:dashboard")
     return render(
         request,
@@ -524,7 +568,7 @@ def first_access(request, uidb64: str, token: str):
         user = form.save()
         user.must_change_password = False
         user.save(update_fields=["must_change_password"])
-        messages.success(request, "Contrasena creada. Ingresa con tu usuario y la nueva contrasena.")
+        messages.success(request, "Contraseña creada. Ingresá con tu usuario y la nueva contraseña.")
         return redirect("users:login")
 
     return render(

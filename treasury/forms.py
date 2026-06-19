@@ -18,6 +18,7 @@ from .models import (
     MovimientoCajaCentral,
     PagoTesoreria,
     Proveedor,
+    SaldoInicialCuentaBancaria,
 )
 from cashops.models import RubroOperativo, Sucursal
 
@@ -155,6 +156,24 @@ class BankAccountFilterForm(TreasuryStyledFormMixin, forms.Form):
         self._apply_input_classes()
 
 
+class InitialBankBalanceForm(TreasuryStyledFormMixin, forms.ModelForm):
+    class Meta:
+        model = SaldoInicialCuentaBancaria
+        fields = ["cuenta_bancaria", "fecha_referencia", "importe", "motivo"]
+        widgets = {
+            "fecha_referencia": forms.DateInput(attrs={"type": "date"}),
+            "importe": forms.NumberInput(attrs={"step": "0.01", "placeholder": "0.00"}),
+            "motivo": forms.Textarea(attrs={"placeholder": "Motivo de carga o correccion"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["cuenta_bancaria"].queryset = CuentaBancaria.objects.filter(activa=True).order_by("banco", "nombre")
+        self.fields["fecha_referencia"].label = "Fecha de referencia"
+        self.fields["importe"].label = "Saldo inicial"
+        self._apply_input_classes()
+
+
 class PayableForm(TreasuryStyledFormMixin, forms.ModelForm):
     class Meta:
         model = CuentaPorPagar
@@ -192,9 +211,9 @@ class PayableForm(TreasuryStyledFormMixin, forms.ModelForm):
             categories = (CategoriaCuentaPagar.objects.filter(pk=self.instance.categoria_id) | categories).distinct()
         self.fields["proveedor"].queryset = suppliers
         self.fields["categoria"].queryset = categories
-        self.fields["categoria"].label = "Rubro / categoria"
-        self.fields["categoria"].help_text = "Solo se pueden registrar deudas nuevas con categorias ya asociadas a rubro."
-        self.fields["periodo_referencia"].label = "Periodo economico"
+        self.fields["categoria"].label = "Rubro / categoría"
+        self.fields["categoria"].help_text = "Solo se pueden registrar deudas nuevas con categorías ya asociadas a rubro."
+        self.fields["periodo_referencia"].label = "Período económico"
         self.fields["periodo_referencia"].required = False
         if not self.is_bound and not self.instance.pk:
             today = timezone.localdate()
@@ -207,7 +226,7 @@ class PayableForm(TreasuryStyledFormMixin, forms.ModelForm):
         issue_date = cleaned_data.get("fecha_emision")
         category = cleaned_data.get("categoria")
         if category and not category.rubro_operativo_id:
-            self.add_error("categoria", "La categoria debe tener un rubro operativo asociado.")
+            self.add_error("categoria", "La categoría debe tener un rubro operativo asociado.")
         if issue_date and not cleaned_data.get("periodo_referencia"):
             cleaned_data["periodo_referencia"] = issue_date.replace(day=1)
         if amount is not None:
@@ -219,7 +238,7 @@ class PayableForm(TreasuryStyledFormMixin, forms.ModelForm):
 class PayableFilterForm(TreasuryStyledFormMixin, forms.Form):
     q = forms.CharField(required=False, label="Buscar", widget=forms.TextInput(attrs={"placeholder": "Proveedor o concepto"}))
     proveedor = forms.ModelChoiceField(queryset=Proveedor.objects.none(), required=False, empty_label="Todos los proveedores")
-    categoria = forms.ModelChoiceField(queryset=CategoriaCuentaPagar.objects.none(), required=False, empty_label="Todas las categorias")
+    categoria = forms.ModelChoiceField(queryset=CategoriaCuentaPagar.objects.none(), required=False, empty_label="Todas las categorías")
     rubro = forms.ModelChoiceField(queryset=RubroOperativo.objects.none(), required=False, empty_label="Todos los rubros")
     estado = forms.ChoiceField(
         required=False,
@@ -243,7 +262,7 @@ class PayableFilterForm(TreasuryStyledFormMixin, forms.Form):
 
 
 class PayableAnnulForm(TreasuryStyledFormMixin, forms.Form):
-    motivo = forms.CharField(label="Motivo de anulacion", max_length=255, widget=forms.Textarea(attrs={"placeholder": "Explica por que se anula la obligacion"}))
+    motivo = forms.CharField(label="Motivo de anulación", max_length=255, widget=forms.Textarea(attrs={"placeholder": "Explicá por qué se anula la obligación"}))
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -536,6 +555,18 @@ class BankMovementFilterForm(TreasuryStyledFormMixin, forms.Form):
         self._apply_input_classes()
 
 
+class BankMovementAnnulForm(TreasuryStyledFormMixin, forms.Form):
+    motivo = forms.CharField(
+        label="Motivo de eliminación",
+        max_length=255,
+        widget=forms.Textarea(attrs={"placeholder": "Explicá por qué se elimina este movimiento"}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._apply_input_classes()
+
+
 class PosBatchForm(TreasuryStyledFormMixin, forms.ModelForm):
     class Meta:
         model = LotePOS
@@ -653,7 +684,7 @@ class CentralCashMovementForm(TreasuryStyledFormMixin, forms.ModelForm):
         manual_choices = [
             (MovimientoCajaCentral.Tipo.APORTE, "Aporte de Socios/Capital"),
             (MovimientoCajaCentral.Tipo.RETIRO_BANCO, "Retiro de Banco (Efectivo)"),
-            (MovimientoCajaCentral.Tipo.DEPOSITO_BANCO, "Deposito en Banco"),
+            (MovimientoCajaCentral.Tipo.DEPOSITO_BANCO, "Depósito en Banco"),
             (MovimientoCajaCentral.Tipo.AJUSTE_POSITIVO, "Ajuste de Saldo (+)"),
             (MovimientoCajaCentral.Tipo.AJUSTE_NEGATIVO, "Ajuste de Saldo (-)"),
         ]

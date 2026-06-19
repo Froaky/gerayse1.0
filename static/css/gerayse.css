@@ -598,7 +598,9 @@ h1, h2, h3, p {
   font-size: 0.88rem;
 }
 
-.button {
+.button,
+.button-secondary,
+.button-primary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -610,6 +612,18 @@ h1, h2, h3, p {
   font-weight: 700;
   cursor: pointer;
   transition: background 0.12s;
+}
+
+button,
+a[href],
+summary,
+[role="button"] {
+  cursor: pointer;
+}
+
+button:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
 }
 
 .button--primary {

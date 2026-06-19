@@ -38,16 +38,16 @@ def _role_queryset_for_instance(instance):
 
 class PersonalForm(forms.ModelForm):
     password = forms.CharField(
-        widget=forms.PasswordInput(attrs={"placeholder": "Contrasena (obligatoria para nuevos)"}),
+        widget=forms.PasswordInput(attrs={"placeholder": "Contraseña (obligatoria para nuevos)"}),
         required=False,
-        help_text="En altas funciona como contrasena default. El usuario debera cambiarla al primer ingreso.",
+        help_text="En altas funciona como contraseña default. El usuario deberá cambiarla al primer ingreso.",
     )
     empresas_permitidas = forms.ModelMultipleChoiceField(
         queryset=Empresa.objects.filter(activa=True).order_by("nombre"),
         required=False,
         widget=forms.CheckboxSelectMultiple,
         label="Empresas con acceso",
-        help_text="Vacio = sin restriccion (ve todas las empresas).",
+        help_text="Vacío = sin restricción (ve todas las empresas).",
     )
 
     class Meta:
@@ -86,7 +86,7 @@ class PersonalForm(forms.ModelForm):
             "email": forms.EmailInput(attrs={"placeholder": "juan@example.com"}),
         }
         help_texts = {
-            "empresa_principal": "Se selecciona automaticamente al iniciar sesion.",
+            "empresa_principal": "Se selecciona automáticamente al iniciar sesión.",
         }
 
     def __init__(self, *args, **kwargs):
@@ -106,7 +106,7 @@ class PersonalForm(forms.ModelForm):
         if not cleaned_data.get("usuario_fijo"):
             cleaned_data["sucursal_base"] = None
         if not self.instance.pk and not cleaned_data.get("password"):
-            self.add_error("password", "La contrasena es obligatoria para nuevos usuarios.")
+            self.add_error("password", "La contraseña es obligatoria para nuevos usuarios.")
         principal = cleaned_data.get("empresa_principal")
         permitidas = cleaned_data.get("empresas_permitidas")
         if principal and permitidas and principal not in permitidas:
@@ -131,7 +131,7 @@ class UserAccessForm(forms.ModelForm):
         required=False,
         widget=forms.CheckboxSelectMultiple,
         label="Empresas con acceso",
-        help_text="Vacio = sin restriccion (ve todas las empresas).",
+        help_text="Vacío = sin restricción (ve todas las empresas).",
     )
 
     class Meta:
@@ -154,7 +154,7 @@ class UserAccessForm(forms.ModelForm):
         help_texts = {
             "role": "El rol define permisos default; la ficha del usuario puede tener ajustes puntuales.",
             "usuario_fijo": "Si esta activo, el usuario queda asociado a una sucursal base.",
-            "empresa_principal": "Se selecciona automaticamente al iniciar sesion.",
+            "empresa_principal": "Se selecciona automáticamente al iniciar sesión.",
         }
 
     def __init__(self, *args, **kwargs):
@@ -187,12 +187,34 @@ class UserAccessForm(forms.ModelForm):
         return user
 
 
+class OwnProfileForm(forms.ModelForm):
+    class Meta:
+        model = User
+        fields = ["first_name", "last_name", "email", "telefono"]
+        labels = {
+            "first_name": "Nombre",
+            "last_name": "Apellido",
+            "email": "Email",
+            "telefono": "Teléfono",
+        }
+        widgets = {
+            "first_name": forms.TextInput(attrs={"placeholder": "Nombre"}),
+            "last_name": forms.TextInput(attrs={"placeholder": "Apellido"}),
+            "email": forms.EmailInput(attrs={"placeholder": "usuario@example.com"}),
+            "telefono": forms.TextInput(attrs={"placeholder": "Teléfono"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        _apply_operational_classes(self)
+
+
 class RoleForm(forms.ModelForm):
     class Meta:
         model = Role
         fields = ["code", "name", "is_active"]
         labels = {
-            "code": "Codigo",
+            "code": "Código",
             "name": "Nombre",
             "is_active": "Rol activo",
         }

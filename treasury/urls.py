@@ -21,6 +21,8 @@ urlpatterns = [
     path("cuentas-bancarias/nueva/", views.cuentas_bancarias_create, name="cuentas_bancarias_create"),
     path("cuentas-bancarias/<int:bank_account_id>/editar/", views.cuentas_bancarias_update, name="cuentas_bancarias_update"),
     path("cuentas-bancarias/<int:bank_account_id>/toggle/", views.cuentas_bancarias_toggle, name="cuentas_bancarias_toggle"),
+    path("cuentas-bancarias/saldos-iniciales/", views.bank_initial_balances_list, name="bank_initial_balances_list"),
+    path("cuentas-bancarias/saldos-iniciales/nuevo/", views.bank_initial_balances_create, name="bank_initial_balances_create"),
     path("cuentas-por-pagar/", views.cuentas_por_pagar_list, name="cuentas_por_pagar_list"),
     path("cuentas-por-pagar/nueva/", views.cuentas_por_pagar_create, name="cuentas_por_pagar_create"),
     path("cuentas-por-pagar/<int:payable_id>/", views.cuentas_por_pagar_detail, name="cuentas_por_pagar_detail"),
@@ -38,10 +40,13 @@ urlpatterns = [
     path("pagos/<int:pk>/", views.pagos_detail, name="pagos_detail"),
     path("pagos/<int:payment_id>/annul/", views.pagos_annul, name="pagos_annul"),
     # --- Bank Movements & Conciliation (EP-04) ---
-    # EP-04: Bancos y Conciliacion
+    # EP-04: Bancos y Conciliación
     path("bancos/", views.bank_movements_list, name="bank_movements_list"),
     path("bancos/nuevo/", views.bank_movements_create, name="bank_movements_create"),
     path("bancos/<int:pk>/", views.bank_movements_detail, name="bank_movements_detail"),
+    path("bancos/<int:pk>/confirmar-edicion/", views.bank_movements_edit_confirm, name="bank_movements_edit_confirm"),
+    path("bancos/<int:pk>/editar/", views.bank_movements_update, name="bank_movements_update"),
+    path("bancos/<int:pk>/confirmar-eliminacion/", views.bank_movements_delete_confirm, name="bank_movements_delete_confirm"),
     path("bancos/<int:pk>/vincular/", views.bank_movements_link, name="bank_movements_link"),
     path("lotes-pos/", views.pos_batches_list, name="pos_batches_list"),
     path("lotes-pos/nuevo/", views.pos_batches_create, name="pos_batches_create"),

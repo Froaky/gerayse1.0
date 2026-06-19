@@ -12,11 +12,11 @@
       <article class="auth-card auth-card--login">
         <div class="auth-card__header">
           <span class="auth-badge">Acceso</span>
-          <h2>Definir contrasena</h2>
+          <h2>Definir contraseña</h2>
           {% if validlink %}
             <p class="muted">Usuario: {{ target_user.username }}</p>
           {% else %}
-            <p class="muted">El link no esta vigente o el usuario ya completo su primer ingreso.</p>
+            <p class="muted">El link no está vigente o el usuario ya completó su primer ingreso.</p>
           {% endif %}
         </div>
 
@@ -36,7 +36,7 @@
               </label>
             {% endfor %}
 
-            <button class="button button--primary button--block" type="submit">Crear contrasena</button>
+            <button class="button button--primary button--block" type="submit">Crear contraseña</button>
           </form>
         {% else %}
           <a class="button button--primary button--block" href="{% url 'users:login' %}">Ir al login</a>
@@ -45,8 +45,8 @@
 
       <article class="auth-copy">
         <p class="eyebrow">Primer acceso</p>
-        <h1>Entrar sin usar la contrasena default</h1>
-        <p class="auth-lead">Este link permite crear una contrasena propia y deja sin efecto el cambio obligatorio pendiente.</p>
+        <h1>Entrar sin usar la contraseña default</h1>
+        <p class="auth-lead">Este link permite crear una contraseña propia y deja sin efecto el cambio obligatorio pendiente.</p>
       </article>
     </div>
   </section>

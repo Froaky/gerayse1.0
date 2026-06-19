@@ -1,6 +1,6 @@
 {% extends "treasury/layout.html" %}
 {% load treasury_tags %}
-{% block title %}Dashboard de Tesoreria | Gerayse{% endblock %}
+{% block title %}Dashboard de Tesorería | Gerayse{% endblock %}
 {% block content %}
   <section class="hero">
     <div class="card">
@@ -8,7 +8,7 @@
         <div>
           <h1>Dashboard financiero</h1>
           <p class="muted">
-            Situacion consolidada de caja, tesoreria y banco.
+            Situación consolidada de caja, tesorería y banco.
             {% if selected_sucursal %}Sucursal {{ selected_sucursal.nombre }}.{% else %}Vista general.{% endif %}
             Corte al {{ snapshot.reference_date|date:"d/m/Y" }}.
           </p>
@@ -53,9 +53,9 @@
         <small class="muted">Caja fuerte general + banco</small>
       </div>
       <div class="summary">
-        <span class="muted">Pendiente de acreditacion</span>
+        <span class="muted">Pendiente de acreditación</span>
         <strong>{{ snapshot.pending_accreditation_total|money }}</strong>
-        <small class="muted">Creditos de acreditacion bancaria menos ventas tarjeta del periodo</small>
+        <small class="muted">Créditos de acreditación bancaria menos ventas tarjeta del período</small>
       </div>
       <div class="summary">
         <span class="muted">Deuda pendiente</span>
@@ -83,7 +83,7 @@
   <section class="card">
     <div class="row">
       <div>
-        <h2>Situacion financiera por periodo</h2>
+        <h2>Situación financiera por período</h2>
         <p class="muted">Ingresos y egresos reales de caja y banco para el alcance seleccionado.</p>
       </div>
       <span class="badge badge-info">Referencia {{ snapshot.reference_date|date:"d/m/Y" }}</span>
@@ -102,12 +102,12 @@
       <div class="summary">
         <span class="muted">Caja neto</span>
         <strong>{{ snapshot.cash_net|money }}</strong>
-        <small class="muted">Periodo seleccionado</small>
+        <small class="muted">Período seleccionado</small>
       </div>
       <div class="summary">
         <span class="muted">Egresos caja fuerte</span>
         <strong>{{ snapshot.central_cash_expense_period|money }}</strong>
-        <small class="muted">Tesoreria central imputada al alcance</small>
+        <small class="muted">Tesorería central imputada al alcance</small>
       </div>
       <div class="summary">
         <span class="muted">Banco creditos</span>
@@ -122,7 +122,7 @@
       <div class="summary">
         <span class="muted">Banco neto</span>
         <strong>{{ snapshot.bank_net|money }}</strong>
-        <small class="muted">Periodo seleccionado</small>
+        <small class="muted">Período seleccionado</small>
       </div>
     </div>
   </section>
@@ -130,7 +130,7 @@
   <section class="card">
     <div class="row">
       <div>
-        <h2>Situacion economica y rentabilidad</h2>
+        <h2>Situación económica y rentabilidad</h2>
         <p class="muted">Lectura por ventas, gasto operativo y deuda imputada al periodo economico.</p>
       </div>
       <span class="badge badge-info">{{ economic_snapshot.period_from|date:"m/Y" }} a {{ economic_snapshot.period_to|date:"m/Y" }}</span>
@@ -216,7 +216,7 @@
               <div class="muted mt-16">Ventas {{ item.sales_total|money }} - Gasto caja {{ item.cash_expense_total|money }} - Gasto tesoreria {{ item.treasury_expense_total|money }} - Deuda {{ item.debt_total|money }}</div>
               {% if item.rubro %}
                 <div class="mt-16">
-                  <a class="button-secondary" href="{% url 'treasury:economic_rubro_detail' item.rubro.pk %}?fecha_desde={{ economic_snapshot.date_from|date:'Y-m-d' }}&fecha_hasta={{ economic_snapshot.date_to|date:'Y-m-d' }}{% if selected_sucursal %}&sucursal={{ selected_sucursal.pk }}{% endif %}">Ver composicion</a>
+                  <a class="button-secondary" href="{% url 'treasury:economic_rubro_detail' item.rubro.pk %}?fecha_desde={{ economic_snapshot.date_from|date:'Y-m-d' }}&fecha_hasta={{ economic_snapshot.date_to|date:'Y-m-d' }}{% if selected_sucursal %}&sucursal={{ selected_sucursal.pk }}{% endif %}">Ver composición</a>
                 </div>
               {% endif %}
             </div>
@@ -243,7 +243,7 @@
       <div class="row">
         <div>
           <h2>Acreditaciones y pendientes</h2>
-          <p class="muted">Lectura del periodo para ventas digitales registradas y movimientos bancarios de acreditacion cargados en Tesoreria.</p>
+          <p class="muted">Lectura del período para ventas digitales registradas y movimientos bancarios de acreditación cargados en Tesorería.</p>
         </div>
         <span class="badge badge-warning">{{ snapshot.reference_date|date:"d/m/Y" }}</span>
       </div>
@@ -256,7 +256,7 @@
         <div class="summary">
           <span class="muted">Acreditado neto</span>
           <strong>{{ snapshot.accredited_net|money }}</strong>
-          <small class="muted">Neto recibido en banco segun movimientos de Tesoreria</small>
+          <small class="muted">Neto recibido en banco según movimientos de Tesorería</small>
         </div>
         <div class="summary">
           <span class="muted">Descuentos</span>
@@ -269,7 +269,7 @@
           <small class="muted">Neto mas descuentos informados</small>
         </div>
       </div>
-      <p class="muted mt-16">Pendiente de acreditacion = ventas tarjeta del periodo menos acreditaciones bancarias registradas en Tesoreria. Las acreditaciones se leen como fondo comun consolidado; no se relacionan uno a uno con caja ni se prorratean por sucursal. Negativo indica que el banco acredito mas de lo vendido.</p>
+      <p class="muted mt-16">Pendiente de acreditación = ventas tarjeta del período menos acreditaciones bancarias registradas en Tesorería. Las acreditaciones se leen como fondo común consolidado; no se relacionan uno a uno con caja ni se prorratean por sucursal. Negativo indica que el banco acreditó más de lo vendido.</p>
     </div>
 
     <div class="card">
@@ -287,6 +287,9 @@
               <div>
                 <strong>{{ item.account.nombre }}</strong>
                 <div class="muted mt-16">{{ item.account.banco }}{% if item.account.sucursal %} - {{ item.account.sucursal.nombre }}{% endif %}</div>
+                {% if item.initial_balance %}
+                  <div class="muted mt-8">Saldo inicial {{ item.initial_amount|money }} desde {{ item.initial_balance.fecha_referencia|date:"d/m/Y" }}</div>
+                {% endif %}
               </div>
               <span class="badge badge-info">{{ item.balance|money }}</span>
             </div>

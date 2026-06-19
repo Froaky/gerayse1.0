@@ -117,20 +117,20 @@ Para controlar acreditaciones, debitos y diferencias desde una sola lectura
 - [x] Descuentos y retenciones
 - [x] Diferencias de conciliacion
 
-### [ ] US-4.8 Saldo inicial bancario por cuenta
+### [x] US-4.8 Saldo inicial bancario por cuenta
 
 Como tesoreria
 Quiero cargar o ajustar el saldo inicial de una cuenta bancaria desde la parte de banco
 Para empezar la lectura bancaria desde un saldo real sin inventar movimientos manuales
 
 Criterios:
-- cada cuenta bancaria permite registrar un saldo inicial con fecha de referencia
-- la carga exige cuenta bancaria, fecha, importe, usuario y motivo
-- el saldo inicial queda visible en el libro o dashboard bancario como punto de partida del periodo
-- el saldo inicial no se mezcla con acreditaciones, transferencias ni egresos reales
-- si se corrige el saldo inicial, queda auditado valor anterior, valor nuevo, usuario, fecha y motivo
-- el sistema evita que existan saldos iniciales ambiguos para la misma cuenta y fecha de referencia
-- los totales bancarios posteriores se calculan desde saldo inicial mas movimientos reales del periodo
+- [x] cada cuenta bancaria permite registrar un saldo inicial con fecha de referencia
+- [x] la carga exige cuenta bancaria, fecha, importe, usuario y motivo
+- [x] el saldo inicial queda visible en el libro o dashboard bancario como punto de partida del periodo
+- [x] el saldo inicial no se mezcla con acreditaciones, transferencias ni egresos reales
+- [x] si se corrige el saldo inicial, queda auditado valor anterior, valor nuevo, usuario, fecha y motivo
+- [x] el sistema evita que existan saldos iniciales ambiguos para la misma cuenta y fecha de referencia
+- [x] los totales bancarios posteriores se calculan desde saldo inicial mas movimientos reales del periodo
 
 ## Dependencias
 

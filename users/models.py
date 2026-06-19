@@ -5,8 +5,8 @@ from django.db import models
 
 class PermissionModule(models.TextChoices):
     CASHOPS = "cashops", "Caja operativa"
-    CONFIG = "config", "Configuracion"
-    TREASURY = "treasury", "Tesoreria"
+    CONFIG = "config", "Configuración"
+    TREASURY = "treasury", "Tesorería"
     USERS = "users", "Usuarios"
 
 
@@ -47,7 +47,7 @@ class User(AbstractUser):
     telefono = models.CharField(max_length=40, blank=True, verbose_name="Telefono")
     must_change_password = models.BooleanField(
         default=False,
-        verbose_name="Debe cambiar contrasena",
+        verbose_name="Debe cambiar contraseña",
     )
     usuario_fijo = models.BooleanField(default=False, verbose_name="Usuario fijo")
     sucursal_base = models.ForeignKey(

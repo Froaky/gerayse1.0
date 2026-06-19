@@ -1,0 +1,83 @@
+{% extends "cashops/layout.html" %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Mi cuenta</h1>
+        <p class="muted">Ajustes propios de usuario y contraseña.</p>
+      </div>
+      <a class="button-secondary" href="{% url 'cashops:dashboard' %}">Volver</a>
+    </div>
+  </section>
+
+  <section class="grid layout-two mt-16">
+    <div class="card">
+      <div class="row">
+        <div>
+          <h2>Datos propios</h2>
+          <p class="muted">Estos datos identifican al usuario dentro de la operación.</p>
+        </div>
+      </div>
+      <form method="post" class="stack mt-16">
+        {% csrf_token %}
+        <input type="hidden" name="form_kind" value="profile">
+        {% if profile_form.non_field_errors %}
+          <ul class="errors">
+            {% for error in profile_form.non_field_errors %}
+              <li>{{ error }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+        {% for field in profile_form.visible_fields %}
+          <div class="field">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% for error in field.errors %}
+              <div class="error">{{ error }}</div>
+            {% endfor %}
+          </div>
+        {% endfor %}
+        <div class="row mt-8">
+          <span class="muted">No modifica rol ni permisos.</span>
+          <button class="button" type="submit">Guardar datos</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div>
+          <h2>Cambiar contraseña</h2>
+          <p class="muted">Ingresá la contraseña actual y confirmá la nueva dos veces.</p>
+        </div>
+      </div>
+      <form method="post" class="stack mt-16">
+        {% csrf_token %}
+        <input type="hidden" name="form_kind" value="password">
+        {% if password_form.non_field_errors %}
+          <ul class="errors">
+            {% for error in password_form.non_field_errors %}
+              <li>{{ error }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+        {% for field in password_form.visible_fields %}
+          <div class="field">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% if field.help_text %}
+              <small class="muted">{{ field.help_text }}</small>
+            {% endif %}
+            {% for error in field.errors %}
+              <div class="error">{{ error }}</div>
+            {% endfor %}
+          </div>
+        {% endfor %}
+        <div class="row mt-8">
+          <span class="muted">La sesión se mantiene activa después del cambio.</span>
+          <button class="button" type="submit">Guardar contraseña</button>
+        </div>
+      </form>
+    </div>
+  </section>
+{% endblock %}

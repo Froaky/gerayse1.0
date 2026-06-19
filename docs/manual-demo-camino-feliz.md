@@ -52,7 +52,7 @@ Una forma simple de introducir el sistema:
 ### Que Mostrar
 
 - Pantalla de ingreso.
-- Usuario y contrasena.
+- Usuario y contraseña.
 
 ### Que Decir
 

@@ -210,6 +210,84 @@ class AuthFlowTests(TestCase):
         self.assertNotIn("_auth_user_id", self.client.session)
 
 
+class AccountSettingsTests(TestCase):
+    def setUp(self):
+        self.role = Role.objects.create(code="ENCARGADO", name="Encargado")
+        self.user = User.objects.create_user(
+            username="mi_cuenta",
+            password="secret12345",
+            first_name="Nombre",
+            last_name="Original",
+            email="original@example.com",
+            telefono="387-000",
+            role=self.role,
+        )
+        self.client.force_login(self.user)
+
+    def test_account_settings_shows_profile_and_password_forms(self):
+        response = self.client.get(reverse("users:account_settings"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Mi cuenta")
+        self.assertContains(response, "Datos propios")
+        self.assertContains(response, "Cambiar contraseña")
+        self.assertContains(response, "Contraseña actual")
+        self.assertContains(response, "Confirmar contraseña nueva")
+
+    def test_account_settings_updates_own_profile_data(self):
+        response = self.client.post(
+            reverse("users:account_settings"),
+            {
+                "form_kind": "profile",
+                "first_name": "Nombre Nuevo",
+                "last_name": "Apellido Nuevo",
+                "email": "nuevo@example.com",
+                "telefono": "387-111",
+            },
+        )
+
+        self.assertRedirects(response, reverse("users:account_settings"))
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.first_name, "Nombre Nuevo")
+        self.assertEqual(self.user.last_name, "Apellido Nuevo")
+        self.assertEqual(self.user.email, "nuevo@example.com")
+        self.assertEqual(self.user.telefono, "387-111")
+
+    def test_account_settings_password_requires_current_password(self):
+        response = self.client.post(
+            reverse("users:account_settings"),
+            {
+                "form_kind": "password",
+                "old_password": "incorrecta",
+                "new_password1": "nueva12345",
+                "new_password2": "nueva12345",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("secret12345"))
+        self.assertFalse(self.user.check_password("nueva12345"))
+
+    def test_account_settings_password_changes_password_and_keeps_session(self):
+        response = self.client.post(
+            reverse("users:account_settings"),
+            {
+                "form_kind": "password",
+                "old_password": "secret12345",
+                "new_password1": "nueva12345",
+                "new_password2": "nueva12345",
+            },
+        )
+
+        self.assertRedirects(response, reverse("users:account_settings"))
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("nueva12345"))
+        self.assertFalse(self.user.must_change_password)
+        follow_up = self.client.get(reverse("users:account_settings"))
+        self.assertEqual(follow_up.status_code, 200)
+
+
 class PersonalViewTests(TestCase):
     def setUp(self):
         self.admin_role = Role.objects.create(code="ADMIN", name="Administrador")
@@ -610,4 +688,4 @@ class FirstAccessPasswordTests(TestCase):
         response = self.client.get(reverse("users:first_access", args=[uid, token]))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "El link no esta vigente")
+        self.assertContains(response, "El link no está vigente")

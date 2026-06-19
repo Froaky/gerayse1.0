@@ -14,7 +14,7 @@ from django.utils import timezone
 
 from cashops.models import Empresa, RubroOperativo, Sucursal, Turno
 from cashops.services import open_box, register_card_sale, register_cash_income, register_expense
-from users.models import Role
+from users.models import PermissionModule, Role, RolePermission
 
 from .admin import (
     CategoriaCuentaPagarAdmin,
@@ -38,6 +38,7 @@ from .models import (
     ObjetivoRubroEconomico,
     PagoTesoreria,
     Proveedor,
+    SaldoInicialCuentaBancaria,
 )
 from .permissions import is_treasury_admin
 from .services import (
@@ -61,7 +62,10 @@ from .services import (
     register_payable,
     register_special_commitment,
     register_transfer_payment,
+    set_initial_bank_balance,
     toggle_payable_category,
+    annul_bank_movement,
+    update_bank_movement,
 )
 
 
@@ -551,6 +555,67 @@ class TreasuryServiceTests(TreasuryTestCase):
                 actor=self.admin,
             )
 
+    def test_update_manual_bank_movement_recalculates_financial_snapshot(self):
+        movement = create_bank_movement(
+            cuenta_bancaria=self.bank_account,
+            tipo=MovimientoBancario.Tipo.CREDITO,
+            fecha=timezone.localdate(),
+            monto=Decimal("100.00"),
+            concepto="Deposito inicial",
+            referencia="DEP-100",
+            actor=self.admin,
+        )
+
+        update_bank_movement(
+            movement=movement,
+            cuenta_bancaria=self.bank_account,
+            tipo=MovimientoBancario.Tipo.DEBITO,
+            clase=MovimientoBancario.Clase.OTRO_EGRESO,
+            rubro_operativo=self.rubro_servicios,
+            fecha=timezone.localdate(),
+            monto=Decimal("65.00"),
+            concepto="Correccion debito",
+            referencia="COR-65",
+            actor=self.admin,
+        )
+
+        movement.refresh_from_db()
+        snapshot = build_financial_period_snapshot(
+            date_from=timezone.localdate(),
+            date_to=timezone.localdate(),
+        )
+        self.assertEqual(movement.tipo, MovimientoBancario.Tipo.DEBITO)
+        self.assertEqual(movement.monto, Decimal("65.00"))
+        self.assertEqual(snapshot["bank_credits"], Decimal("0.00"))
+        self.assertEqual(snapshot["bank_debits"], Decimal("65.00"))
+        self.assertEqual(snapshot["total_bank_balance"], Decimal("-65.00"))
+
+    def test_annul_manual_bank_movement_keeps_audit_and_excludes_balance(self):
+        movement = create_bank_movement(
+            cuenta_bancaria=self.bank_account,
+            tipo=MovimientoBancario.Tipo.CREDITO,
+            fecha=timezone.localdate(),
+            monto=Decimal("180.00"),
+            concepto="Credito duplicado",
+            referencia="DUP-180",
+            actor=self.admin,
+        )
+
+        annul_bank_movement(movement=movement, motivo="Carga duplicada por extracto", actor=self.admin)
+
+        movement.refresh_from_db()
+        snapshot = build_financial_period_snapshot(
+            date_from=timezone.localdate(),
+            date_to=timezone.localdate(),
+        )
+        self.assertEqual(MovimientoBancario.objects.count(), 1)
+        self.assertEqual(movement.estado, MovimientoBancario.Estado.ANULADO)
+        self.assertEqual(movement.motivo_anulacion, "Carga duplicada por extracto")
+        self.assertEqual(movement.anulado_por, self.admin)
+        self.assertIsNotNone(movement.anulado_en)
+        self.assertEqual(snapshot["bank_credits"], Decimal("0.00"))
+        self.assertEqual(snapshot["total_bank_balance"], Decimal("0.00"))
+
     def test_link_payment_to_bank_movement_sets_financial_class_supplier_and_category(self):
         payable = register_payable(
             proveedor=self.supplier,
@@ -588,6 +653,52 @@ class TreasuryServiceTests(TreasuryTestCase):
         self.assertEqual(movement.clase, MovimientoBancario.Clase.TRANSFERENCIA_TERCEROS)
         self.assertEqual(movement.proveedor, self.supplier)
         self.assertEqual(movement.categoria, self.category)
+
+    def test_linked_bank_movement_cannot_be_edited_or_annulled_directly(self):
+        payable = register_payable(
+            proveedor=self.supplier,
+            categoria=self.category,
+            concepto="Factura link bloqueado",
+            fecha_emision=timezone.localdate(),
+            fecha_vencimiento=timezone.localdate(),
+            importe_total=Decimal("500.00"),
+            actor=self.admin,
+        )
+        payment = register_transfer_payment(
+            payable=payable,
+            bank_account=self.bank_account,
+            fecha_pago=timezone.localdate(),
+            monto=Decimal("120.00"),
+            referencia="TRF-BLOCK",
+            actor=self.admin,
+        )
+        movement = create_bank_movement(
+            cuenta_bancaria=self.bank_account,
+            tipo=MovimientoBancario.Tipo.DEBITO,
+            clase=MovimientoBancario.Clase.OTRO_EGRESO,
+            categoria=self.category,
+            fecha=timezone.localdate(),
+            monto=Decimal("120.00"),
+            concepto="Debito vinculado",
+            referencia="TRF-BLOCK",
+            actor=self.admin,
+        )
+        link_payment_to_bank_movement(payment=payment, bank_movement=movement, actor=self.admin)
+
+        with self.assertRaises(ValidationError):
+            update_bank_movement(
+                movement=movement,
+                cuenta_bancaria=self.bank_account,
+                tipo=MovimientoBancario.Tipo.DEBITO,
+                clase=MovimientoBancario.Clase.OTRO_EGRESO,
+                rubro_operativo=self.rubro_servicios,
+                fecha=timezone.localdate(),
+                monto=Decimal("90.00"),
+                concepto="Intento directo",
+                actor=self.admin,
+            )
+        with self.assertRaises(ValidationError):
+            annul_bank_movement(movement=movement, motivo="Intento directo", actor=self.admin)
 
     def test_register_grouped_card_accreditation_persists_period_and_blocks_obvious_duplicate(self):
         grouped = register_card_accreditation(
@@ -648,6 +759,77 @@ class TreasuryServiceTests(TreasuryTestCase):
         self.assertEqual(snapshot["historical_total"], Decimal("500.00"))
         self.assertEqual(snapshot["historical_pending"], Decimal("300.00"))
         self.assertEqual(snapshot["historical_paid"], Decimal("200.00"))
+
+    def test_initial_bank_balance_is_audited_and_does_not_create_bank_movement(self):
+        reference_date = timezone.localdate().replace(day=1)
+
+        balance = set_initial_bank_balance(
+            cuenta_bancaria=self.bank_account,
+            fecha_referencia=reference_date,
+            importe=Decimal("1000.00"),
+            motivo="Carga inicial segun extracto",
+            actor=self.admin,
+        )
+        corrected = set_initial_bank_balance(
+            cuenta_bancaria=self.bank_account,
+            fecha_referencia=reference_date,
+            importe=Decimal("1250.00"),
+            motivo="Correccion por extracto actualizado",
+            actor=self.admin,
+        )
+
+        self.assertEqual(balance.pk, corrected.pk)
+        self.assertEqual(SaldoInicialCuentaBancaria.objects.count(), 1)
+        self.assertEqual(MovimientoBancario.objects.count(), 0)
+        self.assertEqual(corrected.importe, Decimal("1250.00"))
+        self.assertEqual(corrected.importe_anterior, Decimal("1000.00"))
+        self.assertEqual(corrected.motivo_correccion, "Correccion por extracto actualizado")
+        self.assertEqual(corrected.actualizado_por, self.admin)
+
+    def test_financial_period_snapshot_uses_initial_bank_balance_as_starting_point(self):
+        reference_date = timezone.localdate().replace(day=1)
+        set_initial_bank_balance(
+            cuenta_bancaria=self.bank_account,
+            fecha_referencia=reference_date,
+            importe=Decimal("1000.00"),
+            motivo="Saldo inicial banco",
+            actor=self.admin,
+        )
+        create_bank_movement(
+            cuenta_bancaria=self.bank_account,
+            tipo=MovimientoBancario.Tipo.CREDITO,
+            fecha=reference_date,
+            monto=Decimal("250.00"),
+            concepto="Ingreso posterior",
+            actor=self.admin,
+        )
+        create_bank_movement(
+            cuenta_bancaria=self.bank_account,
+            tipo=MovimientoBancario.Tipo.DEBITO,
+            fecha=reference_date + timedelta(days=1),
+            monto=Decimal("90.00"),
+            concepto="Debito posterior",
+            actor=self.admin,
+        )
+        create_bank_movement(
+            cuenta_bancaria=self.bank_account,
+            tipo=MovimientoBancario.Tipo.CREDITO,
+            fecha=reference_date - timedelta(days=1),
+            monto=Decimal("500.00"),
+            concepto="Movimiento anterior al saldo inicial",
+            actor=self.admin,
+        )
+
+        snapshot = build_financial_period_snapshot(
+            date_from=reference_date,
+            date_to=reference_date + timedelta(days=1),
+        )
+
+        self.assertEqual(snapshot["bank_credits"], Decimal("250.00"))
+        self.assertEqual(snapshot["bank_debits"], Decimal("90.00"))
+        self.assertEqual(snapshot["total_bank_balance"], Decimal("1160.00"))
+        self.assertEqual(snapshot["bank_balances"][0]["initial_amount"], Decimal("1000.00"))
+        self.assertEqual(snapshot["bank_balances"][0]["balance"], Decimal("1160.00"))
 
     def test_financial_period_snapshot_aggregates_cash_bank_accreditations_and_due_buckets(self):
         branch = Sucursal.objects.create(codigo="SUC-T", nombre="Sucursal Test", razon_social="Test SRL")
@@ -1537,6 +1719,88 @@ class TreasuryViewTests(TreasuryTestCase):
         super().setUp()
         self.client.force_login(self.admin)
 
+    def test_initial_bank_balance_list_allows_treasury_read_permission(self):
+        read_role = Role.objects.create(code="TESORERIA_READ", name="Tesoreria lectura")
+        RolePermission.objects.create(
+            role=read_role,
+            module=PermissionModule.TREASURY,
+            can_read=True,
+            can_write=False,
+        )
+        read_user = User.objects.create_user(username="tesoreria-read", password="test", role=read_role)
+        set_initial_bank_balance(
+            cuenta_bancaria=self.bank_account,
+            fecha_referencia=timezone.localdate().replace(day=1),
+            importe=Decimal("900.00"),
+            motivo="Carga inicial visible",
+            actor=self.admin,
+        )
+
+        self.client.force_login(read_user)
+        response = self.client.get(reverse("treasury:bank_initial_balances_list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Saldos iniciales bancarios")
+        self.assertContains(response, "Carga inicial visible")
+
+    def test_initial_bank_balance_create_requires_treasury_write_permission(self):
+        read_role = Role.objects.create(code="TESORERIA_SOLO_LECTURA", name="Tesoreria solo lectura")
+        RolePermission.objects.create(
+            role=read_role,
+            module=PermissionModule.TREASURY,
+            can_read=True,
+            can_write=False,
+        )
+        read_user = User.objects.create_user(username="tesoreria-read-post", password="test", role=read_role)
+
+        self.client.force_login(read_user)
+        response = self.client.post(
+            reverse("treasury:bank_initial_balances_create"),
+            {
+                "cuenta_bancaria": self.bank_account.pk,
+                "fecha_referencia": timezone.localdate().isoformat(),
+                "importe": "700.00",
+                "motivo": "Intento sin escritura",
+            },
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(SaldoInicialCuentaBancaria.objects.count(), 0)
+
+    def test_initial_bank_balance_create_persists_without_bank_movement(self):
+        reference_date = timezone.localdate().replace(day=1)
+
+        response = self.client.post(
+            reverse("treasury:bank_initial_balances_create"),
+            {
+                "cuenta_bancaria": self.bank_account.pk,
+                "fecha_referencia": reference_date.isoformat(),
+                "importe": "1500.00",
+                "motivo": "Saldo inicial por extracto",
+            },
+        )
+
+        self.assertRedirects(response, reverse("treasury:bank_initial_balances_list"))
+        balance = SaldoInicialCuentaBancaria.objects.get(cuenta_bancaria=self.bank_account)
+        self.assertEqual(balance.importe, Decimal("1500.00"))
+        self.assertEqual(balance.creado_por, self.admin)
+        self.assertFalse(MovimientoBancario.objects.filter(concepto__icontains="Saldo inicial").exists())
+
+    def test_bank_account_list_links_initial_balances_and_shows_latest_starting_point(self):
+        set_initial_bank_balance(
+            cuenta_bancaria=self.bank_account,
+            fecha_referencia=timezone.localdate().replace(day=1),
+            importe=Decimal("1200.00"),
+            motivo="Saldo para listado",
+            actor=self.admin,
+        )
+
+        response = self.client.get(reverse("treasury:cuentas_bancarias_list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Saldos iniciales")
+        self.assertContains(response, "Saldo inicial: $ 1.200,00")
+
     def test_supplier_list_filters_by_text_query(self):
         create_supplier(razon_social="Otro proveedor", actor=self.admin)
         response = self.client.get(reverse("treasury:proveedores_list"), {"q": "Uno"})
@@ -2071,6 +2335,102 @@ class TreasuryViewTests(TreasuryTestCase):
         self.assertContains(response, "El rubro es obligatorio para este tipo de movimiento.")
         self.assertFalse(MovimientoBancario.objects.filter(referencia="IMP-SIN-RUBRO").exists())
 
+    def test_bank_movement_detail_exposes_edit_and_delete_for_manual_active_movement(self):
+        movement = create_bank_movement(
+            cuenta_bancaria=self.bank_account,
+            tipo=MovimientoBancario.Tipo.DEBITO,
+            clase=MovimientoBancario.Clase.OTRO_EGRESO,
+            rubro_operativo=self.rubro_servicios,
+            fecha=timezone.localdate(),
+            monto=Decimal("75.00"),
+            concepto="Debito editable",
+            referencia="EDIT-75",
+            actor=self.admin,
+        )
+
+        response = self.client.get(reverse("treasury:bank_movements_detail", args=[movement.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Editar")
+        self.assertContains(response, "Eliminar")
+        self.assertContains(response, "Vincular a pago")
+
+    def test_bank_movement_edit_confirmation_and_update_recalculate_balance(self):
+        movement = create_bank_movement(
+            cuenta_bancaria=self.bank_account,
+            tipo=MovimientoBancario.Tipo.CREDITO,
+            fecha=timezone.localdate(),
+            monto=Decimal("120.00"),
+            concepto="Credito a corregir",
+            referencia="EDIT-CONFIRM",
+            actor=self.admin,
+        )
+
+        confirm = self.client.get(reverse("treasury:bank_movements_edit_confirm", args=[movement.pk]))
+        self.assertEqual(confirm.status_code, 200)
+        self.assertContains(confirm, "¿Seguro que quiere editar este movimiento?")
+        self.assertContains(confirm, "Sí, editar")
+
+        response = self.client.post(
+            reverse("treasury:bank_movements_update", args=[movement.pk]),
+            {
+                "cuenta_bancaria": self.bank_account.pk,
+                "tipo": MovimientoBancario.Tipo.DEBITO,
+                "clase": MovimientoBancario.Clase.OTRO_EGRESO,
+                "rubro_operativo": self.rubro_servicios.pk,
+                "proveedor": "",
+                "sucursal_gasto": self.sucursal.pk,
+                "fecha": timezone.localdate().isoformat(),
+                "monto": "55.00",
+                "concepto": "Debito corregido",
+                "referencia": "EDIT-CONFIRM-OK",
+                "observaciones": "Corregido con confirmacion previa",
+            },
+        )
+
+        self.assertRedirects(response, reverse("treasury:bank_movements_detail", args=[movement.pk]))
+        movement.refresh_from_db()
+        snapshot = build_financial_period_snapshot(
+            date_from=timezone.localdate(),
+            date_to=timezone.localdate(),
+        )
+        self.assertEqual(movement.tipo, MovimientoBancario.Tipo.DEBITO)
+        self.assertEqual(movement.monto, Decimal("55.00"))
+        self.assertEqual(snapshot["total_bank_balance"], Decimal("-55.00"))
+
+    def test_bank_movement_delete_confirmation_annuls_and_hides_from_list(self):
+        movement = create_bank_movement(
+            cuenta_bancaria=self.bank_account,
+            tipo=MovimientoBancario.Tipo.CREDITO,
+            fecha=timezone.localdate(),
+            monto=Decimal("90.00"),
+            concepto="Credito a eliminar",
+            referencia="DEL-CONFIRM",
+            actor=self.admin,
+        )
+
+        confirm = self.client.get(reverse("treasury:bank_movements_delete_confirm", args=[movement.pk]))
+        self.assertEqual(confirm.status_code, 200)
+        self.assertContains(confirm, "¿Seguro que quiere eliminar este movimiento?")
+        self.assertContains(confirm, "Motivo de eliminación")
+
+        response = self.client.post(
+            reverse("treasury:bank_movements_delete_confirm", args=[movement.pk]),
+            {"motivo": "Movimiento duplicado en extracto"},
+        )
+
+        self.assertRedirects(response, reverse("treasury:bank_movements_detail", args=[movement.pk]))
+        movement.refresh_from_db()
+        self.assertEqual(movement.estado, MovimientoBancario.Estado.ANULADO)
+        self.assertEqual(movement.motivo_anulacion, "Movimiento duplicado en extracto")
+
+        listing = self.client.get(reverse("treasury:bank_movements_list"), {"q": "DEL-CONFIRM"})
+        self.assertEqual(listing.status_code, 200)
+        self.assertNotContains(listing, "Credito a eliminar")
+        detail = self.client.get(reverse("treasury:bank_movements_detail", args=[movement.pk]))
+        self.assertContains(detail, "Anulado")
+        self.assertContains(detail, "Movimiento duplicado en extracto")
+
     def test_bank_movement_list_finds_by_amount_and_sucursal_gasto(self):
         create_bank_movement(
             cuenta_bancaria=self.bank_account,
@@ -2274,8 +2634,8 @@ class TreasuryViewTests(TreasuryTestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Situacion financiera por periodo")
-        self.assertContains(response, "Situacion economica y rentabilidad")
+        self.assertContains(response, "Situación financiera por período")
+        self.assertContains(response, "Situación económica y rentabilidad")
         self.assertContains(response, "Gasto tesoreria")
         self.assertContains(response, "Resultado economico")
         self.assertContains(response, "Objetivo parametrizado")
@@ -2283,14 +2643,14 @@ class TreasuryViewTests(TreasuryTestCase):
         self.assertContains(response, "Dashboard Rubro")
         self.assertContains(response, "Caja fuerte general")
         self.assertContains(response, "Egresos caja fuerte")
-        self.assertContains(response, "Tesoreria central imputada al alcance")
-        self.assertContains(response, "Pendiente de acreditacion")
+        self.assertContains(response, "Tesorería central imputada al alcance")
+        self.assertContains(response, "Pendiente de acreditación")
         self.assertContains(response, "Vence hoy")
         self.assertContains(response, "$ 120,00")
         self.assertContains(response, "$ 30,00")
         self.assertContains(response, "$ 150,00")
         self.assertContains(response, "$ 45,00")
-        self.assertContains(response, "Ver composicion")
+        self.assertContains(response, "Ver composición")
 
     def test_economic_rubro_detail_view_explains_dashboard_total(self):
         empresa = Empresa.objects.create(nombre="Empresa Vista Detalle Economico")
@@ -2358,7 +2718,7 @@ class TreasuryViewTests(TreasuryTestCase):
 
         self.assertEqual(dashboard_response.status_code, 200)
         self.assertContains(dashboard_response, "Almacen Vista")
-        self.assertContains(dashboard_response, "Ver composicion")
+        self.assertContains(dashboard_response, "Ver composición")
         self.assertEqual(detail_response.status_code, 200)
         self.assertContains(detail_response, "Composicion de Almacen Vista")
         self.assertContains(detail_response, "Compra mostrador")

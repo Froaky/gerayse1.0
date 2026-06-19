@@ -1,0 +1,48 @@
+{% extends "treasury/layout.html" %}
+{% block title %}{{ title }} | Tesorería | Gerayse{% endblock %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>{{ title }}</h1>
+        <p class="muted">{{ subtitle }}</p>
+      </div>
+      <a class="button-secondary" href="{{ back_url }}">Volver</a>
+    </div>
+
+    <div class="summary mt-16">
+      <small class="muted">Confirmación</small>
+      <strong>{{ question }}</strong>
+      <p class="muted">{{ body }}</p>
+    </div>
+
+    <form method="post" action="{{ post_url }}" class="stack mt-16">
+      {% csrf_token %}
+      {% if form %}
+        {% if form.non_field_errors %}
+          <ul class="errors">
+            {% for error in form.non_field_errors %}
+              <li>{{ error }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+        {% for field in form.visible_fields %}
+          <div class="field">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% if field.help_text %}
+              <small class="muted">{{ field.help_text }}</small>
+            {% endif %}
+            {% for error in field.errors %}
+              <div class="error">{{ error }}</div>
+            {% endfor %}
+          </div>
+        {% endfor %}
+      {% endif %}
+      <div class="list-actions">
+        <a class="button-secondary" href="{{ back_url }}">Cancelar</a>
+        <button class="button {% if confirm_kind == 'danger' %}button-danger{% endif %}" type="submit">{{ confirm_label }}</button>
+      </div>
+    </form>
+  </section>
+{% endblock %}

@@ -4,7 +4,7 @@
     <div class="row">
       <div>
         <h1>{{ target_user.get_full_name|default:target_user.username }}</h1>
-        <p class="muted">Gestion de acceso real para {{ target_user.username }}.</p>
+        <p class="muted">Gestión de acceso real para {{ target_user.username }}.</p>
       </div>
       <div class="list-actions">
         <a class="button-secondary" href="{% url 'users:user_list' %}">Volver</a>
@@ -42,7 +42,7 @@
         </strong>
       </div>
       <div class="summary">
-        <small class="muted">Password</small>
+        <small class="muted">Contraseña</small>
         <strong>{% if target_user.must_change_password %}Debe cambiar{% else %}Propia{% endif %}</strong>
       </div>
     </div>
@@ -53,7 +53,7 @@
       <div class="row">
         <div>
           <h2>Link de primer ingreso</h2>
-          <p class="muted">Sirve para que el usuario defina su contrasena sin usar la default.</p>
+          <p class="muted">Sirve para que el usuario defina su contraseña sin usar la default.</p>
         </div>
       </div>
       <div class="field mt-12">
@@ -85,21 +85,21 @@
                 <form method="post" action="{% url 'users:user_permission_toggle' target_user.id row.module 'read' %}">
                   {% csrf_token %}
                   <button class="badge {% if row.read %}badge-success{% else %}badge-muted{% endif %}" type="submit">
-                    Lectura: {% if row.read %}Si{% else %}No{% endif %}
+                    Lectura: {% if row.read %}Sí{% else %}No{% endif %}
                   </button>
                 </form>
                 <form method="post" action="{% url 'users:user_permission_toggle' target_user.id row.module 'write' %}">
                   {% csrf_token %}
                   <button class="badge {% if row.write %}badge-success{% else %}badge-muted{% endif %}" type="submit">
-                    Escritura: {% if row.write %}Si{% else %}No{% endif %}
+                    Escritura: {% if row.write %}Sí{% else %}No{% endif %}
                   </button>
                 </form>
               {% else %}
                 <span class="badge {% if row.read %}badge-success{% else %}badge-muted{% endif %}">
-                  Lectura: {% if row.read %}Si{% else %}No{% endif %}
+                  Lectura: {% if row.read %}Sí{% else %}No{% endif %}
                 </span>
                 <span class="badge {% if row.write %}badge-success{% else %}badge-muted{% endif %}">
-                  Escritura: {% if row.write %}Si{% else %}No{% endif %}
+                  Escritura: {% if row.write %}Sí{% else %}No{% endif %}
                 </span>
               {% endif %}
             </div>
@@ -118,13 +118,13 @@
         </div>
       </div>
 
-    {% if access_form.non_field_errors %}
-      <ul class="errors">
-        {% for error in access_form.non_field_errors %}
-          <li>{{ error }}</li>
-        {% endfor %}
-      </ul>
-    {% endif %}
+      {% if access_form.non_field_errors %}
+        <ul class="errors">
+          {% for error in access_form.non_field_errors %}
+            <li>{{ error }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
 
       <form method="post" class="stack mt-16">
         {% csrf_token %}
@@ -141,7 +141,7 @@
           </div>
         {% endfor %}
         <div class="row mt-8">
-          <span class="muted">El usuario archivado no puede iniciar sesion.</span>
+          <span class="muted">El usuario archivado no puede iniciar sesión.</span>
           <button class="button" type="submit">Guardar permisos</button>
         </div>
       </form>

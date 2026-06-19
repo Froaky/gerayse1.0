@@ -12,7 +12,7 @@ Estado actual:
 - `EP-01`: caja operativa, movimientos y cierres. Implementada.
 - `EP-02`: alertas y semaforos operativos. Implementada.
 - `EP-03`: tesoreria central base. Implementada.
-- `EP-04`: bancos y conciliacion. Reabierta: implementada hasta US-4.7; pendiente saldo inicial bancario por cuenta (`US-4.8`).
+- `EP-04`: bancos y conciliacion. Implementada hasta `US-4.8`; bancos ya permite saldo inicial auditado por cuenta.
 - `EP-05`: flujo de disponibilidades. Implementada.
 - `EP-06`: control de gestion y alertas. Implementada.
 - `EP-07`: impuestos, planes y autorizaciones. Implementada.

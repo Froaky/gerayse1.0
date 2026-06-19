@@ -12,7 +12,7 @@ Reducir la administracion de usuarios y personal a los datos realmente necesario
 - preservacion de rol como dato principal operativo
 - vista operativa de usuarios desde Config
 - archivo, reactivacion y baja protegida de usuarios
-- primer ingreso con contrasena default, cambio obligatorio y link tokenizado
+- primer ingreso con contraseña default, cambio obligatorio y link tokenizado
 - ficha de usuario con permisos efectivos basados en reglas vigentes
 - roles operativos con permisos default por modulo
 - permisos puntuales por usuario para lectura y escritura
@@ -31,8 +31,8 @@ Reducir la administracion de usuarios y personal a los datos realmente necesario
 - la condicion de usuario fijo o no debe quedar explicita y administrable
 - en este backlog, `usuario fijo` se interpreta como asignacion operativa preferida a una sucursal o puesto base, no como bloqueo absoluto a una excepcion manual de administracion
 - ocultar datos en UI no debe borrar historial previo ni romper compatibilidad
-- un usuario creado con contrasena default debe cambiarla antes de operar
-- el link de primer ingreso debe permitir definir contrasena propia sin conocer la default
+- un usuario creado con contraseña default debe cambiarla antes de operar
+- el link de primer ingreso debe permitir definir contraseña propia sin conocer la default
 - archivar un usuario debe impedir login sin borrar trazabilidad historica
 - eliminar un usuario solo debe permitirse cuando no rompa operaciones asociadas
 - la ficha de permisos solo debe permitir gestionar reglas que el sistema aplica realmente
@@ -104,14 +104,14 @@ Criterios:
 ### [x] US-9.6 Primer ingreso con cambio obligatorio
 
 Como administracion
-Quiero crear un usuario con contrasena default y link de primer ingreso
-Para entregar acceso sin que esa contrasena quede como definitiva
+Quiero crear un usuario con contraseña default y link de primer ingreso
+Para entregar acceso sin que esa contraseña quede como definitiva
 
 Criterios:
-- al crear o resetear contrasena desde el flujo operativo, el usuario queda marcado para cambiar contrasena
-- si ingresa con la contrasena default, el sistema lo redirige al cambio obligatorio antes de operar
+- al crear o resetear contraseña desde el flujo operativo, el usuario queda marcado para cambiar contraseña
+- si ingresa con la contraseña default, el sistema lo redirige al cambio obligatorio antes de operar
 - la ficha del usuario muestra un link de primer ingreso mientras el cambio este pendiente
-- el link permite definir una contrasena propia sin usar la default
+- el link permite definir una contraseña propia sin usar la default
 - luego del cambio, el flag pendiente se desactiva y el link deja de ser valido
 
 ### [x] US-9.7 Ficha de usuario con permisos efectivos
@@ -136,7 +136,7 @@ Criterios:
 - archivar cambia el usuario a inactivo e impide login
 - reactivar vuelve a habilitar el acceso
 - eliminar esta disponible solo para usuarios distintos al actual
-- si el usuario tiene operaciones asociadas, la baja fisica se bloquea y se recomienda archivar
+- si el usuario tiene operaciones asociadas, la baja física se bloquea y se recomienda archivar
 
 ### [x] US-9.9 Matriz granular por modulo y accion
 
@@ -162,7 +162,7 @@ Criterios:
 - se puede crear y editar rol operativo
 - cada rol tiene permisos default de lectura y escritura por modulo
 - al asignar un rol a un usuario, los permisos efectivos salen del rol salvo override puntual
-- escritura habilita lectura automaticamente
+- escritura habilita lectura automáticamente
 
 ### [ ] US-9.11 Permisos por lugar o alcance operativo
 
@@ -171,7 +171,7 @@ Quiero limitar permisos por sucursal, empresa o lugar operativo
 Para que un usuario no solo tenga modulo permitido, sino tambien alcance territorial controlado
 
 Criterios:
-- los accesos por sucursal o empresa no filtran solo la pantalla, tambien validan operaciones de escritura
+- los accesos por sucursal o empresa no filtran solo la pantalla, también validan operaciones de escritura
 - los permisos por lugar conviven con `usuario fijo` y `sucursal_base` sin duplicar reglas
 - los usuarios legacy mantienen compatibilidad hasta recibir alcance explicito
 - los reportes y formularios rechazan datos fuera del alcance permitido

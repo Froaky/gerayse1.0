@@ -1,12 +1,12 @@
 {% extends "treasury/layout.html" %}
 
-{% block title %}Gerayse | Categorias de deuda{% endblock %}
+{% block title %}Gerayse | Categorías de deuda{% endblock %}
 
 {% block content %}
   <section class="card">
     <div class="row">
       <div>
-        <h1>Categorias de deuda</h1>
+        <h1>Categorías de deuda</h1>
         <p class="muted">Ordenan cuentas por pagar y facilitan lectura operativa.</p>
       </div>
       <a class="button" href="{% url 'treasury:categoria_cuenta_pagar_create' %}">Nueva categoria</a>

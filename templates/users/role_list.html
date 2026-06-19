@@ -17,7 +17,7 @@
     <form method="get" class="row mt-16" style="align-items:end;">
       <div class="field" style="flex:1;">
         <label for="id_q">Buscar</label>
-        <input id="id_q" class="input" type="text" name="q" value="{{ query }}" placeholder="Codigo o nombre">
+        <input id="id_q" class="input" type="text" name="q" value="{{ query }}" placeholder="Código o nombre">
       </div>
       <button class="button-secondary" type="submit">Buscar</button>
     </form>
@@ -30,7 +30,7 @@
           <div class="row">
             <div>
               <strong>{{ role.name }}</strong>
-              <div class="muted">Codigo: {{ role.code }}</div>
+              <div class="muted">Código: {{ role.code }}</div>
             </div>
             {% if role.is_active %}
               <span class="badge badge-success">Activo</span>

@@ -7,7 +7,7 @@
     <article class="auth-card">
       <p class="eyebrow">Acceso operativo</p>
       <h1>Ingresar a Gerayse</h1>
-      <p class="muted">Acceso rapido para operar cajas, turnos y cierres desde el celular o la computadora.</p>
+      <p class="muted">Acceso rápido para operar cajas, turnos y cierres desde el celular o la computadora.</p>
 
       <form method="post" class="form-stack" novalidate>
         {% csrf_token %}
@@ -22,7 +22,7 @@
         </label>
 
         <label class="field">
-          <span>Contrasena</span>
+          <span>Contraseña</span>
           {{ form.password }}
           {% if form.password.errors %}<small class="field__error">{{ form.password.errors }}</small>{% endif %}
         </label>

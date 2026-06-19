@@ -59,7 +59,7 @@
                 <span class="badge badge-warning">Fijo{% if member.sucursal_base %}: {{ member.sucursal_base.nombre }}{% endif %}</span>
               {% endif %}
               {% if member.must_change_password %}
-                <span class="badge badge-info">Cambio de contrasena pendiente</span>
+                <span class="badge badge-info">Cambio de contraseña pendiente</span>
               {% endif %}
               {% if not member.is_active %}
                 <span class="badge badge-muted">Archivado</span>

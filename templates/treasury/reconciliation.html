@@ -1,11 +1,11 @@
 {% extends "treasury/layout.html" %}
-{% block title %}Conciliacion simple | Tesoreria | Gerayse{% endblock %}
+{% block title %}Conciliación simple | Tesorería | Gerayse{% endblock %}
 {% block content %}
   <section class="card">
     <div class="row">
       <div>
-        <h1>Conciliacion simple tarjeta vs banco</h1>
-        <p class="muted">Comparacion operativa entre venta tarjeta, lote POS y acreditacion bancaria.</p>
+        <h1>Conciliación simple tarjeta vs banco</h1>
+        <p class="muted">Comparación operativa entre venta tarjeta, lote POS y acreditación bancaria.</p>
       </div>
       <a class="button-secondary" href="{% url 'treasury:dashboard' %}">Volver al dashboard</a>
     </div>
@@ -54,7 +54,7 @@
 
   {% if summary.account_filter_limits_sales %}
     <section class="card" style="margin-top:16px;">
-      <p class="muted">La cuenta bancaria filtra lotes POS y acreditaciones. Las ventas tarjeta siguen viniendo del total operativo del periodo porque la fuente actual de caja no separa ventas por cuenta bancaria.</p>
+      <p class="muted">La cuenta bancaria filtra lotes POS y acreditaciones. Las ventas tarjeta siguen viniendo del total operativo del período porque la fuente actual de caja no separa ventas por cuenta bancaria.</p>
     </section>
   {% endif %}
 
@@ -76,11 +76,11 @@
             Venta ${{ row.card_sales }} · Lote ${{ row.pos_batches }} · Neto ${{ row.accredited_net }} · Descuentos ${{ row.bank_discounts }} · Bruto ${{ row.accredited_gross }}
           </div>
           <div class="muted" style="margin-top:8px;">
-            Venta vs lote ${{ row.sales_vs_batches_difference }} · Lote vs acreditacion ${{ row.batches_vs_accreditation_difference }}
+            Venta vs lote ${{ row.sales_vs_batches_difference }} · Lote vs acreditación ${{ row.batches_vs_accreditation_difference }}
           </div>
         </div>
       {% empty %}
-        <p class="muted">No hay datos para el periodo seleccionado.</p>
+        <p class="muted">No hay datos para el período seleccionado.</p>
       {% endfor %}
     </div>
   </section>

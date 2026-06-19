@@ -15,6 +15,7 @@ from .models import (
     ObjetivoRubroEconomico,
     PagoTesoreria,
     Proveedor,
+    SaldoInicialCuentaBancaria,
 )
 
 
@@ -83,6 +84,14 @@ class CuentaBancariaAdmin(TreasuryNoDeleteAdminMixin, admin.ModelAdmin):
     list_filter = ("activa", "tipo_cuenta", "banco")
     search_fields = ("nombre", "banco", "numero_cuenta", "alias", "cbu")
     autocomplete_fields = ("creado_por",)
+
+
+@admin.register(SaldoInicialCuentaBancaria)
+class SaldoInicialCuentaBancariaAdmin(TreasuryReadOnlyAdminMixin, admin.ModelAdmin):
+    list_display = ("cuenta_bancaria", "fecha_referencia", "importe", "importe_anterior", "creado_por", "actualizado_por")
+    list_filter = ("fecha_referencia", "cuenta_bancaria")
+    search_fields = ("cuenta_bancaria__nombre", "cuenta_bancaria__banco", "motivo", "motivo_correccion")
+    autocomplete_fields = ("cuenta_bancaria", "creado_por", "actualizado_por")
 
 
 @admin.register(CuentaPorPagar)
@@ -181,8 +190,8 @@ class PagoTesoreriaAdmin(TreasuryReadOnlyAdminMixin, admin.ModelAdmin):
 
 @admin.register(MovimientoBancario)
 class MovimientoBancarioAdmin(TreasuryReadOnlyAdminMixin, admin.ModelAdmin):
-    list_display = ("fecha", "cuenta_bancaria", "tipo", "origen", "monto", "concepto", "pago_tesoreria")
-    list_filter = ("tipo", "origen", "fecha", "cuenta_bancaria")
+    list_display = ("fecha", "cuenta_bancaria", "tipo", "estado", "origen", "monto", "concepto", "pago_tesoreria")
+    list_filter = ("estado", "tipo", "origen", "fecha", "cuenta_bancaria")
     search_fields = ("concepto", "referencia", "observaciones")
     autocomplete_fields = ("cuenta_bancaria", "pago_tesoreria", "creado_por")
 

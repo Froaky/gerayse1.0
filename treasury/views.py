@@ -15,6 +15,7 @@ from .forms import (
     ArqueoForm,
     BankAccountFilterForm,
     BankAccountForm,
+    BankMovementAnnulForm,
     BankMovementFilterForm,
     BankMovementForm,
     BankReconciliationFilterForm,
@@ -28,6 +29,7 @@ from .forms import (
     PayableAnnulForm,
     PayableCategoryFilterForm,
     PayableCategoryForm,
+    InitialBankBalanceForm,
     PayableFilterForm,
     PayableForm,
     PaymentAnnulForm,
@@ -60,6 +62,7 @@ from .models import (
     MovimientoCajaCentral,
     PagoTesoreria,
     Proveedor,
+    SaldoInicialCuentaBancaria,
 )
 from .permissions import ensure_treasury_permission
 from .services import (
@@ -75,6 +78,7 @@ from .services import (
     build_treasury_dashboard_snapshot,
     CENTRAL_CASH_IN_TYPES,
     CENTRAL_CASH_OUT_TYPES,
+    annul_bank_movement,
     close_treasury_month,
     create_bank_account,
     create_bank_movement,
@@ -96,6 +100,7 @@ from .services import (
     register_special_commitment,
     register_transfer_payment,
     scope_central_cash_movements,
+    set_initial_bank_balance,
     toggle_bank_account,
     toggle_payable_category,
     toggle_supplier,
@@ -118,6 +123,7 @@ TREASURY_WRITE_VIEW_NAMES = {
     "cuentas_bancarias_create",
     "cuentas_bancarias_update",
     "cuentas_bancarias_toggle",
+    "bank_initial_balances_create",
     "cuentas_por_pagar_create",
     "cuentas_por_pagar_update",
     "cuentas_por_pagar_annul",
@@ -129,6 +135,9 @@ TREASURY_WRITE_VIEW_NAMES = {
     "pagos_efectivo_create",
     "pagos_annul",
     "bank_movements_create",
+    "bank_movements_edit_confirm",
+    "bank_movements_update",
+    "bank_movements_delete_confirm",
     "bank_movements_link",
     "pos_batches_create",
     "card_accreditations_register",
@@ -282,14 +291,31 @@ def _bank_movement_rubro_label(movement: MovimientoBancario) -> str:
     return "No aplica"
 
 
+def _bank_movement_can_be_manually_changed(movement: MovimientoBancario) -> bool:
+    if movement.estado != MovimientoBancario.Estado.REGISTRADO:
+        return False
+    if movement.origen != MovimientoBancario.Origen.MANUAL:
+        return False
+    if movement.pago_tesoreria_id:
+        return False
+    return not hasattr(movement, "acreditacion_tarjeta")
+
+
 def _bank_account_item(bank_account: CuentaBancaria) -> dict:
+    initial_balance = bank_account.saldos_iniciales.order_by("-fecha_referencia", "-id").first()
+    meta = bank_account.alias or bank_account.cbu or bank_account.numero_cuenta
+    if initial_balance:
+        meta = (
+            f"{meta} | Saldo inicial: {_money(initial_balance.importe)} "
+            f"desde {initial_balance.fecha_referencia:%d/%m/%Y}"
+        )
     return {
         "href": reverse("treasury:cuentas_bancarias_update", args=[bank_account.pk]),
         "title": bank_account.nombre,
         "subtitle": f"{bank_account.banco} - {bank_account.get_tipo_cuenta_display()}",
         "badge": "Activa" if bank_account.activa else "Inactiva",
         "badge_class": "badge-success" if bank_account.activa else "badge-muted",
-        "meta": bank_account.alias or bank_account.cbu or bank_account.numero_cuenta,
+        "meta": meta,
     }
 
 
@@ -646,7 +672,7 @@ def categorias_list(request):
         request,
         "treasury/list_page.html",
         {
-            "title": "Categorias de deuda",
+            "title": "Categorías de deuda",
             "subtitle": "Ordenan deuda y facilitan filtros de vencimiento.",
             "items": [_category_item(item) for item in queryset],
             "create_url": reverse("treasury:categorias_create"),
@@ -730,7 +756,7 @@ def categorias_toggle(request, category_id: int):
 def cuentas_bancarias_list(request):
     _require_treasury_admin(request)
     form = BankAccountFilterForm(request.GET or None)
-    queryset = CuentaBancaria.objects.order_by("banco", "nombre")
+    queryset = CuentaBancaria.objects.prefetch_related("saldos_iniciales").order_by("banco", "nombre")
     empresa_ids = _get_empresa_ids(request)
     if empresa_ids:
         queryset = queryset.filter(sucursal__empresa_id__in=empresa_ids)
@@ -757,6 +783,8 @@ def cuentas_bancarias_list(request):
             "subtitle": "Origen real de pagos administrativos y trazabilidad.",
             "items": [_bank_account_item(item) for item in queryset],
             "create_url": reverse("treasury:cuentas_bancarias_create"),
+            "secondary_url": reverse("treasury:bank_initial_balances_list"),
+            "secondary_label": "Saldos iniciales",
             "filter_form": form,
         },
     )
@@ -830,6 +858,74 @@ def cuentas_bancarias_toggle(request, bank_account_id: int):
         f"Cuenta bancaria {bank_account.nombre} {'activada' if bank_account.activa else 'desactivada'}.",
     )
     return redirect("treasury:cuentas_bancarias_list")
+
+
+@login_required
+def bank_initial_balances_list(request):
+    _require_treasury_admin(request)
+    balances = SaldoInicialCuentaBancaria.objects.select_related(
+        "cuenta_bancaria",
+        "creado_por",
+        "actualizado_por",
+    )
+    empresa_ids = _get_empresa_ids(request)
+    if empresa_ids:
+        balances = balances.filter(
+            Q(cuenta_bancaria__sucursal__empresa_id__in=empresa_ids)
+            | Q(cuenta_bancaria__sucursal__isnull=True)
+        )
+    items = []
+    for balance in balances[:100]:
+        corrected_by = f" | Corregido por: {balance.actualizado_por}" if balance.actualizado_por_id else ""
+        previous = f" | Anterior: {_money(balance.importe_anterior)}" if balance.importe_anterior is not None else ""
+        items.append(
+            {
+                "href": reverse("treasury:bank_initial_balances_create"),
+                "title": balance.cuenta_bancaria.nombre,
+                "subtitle": f"{balance.cuenta_bancaria.banco} | Desde {balance.fecha_referencia:%d/%m/%Y}",
+                "badge": _money(balance.importe),
+                "badge_class": "badge-info",
+                "meta": f"Motivo: {balance.motivo}{previous}{corrected_by}",
+            }
+        )
+    return render(
+        request,
+        "treasury/list_page.html",
+        {
+            "title": "Saldos iniciales bancarios",
+            "subtitle": "Punto de partida auditado por cuenta; no son movimientos bancarios reales.",
+            "items": items,
+            "create_url": reverse("treasury:bank_initial_balances_create"),
+            "empty_message": "No hay saldos iniciales bancarios cargados.",
+        },
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def bank_initial_balances_create(request):
+    _require_treasury_admin(request)
+    form = InitialBankBalanceForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        try:
+            set_initial_bank_balance(actor=request.user, **form.cleaned_data)
+        except (ValidationError, IntegrityError) as error:
+            _handle_operation_error(form, error, "No se pudo guardar el saldo inicial bancario.")
+        else:
+            messages.success(request, "Saldo inicial bancario guardado.")
+            return redirect("treasury:bank_initial_balances_list")
+    return _render_form(
+        request,
+        {
+            "title": "Saldo inicial bancario",
+            "subtitle": "Carga o corrige el punto de partida de una cuenta sin crear movimientos reales.",
+            "form": form,
+            "submit_label": "Guardar saldo inicial",
+            "back_url": reverse("treasury:bank_initial_balances_list"),
+            "form_action": reverse("treasury:bank_initial_balances_create"),
+        },
+        status=400 if request.method == "POST" and not form.is_valid() else 200,
+    )
 
 
 @login_required
@@ -1431,7 +1527,9 @@ def pagos_annul(request, payment_id: int):
 def bank_movements_list(request):
     _require_treasury_admin(request)
     filter_form = BankMovementFilterForm(request.GET)
-    movements = MovimientoBancario.objects.all().select_related(
+    movements = MovimientoBancario.objects.filter(
+        estado=MovimientoBancario.Estado.REGISTRADO,
+    ).select_related(
         "cuenta_bancaria",
         "cuenta_bancaria__sucursal",
         "pago_tesoreria",
@@ -1526,6 +1624,102 @@ def bank_movements_create(request):
         "form_action": reverse("treasury:bank_movements_create"),
     })
 
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def bank_movements_edit_confirm(request, pk):
+    _require_treasury_admin(request)
+    movement = get_object_or_404(MovimientoBancario, pk=pk)
+    if not _bank_movement_can_be_manually_changed(movement):
+        messages.error(request, "Este movimiento no se puede editar desde Banco porque no es un movimiento manual activo.")
+        return redirect("treasury:bank_movements_detail", pk=movement.pk)
+    if request.method == "POST":
+        return redirect("treasury:bank_movements_update", pk=movement.pk)
+    return render(
+        request,
+        "treasury/confirm_action.html",
+        {
+            "title": "Confirmar edición",
+            "subtitle": f"{movement.concepto} - {_money(movement.monto)}",
+            "question": "¿Seguro que quiere editar este movimiento?",
+            "body": "La edición cambia el reflejo real del banco: saldos, reportes y disponibilidad se recalculan con los nuevos datos.",
+            "post_url": reverse("treasury:bank_movements_edit_confirm", args=[movement.pk]),
+            "confirm_label": "Sí, editar",
+            "back_url": reverse("treasury:bank_movements_detail", args=[movement.pk]),
+        },
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def bank_movements_update(request, pk):
+    _require_treasury_admin(request)
+    movement = get_object_or_404(MovimientoBancario, pk=pk)
+    if not _bank_movement_can_be_manually_changed(movement):
+        messages.error(request, "Este movimiento no se puede editar desde Banco porque no es un movimiento manual activo.")
+        return redirect("treasury:bank_movements_detail", pk=movement.pk)
+    form = BankMovementForm(request.POST or None, instance=movement)
+    if request.method == "POST" and form.is_valid():
+        try:
+            movement = update_bank_movement(movement=movement, actor=request.user, **form.cleaned_data)
+        except ValidationError as error:
+            _handle_operation_error(form, error, "No se pudo editar el movimiento bancario.")
+        else:
+            messages.success(request, "Movimiento bancario editado. El saldo queda recalculado con los nuevos datos.")
+            return redirect("treasury:bank_movements_detail", pk=movement.pk)
+    return _render_form(
+        request,
+        {
+            "title": "Editar movimiento bancario",
+            "subtitle": "Los cambios impactan saldos bancarios, reportes y disponibilidad.",
+            "form": form,
+            "submit_label": "Guardar edición",
+            "back_url": reverse("treasury:bank_movements_detail", args=[movement.pk]),
+            "form_action": reverse("treasury:bank_movements_update", args=[movement.pk]),
+        },
+        status=400 if request.method == "POST" and not form.is_valid() else 200,
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def bank_movements_delete_confirm(request, pk):
+    _require_treasury_admin(request)
+    movement = get_object_or_404(MovimientoBancario, pk=pk)
+    if not _bank_movement_can_be_manually_changed(movement):
+        messages.error(request, "Este movimiento no se puede eliminar desde Banco porque no es un movimiento manual activo.")
+        return redirect("treasury:bank_movements_detail", pk=movement.pk)
+    form = BankMovementAnnulForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        try:
+            movement = annul_bank_movement(
+                movement=movement,
+                motivo=form.cleaned_data["motivo"],
+                actor=request.user,
+            )
+        except ValidationError as error:
+            _handle_operation_error(form, error, "No se pudo eliminar el movimiento bancario.")
+        else:
+            messages.success(request, "Movimiento bancario eliminado. El saldo queda recalculado sin este movimiento.")
+            return redirect("treasury:bank_movements_detail", pk=movement.pk)
+    return render(
+        request,
+        "treasury/confirm_action.html",
+        {
+            "title": "Confirmar eliminación",
+            "subtitle": f"{movement.concepto} - {_money(movement.monto)}",
+            "question": "¿Seguro que quiere eliminar este movimiento?",
+            "body": "La eliminación descuenta este movimiento de saldos, reportes y disponibilidad. La auditoría queda guardada con el motivo.",
+            "form": form,
+            "post_url": reverse("treasury:bank_movements_delete_confirm", args=[movement.pk]),
+            "confirm_label": "Sí, eliminar",
+            "confirm_kind": "danger",
+            "back_url": reverse("treasury:bank_movements_detail", args=[movement.pk]),
+        },
+        status=400 if request.method == "POST" and not form.is_valid() else 200,
+    )
+
+
 @login_required
 def bank_movements_detail(request, pk):
     _require_treasury_admin(request)
@@ -1547,6 +1741,7 @@ def bank_movements_detail(request, pk):
     fields = [
         {"label": "Fecha", "value": movement.fecha.strftime("%d/%m/%Y")},
         {"label": "Cuenta", "value": str(movement.cuenta_bancaria)},
+        {"label": "Estado", "value": movement.get_estado_display()},
         {"label": "Tipo", "value": movement.get_tipo_display()},
         {"label": "Tipo financiero", "value": movement.get_clase_display()},
         {"label": "Monto", "value": _money(movement.monto)},
@@ -1562,11 +1757,22 @@ def bank_movements_detail(request, pk):
     if movement.actualizado_por:
         fields.append({"label": "Actualizado por", "value": str(movement.actualizado_por)})
         fields.append({"label": "Actualizado en", "value": movement.actualizado_en.strftime("%d/%m/%Y %H:%M")})
+    if movement.estado == MovimientoBancario.Estado.ANULADO:
+        fields.append({"label": "Eliminado por", "value": str(movement.anulado_por) if movement.anulado_por else "Sistema"})
+        fields.append({"label": "Eliminado en", "value": movement.anulado_en.strftime("%d/%m/%Y %H:%M") if movement.anulado_en else "-"})
+        fields.append({"label": "Motivo de eliminación", "value": movement.motivo_anulacion})
     
     fields.append({"label": "Observaciones", "value": movement.observaciones or "Sin observaciones"})
 
     actions = []
-    if not movement.pago_tesoreria and movement.tipo == MovimientoBancario.Tipo.DEBITO:
+    if _bank_movement_can_be_manually_changed(movement):
+        actions.append(_action(reverse("treasury:bank_movements_edit_confirm", args=[movement.pk]), "Editar", "secondary"))
+        actions.append(_action(reverse("treasury:bank_movements_delete_confirm", args=[movement.pk]), "Eliminar", "secondary"))
+    if (
+        movement.estado == MovimientoBancario.Estado.REGISTRADO
+        and not movement.pago_tesoreria
+        and movement.tipo == MovimientoBancario.Tipo.DEBITO
+    ):
         actions.append(_action(reverse("treasury:bank_movements_link", args=[movement.pk]), "Vincular a pago", "primary"))
 
     extra_sections = []
@@ -1584,13 +1790,17 @@ def bank_movements_detail(request, pk):
         "extra_sections": extra_sections,
         "back_url": reverse("treasury:bank_movements_list"),
         "section_label": movement.get_tipo_display(),
-        "section_label_class": "badge-success" if movement.tipo == MovimientoBancario.Tipo.CREDITO else "badge-danger"
+        "section_label_class": (
+            "badge-muted"
+            if movement.estado == MovimientoBancario.Estado.ANULADO
+            else "badge-success" if movement.tipo == MovimientoBancario.Tipo.CREDITO else "badge-danger"
+        )
     })
 
 @login_required
 def bank_movements_link(request, pk):
     _require_treasury_admin(request)
-    movement = get_object_or_404(MovimientoBancario, pk=pk)
+    movement = get_object_or_404(MovimientoBancario, pk=pk, estado=MovimientoBancario.Estado.REGISTRADO)
     # Filter payments that are not linked yet, match the account and the amount
     payments = PagoTesoreria.objects.filter(
         cuenta_bancaria=movement.cuenta_bancaria,
@@ -1702,7 +1912,9 @@ def pos_batches_create(request):
 def card_accreditations_list(request):
     _require_treasury_admin(request)
     filter_form = CardAccreditationFilterForm(request.GET)
-    accreditations = AcreditacionTarjeta.objects.all().select_related("movimiento_bancario__cuenta_bancaria", "lote_pos")
+    accreditations = AcreditacionTarjeta.objects.filter(
+        movimiento_bancario__estado=MovimientoBancario.Estado.REGISTRADO,
+    ).select_related("movimiento_bancario__cuenta_bancaria", "lote_pos")
     empresa_ids = _get_empresa_ids(request)
     if empresa_ids:
         accreditations = accreditations.filter(movimiento_bancario__cuenta_bancaria__sucursal__empresa_id__in=empresa_ids)
@@ -1746,7 +1958,7 @@ def card_accreditations_list(request):
         "filter_form": filter_form,
         "items": items,
         "create_url": reverse("treasury:card_accreditations_register"),
-        "create_label": "Registrar acreditacion"
+        "create_label": "Registrar acreditación"
     })
 
 @login_required
@@ -1781,7 +1993,7 @@ def card_accreditations_register(request):
                 messages.success(request, "Acreditacion registrada correctamente.")
                 return redirect("treasury:card_accreditations_list")
             except ValidationError as error:
-                _handle_operation_error(form, error, "No se pudo registrar la acreditacion.")
+                _handle_operation_error(form, error, "No se pudo registrar la acreditación.")
     else:
         form = CardAccreditationForm()
 
@@ -2018,7 +2230,7 @@ def egreso_tesoreria_create(request):
         form = EgresoTesoreriaForm()
     return render(request, "treasury/form_page.html", {
         "title": "Egreso administrativo de tesoreria",
-        "subtitle": "Pagos y gastos que salen directamente de tesoreria (no de una caja operativa de sucursal). Si el origen es caja fuerte, reduce el libro de efectivo central. Si es banco, impacta el libro bancario.",
+        "subtitle": "Pagos y gastos que salen directamente de tesorería (no de una caja operativa de sucursal). Si el origen es caja fuerte, reduce el libro de efectivo central. Si es banco, impacta el libro bancario.",
         "form": form,
         "back_url": reverse("treasury:central_cash_list"),
     })

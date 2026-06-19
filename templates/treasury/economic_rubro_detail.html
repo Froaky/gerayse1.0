@@ -1,6 +1,6 @@
 {% extends "treasury/layout.html" %}
 {% load treasury_tags %}
-{% block title %}Composicion de {{ detail.rubro.nombre }} | Tesoreria | Gerayse{% endblock %}
+{% block title %}Composición de {{ detail.rubro.nombre }} | Tesorería | Gerayse{% endblock %}
 {% block content %}
   <section class="card">
     <div class="row">
@@ -94,7 +94,7 @@
           </div>
         </div>
       {% empty %}
-        <p class="muted">No hay egresos ni deudas imputadas a este rubro para el periodo seleccionado.</p>
+        <p class="muted">No hay egresos ni deudas imputadas a este rubro para el período seleccionado.</p>
       {% endfor %}
     </div>
   </section>

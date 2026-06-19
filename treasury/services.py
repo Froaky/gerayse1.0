@@ -25,6 +25,7 @@ from .models import (
     ObjetivoRubroEconomico,
     PagoTesoreria,
     Proveedor,
+    SaldoInicialCuentaBancaria,
 )
 from .permissions import ensure_treasury_admin
 
@@ -311,6 +312,37 @@ def toggle_bank_account(*, bank_account: CuentaBancaria, actor=None) -> CuentaBa
     return bank_account
 
 
+def set_initial_bank_balance(
+    *,
+    cuenta_bancaria: CuentaBancaria,
+    fecha_referencia: date,
+    importe: Decimal,
+    motivo: str,
+    actor=None,
+) -> SaldoInicialCuentaBancaria:
+    _require_actor(actor)
+    motivo = (motivo or "").strip()
+    if not motivo:
+        raise ValidationError({"motivo": "El motivo es obligatorio."})
+    balance, created = SaldoInicialCuentaBancaria.objects.get_or_create(
+        cuenta_bancaria=cuenta_bancaria,
+        fecha_referencia=fecha_referencia,
+        defaults={
+            "importe": importe,
+            "motivo": motivo,
+            "creado_por": actor,
+        },
+    )
+    if created:
+        return _save_instance(balance)
+
+    balance.importe_anterior = balance.importe
+    balance.importe = importe
+    balance.motivo_correccion = motivo
+    balance.actualizado_por = actor
+    return _save_instance(balance)
+
+
 def register_payable(
     *,
     sucursal=None,
@@ -329,7 +361,7 @@ def register_payable(
     if not proveedor.activo:
         raise ValidationError({"proveedor": "El proveedor esta inactivo."})
     if not categoria.activo:
-        raise ValidationError({"categoria": "La categoria esta inactiva."})
+        raise ValidationError({"categoria": "La categoría está inactiva."})
     _ensure_payable_category_is_economic(categoria)
     payable = CuentaPorPagar(
         sucursal=sucursal,
@@ -370,7 +402,7 @@ def update_payable(
     if not proveedor.activo:
         raise ValidationError({"proveedor": "El proveedor esta inactivo."})
     if not categoria.activo:
-        raise ValidationError({"categoria": "La categoria esta inactiva."})
+        raise ValidationError({"categoria": "La categoría está inactiva."})
     _ensure_payable_category_is_economic(categoria)
     payable.sucursal = sucursal
     payable.proveedor = proveedor
@@ -578,7 +610,7 @@ def register_payment(
     if bank_account:
         bank_account = CuentaBancaria.objects.get(pk=bank_account.pk)
         if not bank_account.activa:
-            raise ValidationError({"cuenta_bancaria": "La cuenta bancaria esta inactiva."})
+            raise ValidationError({"cuenta_bancaria": "La cuenta bancaria está inactiva."})
     if locked_payable.estado == CuentaPorPagar.Estado.ANULADA:
         raise ValidationError({"cuenta_por_pagar": "La cuenta por pagar esta anulada."})
     if locked_payable.estado == CuentaPorPagar.Estado.PAGADA:
@@ -757,6 +789,7 @@ def _existing_accreditation_duplicate_qs(
     periodo_hasta=None,
 ):
     queryset = AcreditacionTarjeta.objects.filter(
+        movimiento_bancario__estado=MovimientoBancario.Estado.REGISTRADO,
         movimiento_bancario__cuenta_bancaria=cuenta_bancaria,
         canal__iexact=(canal or "").strip(),
         modo_registro=modo_registro,
@@ -829,6 +862,62 @@ def _bank_movement_empresa_scope_query(empresa_ids) -> Q:
     return Q(cuenta_bancaria__sucursal__empresa_id__in=empresa_ids) | Q(cuenta_bancaria__sucursal__isnull=True)
 
 
+def _bank_balance_until(account: CuentaBancaria, reference_date: date) -> dict:
+    initial_balance = (
+        SaldoInicialCuentaBancaria.objects.filter(
+            cuenta_bancaria=account,
+            fecha_referencia__lte=reference_date,
+        )
+        .select_related("creado_por", "actualizado_por")
+        .order_by("-fecha_referencia", "-id")
+        .first()
+    )
+    movements = MovimientoBancario.objects.filter(
+        cuenta_bancaria=account,
+        fecha__lte=reference_date,
+        estado=MovimientoBancario.Estado.REGISTRADO,
+    )
+    opening_amount = Decimal("0.00")
+    movement_from = None
+    if initial_balance is not None:
+        opening_amount = initial_balance.importe
+        movement_from = initial_balance.fecha_referencia
+        movements = movements.filter(fecha__gte=initial_balance.fecha_referencia)
+    credits = (
+        movements.filter(tipo=MovimientoBancario.Tipo.CREDITO).aggregate(total=Sum("monto"))["total"]
+        or Decimal("0.00")
+    )
+    debits = (
+        movements.filter(tipo=MovimientoBancario.Tipo.DEBITO).aggregate(total=Sum("monto"))["total"]
+        or Decimal("0.00")
+    )
+    return {
+        "initial_balance": initial_balance,
+        "initial_amount": opening_amount,
+        "movement_from": movement_from,
+        "credits": credits,
+        "debits": debits,
+        "balance": opening_amount + credits - debits,
+    }
+
+
+def _ensure_manual_bank_movement_mutable(movement: MovimientoBancario) -> None:
+    if movement.estado == MovimientoBancario.Estado.ANULADO:
+        raise ValidationError({"__all__": "No se puede editar ni eliminar un movimiento bancario anulado."})
+    if movement.origen != MovimientoBancario.Origen.MANUAL:
+        raise ValidationError(
+            {"__all__": "Solo se pueden editar o eliminar movimientos manuales desde esta pantalla."}
+        )
+    if movement.pago_tesoreria_id:
+        raise ValidationError(
+            {"__all__": "No se puede editar o eliminar un movimiento vinculado a un pago de tesorería."}
+        )
+    if hasattr(movement, "acreditacion_tarjeta"):
+        raise ValidationError(
+            {"__all__": "No se puede editar o eliminar un movimiento generado por una acreditación."}
+        )
+
+
 def create_bank_movement(
     *,
     cuenta_bancaria: CuentaBancaria,
@@ -871,6 +960,8 @@ def create_bank_movement(
 def update_bank_movement(
     *,
     movement: MovimientoBancario,
+    cuenta_bancaria: CuentaBancaria,
+    tipo: str,
     fecha: date,
     monto: Decimal,
     concepto: str,
@@ -878,21 +969,39 @@ def update_bank_movement(
     categoria: CategoriaCuentaPagar = None,
     rubro_operativo=None,
     proveedor: Proveedor = None,
+    sucursal_gasto=None,
     referencia: str = "",
     observaciones: str = "",
     actor=None,
 ) -> MovimientoBancario:
     _require_actor(actor)
+    _ensure_manual_bank_movement_mutable(movement)
+    movement.cuenta_bancaria = cuenta_bancaria
+    movement.tipo = tipo
     movement.fecha = fecha
     movement.monto = monto
     movement.concepto = concepto
-    if clase:
-        movement.clase = clase
+    movement.clase = clase or _infer_bank_movement_class(tipo=tipo, origen=movement.origen, payment=None)
     movement.categoria = categoria
     movement.rubro_operativo = rubro_operativo
     movement.proveedor = proveedor
+    movement.sucursal_gasto = sucursal_gasto
     movement.referencia = referencia
     movement.observaciones = observaciones
+    movement.actualizado_por = actor
+    return _save_instance(movement)
+
+
+def annul_bank_movement(*, movement: MovimientoBancario, motivo: str, actor=None) -> MovimientoBancario:
+    _require_actor(actor)
+    _ensure_manual_bank_movement_mutable(movement)
+    motivo = (motivo or "").strip()
+    if not motivo:
+        raise ValidationError({"motivo": "El motivo de eliminación es obligatorio."})
+    movement.estado = MovimientoBancario.Estado.ANULADO
+    movement.motivo_anulacion = motivo
+    movement.anulado_por = actor
+    movement.anulado_en = timezone.now()
     movement.actualizado_por = actor
     return _save_instance(movement)
 
@@ -977,7 +1086,7 @@ def register_card_accreditation(
         raise ValidationError(
             {
                 "referencia_externa": (
-                    "Ya existe una acreditacion equivalente para esta cuenta, canal y referencia o periodo."
+                    "Ya existe una acreditación equivalente para esta cuenta, canal y referencia o período."
                 )
             }
         )
@@ -1035,6 +1144,8 @@ def link_payment_to_bank_movement(
     """
     _require_actor(actor)
 
+    if bank_movement.estado != MovimientoBancario.Estado.REGISTRADO:
+        raise ValidationError("No se puede vincular un movimiento bancario eliminado.")
     if payment.monto != bank_movement.monto:
         raise ValidationError("El monto del pago y el movimiento bancario no coinciden.")
     if payment.cuenta_bancaria_id != bank_movement.cuenta_bancaria_id:
@@ -1093,6 +1204,7 @@ def build_bank_reconciliation_snapshot(
 
     # 3. Total accredited in Bank
     accreditations = AcreditacionTarjeta.objects.filter(
+        movimiento_bancario__estado=MovimientoBancario.Estado.REGISTRADO,
         movimiento_bancario__cuenta_bancaria=cuenta_bancaria,
         movimiento_bancario__fecha__gte=date_from,
         movimiento_bancario__fecha__lte=date_to,
@@ -1237,6 +1349,7 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
         sucursal_gasto__isnull=False,
     )
     bank_treasury_expenses = MovimientoBancario.objects.filter(
+        estado=MovimientoBancario.Estado.REGISTRADO,
         tipo=MovimientoBancario.Tipo.DEBITO,
         periodo_pago__gte=period_from,
         periodo_pago__lte=period_to,
@@ -1272,6 +1385,7 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
         fecha__lte=date_to,
     ).filter(Q(rubro_operativo__isnull=True) | Q(sucursal_gasto__isnull=True) | Q(periodo_pago__isnull=True))
     pending_bank_treasury_expenses = MovimientoBancario.objects.filter(
+        estado=MovimientoBancario.Estado.REGISTRADO,
         tipo=MovimientoBancario.Tipo.DEBITO,
         fecha__gte=date_from,
         fecha__lte=date_to,
@@ -1507,6 +1621,7 @@ def build_economic_rubro_detail(*, rubro_id: int, date_from: date, date_to: date
         sucursal_gasto__isnull=False,
     ).select_related("sucursal_gasto")
     bank_treasury_expenses = MovimientoBancario.objects.filter(
+        estado=MovimientoBancario.Estado.REGISTRADO,
         tipo=MovimientoBancario.Tipo.DEBITO,
         periodo_pago__gte=period_from,
         periodo_pago__lte=period_to,
@@ -1645,7 +1760,11 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     cash_income = cash_totals["ingresos"] or Decimal("0.00")
     cash_expense = cash_totals["egresos"] or Decimal("0.00")
 
-    bank_movements = MovimientoBancario.objects.filter(fecha__gte=date_from, fecha__lte=date_to)
+    bank_movements = MovimientoBancario.objects.filter(
+        estado=MovimientoBancario.Estado.REGISTRADO,
+        fecha__gte=date_from,
+        fecha__lte=date_to,
+    )
     if sucursal is not None:
         bank_movements = bank_movements.filter(cuenta_bancaria__sucursal=sucursal)
     elif empresa_ids:
@@ -1667,18 +1786,9 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     bank_balances = []
     total_bank_balance = Decimal("0.00")
     for account in bank_accounts.order_by("banco", "nombre"):
-        account_movements = MovimientoBancario.objects.filter(cuenta_bancaria=account, fecha__lte=date_to)
-        credits = (
-            account_movements.filter(tipo=MovimientoBancario.Tipo.CREDITO).aggregate(total=Sum("monto"))["total"]
-            or Decimal("0.00")
-        )
-        debits = (
-            account_movements.filter(tipo=MovimientoBancario.Tipo.DEBITO).aggregate(total=Sum("monto"))["total"]
-            or Decimal("0.00")
-        )
-        balance = credits - debits
-        total_bank_balance += balance
-        bank_balances.append({"account": account, "balance": balance})
+        balance_data = _bank_balance_until(account, date_to)
+        total_bank_balance += balance_data["balance"]
+        bank_balances.append({"account": account, **balance_data})
 
     pending_payables = CuentaPorPagar.objects.filter(
         estado__in=[CuentaPorPagar.Estado.PENDIENTE, CuentaPorPagar.Estado.PARCIAL]
@@ -1710,6 +1820,7 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     digital_sales_total = digital_sales.aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
 
     bank_accreditation_movements = MovimientoBancario.objects.filter(
+        estado=MovimientoBancario.Estado.REGISTRADO,
         tipo=MovimientoBancario.Tipo.CREDITO,
         clase=MovimientoBancario.Clase.ACREDITACION,
     ).filter(_bank_accreditation_movement_scope_query(date_from=date_from, date_to=date_to))
@@ -1838,15 +1949,15 @@ def build_treasury_dashboard_snapshot(*, reference_date=None, sucursal_id=None) 
     # Bank balances
     bank_balances = []
     for account in bank_accounts:
-        credits = MovimientoBancario.objects.filter(cuenta_bancaria=account, tipo=MovimientoBancario.Tipo.CREDITO).aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
-        debits = MovimientoBancario.objects.filter(cuenta_bancaria=account, tipo=MovimientoBancario.Tipo.DEBITO).aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
         bank_balances.append({
             "account": account,
-            "balance": credits - debits
+            **_bank_balance_until(account, reference_date),
         })
     
     recent_batches = LotePOS.objects.all().select_related("cuenta_bancaria").order_by("-fecha_lote", "-id")
-    recent_movements = MovimientoBancario.objects.all().select_related("cuenta_bancaria").order_by("-fecha", "-id")
+    recent_movements = MovimientoBancario.objects.filter(
+        estado=MovimientoBancario.Estado.REGISTRADO,
+    ).select_related("cuenta_bancaria").order_by("-fecha", "-id")
     recent_payments = PagoTesoreria.objects.filter(estado=PagoTesoreria.Estado.REGISTRADO).select_related("cuenta_por_pagar__proveedor", "cuenta_bancaria")
 
     if sucursal_id:
@@ -2090,7 +2201,11 @@ def build_disponibilidades_snapshot(year: int, month: int, sucursal=None, empres
     for acc in bank_accounts:
         initial = Decimal(saldos_iniciales_bancarios.get(str(acc.id), "0.00"))
         
-        m_period = MovimientoBancario.objects.filter(cuenta_bancaria=acc, fecha__range=(first_day, last_day))
+        m_period = MovimientoBancario.objects.filter(
+            cuenta_bancaria=acc,
+            estado=MovimientoBancario.Estado.REGISTRADO,
+            fecha__range=(first_day, last_day),
+        )
         credits = m_period.filter(tipo=MovimientoBancario.Tipo.CREDITO).aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
         debits = m_period.filter(tipo=MovimientoBancario.Tipo.DEBITO).aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
         

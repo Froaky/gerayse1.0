@@ -7,6 +7,7 @@ app_name = "users"
 urlpatterns = [
     path("login/", views.GerayseLoginView.as_view(), name="login"),
     path("logout/", views.GerayseLogoutView.as_view(), name="logout"),
+    path("mi-cuenta/", views.account_settings, name="account_settings"),
     path("password/cambio-obligatorio/", views.password_change_required, name="password_change_required"),
     path("primer-ingreso/<uidb64>/<token>/", views.first_access, name="first_access"),
 

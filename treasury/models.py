@@ -281,6 +281,58 @@ class CuentaBancaria(models.Model):
         return f"{self.nombre} - {self.banco}"
 
 
+class SaldoInicialCuentaBancaria(models.Model):
+    cuenta_bancaria = models.ForeignKey(
+        CuentaBancaria,
+        on_delete=models.PROTECT,
+        related_name="saldos_iniciales",
+    )
+    fecha_referencia = models.DateField()
+    importe = models.DecimalField(max_digits=14, decimal_places=2)
+    motivo = models.CharField(max_length=255)
+    importe_anterior = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    motivo_correccion = models.CharField(max_length=255, blank=True)
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="saldos_iniciales_bancarios_creados",
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+    actualizado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="saldos_iniciales_bancarios_actualizados",
+    )
+
+    class Meta:
+        ordering = ["-fecha_referencia", "cuenta_bancaria__banco", "cuenta_bancaria__nombre"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["cuenta_bancaria", "fecha_referencia"],
+                name="unique_initial_bank_balance_per_account_date",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["cuenta_bancaria", "fecha_referencia"]),
+        ]
+
+    def clean(self) -> None:
+        self.motivo = (self.motivo or "").strip()
+        self.motivo_correccion = (self.motivo_correccion or "").strip()
+        if not self.motivo:
+            raise ValidationError({"motivo": "El motivo es obligatorio."})
+        if self.importe_anterior is not None and not self.motivo_correccion:
+            raise ValidationError({"motivo_correccion": "El motivo de correccion es obligatorio."})
+
+    def __str__(self) -> str:
+        return f"{self.cuenta_bancaria} - {self.fecha_referencia:%d/%m/%Y} - {self.importe}"
+
+
 class CuentaPorPagar(models.Model):
     class Estado(models.TextChoices):
         PENDIENTE = "PENDIENTE", "Pendiente"
@@ -736,7 +788,7 @@ class PagoTesoreria(models.Model):
             and self.estado == self.Estado.REGISTRADO
             and not self.cuenta_bancaria.activa
         ):
-            errors["cuenta_bancaria"] = "La cuenta bancaria esta inactiva."
+            errors["cuenta_bancaria"] = "La cuenta bancaria está inactiva."
         if self.cuenta_por_pagar_id and self.estado == self.Estado.REGISTRADO:
             if self.cuenta_por_pagar.estado == CuentaPorPagar.Estado.ANULADA:
                 errors["cuenta_por_pagar"] = "La cuenta por pagar esta anulada."
@@ -819,7 +871,7 @@ class LotePOS(models.Model):
         if self.total_lote is not None and self.total_lote <= 0:
             errors["total_lote"] = "El total del lote debe ser mayor que cero."
         if self.cuenta_bancaria_id and not self.cuenta_bancaria.activa:
-            errors["cuenta_bancaria"] = "La cuenta bancaria seleccionada esta inactiva."
+            errors["cuenta_bancaria"] = "La cuenta bancaria seleccionada está inactiva."
         if errors:
             raise ValidationError(errors)
 
@@ -829,17 +881,21 @@ class LotePOS(models.Model):
 
 
 class MovimientoBancario(models.Model):
+    class Estado(models.TextChoices):
+        REGISTRADO = "REGISTRADO", "Registrado"
+        ANULADO = "ANULADO", "Anulado"
+
     class Tipo(models.TextChoices):
         DEBITO = "DEBITO", "Debito"
         CREDITO = "CREDITO", "Credito"
 
     class Clase(models.TextChoices):
-        ACREDITACION = "ACREDITACION", "Ingreso por acreditacion"
+        ACREDITACION = "ACREDITACION", "Ingreso por acreditación"
         OTRO_INGRESO = "OTRO_INGRESO", "Otro ingreso"
         CHEQUE = "CHEQUE", "Egreso por cheque"
         ECHEQ = "ECHEQ", "Egreso por ECHEQ"
         IMPUESTO = "IMPUESTO", "Egreso por impuestos"
-        COMISION_BANCARIA = "COMISION_BANCARIA", "Egreso por comision bancaria"
+        COMISION_BANCARIA = "COMISION_BANCARIA", "Egreso por comisión bancaria"
         RETIRO = "RETIRO", "Egreso por retiro"
         TRANSFERENCIA_TERCEROS = "TRANSFERENCIA_TERCEROS", "Egreso por transferencia a terceros"
         OTRO_EGRESO = "OTRO_EGRESO", "Otro egreso"
@@ -857,6 +913,7 @@ class MovimientoBancario(models.Model):
     tipo = models.CharField(max_length=10, choices=Tipo.choices)
     clase = models.CharField(max_length=32, choices=Clase.choices, default=Clase.OTRO_INGRESO)
     origen = models.CharField(max_length=24, choices=Origen.choices, default=Origen.MANUAL)
+    estado = models.CharField(max_length=12, choices=Estado.choices, default=Estado.REGISTRADO)
     fecha = models.DateField()
     monto = models.DecimalField(max_digits=14, decimal_places=2)
     concepto = models.CharField(max_length=160)
@@ -914,7 +971,15 @@ class MovimientoBancario(models.Model):
         blank=True,
         related_name="movimientos_bancarios_actualizados",
     )
-
+    anulado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="movimientos_bancarios_anulados",
+    )
+    anulado_en = models.DateTimeField(null=True, blank=True)
+    motivo_anulacion = models.CharField(max_length=255, blank=True)
 
     class Meta:
         ordering = ["-fecha", "-id"]
@@ -932,11 +997,14 @@ class MovimientoBancario(models.Model):
         self.concepto = (self.concepto or "").strip()
         self.referencia = (self.referencia or "").strip()
         self.observaciones = (self.observaciones or "").strip()
+        self.motivo_anulacion = (self.motivo_anulacion or "").strip()
         errors = {}
         if self.monto is not None and self.monto <= 0:
             errors["monto"] = "El monto debe ser mayor que cero."
         if not self.concepto:
             errors["concepto"] = "El concepto es obligatorio."
+        if self.estado == self.Estado.ANULADO and not self.motivo_anulacion:
+            errors["motivo_anulacion"] = "El motivo de eliminación es obligatorio."
         credit_classes = {self.Clase.ACREDITACION, self.Clase.OTRO_INGRESO}
         debit_classes = {
             self.Clase.CHEQUE,
@@ -948,7 +1016,7 @@ class MovimientoBancario(models.Model):
             self.Clase.OTRO_EGRESO,
         }
         if self.tipo == self.Tipo.CREDITO and self.clase not in credit_classes:
-            errors["clase"] = "La clase elegida no corresponde a un credito bancario."
+            errors["clase"] = "La clase elegida no corresponde a un crédito bancario."
         if self.tipo == self.Tipo.DEBITO and self.clase not in debit_classes:
             errors["clase"] = "La clase elegida no corresponde a un debito bancario."
         if self.clase in {
@@ -968,7 +1036,7 @@ class MovimientoBancario(models.Model):
         } and not self.proveedor_id:
             errors["proveedor"] = "El proveedor es obligatorio para este tipo de movimiento."
         if self.cuenta_bancaria_id and not self.cuenta_bancaria.activa:
-            errors["cuenta_bancaria"] = "La cuenta bancaria esta inactiva."
+            errors["cuenta_bancaria"] = "La cuenta bancaria está inactiva."
         if self.pago_tesoreria_id:
             if self.tipo != self.Tipo.DEBITO:
                 errors["tipo"] = "Un pago de tesoreria solo puede vincularse a un debito bancario."
@@ -992,7 +1060,7 @@ class MovimientoBancario(models.Model):
         elif self.origen == self.Origen.PAGO_TESORERIA:
             errors["pago_tesoreria"] = "El origen pago de tesoreria requiere un pago vinculado."
         if self.origen == self.Origen.ACREDITACION_TARJETA and self.clase != self.Clase.ACREDITACION:
-            errors["clase"] = "Las acreditaciones de tarjeta deben quedar tipificadas como acreditacion."
+            errors["clase"] = "Las acreditaciones de tarjeta deben quedar tipificadas como acreditación."
         if errors:
             raise ValidationError(errors)
 
@@ -1097,11 +1165,11 @@ class AcreditacionTarjeta(models.Model):
             errors["referencia_externa"] = "Informá un lote POS o una referencia de liquidacion."
         if self.movimiento_bancario_id:
             if self.movimiento_bancario.tipo != MovimientoBancario.Tipo.CREDITO:
-                errors["movimiento_bancario"] = "La acreditacion debe vincularse a un credito bancario."
+                errors["movimiento_bancario"] = "La acreditación debe vincularse a un crédito bancario."
             if self.movimiento_bancario.origen != MovimientoBancario.Origen.ACREDITACION_TARJETA:
-                errors["movimiento_bancario"] = "El movimiento debe estar marcado como acreditacion de tarjeta."
+                errors["movimiento_bancario"] = "El movimiento debe estar marcado como acreditación de tarjeta."
             if self.movimiento_bancario.clase != MovimientoBancario.Clase.ACREDITACION:
-                errors["movimiento_bancario"] = "El movimiento debe quedar tipificado como acreditacion."
+                errors["movimiento_bancario"] = "El movimiento debe quedar tipificado como acreditación."
         if errors:
             raise ValidationError(errors)
 
@@ -1213,8 +1281,8 @@ class MovimientoCajaCentral(models.Model):
         APORTE = "APORTE", "Aporte de Socios/Capital"
         RETIRO_BANCO = "RETIRO_BANCO", "Retiro de Banco (Efectivo)"
         EGRESO_PAGO = "EGRESO_PAGO", "Egreso por Pago Administrativo"
-        EGRESO_ADMIN = "EGRESO_ADMIN", "Egreso Administrativo de Tesoreria"
-        DEPOSITO_BANCO = "DEPOSITO_BANCO", "Deposito en Banco"
+        EGRESO_ADMIN = "EGRESO_ADMIN", "Egreso Administrativo de Tesorería"
+        DEPOSITO_BANCO = "DEPOSITO_BANCO", "Depósito en Banco"
         AJUSTE_POSITIVO = "AJUSTE_POSITIVO", "Ajuste de Saldo (+)"
         AJUSTE_NEGATIVO = "AJUSTE_NEGATIVO", "Ajuste de Saldo (-)"
 

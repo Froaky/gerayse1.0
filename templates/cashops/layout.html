@@ -77,6 +77,18 @@
         font-size: 0.9rem;
         color: var(--text);
         transition: border-color 0.12s, background 0.12s;
+        cursor: pointer;
+      }
+      button,
+      a[href],
+      summary,
+      [role="button"],
+      button.badge {
+        cursor: pointer;
+      }
+      button:disabled,
+      [aria-disabled="true"] {
+        cursor: not-allowed;
       }
       .chip:hover { border-color: var(--accent); }
       .chip-button {
@@ -85,6 +97,7 @@
       }
       .button { background: var(--accent); color: var(--nb-light); border-color: transparent; font-weight: 600; }
       .button:hover { background: var(--accent-hi); }
+      .button-danger { background: var(--danger); color: var(--nb-light); border-color: transparent; }
       .button-secondary { background: var(--panel-soft); color: var(--text); }
       .grid { display: grid; gap: 16px; }
       .card {
@@ -328,7 +341,7 @@
               <a class="chip" href="{% url 'cashops:box_open' %}">Abrir caja</a>
             {% endif %}
             {% if request.user.is_authenticated and request.user.can_read_treasury %}
-              <a class="chip" href="{% url 'treasury:dashboard' %}">Tesoreria</a>
+              <a class="chip" href="{% url 'treasury:dashboard' %}">Tesorería</a>
             {% endif %}
             {% if request.user.is_authenticated and request.user.can_read_config or request.user.can_read_users %}
               <span class="nav-divider"></span>
@@ -376,14 +389,14 @@
                         </label>
                       {% endfor %}
                       <div class="nav-menu__separator"></div>
-                      <button class="nav-menu__item nav-menu__item--apply" type="submit">Aplicar seleccion</button>
+                      <button class="nav-menu__item nav-menu__item--apply" type="submit">Aplicar selección</button>
                     </form>
                   </div>
                 </details>
               {% elif empresa_activa %}
                 <span class="chip">{{ empresa_activa.nombre }}</span>
               {% endif %}
-              <span class="chip">{{ request.user }}</span>
+              <a class="chip" href="{% url 'users:account_settings' %}">{{ request.user }}</a>
               <form method="post" action="{% url 'users:logout' %}">
                 {% csrf_token %}
                 <button class="chip chip-button" type="submit">Salir</button>

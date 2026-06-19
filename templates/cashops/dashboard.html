@@ -33,7 +33,7 @@
     <div class="row">
       <div>
         <h3>Vista actual</h3>
-        <p class="muted">El semaforo, KPIs y alertas cambian segun la vista seleccionada.</p>
+        <p class="muted">El semáforo, KPIs y alertas cambian según la vista seleccionada.</p>
       </div>
       <div class="list-actions">
         <a class="button-secondary" href="{% url 'cashops:box_tracking' %}">Seguimiento de cajas</a>
@@ -183,7 +183,7 @@
             <a class="summary" href="{% url 'cashops:box_detail' selected_box.id %}#ventas">
               <span class="muted">Ventas cargadas</span>
               <strong>${{ selected_box_sales_breakdown.total }}</strong>
-              <small class="muted">ver composicion</small>
+              <small class="muted">ver composición</small>
             </a>
           </div>
           {% if dashboard_snapshot.ventas_por_canal %}
@@ -261,7 +261,7 @@
           <div class="row">
             <div>
               <h3>Sin caja seleccionada</h3>
-              <p class="muted">No hay caja seleccionada. El control se esta mostrando para {{ dashboard_snapshot.scope_label }}.</p>
+              <p class="muted">No hay caja seleccionada. El control se está mostrando para {{ dashboard_snapshot.scope_label }}.</p>
             </div>
             {% if is_cashops_admin %}
               <a class="button-secondary" href="{% url 'cashops:operational_limit_list' %}">Configurar limites</a>

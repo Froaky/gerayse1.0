@@ -61,6 +61,54 @@ Last updated: 2026-06-12
 
 ## Current Session
 
+### Bank Movement Corrections And User Settings 2026-06-19
+
+- User reported wrong bank movements and requested visible `Editar` and `Eliminar` buttons with confirmation.
+- Decision in progress: treat bank movement "delete" as audited annulment, not physical delete, so balances stop counting the movement but the trace remains.
+- Linked/generated bank movements need extra care: do not silently edit/delete records whose source is payment/accreditation without preserving accounting trace.
+- User also requested UTF-8 Spanish labels with correct accents, personal user settings, password change with old password and double confirmation, and pointer cursor on clickable buttons.
+- Implemented direction:
+  - manual registered bank movements can be edited after confirmation; balances/reporting read the persisted corrected values.
+  - manual registered bank movements can be "eliminated" only by audited annulment (`estado=ANULADO`, reason, user, timestamp); financial snapshots and lists exclude them.
+  - bank movements linked to treasury payments or card accreditations are blocked from direct bank edit/delete.
+  - users now have `Mi cuenta` from the username chip to edit own basic data and change password with current password plus double confirmation.
+  - visible Spanish copy and clickable cursor styles are being normalized in active UI templates.
+- Files touched for this slice:
+  - `treasury/models.py`, `treasury/services.py`, `treasury/forms.py`, `treasury/views.py`, `treasury/urls.py`, `treasury/admin.py`
+  - `templates/treasury/confirm_action.html`, treasury list/detail/form/layout/dashboard/accreditation/reconciliation templates
+  - `users/forms.py`, `users/views.py`, `users/urls.py`, `users/models.py`, user account/password/templates/tests
+  - shared cursor/layout CSS in `static/css/gerayse.css`, `templates/cashops/layout.html`, plus selected visible copy in cashops templates
+  - migrations `treasury/0019_bank_movement_annulment.py`, `treasury/0020_alter_movimientobancario_clase_and_more.py`, `users/0009_utf8_spanish_user_labels.py`
+- Validation:
+  - focused new bank/user tests passed: 10 tests OK
+  - `py -3.14 manage.py test treasury.tests users.tests -v 1` with `PYTHONPATH=.venv\Lib\site-packages`: 115 tests OK, 1 skipped
+  - `py -3.14 -m compileall treasury users`: OK
+  - `py -3.14 manage.py makemigrations --check --dry-run`: no changes detected
+  - search for common broken Spanish strings found only benign partial matches (`seleccionados`) and old historical migrations.
+
+### EP-04 Runtime Slice 2026-06-19
+
+- User asked to work on permissions and bank movements.
+- Implemented `EP-04` `US-4.8` saldo inicial bancario por cuenta.
+- Decision: initial bank balance must be an audited starting point for account balances, not a real bank movement, accreditation or transfer.
+- Permission decision: reuse existing treasury module permissions; read can view initial balances and write is required to create/correct them.
+- Behavior:
+  - new `SaldoInicialCuentaBancaria` stores one audited starting balance per account/reference date
+  - correcting the same account/date updates the record and stores previous value, correction user/date and motive
+  - bank availability reads `initial balance + real bank movements from the reference date through the cutoff date`
+  - initial balances are shown from the bank account list and the treasury dashboard but are not `MovimientoBancario`
+- Files touched:
+  - `treasury/models.py`, `treasury/forms.py`, `treasury/services.py`, `treasury/views.py`, `treasury/urls.py`, `treasury/admin.py`
+  - `templates/treasury/dashboard.html`
+  - `treasury/migrations/0018_saldo_inicial_cuenta_bancaria.py`
+  - `treasury/tests.py`
+  - `docs/epics/EP-04-bancos-y-conciliacion.md`, `docs/epics/README.md`, `context.md`
+- Validation:
+  - focused initial-balance service/view tests passed: 6 tests OK
+  - `py -3.14 manage.py test treasury.tests treasury.tests_ep05 -v 1` with `PYTHONPATH=.venv\Lib\site-packages` passed: 80 tests OK, 1 skipped
+  - `py -3.14 -m compileall treasury` with `PYTHONPATH=.venv\Lib\site-packages` passed
+  - `py -3.14 manage.py makemigrations --check --dry-run` still reports only the pre-existing `treasury\migrations\0019_alter_movimientocajacentral_tipo.py` drift
+
 ### Backlog Intake 2026-06-12
 
 - New user feedback:
