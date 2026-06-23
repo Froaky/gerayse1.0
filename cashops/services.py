@@ -434,7 +434,7 @@ def _period_boxes_for_operational_scope(
     )
     if sucursal is not None:
         boxes = boxes.filter(sucursal=sucursal)
-    elif empresa_ids:
+    elif empresa_ids is not None:
         boxes = boxes.filter(sucursal__empresa_id__in=empresa_ids)
     return boxes
 
@@ -627,12 +627,16 @@ def build_alert_panel_queryset(
         queryset = queryset.filter(rubro_operativo=rubro)
     if sucursal is not None:
         queryset = queryset.filter(sucursal=sucursal)
-    elif empresa_ids:
-        queryset = queryset.filter(
-            Q(caja__sucursal__empresa_id__in=empresa_ids)
-            | Q(sucursal__empresa_id__in=empresa_ids)
-            | Q(turno__empresa_id__in=empresa_ids)
-        )
+    elif empresa_ids is not None:
+        if not empresa_ids:
+            queryset = queryset.none()
+        else:
+            queryset = queryset.filter(
+                Q(caja__sucursal__empresa_id__in=empresa_ids)
+                | Q(sucursal__empresa_id__in=empresa_ids)
+                | Q(turno__empresa_id__in=empresa_ids)
+                | Q(caja__isnull=True, sucursal__isnull=True, turno__isnull=True)
+            )
     if alcance == "global":
         queryset = queryset.filter(caja__isnull=True, sucursal__isnull=True)
     elif alcance == "sucursal":
@@ -793,7 +797,7 @@ def build_operational_period_summary(*, date_from: date, date_to: date, sucursal
     ).exclude(tipo=MovimientoCaja.Tipo.APERTURA).filter(estado=MovimientoCaja.Estado.REGISTRADO)
     if sucursal is not None:
         movement_qs = movement_qs.filter(caja__sucursal=sucursal)
-    elif empresa_ids:
+    elif empresa_ids is not None:
         movement_qs = movement_qs.filter(caja__sucursal__empresa_id__in=empresa_ids)
 
     _channels = _get_active_channels()
@@ -958,7 +962,7 @@ def build_management_daily_matrix(*, date_from: date, date_to: date, sucursal: S
     ).exclude(tipo=MovimientoCaja.Tipo.APERTURA).filter(estado=MovimientoCaja.Estado.REGISTRADO)
     if sucursal is not None:
         movement_qs = movement_qs.filter(caja__sucursal=sucursal)
-    elif empresa_ids:
+    elif empresa_ids is not None:
         movement_qs = movement_qs.filter(caja__sucursal__empresa_id__in=empresa_ids)
 
     _channels = _get_active_channels()

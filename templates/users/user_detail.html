@@ -37,7 +37,7 @@
           {% if empresas_del_usuario %}
             {% for e in empresas_del_usuario %}{{ e.nombre }}{% if not forloop.last %}, {% endif %}{% endfor %}
           {% else %}
-            Sin restricción
+            Sin acceso a empresas
           {% endif %}
         </strong>
       </div>

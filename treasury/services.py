@@ -855,10 +855,14 @@ def _bank_account_empresa_scope_query(empresa_ids) -> Q:
     active company scope, include both accounts linked to that company's
     branches and global accounts without branch.
     """
+    if not empresa_ids:
+        return Q(pk__in=[])
     return Q(sucursal__empresa_id__in=empresa_ids) | Q(sucursal__isnull=True)
 
 
 def _bank_movement_empresa_scope_query(empresa_ids) -> Q:
+    if not empresa_ids:
+        return Q(pk__in=[])
     return Q(cuenta_bancaria__sucursal__empresa_id__in=empresa_ids) | Q(cuenta_bancaria__sucursal__isnull=True)
 
 
@@ -1252,7 +1256,9 @@ def scope_central_cash_movements(movements, *, sucursal=None, empresa_ids=None):
             Q(caja_central__sucursal=sucursal)
             | Q(tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN, sucursal_gasto=sucursal)
         )
-    if empresa_ids:
+    if empresa_ids is not None:
+        if not empresa_ids:
+            return movements.none()
         return movements.filter(
             Q(caja_central__sucursal__empresa_id__in=empresa_ids)
             | Q(caja_central__sucursal__isnull=True, sucursal_gasto__isnull=True)
@@ -1313,7 +1319,7 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
     if sucursal is not None:
         sales = sales.filter(caja__sucursal=sucursal)
         expenses = expenses.filter(caja__sucursal=sucursal)
-    elif empresa_ids:
+    elif empresa_ids is not None:
         sales = sales.filter(caja__sucursal__empresa_id__in=empresa_ids)
         expenses = expenses.filter(caja__sucursal__empresa_id__in=empresa_ids)
 
@@ -1359,7 +1365,7 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
     if sucursal is not None:
         central_treasury_expenses = central_treasury_expenses.filter(sucursal_gasto=sucursal)
         bank_treasury_expenses = bank_treasury_expenses.filter(sucursal_gasto=sucursal)
-    elif empresa_ids:
+    elif empresa_ids is not None:
         central_treasury_expenses = central_treasury_expenses.filter(sucursal_gasto__empresa_id__in=empresa_ids)
         bank_treasury_expenses = bank_treasury_expenses.filter(sucursal_gasto__empresa_id__in=empresa_ids)
 
@@ -1397,13 +1403,17 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
         pending_bank_treasury_expenses = pending_bank_treasury_expenses.filter(
             Q(sucursal_gasto=sucursal) | Q(sucursal_gasto__isnull=True)
         )
-    elif empresa_ids:
-        pending_central_treasury_expenses = pending_central_treasury_expenses.filter(
-            Q(sucursal_gasto__empresa_id__in=empresa_ids) | Q(sucursal_gasto__isnull=True)
-        )
-        pending_bank_treasury_expenses = pending_bank_treasury_expenses.filter(
-            Q(sucursal_gasto__empresa_id__in=empresa_ids) | Q(sucursal_gasto__isnull=True)
-        )
+    elif empresa_ids is not None:
+        if not empresa_ids:
+            pending_central_treasury_expenses = pending_central_treasury_expenses.none()
+            pending_bank_treasury_expenses = pending_bank_treasury_expenses.none()
+        else:
+            pending_central_treasury_expenses = pending_central_treasury_expenses.filter(
+                Q(sucursal_gasto__empresa_id__in=empresa_ids) | Q(sucursal_gasto__isnull=True)
+            )
+            pending_bank_treasury_expenses = pending_bank_treasury_expenses.filter(
+                Q(sucursal_gasto__empresa_id__in=empresa_ids) | Q(sucursal_gasto__isnull=True)
+            )
     treasury_unmapped_expenses_total = (
         (pending_central_treasury_expenses.aggregate(total=Sum("monto"))["total"] or Decimal("0.00"))
         + (pending_bank_treasury_expenses.aggregate(total=Sum("monto"))["total"] or Decimal("0.00"))
@@ -1418,11 +1428,14 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
     )
     if sucursal is not None:
         period_payables = period_payables.filter(sucursal=sucursal)
-    elif empresa_ids:
-        period_payables = period_payables.filter(
-            Q(sucursal__empresa_id__in=empresa_ids)
-            | Q(sucursal__isnull=True)
-        )
+    elif empresa_ids is not None:
+        if not empresa_ids:
+            period_payables = period_payables.none()
+        else:
+            period_payables = period_payables.filter(
+                Q(sucursal__empresa_id__in=empresa_ids)
+                | Q(sucursal__isnull=True)
+            )
 
     mapped_period_payables = period_payables.filter(categoria__rubro_operativo__isnull=False)
     debt_period_total = mapped_period_payables.aggregate(total=Sum("importe_total"))["total"] or Decimal("0.00")
@@ -1610,7 +1623,7 @@ def build_economic_rubro_detail(*, rubro_id: int, date_from: date, date_to: date
     ).select_related("caja", "caja__sucursal")
     if sucursal is not None:
         cash_expenses = cash_expenses.filter(caja__sucursal=sucursal)
-    elif empresa_ids:
+    elif empresa_ids is not None:
         cash_expenses = cash_expenses.filter(caja__sucursal__empresa_id__in=empresa_ids)
 
     central_treasury_expenses = MovimientoCajaCentral.objects.filter(
@@ -1631,7 +1644,7 @@ def build_economic_rubro_detail(*, rubro_id: int, date_from: date, date_to: date
     if sucursal is not None:
         central_treasury_expenses = central_treasury_expenses.filter(sucursal_gasto=sucursal)
         bank_treasury_expenses = bank_treasury_expenses.filter(sucursal_gasto=sucursal)
-    elif empresa_ids:
+    elif empresa_ids is not None:
         central_treasury_expenses = central_treasury_expenses.filter(sucursal_gasto__empresa_id__in=empresa_ids)
         bank_treasury_expenses = bank_treasury_expenses.filter(sucursal_gasto__empresa_id__in=empresa_ids)
 
@@ -1644,11 +1657,14 @@ def build_economic_rubro_detail(*, rubro_id: int, date_from: date, date_to: date
     ).select_related("proveedor", "categoria", "sucursal")
     if sucursal is not None:
         payables = payables.filter(sucursal=sucursal)
-    elif empresa_ids:
-        payables = payables.filter(
-            Q(sucursal__empresa_id__in=empresa_ids)
-            | Q(sucursal__isnull=True)
-        )
+    elif empresa_ids is not None:
+        if not empresa_ids:
+            payables = payables.none()
+        else:
+            payables = payables.filter(
+                Q(sucursal__empresa_id__in=empresa_ids)
+                | Q(sucursal__isnull=True)
+            )
 
     items = []
     cash_total = Decimal("0.00")
@@ -1750,7 +1766,7 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     ).exclude(tipo=MovimientoCaja.Tipo.APERTURA)
     if sucursal is not None:
         cash_movements = cash_movements.filter(caja__sucursal=sucursal)
-    elif empresa_ids:
+    elif empresa_ids is not None:
         cash_movements = cash_movements.filter(caja__sucursal__empresa_id__in=empresa_ids)
 
     cash_totals = cash_movements.aggregate(
@@ -1767,7 +1783,7 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     )
     if sucursal is not None:
         bank_movements = bank_movements.filter(cuenta_bancaria__sucursal=sucursal)
-    elif empresa_ids:
+    elif empresa_ids is not None:
         bank_movements = bank_movements.filter(_bank_movement_empresa_scope_query(empresa_ids))
 
     bank_totals = bank_movements.aggregate(
@@ -1780,7 +1796,7 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     bank_accounts = CuentaBancaria.objects.filter(activa=True)
     if sucursal is not None:
         bank_accounts = bank_accounts.filter(sucursal=sucursal)
-    elif empresa_ids:
+    elif empresa_ids is not None:
         bank_accounts = bank_accounts.filter(_bank_account_empresa_scope_query(empresa_ids))
 
     bank_balances = []
@@ -1795,7 +1811,7 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     )
     if sucursal is not None:
         pending_payables = pending_payables.filter(sucursal=sucursal)
-    elif empresa_ids:
+    elif empresa_ids is not None:
         pending_payables = pending_payables.filter(sucursal__empresa_id__in=empresa_ids)
 
     reference_date = date_to
@@ -1848,7 +1864,7 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     recent_batches = LotePOS.objects.filter(fecha_lote__gte=date_from, fecha_lote__lte=date_to)
     if sucursal is not None:
         recent_batches = recent_batches.filter(cuenta_bancaria__sucursal=sucursal)
-    elif empresa_ids:
+    elif empresa_ids is not None:
         recent_batches = recent_batches.filter(cuenta_bancaria__sucursal__empresa_id__in=empresa_ids)
     recent_batches = recent_batches.select_related("cuenta_bancaria").order_by("-fecha_lote", "-id")[:5]
 
@@ -1859,7 +1875,7 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     )
     if sucursal is not None:
         recent_payments = recent_payments.filter(cuenta_por_pagar__sucursal=sucursal)
-    elif empresa_ids:
+    elif empresa_ids is not None:
         recent_payments = recent_payments.filter(cuenta_por_pagar__sucursal__empresa_id__in=empresa_ids)
     recent_payments = recent_payments.select_related("cuenta_por_pagar__proveedor", "cuenta_bancaria").order_by(
         "-fecha_pago", "-id"
@@ -2192,7 +2208,7 @@ def build_disponibilidades_snapshot(year: int, month: int, sucursal=None, empres
     bank_accounts = CuentaBancaria.objects.filter(activa=True)
     if sucursal:
         bank_accounts = bank_accounts.filter(sucursal=sucursal)
-    elif empresa_ids:
+    elif empresa_ids is not None:
         bank_accounts = bank_accounts.filter(_bank_account_empresa_scope_query(empresa_ids))
         
     accounts_info = []

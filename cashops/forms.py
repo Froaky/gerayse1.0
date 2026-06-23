@@ -88,7 +88,7 @@ class CajaAperturaForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.fields["fecha_operativa"].initial = datetime.date.today()
         # empresa_ids (multi) tiene prioridad; empresa (single) es fallback de compatibilidad
-        if empresa_ids:
+        if empresa_ids is not None:
             self.fields["turno"].queryset = Turno.objects.filter(empresa_id__in=empresa_ids)
         elif empresa:
             self.fields["turno"].queryset = Turno.objects.filter(empresa=empresa)
@@ -108,7 +108,7 @@ class CajaAperturaForm(forms.Form):
                 self.fields["sucursal"].queryset = Sucursal.objects.filter(
                     pk=self.actor.sucursal_base_id, activa=True
                 )
-            elif empresa_ids:
+            elif empresa_ids is not None:
                 self.fields["sucursal"].queryset = Sucursal.objects.filter(
                     activa=True, empresa_id__in=empresa_ids
                 )

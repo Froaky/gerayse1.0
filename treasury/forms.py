@@ -850,7 +850,7 @@ class DisponibilidadesFilterForm(TreasuryStyledFormMixin, forms.Form):
         today = timezone.localdate()
         self.fields["year"].initial = today.year
         self.fields["month"].initial = today.month
-        if empresa_ids:
+        if empresa_ids is not None:
             self.fields["sucursal"].queryset = Sucursal.objects.filter(
                 empresa_id__in=empresa_ids
             ).order_by("nombre")

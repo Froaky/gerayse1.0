@@ -66,6 +66,10 @@ class CashopsTestCase(TestCase):
         self.empresa_b = Empresa.objects.create(nombre="MAPOGO SRL")
         self.branch_a = Sucursal.objects.create(codigo="SUC-A", nombre="Sucursal A", razon_social="ARMADI SRL", empresa=self.empresa_a)
         self.branch_b = Sucursal.objects.create(codigo="SUC-B", nombre="Sucursal B", razon_social="MAPOGO SRL", empresa=self.empresa_b)
+        self.admin.empresas_permitidas.set([self.empresa_a, self.empresa_b])
+        self.operator.empresas_permitidas.set([self.empresa_a])
+        self.operator_2.empresas_permitidas.set([self.empresa_b])
+        self.other.empresas_permitidas.set([self.empresa_b])
         self.rubro_insumos = RubroOperativo.objects.create(nombre="Insumos")
         self.rubro_viaticos = RubroOperativo.objects.create(nombre="Viaticos")
 
@@ -2379,6 +2383,7 @@ class CashopsViewTests(CashopsTestCase):
 class EP12EmpresasTests(CashopsTestCase):
     def setUp(self):
         super().setUp()
+        self.admin.empresas_permitidas.set([self.empresa_a, self.empresa_b])
 
     def test_empresa_list_requires_admin(self):
         self.client.force_login(self.operator)
@@ -2408,6 +2413,15 @@ class EP12EmpresasTests(CashopsTestCase):
             {"empresa_id": self.empresa_a.pk, "next": reverse("cashops:dashboard")},
         )
         self.assertEqual(self.client.session.get("empresa_ids"), [self.empresa_a.pk])
+
+    def test_set_empresa_activa_ignores_unassigned_company(self):
+        self.admin.empresas_permitidas.clear()
+        self.client.force_login(self.admin)
+        self.client.post(
+            reverse("cashops:set_empresa_activa"),
+            {"empresa_id": self.empresa_a.pk, "next": reverse("cashops:dashboard")},
+        )
+        self.assertEqual(self.client.session.get("empresa_ids"), [])
 
     def test_dashboard_filters_sucursales_by_empresa_activa(self):
         self.client.force_login(self.admin)

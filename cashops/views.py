@@ -65,20 +65,16 @@ def _boxes_for_request(request):
     queryset = Caja.objects.select_related("sucursal", "turno", "usuario")
     if request.user.is_authenticated and request.user.is_cashops_admin():
         empresa_ids = _get_empresa_ids(request)
-        if empresa_ids:
-            return queryset.filter(sucursal__empresa_id__in=empresa_ids)
-        return queryset
-    return queryset.filter(usuario=request.user)
+        return queryset.filter(sucursal__empresa_id__in=empresa_ids)
+    return queryset.filter(usuario=request.user, sucursal__empresa_id__in=_get_empresa_ids(request))
 
 
 def _owned_open_boxes(request):
     queryset = Caja.objects.select_related("turno", "sucursal", "usuario").filter(estado=Caja.Estado.ABIERTA)
     if request.user.is_authenticated and request.user.is_cashops_admin():
         empresa_ids = _get_empresa_ids(request)
-        if empresa_ids:
-            return queryset.filter(sucursal__empresa_id__in=empresa_ids)
-        return queryset
-    return queryset.filter(usuario=request.user)
+        return queryset.filter(sucursal__empresa_id__in=empresa_ids)
+    return queryset.filter(usuario=request.user, sucursal__empresa_id__in=_get_empresa_ids(request))
 
 
 def _box_movements_prefetch():
@@ -99,11 +95,13 @@ def _get_box_for_request(request, box_id: int):
     box = get_object_or_404(Caja.objects.select_related("sucursal", "turno", "usuario"), pk=box_id)
     if request.user.is_authenticated and request.user.is_cashops_admin():
         empresa_ids = _get_empresa_ids(request)
-        if empresa_ids and box.sucursal.empresa_id not in empresa_ids:
+        if box.sucursal.empresa_id not in empresa_ids:
             raise PermissionDenied("Esta caja no pertenece a las empresas seleccionadas.")
         return box
     if box.usuario_id != request.user.id:
         raise PermissionDenied("No tenes permiso para operar esta caja.")
+    if box.sucursal.empresa_id not in _get_empresa_ids(request):
+        raise PermissionDenied("Esta caja no pertenece a tus empresas seleccionadas.")
     return box
 
 
@@ -148,9 +146,12 @@ def _get_empresa_ids(request):
     if ids is not None:
         return ids
     # Compatibilidad con la clave vieja
-    old_id = request.session.get("empresa_activa_id")
-    if old_id:
-        return [old_id]
+    if request.user.is_authenticated:
+        allowed_ids = list(request.user.empresas_permitidas.values_list("pk", flat=True))
+        old_id = request.session.get("empresa_activa_id")
+        if old_id and old_id in allowed_ids:
+            return [old_id]
+        return allowed_ids
     return []
 
 
@@ -169,9 +170,7 @@ def _sucursales_for_empresa(request):
     """Queryset de sucursales filtrado por las empresas seleccionadas en sesión."""
     qs = Sucursal.objects.all()
     empresa_ids = _get_empresa_ids(request)
-    if empresa_ids:
-        qs = qs.filter(empresa_id__in=empresa_ids)
-    return qs
+    return qs.filter(empresa_id__in=empresa_ids)
 
 
 def _sucursales_for_dashboard(request):
@@ -260,7 +259,7 @@ def _parse_management_matrix_filters(request, empresa_ids=None):
     if sucursal_id:
         try:
             sucursal_qs = Sucursal.objects.filter(activa=True)
-            if empresa_ids:
+            if empresa_ids is not None:
                 sucursal_qs = sucursal_qs.filter(empresa_id__in=empresa_ids)
             sucursal = sucursal_qs.get(pk=int(sucursal_id))
         except (Sucursal.DoesNotExist, TypeError, ValueError):
@@ -316,7 +315,7 @@ def _resolve_dashboard_scope(request):
         snapshot = build_operational_period_summary(
             date_from=period_from,
             date_to=period_to,
-            empresa_ids=empresa_ids or None,
+            empresa_ids=empresa_ids,
         )
         if snapshot and empresa_ids:
             empresas_filtradas = list(Empresa.objects.filter(pk__in=empresa_ids).order_by("nombre"))
@@ -604,10 +603,10 @@ def alert_panel(request):
         rubro=rubro,
         sucursal=sucursal,
         alcance=alcance,
-        empresa_ids=empresa_ids if empresa_ids else None,
+        empresa_ids=empresa_ids,
     )
     sucursales_qs = Sucursal.objects.filter(activa=True)
-    if empresa_ids:
+    if empresa_ids is not None:
         sucursales_qs = sucursales_qs.filter(empresa_id__in=empresa_ids)
     return render(
         request,
@@ -637,10 +636,10 @@ def management_matrix(request):
         date_from=date_from,
         date_to=date_to,
         sucursal=sucursal,
-        empresa_ids=empresa_ids if empresa_ids else None,
+        empresa_ids=empresa_ids,
     )
     sucursales_qs = Sucursal.objects.filter(activa=True)
-    if empresa_ids:
+    if empresa_ids is not None:
         sucursales_qs = sucursales_qs.filter(empresa_id__in=empresa_ids)
     return render(
         request,
@@ -664,7 +663,7 @@ def management_matrix_export(request):
         date_from=date_from,
         date_to=date_to,
         sucursal=sucursal,
-        empresa_ids=empresa_ids if empresa_ids else None,
+        empresa_ids=empresa_ids,
     )
     filename_scope = sucursal.codigo if sucursal else "global"
     response = HttpResponse(content_type="text/csv")
@@ -817,7 +816,7 @@ def operational_limit_list(request):
         "sucursal__nombre",
         "id",
     )
-    if empresa_ids:
+    if empresa_ids is not None:
         limits = limits.filter(
             Q(sucursal__empresa_id__in=empresa_ids) | Q(sucursal__isnull=True)
         )
@@ -931,7 +930,7 @@ def sucursal_list(request):
     empresa_ids = _get_empresa_ids(request)
     q = (request.GET.get("q") or "").strip()
     items = Sucursal.objects.all().order_by("nombre")
-    if empresa_ids:
+    if empresa_ids is not None:
         items = items.filter(empresa_id__in=empresa_ids)
     if q:
         items = items.filter(
@@ -1027,7 +1026,7 @@ def turno_list(request):
     _require_config_read(request)
     empresa_ids = _get_empresa_ids(request)
     turnos = Turno.objects.select_related("empresa").all()
-    if empresa_ids:
+    if empresa_ids is not None:
         turnos = turnos.filter(empresa_id__in=empresa_ids)
     return render(
         request,
@@ -1045,7 +1044,7 @@ def turno_list(request):
 def open_box_view(request):
     _require_cashops_write(request)
     empresa_ids = _get_empresa_ids(request)
-    form = CajaAperturaForm(request.POST or None, actor=request.user, empresa_ids=empresa_ids or None)
+    form = CajaAperturaForm(request.POST or None, actor=request.user, empresa_ids=empresa_ids)
     if request.method == "POST" and form.is_valid():
         try:
             box = open_box(
@@ -1456,11 +1455,16 @@ def empresa_toggle(request, empresa_id: int):
 def set_empresa_activa(request):
     """Mantiene compatibilidad hacia atrás — redirige a set_empresas_activas."""
     empresa_id = request.POST.get("empresa_id")
+    permitidas_ids = set(request.user.empresas_permitidas.values_list("pk", flat=True))
+    if not permitidas_ids:
+        request.session["empresa_ids"] = []
+        request.session.pop("empresa_activa_id", None)
+        next_url = request.POST.get("next") or reverse("cashops:dashboard")
+        return redirect(next_url)
     if empresa_id:
         try:
             eid = int(empresa_id)
-            permitidas_ids = set(request.user.empresas_permitidas.values_list("pk", flat=True))
-            if permitidas_ids and eid not in permitidas_ids:
+            if eid not in permitidas_ids:
                 pass
             else:
                 Empresa.objects.get(pk=eid, activa=True)
@@ -1484,7 +1488,7 @@ def set_empresas_activas(request):
     for v in raw_ids:
         try:
             eid = int(v)
-            if permitidas_ids and eid not in permitidas_ids:
+            if eid not in permitidas_ids:
                 continue
             if Empresa.objects.filter(pk=eid, activa=True).exists():
                 empresa_ids.append(eid)

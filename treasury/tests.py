@@ -83,6 +83,10 @@ class TreasuryTestCase(TestCase):
         self.superadmin.is_superuser = True
         self.superadmin.save(update_fields=["is_staff", "is_superuser"])
         self.operator = User.objects.create_user(username="operador-treasury", password="test", role=self.operator_role)
+        self.empresa = Empresa.objects.create(nombre="Empresa Demo SA")
+        self.admin.empresas_permitidas.set([self.empresa])
+        self.superadmin.empresas_permitidas.set([self.empresa])
+        self.operator.empresas_permitidas.set([self.empresa])
         self.rubro_servicios = RubroOperativo.objects.create(nombre="Servicios")
         self.category = create_payable_category(
             nombre="Servicios",
@@ -93,6 +97,7 @@ class TreasuryTestCase(TestCase):
             nombre="Sucursal Central",
             codigo="SC01",
             razon_social="Empresa Demo SA",
+            empresa=self.empresa,
         )
         self.supplier = create_supplier(razon_social="Proveedor Uno SA", identificador_fiscal="30-12345678-9", actor=self.admin)
         self.bank_account = create_bank_account(
@@ -2529,6 +2534,10 @@ class TreasuryViewTests(TreasuryTestCase):
     def test_dashboard_supports_period_and_branch_financial_view(self):
         branch = Sucursal.objects.create(codigo="SUC-D", nombre="Sucursal Dashboard", razon_social="Dashboard SRL")
         empresa = Empresa.objects.create(nombre="Empresa Dashboard Snapshot")
+        branch.empresa = empresa
+        branch.save(update_fields=["empresa"])
+        self.admin.empresas_permitidas.add(empresa)
+        self.operator.empresas_permitidas.add(empresa)
         branch_account = create_bank_account(
             nombre="Cuenta Dashboard",
             banco="Banco Dashboard",
@@ -2654,6 +2663,8 @@ class TreasuryViewTests(TreasuryTestCase):
 
     def test_economic_rubro_detail_view_explains_dashboard_total(self):
         empresa = Empresa.objects.create(nombre="Empresa Vista Detalle Economico")
+        self.admin.empresas_permitidas.add(empresa)
+        self.operator.empresas_permitidas.add(empresa)
         branch = Sucursal.objects.create(
             codigo="SUC-VDE",
             nombre="Sucursal Vista Detalle",

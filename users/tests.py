@@ -6,7 +6,7 @@ from django.urls import reverse
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 
-from cashops.models import Sucursal
+from cashops.models import Empresa, Sucursal
 from users.forms import PersonalForm
 from users.models import PermissionModule, Role, RolePermission, User, UserPermission
 
@@ -101,6 +101,25 @@ class UserModelTests(TestCase):
             user.full_clean()
 
         self.assertIn("sucursal_base", raised.exception.message_dict)
+
+
+class UserCompanyAccessFormTests(TestCase):
+    def test_principal_company_requires_explicit_company_access(self):
+        empresa = Empresa.objects.create(nombre="ARMADI SRL")
+        form = PersonalForm(
+            data={
+                "username": "nuevo",
+                "first_name": "Nuevo",
+                "last_name": "Usuario",
+                "password": "secret12345",
+                "empresa_principal": empresa.pk,
+                "empresas_permitidas": [],
+                "is_active": "on",
+            }
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("empresa_principal", form.errors)
 
 
 class AdminRegistrationTests(TestCase):

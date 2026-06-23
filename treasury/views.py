@@ -195,16 +195,19 @@ def _get_empresa_ids(request):
     ids = request.session.get("empresa_ids")
     if ids is not None:
         return ids
-    old_id = request.session.get("empresa_activa_id")
-    if old_id:
-        return [old_id]
+    if request.user.is_authenticated:
+        allowed_ids = list(request.user.empresas_permitidas.values_list("pk", flat=True))
+        old_id = request.session.get("empresa_activa_id")
+        if old_id and old_id in allowed_ids:
+            return [old_id]
+        return allowed_ids
     return []
 
 
 def _filter_sucursal_qs(request, qs):
     """Aplica filtro de empresa al queryset de Sucursal."""
     empresa_ids = _get_empresa_ids(request)
-    if empresa_ids:
+    if empresa_ids is not None:
         return qs.filter(empresa_id__in=empresa_ids)
     return qs
 
@@ -392,7 +395,7 @@ def dashboard(request):
         date_from = first_day_of_month
         date_to = today
 
-    empresa_ids = _get_empresa_ids(request) or None
+    empresa_ids = _get_empresa_ids(request)
     snapshot = build_financial_period_snapshot(date_from=date_from, date_to=date_to, sucursal=sucursal, empresa_ids=empresa_ids)
     economic_snapshot = build_economic_period_snapshot(date_from=date_from, date_to=date_to, sucursal=sucursal, empresa_ids=empresa_ids)
 
@@ -479,7 +482,7 @@ def economic_rubro_detail(request, rubro_id):
         date_from = first_day_of_month
         date_to = today
 
-    empresa_ids = _get_empresa_ids(request) or None
+    empresa_ids = _get_empresa_ids(request)
     detail = build_economic_rubro_detail(
         rubro_id=rubro_id,
         date_from=date_from,
@@ -758,8 +761,11 @@ def cuentas_bancarias_list(request):
     form = BankAccountFilterForm(request.GET or None)
     queryset = CuentaBancaria.objects.prefetch_related("saldos_iniciales").order_by("banco", "nombre")
     empresa_ids = _get_empresa_ids(request)
-    if empresa_ids:
-        queryset = queryset.filter(sucursal__empresa_id__in=empresa_ids)
+    if empresa_ids is not None:
+        if not empresa_ids:
+            queryset = queryset.none()
+        else:
+            queryset = queryset.filter(Q(sucursal__empresa_id__in=empresa_ids) | Q(sucursal__isnull=True))
     if form.is_valid():
         q = (form.cleaned_data.get("q") or "").strip()
         active = form.cleaned_data.get("activa")
@@ -869,7 +875,7 @@ def bank_initial_balances_list(request):
         "actualizado_por",
     )
     empresa_ids = _get_empresa_ids(request)
-    if empresa_ids:
+    if empresa_ids is not None:
         balances = balances.filter(
             Q(cuenta_bancaria__sucursal__empresa_id__in=empresa_ids)
             | Q(cuenta_bancaria__sucursal__isnull=True)
@@ -936,8 +942,11 @@ def cuentas_por_pagar_list(request):
         "fecha_vencimiento", "proveedor__razon_social"
     )
     empresa_ids = _get_empresa_ids(request)
-    if empresa_ids:
-        queryset = queryset.filter(sucursal__empresa_id__in=empresa_ids)
+    if empresa_ids is not None:
+        if not empresa_ids:
+            queryset = queryset.none()
+        else:
+            queryset = queryset.filter(Q(sucursal__empresa_id__in=empresa_ids) | Q(sucursal__isnull=True))
     if form.is_valid():
         q = (form.cleaned_data.get("q") or "").strip()
         proveedor = form.cleaned_data.get("proveedor")
@@ -1146,8 +1155,11 @@ def compromisos_especiales_list(request):
         "id",
     )
     empresa_ids = _get_empresa_ids(request)
-    if empresa_ids:
-        queryset = queryset.filter(sucursal__empresa_id__in=empresa_ids)
+    if empresa_ids is not None:
+        if not empresa_ids:
+            queryset = queryset.none()
+        else:
+            queryset = queryset.filter(Q(sucursal__empresa_id__in=empresa_ids) | Q(sucursal__isnull=True))
     if form.is_valid():
         tipo = form.cleaned_data.get("tipo")
         estado = form.cleaned_data.get("estado")
@@ -1301,8 +1313,14 @@ def pagos_list(request):
         "-fecha_pago", "-id"
     )
     empresa_ids = _get_empresa_ids(request)
-    if empresa_ids:
-        queryset = queryset.filter(cuenta_por_pagar__sucursal__empresa_id__in=empresa_ids)
+    if empresa_ids is not None:
+        if not empresa_ids:
+            queryset = queryset.none()
+        else:
+            queryset = queryset.filter(
+                Q(cuenta_por_pagar__sucursal__empresa_id__in=empresa_ids)
+                | Q(cuenta_por_pagar__sucursal__isnull=True)
+            )
     if form.is_valid():
         q = (form.cleaned_data.get("q") or "").strip()
         medio_pago = form.cleaned_data.get("medio_pago")
@@ -1541,7 +1559,7 @@ def bank_movements_list(request):
         "sucursal_gasto",
     )
     empresa_ids = _get_empresa_ids(request)
-    if empresa_ids:
+    if empresa_ids is not None:
         movements = movements.filter(
             Q(cuenta_bancaria__sucursal__empresa_id__in=empresa_ids)
             | Q(cuenta_bancaria__sucursal__isnull=True)
@@ -1845,7 +1863,7 @@ def pos_batches_list(request):
     filter_form = PosBatchFilterForm(request.GET)
     batches = LotePOS.objects.all().select_related("cuenta_bancaria", "creado_por")
     empresa_ids = _get_empresa_ids(request)
-    if empresa_ids:
+    if empresa_ids is not None:
         batches = batches.filter(cuenta_bancaria__sucursal__empresa_id__in=empresa_ids)
 
     if filter_form.is_valid():
@@ -1916,7 +1934,7 @@ def card_accreditations_list(request):
         movimiento_bancario__estado=MovimientoBancario.Estado.REGISTRADO,
     ).select_related("movimiento_bancario__cuenta_bancaria", "lote_pos")
     empresa_ids = _get_empresa_ids(request)
-    if empresa_ids:
+    if empresa_ids is not None:
         accreditations = accreditations.filter(movimiento_bancario__cuenta_bancaria__sucursal__empresa_id__in=empresa_ids)
 
     if filter_form.is_valid():
@@ -2034,7 +2052,7 @@ def bank_reconciliation(request):
 @login_required
 def disponibilidades_report(request):
     _require_treasury_admin(request)
-    empresa_ids = _get_empresa_ids(request) or None
+    empresa_ids = _get_empresa_ids(request)
     form = DisponibilidadesFilterForm(request.GET or None, empresa_ids=empresa_ids)
     
     if form.is_valid():

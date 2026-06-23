@@ -941,6 +941,13 @@ Last updated: 2026-06-12
   - guardrail: apertura, transferencias and cierre auto-ajustes are not editable through this correction button; they need a specific circuit if business asks
   - key refs: `cashops/models.py`, `cashops/services.py`, `cashops/forms.py`, `cashops/views.py`, `cashops/urls.py`, `templates/cashops/partials/movement_list.html`, `users/models.py`, `users/views.py`
   - evidence: `py -3.14 -m compileall users cashops`; `py -3.14 manage.py test cashops.tests.CashopsServiceTests cashops.tests.CashopsViewTests users.tests -v 1` => 120 OK; `py -3.14 manage.py makemigrations --check --dry-run` => no changes detected
+- Company access rule 2026-06-23:
+  - user corrected the access rule: empty `empresas_permitidas` means no company access, never all companies.
+  - behavior: users without marked companies get no available/active companies and no company-scoped caja/treasury data; users with marked companies default to all explicitly allowed companies when no session filter exists.
+  - guardrail: `empresa_principal` must be included in `empresas_permitidas`; stale session company ids are ignored unless explicitly allowed.
+  - compatibility decision: legacy/global rows without branch/company can remain visible only when the user has at least one explicitly allowed company; users with zero companies see none.
+  - files touched: `core/context_processors.py`, `cashops/views.py`, `cashops/forms.py`, `cashops/services.py`, `treasury/views.py`, `treasury/forms.py`, `treasury/services.py`, `users/forms.py`, `templates/users/user_detail.html`, plus focused tests in `core/tests.py`, `users/tests.py`, `cashops/tests.py`, `treasury/tests.py`.
+  - evidence: `py -3.14 -m compileall core users cashops treasury`; `py -3.14 manage.py makemigrations --check --dry-run` => no changes detected; `py -3.14 manage.py test core.tests users.tests cashops.tests.EP12EmpresasTests cashops.tests.CashopsViewTests treasury.tests.TreasuryViewTests -v 1` => 130 OK.
 
 ## Useful Commands
 

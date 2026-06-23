@@ -47,7 +47,7 @@ class PersonalForm(forms.ModelForm):
         required=False,
         widget=forms.CheckboxSelectMultiple,
         label="Empresas con acceso",
-        help_text="Vacío = sin restricción (ve todas las empresas).",
+        help_text="Si queda vacío, el usuario no accede a ninguna empresa.",
     )
 
     class Meta:
@@ -109,7 +109,7 @@ class PersonalForm(forms.ModelForm):
             self.add_error("password", "La contraseña es obligatoria para nuevos usuarios.")
         principal = cleaned_data.get("empresa_principal")
         permitidas = cleaned_data.get("empresas_permitidas")
-        if principal and permitidas and principal not in permitidas:
+        if principal and principal not in permitidas:
             self.add_error("empresa_principal", "La empresa principal debe estar entre las empresas con acceso.")
         return cleaned_data
 
@@ -131,7 +131,7 @@ class UserAccessForm(forms.ModelForm):
         required=False,
         widget=forms.CheckboxSelectMultiple,
         label="Empresas con acceso",
-        help_text="Vacío = sin restricción (ve todas las empresas).",
+        help_text="Si queda vacío, el usuario no accede a ninguna empresa.",
     )
 
     class Meta:
@@ -175,7 +175,7 @@ class UserAccessForm(forms.ModelForm):
             cleaned_data["sucursal_base"] = None
         principal = cleaned_data.get("empresa_principal")
         permitidas = cleaned_data.get("empresas_permitidas")
-        if principal and permitidas and principal not in permitidas:
+        if principal and principal not in permitidas:
             self.add_error("empresa_principal", "La empresa principal debe estar entre las empresas con acceso.")
         return cleaned_data
 
