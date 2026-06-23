@@ -242,6 +242,73 @@ class GastoRapidoForm(forms.Form):
         return bool(self.data.get("pago_otra_sucursal"))
 
 
+class ClosedBoxMovementEditForm(forms.Form):
+    monto = forms.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        min_value=Decimal("0.01"),
+        label="Monto corregido",
+        widget=forms.NumberInput(attrs={"step": "0.01", "placeholder": "0.00"}),
+    )
+    rubro_operativo = forms.ModelChoiceField(
+        queryset=RubroOperativo.objects.none(),
+        required=False,
+        label="Rubro",
+    )
+    categoria = forms.CharField(
+        max_length=80,
+        required=False,
+        label="Detalle",
+        widget=forms.TextInput(attrs={"placeholder": "Detalle breve"}),
+    )
+    observacion = forms.CharField(
+        max_length=255,
+        required=False,
+        label="Observación",
+        widget=forms.Textarea(attrs={"placeholder": "Observación visible del movimiento"}),
+    )
+    motivo = forms.CharField(
+        label="Motivo de corrección",
+        widget=forms.Textarea(attrs={"placeholder": "Explica por qué se corrige esta caja cerrada"}),
+    )
+
+    def __init__(self, *args, movement=None, **kwargs):
+        self.movement = movement
+        initial = kwargs.setdefault("initial", {})
+        if movement is not None:
+            initial.setdefault("monto", movement.monto)
+            initial.setdefault("rubro_operativo", movement.rubro_operativo_id)
+            initial.setdefault("categoria", movement.categoria)
+            initial.setdefault("observacion", movement.observacion)
+        super().__init__(*args, **kwargs)
+        self.fields["rubro_operativo"].queryset = RubroOperativo.objects.filter(activo=True)
+        for field in self.fields.values():
+            if isinstance(field.widget, forms.Textarea):
+                field.widget.attrs.setdefault("class", "input textarea")
+            elif isinstance(field.widget, forms.Select):
+                field.widget.attrs.setdefault("class", "input select")
+            else:
+                field.widget.attrs.setdefault("class", "input")
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if self.movement and self.movement.tipo == MovimientoCaja.Tipo.GASTO and not cleaned_data.get("rubro_operativo"):
+            self.add_error("rubro_operativo", "El rubro es obligatorio para gastos operativos.")
+        return cleaned_data
+
+
+class ClosedBoxMovementAnnulForm(forms.Form):
+    motivo = forms.CharField(
+        label="Motivo de anulación",
+        widget=forms.Textarea(attrs={"placeholder": "Explica por qué se elimina este movimiento de una caja cerrada"}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs.setdefault("class", "input textarea")
+
+
 class VentaGeneralForm(forms.Form):
     tipo_venta = forms.ChoiceField(choices=[], label="Medio de ingreso")
     rubro = forms.ModelChoiceField(

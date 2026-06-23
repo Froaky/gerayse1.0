@@ -16,6 +16,8 @@ from django.views.decorators.http import require_http_methods
 from .forms import (
     CajaAperturaForm,
     CanalIngresoForm,
+    ClosedBoxMovementAnnulForm,
+    ClosedBoxMovementEditForm,
     CierreCajaForm,
     EmpresaForm,
     IngresoEfectivoForm,
@@ -28,9 +30,10 @@ from .forms import (
     TransferenciaEntreSucursalesForm,
     VentaGeneralForm,
 )
-from .models import CanalIngreso, Caja, CierreCaja, Empresa, LimiteRubroOperativo, MovimientoCaja, RubroOperativo, Sucursal, Turno
-from .permissions import ensure_cashops_read, ensure_cashops_write, ensure_config_read, ensure_config_write
+from .models import CanalIngreso, Caja, CierreCaja, Empresa, LimiteRubroOperativo, MovimientoCaja, MovimientoCajaCorreccion, RubroOperativo, Sucursal, Turno
+from .permissions import can_correct_closed_box, ensure_cashops_read, ensure_cashops_write, ensure_closed_box_correction, ensure_config_read, ensure_config_write
 from .services import (
+    annul_closed_box_movement,
     BRANCH_TRANSFER_DISABLED_REASON,
     CLOSING_DIFF_THRESHOLD,
     OPERATIONAL_ALERT_SCOPE_POLICY,
@@ -48,6 +51,7 @@ from .services import (
     describe_box_follow_up,
     get_cash_movement_type_label,
     get_income_channel_map,
+    is_closed_box_movement_correctable,
     open_box,
     register_cash_income,
     register_general_sale,
@@ -55,6 +59,7 @@ from .services import (
     resync_operational_control_for_rubro,
     transfer_between_boxes,
     transfer_between_branches,
+    update_closed_box_movement,
 )
 def _boxes_for_request(request):
     queryset = Caja.objects.select_related("sucursal", "turno", "usuario")
@@ -79,7 +84,13 @@ def _owned_open_boxes(request):
 def _box_movements_prefetch():
     return Prefetch(
         "movimientos",
-        queryset=MovimientoCaja.objects.select_related("creado_por", "rubro_operativo", "transferencia").order_by("-creado_en", "-id"),
+        queryset=MovimientoCaja.objects.select_related("creado_por", "rubro_operativo", "transferencia").prefetch_related(
+            Prefetch(
+                "correcciones",
+                queryset=MovimientoCajaCorreccion.objects.select_related("creado_por").order_by("-creado_en", "-id"),
+                to_attr="prefetched_corrections",
+            )
+        ).order_by("-creado_en", "-id"),
         to_attr="prefetched_movements",
     )
 
@@ -455,8 +466,13 @@ def box_detail_view(request, box_id: int):
     timeline = build_box_activity_timeline(box, movements)
     latest_event = timeline[0] if timeline else None
     channel_map = get_income_channel_map()
+    can_fix_closed_box = can_correct_closed_box(request.user)
     for movement in movements:
         movement.tipo_label = get_cash_movement_type_label(movement.tipo, channel_map)
+        movement.can_fix_closed_box = can_fix_closed_box and is_closed_box_movement_correctable(movement)
+        if movement.can_fix_closed_box:
+            movement.edit_url = reverse("cashops:closed_box_movement_edit", args=[movement.pk])
+            movement.delete_url = reverse("cashops:closed_box_movement_delete", args=[movement.pk])
 
     return render(
         request,
@@ -468,9 +484,92 @@ def box_detail_view(request, box_id: int):
             "follow_up": follow_up,
             "timeline": timeline,
             "latest_event": latest_event,
+            "can_correct_closed_box": can_fix_closed_box,
             "resume_url": f"{reverse('cashops:dashboard')}?scope=box&box={box.pk}",
             "tracking_url": reverse("cashops:box_tracking"),
         },
+    )
+
+
+def _get_correctable_movement_for_request(request, movement_id: int) -> MovimientoCaja:
+    ensure_closed_box_correction(request.user)
+    movement = get_object_or_404(
+        MovimientoCaja.objects.select_related("caja", "caja__sucursal", "caja__turno", "caja__usuario", "rubro_operativo"),
+        pk=movement_id,
+    )
+    _get_box_for_request(request, movement.caja_id)
+    return movement
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def closed_box_movement_edit_view(request, movement_id: int):
+    _require_cashops_read(request)
+    movement = _get_correctable_movement_for_request(request, movement_id)
+    form = ClosedBoxMovementEditForm(request.POST or None, movement=movement)
+    back_url = reverse("cashops:box_detail", args=[movement.caja_id])
+    if request.method == "POST" and form.is_valid():
+        try:
+            update_closed_box_movement(
+                movement=movement,
+                monto=form.cleaned_data["monto"],
+                categoria=form.cleaned_data["categoria"],
+                observacion=form.cleaned_data["observacion"],
+                rubro_operativo=form.cleaned_data["rubro_operativo"],
+                motivo=form.cleaned_data["motivo"],
+                actor=request.user,
+            )
+        except ValidationError as exc:
+            form.add_error(None, exc)
+        else:
+            messages.success(request, "Movimiento corregido y cierre recalculado.")
+            return redirect(back_url)
+    return render(
+        request,
+        "cashops/form_page.html",
+        {
+            "title": f"Editar movimiento #{movement.id}",
+            "subtitle": "Seguro que queres editar este movimiento de una caja cerrada? Se guardara el motivo y se recalculara el cierre.",
+            "form": form,
+            "submit_label": "Confirmar edicion",
+            "form_action": reverse("cashops:closed_box_movement_edit", args=[movement.id]),
+            "back_url": back_url,
+        },
+        status=400 if request.method == "POST" else 200,
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def closed_box_movement_delete_view(request, movement_id: int):
+    _require_cashops_read(request)
+    movement = _get_correctable_movement_for_request(request, movement_id)
+    form = ClosedBoxMovementAnnulForm(request.POST or None)
+    back_url = reverse("cashops:box_detail", args=[movement.caja_id])
+    if request.method == "POST" and form.is_valid():
+        try:
+            annul_closed_box_movement(
+                movement=movement,
+                motivo=form.cleaned_data["motivo"],
+                actor=request.user,
+            )
+        except ValidationError as exc:
+            form.add_error(None, exc)
+        else:
+            messages.success(request, "Movimiento anulado y cierre recalculado.")
+            return redirect(back_url)
+    return render(
+        request,
+        "cashops/form_page.html",
+        {
+            "title": f"Eliminar movimiento #{movement.id}",
+            "subtitle": "Seguro que queres eliminar este movimiento de una caja cerrada? No se borra el registro: queda anulado con auditoria.",
+            "form": form,
+            "submit_label": "Confirmar eliminacion",
+            "form_action": reverse("cashops:closed_box_movement_delete", args=[movement.id]),
+            "back_url": back_url,
+        },
+        status=400 if request.method == "POST" else 200,
     )
 
 

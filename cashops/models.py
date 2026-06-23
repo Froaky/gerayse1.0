@@ -143,7 +143,10 @@ class Caja(models.Model):
 
     @property
     def saldo_esperado(self) -> Decimal:
-        movimientos = self.movimientos.filter(impacta_saldo_caja=True).exclude(
+        movimientos = self.movimientos.filter(
+            impacta_saldo_caja=True,
+            estado=MovimientoCaja.Estado.REGISTRADO,
+        ).exclude(
             tipo=MovimientoCaja.Tipo.APERTURA
         )
         ingresos = movimientos.filter(sentido=MovimientoCaja.Sentido.INGRESO).aggregate(
@@ -379,10 +382,15 @@ class MovimientoCaja(models.Model):
         INGRESO = "INGRESO", "Ingreso"
         EGRESO = "EGRESO", "Egreso"
 
+    class Estado(models.TextChoices):
+        REGISTRADO = "REGISTRADO", "Registrado"
+        ANULADO = "ANULADO", "Anulado"
+
     caja = models.ForeignKey(Caja, on_delete=models.PROTECT, related_name="movimientos")
     tipo = models.CharField(max_length=40)
     sentido = models.CharField(max_length=10, choices=Sentido.choices)
     monto = models.DecimalField(max_digits=14, decimal_places=2)
+    estado = models.CharField(max_length=12, choices=Estado.choices, default=Estado.REGISTRADO)
     impacta_saldo_caja = models.BooleanField(default=True)
     categoria = models.CharField(max_length=80, blank=True)
     observacion = models.CharField(max_length=255, blank=True)
@@ -415,11 +423,29 @@ class MovimientoCaja(models.Model):
         related_name="movimientos_creados",
     )
     creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="movimientos_actualizados",
+    )
+    actualizado_en = models.DateTimeField(auto_now=True)
+    anulado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="movimientos_anulados",
+    )
+    anulado_en = models.DateTimeField(null=True, blank=True)
+    motivo_anulacion = models.TextField(blank=True)
 
     class Meta:
         ordering = ["-creado_en", "-id"]
         indexes = [
             models.Index(fields=["caja", "tipo"]),
+            models.Index(fields=["caja", "estado"]),
             models.Index(fields=["caja", "creado_en"]),
             models.Index(fields=["caja", "impacta_saldo_caja", "creado_en"]),
             models.Index(fields=["tipo", "rubro_operativo"]),
@@ -441,6 +467,8 @@ class MovimientoCaja(models.Model):
             raise ValidationError(
                 {"impacta_saldo_caja": "Las ventas por tarjeta no pueden impactar saldo de caja."}
             )
+        if self.estado == self.Estado.ANULADO and not (self.motivo_anulacion or "").strip():
+            raise ValidationError({"motivo_anulacion": "El motivo es obligatorio para anular un movimiento."})
         if (
             self.rubro_operativo_id
             and not self.rubro_operativo.activo
@@ -450,6 +478,58 @@ class MovimientoCaja(models.Model):
 
     def __str__(self) -> str:
         return f"{self.get_tipo_display()} {self.monto} - Caja {self.caja_id}"
+
+
+class MovimientoCajaCorreccion(models.Model):
+    class Accion(models.TextChoices):
+        EDICION = "EDICION", "Edición"
+        ANULACION = "ANULACION", "Anulación"
+
+    movimiento = models.ForeignKey(MovimientoCaja, on_delete=models.PROTECT, related_name="correcciones")
+    accion = models.CharField(max_length=12, choices=Accion.choices)
+    motivo = models.TextField()
+    monto_anterior = models.DecimalField(max_digits=14, decimal_places=2)
+    monto_nuevo = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    categoria_anterior = models.CharField(max_length=80, blank=True)
+    categoria_nueva = models.CharField(max_length=80, blank=True)
+    observacion_anterior = models.CharField(max_length=255, blank=True)
+    observacion_nueva = models.CharField(max_length=255, blank=True)
+    rubro_operativo_anterior = models.ForeignKey(
+        RubroOperativo,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="correcciones_como_anterior",
+    )
+    rubro_operativo_nuevo = models.ForeignKey(
+        RubroOperativo,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="correcciones_como_nuevo",
+    )
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="correcciones_caja_creadas",
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-creado_en", "-id"]
+        indexes = [
+            models.Index(fields=["movimiento", "creado_en"]),
+            models.Index(fields=["accion", "creado_en"]),
+        ]
+
+    def clean(self) -> None:
+        if not (self.motivo or "").strip():
+            raise ValidationError({"motivo": "El motivo de la corrección es obligatorio."})
+
+    def __str__(self) -> str:
+        return f"{self.get_accion_display()} movimiento {self.movimiento_id}"
 
 
 class CierreCaja(models.Model):

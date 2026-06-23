@@ -16,12 +16,13 @@ from .models import (
     Justificacion,
     LimiteRubroOperativo,
     MovimientoCaja,
+    MovimientoCajaCorreccion,
     RubroOperativo,
     Sucursal,
     Transferencia,
     Turno,
 )
-from .permissions import can_assign_box_to_user, ensure_can_operate_box, is_cashops_admin
+from .permissions import can_assign_box_to_user, ensure_can_operate_box, ensure_closed_box_correction, is_cashops_admin
 
 
 CLOSING_DIFF_THRESHOLD = Decimal("10000.00")
@@ -67,6 +68,14 @@ BOX_BREAKDOWN_EXCLUDED_TYPES = {
     MovimientoCaja.Tipo.TRANSFERENCIA_SUCURSAL_SALIDA,
     MovimientoCaja.Tipo.AJUSTE_CIERRE,
 }
+CLOSED_BOX_CORRECTION_BLOCKED_TYPES = {
+    MovimientoCaja.Tipo.APERTURA,
+    MovimientoCaja.Tipo.TRANSFERENCIA_ENTRADA,
+    MovimientoCaja.Tipo.TRANSFERENCIA_SUCURSAL_ENTRADA,
+    MovimientoCaja.Tipo.TRANSFERENCIA_SALIDA,
+    MovimientoCaja.Tipo.TRANSFERENCIA_SUCURSAL_SALIDA,
+    MovimientoCaja.Tipo.AJUSTE_CIERRE,
+}
 
 
 def get_cash_movement_type_label(tipo: str, channel_map: dict[str, str] | None = None) -> str:
@@ -82,6 +91,8 @@ def build_box_sales_breakdown(movements) -> dict:
     total = Decimal("0.00")
 
     for movement in movements:
+        if getattr(movement, "estado", MovimientoCaja.Estado.REGISTRADO) != MovimientoCaja.Estado.REGISTRADO:
+            continue
         if movement.sentido != MovimientoCaja.Sentido.INGRESO:
             continue
         if movement.tipo in BOX_BREAKDOWN_EXCLUDED_TYPES:
@@ -111,7 +122,12 @@ def build_box_sales_breakdown(movements) -> dict:
 
 
 def describe_box_follow_up(caja: Caja, movements) -> dict:
-    post_opening_movements = [movement for movement in movements if movement.tipo != MovimientoCaja.Tipo.APERTURA]
+    active_movements = [
+        movement
+        for movement in movements
+        if getattr(movement, "estado", MovimientoCaja.Estado.REGISTRADO) == MovimientoCaja.Estado.REGISTRADO
+    ]
+    post_opening_movements = [movement for movement in active_movements if movement.tipo != MovimientoCaja.Tipo.APERTURA]
     last_movement = movements[0] if movements else None
     last_activity_at = caja.cerrada_en or (last_movement.creado_en if last_movement else caja.abierta_en)
 
@@ -167,18 +183,34 @@ def build_box_activity_timeline(caja: Caja, movements) -> list[dict]:
             detail_parts.append(movement.observacion)
         if movement.transferencia_id:
             detail_parts.append(f"Transferencia #{movement.transferencia_id}")
+        is_annulled = movement.estado == MovimientoCaja.Estado.ANULADO
+        if is_annulled:
+            detail_parts.append(f"Anulado: {movement.motivo_anulacion}")
         events.append(
             {
                 "timestamp": movement.creado_en,
                 "kind": "MOVIMIENTO",
-                "badge_class": "badge-danger" if movement.sentido == MovimientoCaja.Sentido.EGRESO else "badge-success",
-                "badge_label": movement.get_sentido_display(),
+                "badge_class": "badge-muted" if is_annulled else ("badge-danger" if movement.sentido == MovimientoCaja.Sentido.EGRESO else "badge-success"),
+                "badge_label": "Anulado" if is_annulled else movement.get_sentido_display(),
                 "title": get_cash_movement_type_label(movement.tipo, channel_map),
                 "detail": " - ".join(detail_parts) if detail_parts else "Movimiento operativo registrado.",
                 "user_label": str(movement.creado_por) if movement.creado_por else "Sin usuario",
                 "amount": movement.monto,
             }
         )
+        for correction in getattr(movement, "prefetched_corrections", []):
+            events.append(
+                {
+                    "timestamp": correction.creado_en,
+                    "kind": "CORRECCION",
+                    "badge_class": "badge-warning",
+                    "badge_label": correction.get_accion_display(),
+                    "title": f"Corrección movimiento #{movement.id}",
+                    "detail": correction.motivo,
+                    "user_label": str(correction.creado_por) if correction.creado_por else "Sin usuario",
+                    "amount": correction.monto_nuevo if correction.monto_nuevo is not None else correction.monto_anterior,
+                }
+            )
 
     cierre = getattr(caja, "cierre", None)
     if cierre is not None:
@@ -617,7 +649,7 @@ def build_operational_control_snapshot(
 ) -> dict:
     movement_qs = MovimientoCaja.objects.filter(_movement_scope_filter(scope)).exclude(
         tipo=MovimientoCaja.Tipo.APERTURA
-    )
+    ).filter(estado=MovimientoCaja.Estado.REGISTRADO)
     _channels = _get_active_channels()
     _excluded_income_codes = _excluded_income_channel_codes(_channels)
     totals = movement_qs.aggregate(
@@ -758,7 +790,7 @@ def build_operational_period_summary(*, date_from: date, date_to: date, sucursal
     movement_qs = MovimientoCaja.objects.filter(
         caja__fecha_operativa__gte=date_from,
         caja__fecha_operativa__lte=date_to,
-    ).exclude(tipo=MovimientoCaja.Tipo.APERTURA)
+    ).exclude(tipo=MovimientoCaja.Tipo.APERTURA).filter(estado=MovimientoCaja.Estado.REGISTRADO)
     if sucursal is not None:
         movement_qs = movement_qs.filter(caja__sucursal=sucursal)
     elif empresa_ids:
@@ -923,7 +955,7 @@ def build_management_daily_matrix(*, date_from: date, date_to: date, sucursal: S
     ).filter(
         caja__fecha_operativa__gte=date_from,
         caja__fecha_operativa__lte=date_to,
-    ).exclude(tipo=MovimientoCaja.Tipo.APERTURA)
+    ).exclude(tipo=MovimientoCaja.Tipo.APERTURA).filter(estado=MovimientoCaja.Estado.REGISTRADO)
     if sucursal is not None:
         movement_qs = movement_qs.filter(caja__sucursal=sucursal)
     elif empresa_ids:
@@ -1124,7 +1156,11 @@ def resync_operational_control_for_caja(caja: Caja) -> None:
 
 
 def _distinct_operational_scope_rows(*, rubro: RubroOperativo | None = None):
-    queryset = MovimientoCaja.objects.filter(tipo=MovimientoCaja.Tipo.GASTO, rubro_operativo__isnull=False)
+    queryset = MovimientoCaja.objects.filter(
+        tipo=MovimientoCaja.Tipo.GASTO,
+        rubro_operativo__isnull=False,
+        estado=MovimientoCaja.Estado.REGISTRADO,
+    )
     if rubro is not None:
         queryset = queryset.filter(rubro_operativo=rubro)
     return queryset.values(
@@ -1545,6 +1581,165 @@ def transfer_between_branches(
         )
 
     return transferencia
+
+
+def is_closed_box_movement_correctable(movement: MovimientoCaja) -> bool:
+    return (
+        movement.caja.estado == Caja.Estado.CERRADA
+        and movement.estado == MovimientoCaja.Estado.REGISTRADO
+        and movement.tipo not in CLOSED_BOX_CORRECTION_BLOCKED_TYPES
+    )
+
+
+def _validate_closed_box_movement_for_correction(movement: MovimientoCaja, *, actor) -> MovimientoCaja:
+    _require_actor(actor)
+    ensure_closed_box_correction(actor)
+    movement = (
+        MovimientoCaja.objects.select_for_update()
+        .select_related("caja", "caja__turno", "caja__sucursal", "caja__usuario", "rubro_operativo")
+        .get(pk=movement.pk)
+    )
+    if movement.caja.estado != Caja.Estado.CERRADA:
+        raise ValidationError({"caja": "Solo se pueden corregir movimientos de cajas cerradas."})
+    if movement.estado != MovimientoCaja.Estado.REGISTRADO:
+        raise ValidationError({"movimiento": "El movimiento ya fue anulado."})
+    if movement.tipo in CLOSED_BOX_CORRECTION_BLOCKED_TYPES:
+        raise ValidationError({"movimiento": "Este tipo de movimiento requiere un circuito de corrección específico."})
+    return movement
+
+
+def _recalculate_closed_box_after_correction(caja: Caja, *, actor=None, motivo: str = "") -> CierreCaja:
+    caja = Caja.objects.select_related("turno", "sucursal", "usuario").get(pk=caja.pk)
+    cierre = CierreCaja.objects.select_for_update().select_related("caja").get(caja=caja)
+    cierre.saldo_esperado = caja.saldo_esperado
+    cierre.diferencia = cierre.saldo_fisico - cierre.saldo_esperado
+    cierre.estado = (
+        CierreCaja.Estado.JUSTIFICADO
+        if abs(cierre.diferencia) > CLOSING_DIFF_THRESHOLD
+        else CierreCaja.Estado.AUTO
+    )
+    cierre.save(update_fields=["saldo_esperado", "diferencia", "estado"])
+
+    if abs(cierre.diferencia) > CLOSING_DIFF_THRESHOLD:
+        if not hasattr(cierre, "justificacion"):
+            Justificacion.objects.create(
+                cierre=cierre,
+                motivo=motivo or "Corrección posterior de movimiento en caja cerrada.",
+                creado_por=actor,
+            )
+        _upsert_alert(
+            dedupe_key=_build_closing_alert_key(cierre=cierre),
+            tipo=AlertaOperativa.Tipo.DIFERENCIA_GRAVE,
+            cierre=cierre,
+            caja=caja,
+            turno=caja.turno,
+            sucursal=caja.sucursal,
+            usuario=caja.usuario,
+            rubro_operativo=None,
+            periodo_fecha=caja.fecha_operativa,
+            mensaje=f"Diferencia grave detectada en caja {caja.id}: {cierre.diferencia}.",
+            resuelta=False,
+        )
+    else:
+        AlertaOperativa.objects.filter(
+            tipo=AlertaOperativa.Tipo.DIFERENCIA_GRAVE,
+            cierre=cierre,
+            resuelta=False,
+        ).update(resuelta=True)
+
+    resync_operational_control_for_caja(caja)
+    return cierre
+
+
+@transaction.atomic
+def update_closed_box_movement(
+    *,
+    movement: MovimientoCaja,
+    monto: Decimal,
+    categoria: str = "",
+    observacion: str = "",
+    rubro_operativo: RubroOperativo | None = None,
+    motivo: str,
+    actor=None,
+) -> MovimientoCaja:
+    movement = _validate_closed_box_movement_for_correction(movement, actor=actor)
+    motivo = (motivo or "").strip()
+    if not motivo:
+        raise ValidationError({"motivo": "El motivo de la corrección es obligatorio."})
+    if monto <= 0:
+        raise ValidationError({"monto": "El monto debe ser mayor que cero."})
+    if movement.tipo == MovimientoCaja.Tipo.GASTO and rubro_operativo is None:
+        raise ValidationError({"rubro_operativo": "El rubro es obligatorio para gastos operativos."})
+    if rubro_operativo and not rubro_operativo.activo and not rubro_operativo.es_sistema:
+        raise ValidationError({"rubro_operativo": "Solo podes usar rubros operativos activos."})
+
+    previous = {
+        "monto": movement.monto,
+        "categoria": movement.categoria,
+        "observacion": movement.observacion,
+        "rubro_operativo": movement.rubro_operativo,
+    }
+    movement.monto = monto
+    movement.categoria = (categoria or "").strip()
+    movement.observacion = (observacion or "").strip()
+    movement.rubro_operativo = rubro_operativo
+    movement.actualizado_por = actor
+    movement.full_clean()
+    movement.save(update_fields=["monto", "categoria", "observacion", "rubro_operativo", "actualizado_por", "actualizado_en"])
+
+    MovimientoCajaCorreccion.objects.create(
+        movimiento=movement,
+        accion=MovimientoCajaCorreccion.Accion.EDICION,
+        motivo=motivo,
+        monto_anterior=previous["monto"],
+        monto_nuevo=movement.monto,
+        categoria_anterior=previous["categoria"],
+        categoria_nueva=movement.categoria,
+        observacion_anterior=previous["observacion"],
+        observacion_nueva=movement.observacion,
+        rubro_operativo_anterior=previous["rubro_operativo"],
+        rubro_operativo_nuevo=movement.rubro_operativo,
+        creado_por=actor,
+    )
+    _recalculate_closed_box_after_correction(movement.caja, actor=actor, motivo=motivo)
+    return movement
+
+
+@transaction.atomic
+def annul_closed_box_movement(
+    *,
+    movement: MovimientoCaja,
+    motivo: str,
+    actor=None,
+) -> MovimientoCaja:
+    movement = _validate_closed_box_movement_for_correction(movement, actor=actor)
+    motivo = (motivo or "").strip()
+    if not motivo:
+        raise ValidationError({"motivo": "El motivo de la anulación es obligatorio."})
+
+    MovimientoCajaCorreccion.objects.create(
+        movimiento=movement,
+        accion=MovimientoCajaCorreccion.Accion.ANULACION,
+        motivo=motivo,
+        monto_anterior=movement.monto,
+        monto_nuevo=None,
+        categoria_anterior=movement.categoria,
+        categoria_nueva=movement.categoria,
+        observacion_anterior=movement.observacion,
+        observacion_nueva=movement.observacion,
+        rubro_operativo_anterior=movement.rubro_operativo,
+        rubro_operativo_nuevo=movement.rubro_operativo,
+        creado_por=actor,
+    )
+    movement.estado = MovimientoCaja.Estado.ANULADO
+    movement.motivo_anulacion = motivo
+    movement.anulado_por = actor
+    movement.anulado_en = timezone.now()
+    movement.actualizado_por = actor
+    movement.full_clean()
+    movement.save(update_fields=["estado", "motivo_anulacion", "anulado_por", "anulado_en", "actualizado_por", "actualizado_en"])
+    _recalculate_closed_box_after_correction(movement.caja, actor=actor, motivo=motivo)
+    return movement
 
 
 @transaction.atomic

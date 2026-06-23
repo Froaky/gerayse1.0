@@ -24,6 +24,10 @@ PERMISSION_MODULE_META = {
         "label": "Caja operativa",
         "scope": "Cajas, apertura, movimientos, ingresos, egresos, traspasos y cierre operativo.",
     },
+    PermissionModule.CASHOPS_CLOSED_FIX: {
+        "label": "Corrección de cajas cerradas",
+        "scope": "Editar o anular movimientos de cajas cerradas con motivo, auditoría y recálculo operativo.",
+    },
     PermissionModule.CONFIG: {
         "label": "Configuración",
         "scope": "Rubros, limites, empresas, sucursales, turnos y reinicio de datos.",

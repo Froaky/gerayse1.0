@@ -933,6 +933,14 @@ Last updated: 2026-06-12
   - third slice done: deuda nueva/editada exige categoria con rubro operativo, categorias activas exigen rubro, filtros/listados/admin muestran rubro, y deuda legacy sin rubro queda visible como pendiente de migracion pero fuera de la lectura economica consolidada
   - residual risk: no se hizo constraint DB `NOT NULL` sobre `CategoriaCuentaPagar.rubro_operativo`; fue intencional para no cortar deuda legacy ni pagos historicos
   - key refs: `treasury/models.py`, `treasury/forms.py`, `treasury/services.py`, `treasury/views.py`, `treasury/admin.py`, `templates/treasury/dashboard.html`, `treasury/tests.py`, `treasury/tests_ep05.py`
+- EP-08 current slice 2026-06-23:
+  - user requested edit/delete for already closed cajas because operators sometimes load movements incorrectly
+  - decision: implement correction/anulacion of closed-caja movements with audit trail and recalculated cierre/control totals; do not hard-delete caja or movement rows
+  - permission to add: user/role assignable write permission for closed-caja corrections, separate from regular caja operation
+  - implemented: `cashops_closed_fix` permission, edit/anular buttons on closed box detail, `MovimientoCaja.estado`, `MovimientoCajaCorreccion`, recalculated `CierreCaja` expected/difference and operational control snapshots
+  - guardrail: apertura, transferencias and cierre auto-ajustes are not editable through this correction button; they need a specific circuit if business asks
+  - key refs: `cashops/models.py`, `cashops/services.py`, `cashops/forms.py`, `cashops/views.py`, `cashops/urls.py`, `templates/cashops/partials/movement_list.html`, `users/models.py`, `users/views.py`
+  - evidence: `py -3.14 -m compileall users cashops`; `py -3.14 manage.py test cashops.tests.CashopsServiceTests cashops.tests.CashopsViewTests users.tests -v 1` => 120 OK; `py -3.14 manage.py makemigrations --check --dry-run` => no changes detected
 
 ## Useful Commands
 

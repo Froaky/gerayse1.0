@@ -5,6 +5,7 @@ from django.db import models
 
 class PermissionModule(models.TextChoices):
     CASHOPS = "cashops", "Caja operativa"
+    CASHOPS_CLOSED_FIX = "cashops_closed_fix", "Corrección de cajas cerradas"
     CONFIG = "config", "Configuración"
     TREASURY = "treasury", "Tesorería"
     USERS = "users", "Usuarios"

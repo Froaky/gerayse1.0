@@ -515,7 +515,7 @@ class PersonalViewTests(TestCase):
 
         self.assertEqual(create_response.status_code, 302)
         role = Role.objects.get(code="LECTURA")
-        self.assertEqual(role.permissions.count(), 4)
+        self.assertEqual(role.permissions.count(), 5)
 
         toggle_response = self.client.post(
             reverse(

@@ -31,6 +31,15 @@ def ensure_cashops_write(user) -> None:
         raise PermissionDenied("No tenes permisos para operar caja.")
 
 
+def can_correct_closed_box(user) -> bool:
+    return _has_module_permission(user, PermissionModule.CASHOPS_CLOSED_FIX, "write")
+
+
+def ensure_closed_box_correction(user) -> None:
+    if not can_correct_closed_box(user):
+        raise PermissionDenied("No tenes permisos para corregir cajas cerradas.")
+
+
 def ensure_config_read(user) -> None:
     if not _has_module_permission(user, PermissionModule.CONFIG, "read"):
         raise PermissionDenied("No tenes permisos para ver configuracion.")

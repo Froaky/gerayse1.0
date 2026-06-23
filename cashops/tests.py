@@ -8,7 +8,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from users.models import Role
+from users.models import PermissionModule, Role, UserPermission
 
 from .forms import CajaAperturaForm, VentaGeneralForm
 from .models import (
@@ -19,6 +19,7 @@ from .models import (
     Empresa,
     LimiteRubroOperativo,
     MovimientoCaja,
+    MovimientoCajaCorreccion,
     RubroOperativo,
     Sucursal,
     Transferencia,
@@ -27,6 +28,7 @@ from .models import (
 from .permissions import can_operate_box, ensure_can_operate_box, is_cashops_admin
 from .services import (
     BRANCH_TRANSFER_DISABLED_REASON,
+    annul_closed_box_movement,
     build_box_control_scope,
     build_branch_control_scope,
     build_operational_category_overview,
@@ -43,6 +45,7 @@ from .services import (
     transfer_between_boxes,
     transfer_between_branches,
     register_general_sale,
+    update_closed_box_movement,
 )
 
 
@@ -84,6 +87,14 @@ class CashopsTestCase(TestCase):
         form.fields["sucursal"].queryset = Sucursal.objects.all()
         form.fields["turno"].queryset = Turno.objects.all()
         return form
+
+    def _grant_closed_box_fix(self, user):
+        return UserPermission.objects.create(
+            user=user,
+            module=PermissionModule.CASHOPS_CLOSED_FIX,
+            can_read=True,
+            can_write=True,
+        )
 
 
 class CashopsPermissionUnitTests(CashopsTestCase):
@@ -162,6 +173,109 @@ class CashopsPermissionUnitTests(CashopsTestCase):
 
 
 class CashopsServiceTests(CashopsTestCase):
+    def test_closed_box_movement_edit_requires_specific_permission(self):
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("100.00"),
+            actor=self.operator,
+        )
+        movimiento = register_cash_income(
+            caja=caja,
+            monto=Decimal("50.00"),
+            categoria="Ingreso",
+            creado_por=self.operator,
+            actor=self.operator,
+        )
+        close_box(caja=caja, saldo_fisico=Decimal("150.00"), cerrado_por=self.operator, actor=self.operator)
+
+        with self.assertRaises(PermissionDenied):
+            update_closed_box_movement(
+                movement=movimiento,
+                monto=Decimal("70.00"),
+                categoria="Ingreso corregido",
+                observacion="",
+                motivo="Carga mal tipeada",
+                actor=self.operator,
+            )
+
+    def test_closed_box_movement_edit_recalculates_closure_and_control(self):
+        self._grant_closed_box_fix(self.operator)
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("100.00"),
+            actor=self.operator,
+        )
+        movimiento = register_cash_income(
+            caja=caja,
+            monto=Decimal("50.00"),
+            categoria="Ingreso",
+            creado_por=self.operator,
+            actor=self.operator,
+        )
+        close_box(caja=caja, saldo_fisico=Decimal("150.00"), cerrado_por=self.operator, actor=self.operator)
+
+        update_closed_box_movement(
+            movement=movimiento,
+            monto=Decimal("70.00"),
+            categoria="Ingreso corregido",
+            observacion="Correccion de importe",
+            motivo="Carga mal tipeada",
+            actor=self.operator,
+        )
+
+        movimiento.refresh_from_db()
+        caja.refresh_from_db()
+        cierre = CierreCaja.objects.get(caja=caja)
+        snapshot = build_operational_control_snapshot(build_box_control_scope(caja=caja))
+        self.assertEqual(movimiento.monto, Decimal("70.00"))
+        self.assertEqual(caja.saldo_esperado, Decimal("170.00"))
+        self.assertEqual(cierre.saldo_esperado, Decimal("170.00"))
+        self.assertEqual(cierre.diferencia, Decimal("-20.00"))
+        self.assertEqual(snapshot["total_ingresos"], Decimal("70.00"))
+        self.assertEqual(MovimientoCajaCorreccion.objects.filter(movimiento=movimiento).count(), 1)
+
+    def test_closed_box_movement_annul_recalculates_closure_and_excludes_totals(self):
+        self._grant_closed_box_fix(self.operator)
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("100.00"),
+            actor=self.operator,
+        )
+        movimiento = register_cash_income(
+            caja=caja,
+            monto=Decimal("50.00"),
+            categoria="Ingreso",
+            creado_por=self.operator,
+            actor=self.operator,
+        )
+        close_box(caja=caja, saldo_fisico=Decimal("150.00"), cerrado_por=self.operator, actor=self.operator)
+
+        annul_closed_box_movement(
+            movement=movimiento,
+            motivo="Movimiento duplicado",
+            actor=self.operator,
+        )
+
+        movimiento.refresh_from_db()
+        caja.refresh_from_db()
+        cierre = CierreCaja.objects.get(caja=caja)
+        snapshot = build_operational_control_snapshot(build_box_control_scope(caja=caja))
+        self.assertEqual(movimiento.estado, MovimientoCaja.Estado.ANULADO)
+        self.assertEqual(caja.saldo_esperado, Decimal("100.00"))
+        self.assertEqual(cierre.saldo_esperado, Decimal("100.00"))
+        self.assertEqual(cierre.diferencia, Decimal("50.00"))
+        self.assertEqual(snapshot["total_ingresos"], Decimal("0.00"))
+        self.assertEqual(MovimientoCajaCorreccion.objects.get(movimiento=movimiento).accion, MovimientoCajaCorreccion.Accion.ANULACION)
+
     def test_admin_can_assign_box_to_another_user(self):
         caja = open_box(
             user=self.other,
@@ -1249,6 +1363,93 @@ class CashopsViewTests(CashopsTestCase):
         response = self.client.get(reverse("cashops:box_expense", args=[self.foreign_box.pk]))
 
         self.assertEqual(response.status_code, 200)
+
+    def test_closed_box_detail_shows_correction_actions_only_with_permission(self):
+        movimiento = register_cash_income(
+            caja=self.owned_box,
+            monto=Decimal("40.00"),
+            categoria="Ingreso",
+            creado_por=self.operator,
+            actor=self.operator,
+        )
+        close_box(caja=self.owned_box, saldo_fisico=Decimal("1040.00"), cerrado_por=self.operator, actor=self.operator)
+        detail_url = reverse("cashops:box_detail", args=[self.owned_box.pk])
+
+        self.client.force_login(self.operator)
+        response_without_permission = self.client.get(detail_url)
+        self.assertNotContains(response_without_permission, reverse("cashops:closed_box_movement_edit", args=[movimiento.pk]))
+
+        self._grant_closed_box_fix(self.operator)
+        response_with_permission = self.client.get(detail_url)
+        self.assertContains(response_with_permission, reverse("cashops:closed_box_movement_edit", args=[movimiento.pk]))
+        self.assertContains(response_with_permission, reverse("cashops:closed_box_movement_delete", args=[movimiento.pk]))
+
+    def test_closed_box_movement_edit_view_updates_movement(self):
+        self._grant_closed_box_fix(self.operator)
+        movimiento = register_cash_income(
+            caja=self.owned_box,
+            monto=Decimal("40.00"),
+            categoria="Ingreso",
+            creado_por=self.operator,
+            actor=self.operator,
+        )
+        close_box(caja=self.owned_box, saldo_fisico=Decimal("1040.00"), cerrado_por=self.operator, actor=self.operator)
+        self.client.force_login(self.operator)
+
+        response = self.client.post(
+            reverse("cashops:closed_box_movement_edit", args=[movimiento.pk]),
+            {
+                "monto": "65.00",
+                "categoria": "Ingreso corregido",
+                "observacion": "Correccion",
+                "motivo": "Importe cargado mal",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        movimiento.refresh_from_db()
+        self.assertEqual(movimiento.monto, Decimal("65.00"))
+        self.assertEqual(CierreCaja.objects.get(caja=self.owned_box).saldo_esperado, Decimal("1065.00"))
+
+    def test_closed_box_movement_delete_view_requires_specific_permission(self):
+        movimiento = register_cash_income(
+            caja=self.owned_box,
+            monto=Decimal("40.00"),
+            categoria="Ingreso",
+            creado_por=self.operator,
+            actor=self.operator,
+        )
+        close_box(caja=self.owned_box, saldo_fisico=Decimal("1040.00"), cerrado_por=self.operator, actor=self.operator)
+        self.client.force_login(self.operator)
+
+        response = self.client.post(
+            reverse("cashops:closed_box_movement_delete", args=[movimiento.pk]),
+            {"motivo": "Duplicado"},
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_closed_box_movement_delete_view_annuls_movement(self):
+        self._grant_closed_box_fix(self.operator)
+        movimiento = register_cash_income(
+            caja=self.owned_box,
+            monto=Decimal("40.00"),
+            categoria="Ingreso",
+            creado_por=self.operator,
+            actor=self.operator,
+        )
+        close_box(caja=self.owned_box, saldo_fisico=Decimal("1040.00"), cerrado_por=self.operator, actor=self.operator)
+        self.client.force_login(self.operator)
+
+        response = self.client.post(
+            reverse("cashops:closed_box_movement_delete", args=[movimiento.pk]),
+            {"motivo": "Duplicado"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        movimiento.refresh_from_db()
+        self.assertEqual(movimiento.estado, MovimientoCaja.Estado.ANULADO)
+        self.assertEqual(CierreCaja.objects.get(caja=self.owned_box).saldo_esperado, Decimal("1000.00"))
 
     def test_reset_confirmation_lists_operational_and_financial_data_to_delete(self):
         self.client.force_login(self.admin)

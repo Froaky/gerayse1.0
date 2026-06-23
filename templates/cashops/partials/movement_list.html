@@ -1,11 +1,16 @@
 <div class="list" style="margin-top:12px;">
   {% for movement in movements %}
-    <article class="list-item">
+    <article class="list-item{% if movement.estado == 'ANULADO' %} is-muted{% endif %}">
       <div class="row">
         <strong>{% firstof movement.tipo_label movement.get_tipo_display movement.tipo %}</strong>
-        <span class="badge {% if movement.sentido == 'EGRESO' %}badge-danger{% endif %}">
-          {{ movement.get_sentido_display }}
-        </span>
+        <div class="row" style="gap:6px;">
+          {% if movement.estado == 'ANULADO' %}
+            <span class="badge-muted">Anulado</span>
+          {% endif %}
+          <span class="badge {% if movement.sentido == 'EGRESO' %}badge-danger{% endif %}">
+            {{ movement.get_sentido_display }}
+          </span>
+        </div>
       </div>
       <div class="row" style="margin-top:8px;">
         <span class="muted">Monto</span>
@@ -19,7 +24,16 @@
       {% if movement.observacion %}
         <div class="muted" style="margin-top:6px;">{{ movement.observacion }}</div>
       {% endif %}
+      {% if movement.motivo_anulacion %}
+        <div class="muted" style="margin-top:6px;">Motivo de anulación: {{ movement.motivo_anulacion }}</div>
+      {% endif %}
       <div class="muted" style="margin-top:6px;">{{ movement.creado_en|date:"d/m/Y H:i" }}</div>
+      {% if movement.can_fix_closed_box %}
+        <div class="row mt-8">
+          <a class="button-secondary" href="{{ movement.edit_url }}">Editar</a>
+          <a class="button-secondary" href="{{ movement.delete_url }}">Eliminar</a>
+        </div>
+      {% endif %}
     </article>
   {% empty %}
     <p class="muted">No hay movimientos para mostrar.</p>
