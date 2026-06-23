@@ -1455,6 +1455,29 @@ class CashopsViewTests(CashopsTestCase):
         self.assertEqual(movimiento.estado, MovimientoCaja.Estado.ANULADO)
         self.assertEqual(CierreCaja.objects.get(caja=self.owned_box).saldo_esperado, Decimal("1000.00"))
 
+    def test_closed_box_movement_delete_view_redirects_htmx_to_box_detail(self):
+        self._grant_closed_box_fix(self.operator)
+        movimiento = register_cash_income(
+            caja=self.owned_box,
+            monto=Decimal("40.00"),
+            categoria="Ingreso",
+            creado_por=self.operator,
+            actor=self.operator,
+        )
+        close_box(caja=self.owned_box, saldo_fisico=Decimal("1040.00"), cerrado_por=self.operator, actor=self.operator)
+        self.client.force_login(self.operator)
+
+        response = self.client.post(
+            reverse("cashops:closed_box_movement_delete", args=[movimiento.pk]),
+            {"motivo": "Duplicado"},
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(response.headers["HX-Redirect"], reverse("cashops:box_detail", args=[self.owned_box.pk]))
+        movimiento.refresh_from_db()
+        self.assertEqual(movimiento.estado, MovimientoCaja.Estado.ANULADO)
+
     def test_reset_confirmation_lists_operational_and_financial_data_to_delete(self):
         self.client.force_login(self.admin)
 

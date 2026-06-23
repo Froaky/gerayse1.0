@@ -522,10 +522,13 @@ def closed_box_movement_edit_view(request, movement_id: int):
             form.add_error(None, exc)
         else:
             messages.success(request, "Movimiento corregido y cierre recalculado.")
+            if _is_htmx(request):
+                return _hx_redirect(back_url)
             return redirect(back_url)
-    return render(
+    return _render_form(
         request,
         "cashops/form_page.html",
+        "cashops/partials/form_card.html",
         {
             "title": f"Editar movimiento #{movement.id}",
             "subtitle": "Seguro que queres editar este movimiento de una caja cerrada? Se guardara el motivo y se recalculara el cierre.",
@@ -556,10 +559,13 @@ def closed_box_movement_delete_view(request, movement_id: int):
             form.add_error(None, exc)
         else:
             messages.success(request, "Movimiento anulado y cierre recalculado.")
+            if _is_htmx(request):
+                return _hx_redirect(back_url)
             return redirect(back_url)
-    return render(
+    return _render_form(
         request,
         "cashops/form_page.html",
+        "cashops/partials/form_card.html",
         {
             "title": f"Eliminar movimiento #{movement.id}",
             "subtitle": "Seguro que queres eliminar este movimiento de una caja cerrada? No se borra el registro: queda anulado con auditoria.",

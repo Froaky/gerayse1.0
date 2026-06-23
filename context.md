@@ -948,6 +948,12 @@ Last updated: 2026-06-12
   - compatibility decision: legacy/global rows without branch/company can remain visible only when the user has at least one explicitly allowed company; users with zero companies see none.
   - files touched: `core/context_processors.py`, `cashops/views.py`, `cashops/forms.py`, `cashops/services.py`, `treasury/views.py`, `treasury/forms.py`, `treasury/services.py`, `users/forms.py`, `templates/users/user_detail.html`, plus focused tests in `core/tests.py`, `users/tests.py`, `cashops/tests.py`, `treasury/tests.py`.
   - evidence: `py -3.14 -m compileall core users cashops treasury`; `py -3.14 manage.py makemigrations --check --dry-run` => no changes detected; `py -3.14 manage.py test core.tests users.tests cashops.tests.EP12EmpresasTests cashops.tests.CashopsViewTests treasury.tests.TreasuryViewTests -v 1` => 130 OK.
+- Closed-box movement submit fix 2026-06-23:
+  - user reported the delete confirmation stayed on the same screen and did not advance.
+  - cause: closed-box edit/delete views returned a normal redirect to an HTMX form submit, so the browser could keep the interaction inside the form target instead of navigating back to box detail.
+  - fix: successful edit/delete now returns `HX-Redirect` for HTMX requests and normal `redirect()` for non-HTMX requests; invalid submissions still render the form partial.
+  - files touched: `cashops/views.py`, `cashops/tests.py`.
+  - evidence: `py -3.14 manage.py test cashops.tests.CashopsViewTests.test_closed_box_movement_edit_view_updates_movement cashops.tests.CashopsViewTests.test_closed_box_movement_delete_view_requires_specific_permission cashops.tests.CashopsViewTests.test_closed_box_movement_delete_view_annuls_movement cashops.tests.CashopsViewTests.test_closed_box_movement_delete_view_redirects_htmx_to_box_detail -v 2` => 4 OK; `py -3.14 -m compileall cashops` => OK.
 
 ## Useful Commands
 
