@@ -1,5 +1,6 @@
 from decimal import Decimal
 from datetime import date, datetime
+from urllib.parse import urlencode
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -1466,17 +1467,25 @@ class CashopsViewTests(CashopsTestCase):
         )
         close_box(caja=self.owned_box, saldo_fisico=Decimal("1040.00"), cerrado_por=self.operator, actor=self.operator)
         self.client.force_login(self.operator)
+        next_url = f"{reverse('cashops:box_tracking')}?estado=cerradas"
+        delete_url = f"{reverse('cashops:closed_box_movement_delete', args=[movimiento.pk])}?{urlencode({'next': next_url})}"
 
         response = self.client.post(
-            reverse("cashops:closed_box_movement_delete", args=[movimiento.pk]),
+            delete_url,
             {"motivo": "Duplicado"},
             HTTP_HX_REQUEST="true",
         )
 
         self.assertEqual(response.status_code, 204)
-        self.assertEqual(response.headers["HX-Redirect"], reverse("cashops:box_detail", args=[self.owned_box.pk]))
+        self.assertEqual(response.headers["HX-Redirect"], next_url)
         movimiento.refresh_from_db()
         self.assertEqual(movimiento.estado, MovimientoCaja.Estado.ANULADO)
+        redirected = self.client.get(next_url)
+        self.assertContains(
+            redirected,
+            f"Caja #{self.owned_box.pk}: movimiento #{movimiento.pk} eliminado correctamente.",
+            html=False,
+        )
 
     def test_reset_confirmation_lists_operational_and_financial_data_to_delete(self):
         self.client.force_login(self.admin)

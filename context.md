@@ -952,8 +952,9 @@ Last updated: 2026-06-12
   - user reported the delete confirmation stayed on the same screen and did not advance.
   - cause: closed-box edit/delete views returned a normal redirect to an HTMX form submit, so the browser could keep the interaction inside the form target instead of navigating back to box detail.
   - fix: successful edit/delete now returns `HX-Redirect` for HTMX requests and normal `redirect()` for non-HTMX requests; invalid submissions still render the form partial.
+  - follow-up fix: edit/delete links now carry a safe `next` URL so confirmation returns to the exact previous screen/filter, and success messages identify the caja and movement, e.g. `Caja #X: movimiento #Y eliminado correctamente.`
   - files touched: `cashops/views.py`, `cashops/tests.py`.
-  - evidence: `py -3.14 manage.py test cashops.tests.CashopsViewTests.test_closed_box_movement_edit_view_updates_movement cashops.tests.CashopsViewTests.test_closed_box_movement_delete_view_requires_specific_permission cashops.tests.CashopsViewTests.test_closed_box_movement_delete_view_annuls_movement cashops.tests.CashopsViewTests.test_closed_box_movement_delete_view_redirects_htmx_to_box_detail -v 2` => 4 OK; `py -3.14 -m compileall cashops` => OK.
+  - evidence: `py -3.14 manage.py test cashops.tests.CashopsViewTests.test_closed_box_detail_shows_correction_actions_only_with_permission cashops.tests.CashopsViewTests.test_closed_box_movement_edit_view_updates_movement cashops.tests.CashopsViewTests.test_closed_box_movement_delete_view_requires_specific_permission cashops.tests.CashopsViewTests.test_closed_box_movement_delete_view_annuls_movement cashops.tests.CashopsViewTests.test_closed_box_movement_delete_view_redirects_htmx_to_box_detail -v 2` => 5 OK; `py -3.14 -m compileall cashops` => OK.
 
 ## Useful Commands
 

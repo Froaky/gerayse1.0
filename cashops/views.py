@@ -1,5 +1,6 @@
 import csv
 from decimal import Decimal, InvalidOperation
+from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -11,6 +12,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_http_methods
 
 from .forms import (
@@ -133,6 +135,17 @@ def _hx_redirect(url: str) -> HttpResponse:
     response = HttpResponse(status=204)
     response["HX-Redirect"] = url
     return response
+
+
+def _safe_next_url(request, default_url: str) -> str:
+    next_url = request.POST.get("next") or request.GET.get("next")
+    if next_url and url_has_allowed_host_and_scheme(
+        next_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return next_url
+    return default_url
 
 
 def _render_form(request, full_template: str, partial_template: str, context: dict, status: int = 200):
@@ -466,12 +479,14 @@ def box_detail_view(request, box_id: int):
     latest_event = timeline[0] if timeline else None
     channel_map = get_income_channel_map()
     can_fix_closed_box = can_correct_closed_box(request.user)
+    return_to = request.get_full_path()
+    correction_query = urlencode({"next": return_to})
     for movement in movements:
         movement.tipo_label = get_cash_movement_type_label(movement.tipo, channel_map)
         movement.can_fix_closed_box = can_fix_closed_box and is_closed_box_movement_correctable(movement)
         if movement.can_fix_closed_box:
-            movement.edit_url = reverse("cashops:closed_box_movement_edit", args=[movement.pk])
-            movement.delete_url = reverse("cashops:closed_box_movement_delete", args=[movement.pk])
+            movement.edit_url = f"{reverse('cashops:closed_box_movement_edit', args=[movement.pk])}?{correction_query}"
+            movement.delete_url = f"{reverse('cashops:closed_box_movement_delete', args=[movement.pk])}?{correction_query}"
 
     return render(
         request,
@@ -506,7 +521,9 @@ def closed_box_movement_edit_view(request, movement_id: int):
     _require_cashops_read(request)
     movement = _get_correctable_movement_for_request(request, movement_id)
     form = ClosedBoxMovementEditForm(request.POST or None, movement=movement)
-    back_url = reverse("cashops:box_detail", args=[movement.caja_id])
+    default_back_url = reverse("cashops:box_detail", args=[movement.caja_id])
+    back_url = _safe_next_url(request, default_back_url)
+    form_action = f"{reverse('cashops:closed_box_movement_edit', args=[movement.id])}?{urlencode({'next': back_url})}"
     if request.method == "POST" and form.is_valid():
         try:
             update_closed_box_movement(
@@ -521,7 +538,7 @@ def closed_box_movement_edit_view(request, movement_id: int):
         except ValidationError as exc:
             form.add_error(None, exc)
         else:
-            messages.success(request, "Movimiento corregido y cierre recalculado.")
+            messages.success(request, f"Caja #{movement.caja_id}: movimiento #{movement.id} editado correctamente.")
             if _is_htmx(request):
                 return _hx_redirect(back_url)
             return redirect(back_url)
@@ -534,7 +551,7 @@ def closed_box_movement_edit_view(request, movement_id: int):
             "subtitle": "Seguro que queres editar este movimiento de una caja cerrada? Se guardara el motivo y se recalculara el cierre.",
             "form": form,
             "submit_label": "Confirmar edicion",
-            "form_action": reverse("cashops:closed_box_movement_edit", args=[movement.id]),
+            "form_action": form_action,
             "back_url": back_url,
         },
         status=400 if request.method == "POST" else 200,
@@ -547,7 +564,9 @@ def closed_box_movement_delete_view(request, movement_id: int):
     _require_cashops_read(request)
     movement = _get_correctable_movement_for_request(request, movement_id)
     form = ClosedBoxMovementAnnulForm(request.POST or None)
-    back_url = reverse("cashops:box_detail", args=[movement.caja_id])
+    default_back_url = reverse("cashops:box_detail", args=[movement.caja_id])
+    back_url = _safe_next_url(request, default_back_url)
+    form_action = f"{reverse('cashops:closed_box_movement_delete', args=[movement.id])}?{urlencode({'next': back_url})}"
     if request.method == "POST" and form.is_valid():
         try:
             annul_closed_box_movement(
@@ -558,7 +577,7 @@ def closed_box_movement_delete_view(request, movement_id: int):
         except ValidationError as exc:
             form.add_error(None, exc)
         else:
-            messages.success(request, "Movimiento anulado y cierre recalculado.")
+            messages.success(request, f"Caja #{movement.caja_id}: movimiento #{movement.id} eliminado correctamente.")
             if _is_htmx(request):
                 return _hx_redirect(back_url)
             return redirect(back_url)
@@ -571,7 +590,7 @@ def closed_box_movement_delete_view(request, movement_id: int):
             "subtitle": "Seguro que queres eliminar este movimiento de una caja cerrada? No se borra el registro: queda anulado con auditoria.",
             "form": form,
             "submit_label": "Confirmar eliminacion",
-            "form_action": reverse("cashops:closed_box_movement_delete", args=[movement.id]),
+            "form_action": form_action,
             "back_url": back_url,
         },
         status=400 if request.method == "POST" else 200,
