@@ -97,6 +97,10 @@
             <a class="button-secondary" href="{{ row.detail_url }}">Ver detalle</a>
             <a class="button-secondary" href="{{ row.detail_url }}#ventas">Ver composición</a>
             <a class="button-secondary" href="{{ row.detail_url }}#historial">Ver historial</a>
+            {% if row.can_edit_box %}
+              <a class="button-secondary" href="{{ row.edit_url }}">Editar</a>
+              <a class="button-secondary" href="{{ row.delete_url }}">Eliminar</a>
+            {% endif %}
           </div>
         </article>
       {% empty %}

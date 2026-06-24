@@ -101,6 +101,7 @@ class Caja(models.Model):
     class Estado(models.TextChoices):
         ABIERTA = "ABIERTA", "Abierta"
         CERRADA = "CERRADA", "Cerrada"
+        ANULADA = "ANULADA", "Anulada"
 
     sucursal = models.ForeignKey(Sucursal, on_delete=models.PROTECT, related_name="cajas")
     turno = models.ForeignKey(Turno, on_delete=models.PROTECT, related_name="cajas")
@@ -530,6 +531,74 @@ class MovimientoCajaCorreccion(models.Model):
 
     def __str__(self) -> str:
         return f"{self.get_accion_display()} movimiento {self.movimiento_id}"
+
+
+class CajaCorreccion(models.Model):
+    class Accion(models.TextChoices):
+        EDICION = "EDICION", "Edición"
+        ANULACION = "ANULACION", "Anulación"
+
+    caja = models.ForeignKey(Caja, on_delete=models.PROTECT, related_name="correcciones")
+    accion = models.CharField(max_length=12, choices=Accion.choices)
+    motivo = models.TextField()
+    estado_anterior = models.CharField(max_length=10, choices=Caja.Estado.choices)
+    estado_nuevo = models.CharField(max_length=10, choices=Caja.Estado.choices)
+    usuario_anterior = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="correcciones_caja_usuario_anterior",
+    )
+    usuario_nuevo = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="correcciones_caja_usuario_nuevo",
+    )
+    sucursal_anterior = models.ForeignKey(
+        Sucursal,
+        on_delete=models.PROTECT,
+        related_name="correcciones_caja_sucursal_anterior",
+    )
+    sucursal_nueva = models.ForeignKey(
+        Sucursal,
+        on_delete=models.PROTECT,
+        related_name="correcciones_caja_sucursal_nueva",
+    )
+    turno_anterior = models.ForeignKey(
+        Turno,
+        on_delete=models.PROTECT,
+        related_name="correcciones_caja_turno_anterior",
+    )
+    turno_nuevo = models.ForeignKey(
+        Turno,
+        on_delete=models.PROTECT,
+        related_name="correcciones_caja_turno_nuevo",
+    )
+    fecha_operativa_anterior = models.DateField()
+    fecha_operativa_nueva = models.DateField()
+    monto_inicial_anterior = models.DecimalField(max_digits=14, decimal_places=2)
+    monto_inicial_nuevo = models.DecimalField(max_digits=14, decimal_places=2)
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="correcciones_caja_completa_creadas",
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-creado_en", "-id"]
+        indexes = [
+            models.Index(fields=["caja", "creado_en"]),
+            models.Index(fields=["accion", "creado_en"]),
+        ]
+
+    def clean(self) -> None:
+        if not (self.motivo or "").strip():
+            raise ValidationError({"motivo": "El motivo es obligatorio."})
+
+    def __str__(self) -> str:
+        return f"{self.get_accion_display()} caja {self.caja_id}"
 
 
 class CierreCaja(models.Model):

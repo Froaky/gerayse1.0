@@ -15,6 +15,7 @@ from .forms import CajaAperturaForm, VentaGeneralForm
 from .models import (
     AlertaOperativa,
     Caja,
+    CajaCorreccion,
     CanalIngreso,
     CierreCaja,
     Empresa,
@@ -1434,6 +1435,26 @@ class CashopsViewTests(CashopsTestCase):
 
         self.assertEqual(response.status_code, 403)
 
+    def test_closed_box_movement_delete_confirmation_uses_plain_post(self):
+        self._grant_closed_box_fix(self.operator)
+        movimiento = register_cash_income(
+            caja=self.owned_box,
+            monto=Decimal("40.00"),
+            categoria="Ingreso",
+            creado_por=self.operator,
+            actor=self.operator,
+        )
+        close_box(caja=self.owned_box, saldo_fisico=Decimal("1040.00"), cerrado_por=self.operator, actor=self.operator)
+        self.client.force_login(self.operator)
+        next_url = f"{reverse('cashops:box_tracking')}?estado=cerradas"
+        delete_url = f"{reverse('cashops:closed_box_movement_delete', args=[movimiento.pk])}?{urlencode({'next': next_url})}"
+
+        response = self.client.get(delete_url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "hx-post")
+        self.assertContains(response, f'name="next" value="{next_url}"', html=False)
+
     def test_closed_box_movement_delete_view_annuls_movement(self):
         self._grant_closed_box_fix(self.operator)
         movimiento = register_cash_income(
@@ -1483,7 +1504,7 @@ class CashopsViewTests(CashopsTestCase):
         redirected = self.client.get(next_url)
         self.assertContains(
             redirected,
-            f"Caja #{self.owned_box.pk}: movimiento #{movimiento.pk} eliminado correctamente.",
+            f"Caja #{self.owned_box.pk}: carga #{movimiento.pk} eliminada correctamente.",
             html=False,
         )
 
@@ -1567,6 +1588,80 @@ class CashopsViewTests(CashopsTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, f"Caja #{self.owned_box.pk}")
         self.assertNotContains(response, f"Caja #{self.foreign_box.pk}")
+
+    def test_tracking_view_shows_box_edit_delete_with_closed_fix_permission(self):
+        self.client.force_login(self.operator)
+        response_without_permission = self.client.get(reverse("cashops:box_tracking"))
+        self.assertNotContains(response_without_permission, reverse("cashops:box_edit", args=[self.owned_box.pk]))
+        self.assertNotContains(response_without_permission, reverse("cashops:box_delete", args=[self.owned_box.pk]))
+
+        self._grant_closed_box_fix(self.operator)
+        response_with_permission = self.client.get(reverse("cashops:box_tracking"))
+        self.assertContains(response_with_permission, reverse("cashops:box_edit", args=[self.owned_box.pk]))
+        self.assertContains(response_with_permission, reverse("cashops:box_delete", args=[self.owned_box.pk]))
+
+    def test_box_edit_view_updates_whole_box_with_audit(self):
+        self._grant_closed_box_fix(self.operator)
+        close_box(caja=self.owned_box, saldo_fisico=Decimal("1000.00"), cerrado_por=self.operator, actor=self.operator)
+        self.client.force_login(self.operator)
+        next_url = reverse("cashops:box_tracking")
+
+        response = self.client.post(
+            f"{reverse('cashops:box_edit', args=[self.owned_box.pk])}?{urlencode({'next': next_url})}",
+            {
+                "usuario": self.operator.pk,
+                "sucursal": self.branch_a.pk,
+                "turno": self.turno_a.pk,
+                "fecha_operativa": "2026-03-28",
+                "monto_inicial": "1200.00",
+                "motivo": "Fecha e importe corregidos",
+                "next": next_url,
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], next_url)
+        self.owned_box.refresh_from_db()
+        self.assertEqual(self.owned_box.fecha_operativa, date(2026, 3, 28))
+        self.assertEqual(self.owned_box.monto_inicial, Decimal("1200.00"))
+        self.assertEqual(CierreCaja.objects.get(caja=self.owned_box).saldo_esperado, Decimal("1200.00"))
+        correction = CajaCorreccion.objects.get(caja=self.owned_box)
+        self.assertEqual(correction.accion, CajaCorreccion.Accion.EDICION)
+        self.assertEqual(correction.motivo, "Fecha e importe corregidos")
+
+    def test_box_delete_view_annuls_whole_box_and_hides_it_from_tracking(self):
+        self._grant_closed_box_fix(self.operator)
+        movimiento = register_cash_income(
+            caja=self.owned_box,
+            monto=Decimal("40.00"),
+            categoria="Duplicada",
+            creado_por=self.operator,
+            actor=self.operator,
+        )
+        close_box(caja=self.owned_box, saldo_fisico=Decimal("1040.00"), cerrado_por=self.operator, actor=self.operator)
+        self.client.force_login(self.operator)
+        next_url = reverse("cashops:box_tracking")
+
+        response = self.client.post(
+            f"{reverse('cashops:box_delete', args=[self.owned_box.pk])}?{urlencode({'next': next_url})}",
+            {
+                "motivo": "Caja duplicada",
+                "next": next_url,
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], next_url)
+        self.owned_box.refresh_from_db()
+        movimiento.refresh_from_db()
+        self.assertEqual(self.owned_box.estado, Caja.Estado.ANULADA)
+        self.assertEqual(movimiento.estado, MovimientoCaja.Estado.ANULADO)
+        correction = CajaCorreccion.objects.get(caja=self.owned_box)
+        self.assertEqual(correction.accion, CajaCorreccion.Accion.ANULACION)
+        self.assertEqual(correction.motivo, "Caja duplicada")
+        tracking = self.client.get(next_url)
+        self.assertEqual(len(tracking.context["rows"]), 0)
+        self.assertContains(tracking, f"Caja #{self.owned_box.pk} eliminada correctamente.", html=False)
 
     def test_box_detail_shows_sales_breakdown_and_history(self):
         register_cash_income(

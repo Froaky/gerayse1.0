@@ -16,6 +16,8 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_http_methods
 
 from .forms import (
+    BoxAnnulForm,
+    BoxEditForm,
     CajaAperturaForm,
     CanalIngresoForm,
     ClosedBoxMovementAnnulForm,
@@ -35,6 +37,7 @@ from .forms import (
 from .models import CanalIngreso, Caja, CierreCaja, Empresa, LimiteRubroOperativo, MovimientoCaja, MovimientoCajaCorreccion, RubroOperativo, Sucursal, Turno
 from .permissions import can_correct_closed_box, ensure_cashops_read, ensure_cashops_write, ensure_closed_box_correction, ensure_config_read, ensure_config_write
 from .services import (
+    annul_box,
     annul_closed_box_movement,
     BRANCH_TRANSFER_DISABLED_REASON,
     CLOSING_DIFF_THRESHOLD,
@@ -61,10 +64,11 @@ from .services import (
     resync_operational_control_for_rubro,
     transfer_between_boxes,
     transfer_between_branches,
+    update_box_metadata,
     update_closed_box_movement,
 )
 def _boxes_for_request(request):
-    queryset = Caja.objects.select_related("sucursal", "turno", "usuario")
+    queryset = Caja.objects.select_related("sucursal", "turno", "usuario").exclude(estado=Caja.Estado.ANULADA)
     if request.user.is_authenticated and request.user.is_cashops_admin():
         empresa_ids = _get_empresa_ids(request)
         return queryset.filter(sucursal__empresa_id__in=empresa_ids)
@@ -432,10 +436,13 @@ def box_tracking_view(request):
         boxes = boxes.filter(estado=Caja.Estado.CERRADA)
 
     rows = []
+    can_fix_boxes = can_correct_closed_box(request.user)
+    return_to = request.get_full_path()
     for box in boxes:
         movements = list(getattr(box, "prefetched_movements", []))
         sales_breakdown = build_box_sales_breakdown(movements)
         follow_up = describe_box_follow_up(box, movements)
+        box_action_query = urlencode({"next": return_to})
         rows.append(
             {
                 "box": box,
@@ -444,6 +451,9 @@ def box_tracking_view(request):
                 "follow_up": follow_up,
                 "resume_url": f"{reverse('cashops:dashboard')}?scope=box&box={box.pk}",
                 "detail_url": reverse("cashops:box_detail", args=[box.pk]),
+                "can_edit_box": can_fix_boxes,
+                "edit_url": f"{reverse('cashops:box_edit', args=[box.pk])}?{box_action_query}",
+                "delete_url": f"{reverse('cashops:box_delete', args=[box.pk])}?{box_action_query}",
             }
         )
 
@@ -460,6 +470,96 @@ def box_tracking_view(request):
             "fecha_hasta": request.GET.get("fecha_hasta", ""),
             "empresa_ids": empresa_ids,
         },
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def box_edit_view(request, box_id: int):
+    _require_cashops_read(request)
+    box = _get_box_for_request(request, box_id)
+    default_back_url = reverse("cashops:box_tracking")
+    back_url = _safe_next_url(request, default_back_url)
+    form = BoxEditForm(
+        request.POST or None,
+        box=box,
+        actor=request.user,
+        empresa_ids=_get_empresa_ids(request),
+    )
+    form_action = f"{reverse('cashops:box_edit', args=[box.id])}?{urlencode({'next': back_url})}"
+    if request.method == "POST" and form.is_valid():
+        try:
+            update_box_metadata(
+                caja=box,
+                usuario=form.cleaned_data["usuario"],
+                sucursal=form.cleaned_data["sucursal"],
+                turno=form.cleaned_data["turno"],
+                fecha_operativa=form.cleaned_data["fecha_operativa"],
+                monto_inicial=form.cleaned_data["monto_inicial"],
+                motivo=form.cleaned_data["motivo"],
+                actor=request.user,
+            )
+        except (ValidationError, PermissionDenied) as exc:
+            _handle_operation_error(form, exc, "No se pudo editar la caja.")
+        else:
+            messages.success(request, f"Caja #{box.id} editada correctamente.")
+            return _hx_redirect(back_url) if _is_htmx(request) else redirect(back_url)
+
+    return _render_form(
+        request,
+        "cashops/form_page.html",
+        "cashops/partials/form_card.html",
+        {
+            "title": f"Editar caja #{box.id}",
+            "subtitle": "Seguro que querés editar esta caja completa? Se guardará el motivo y se recalcularán los saldos si corresponde.",
+            "form": form,
+            "submit_label": "Confirmar edición",
+            "form_action": form_action,
+            "back_url": back_url,
+            "next_url": back_url,
+            "disable_htmx": True,
+        },
+        status=400 if request.method == "POST" and not form.is_valid() else 200,
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def box_delete_view(request, box_id: int):
+    _require_cashops_read(request)
+    box = _get_box_for_request(request, box_id)
+    default_back_url = reverse("cashops:box_tracking")
+    back_url = _safe_next_url(request, default_back_url)
+    form = BoxAnnulForm(request.POST or None)
+    form_action = f"{reverse('cashops:box_delete', args=[box.id])}?{urlencode({'next': back_url})}"
+    if request.method == "POST" and form.is_valid():
+        try:
+            annul_box(
+                caja=box,
+                motivo=form.cleaned_data["motivo"],
+                actor=request.user,
+            )
+        except (ValidationError, PermissionDenied) as exc:
+            _handle_operation_error(form, exc, "No se pudo eliminar la caja.")
+        else:
+            messages.success(request, f"Caja #{box.id} eliminada correctamente.")
+            return _hx_redirect(back_url) if _is_htmx(request) else redirect(back_url)
+
+    return _render_form(
+        request,
+        "cashops/form_page.html",
+        "cashops/partials/form_card.html",
+        {
+            "title": f"Eliminar caja #{box.id}",
+            "subtitle": "Seguro que querés eliminar esta caja completa? No se borra la auditoría: la caja queda anulada y sus movimientos dejan de contar.",
+            "form": form,
+            "submit_label": "Confirmar eliminación",
+            "form_action": form_action,
+            "back_url": back_url,
+            "next_url": back_url,
+            "disable_htmx": True,
+        },
+        status=400 if request.method == "POST" and not form.is_valid() else 200,
     )
 
 
@@ -553,6 +653,8 @@ def closed_box_movement_edit_view(request, movement_id: int):
             "submit_label": "Confirmar edicion",
             "form_action": form_action,
             "back_url": back_url,
+            "next_url": back_url,
+            "disable_htmx": True,
         },
         status=400 if request.method == "POST" else 200,
     )
@@ -577,7 +679,7 @@ def closed_box_movement_delete_view(request, movement_id: int):
         except ValidationError as exc:
             form.add_error(None, exc)
         else:
-            messages.success(request, f"Caja #{movement.caja_id}: movimiento #{movement.id} eliminado correctamente.")
+            messages.success(request, f"Caja #{movement.caja_id}: carga #{movement.id} eliminada correctamente.")
             if _is_htmx(request):
                 return _hx_redirect(back_url)
             return redirect(back_url)
@@ -592,6 +694,8 @@ def closed_box_movement_delete_view(request, movement_id: int):
             "submit_label": "Confirmar eliminacion",
             "form_action": form_action,
             "back_url": back_url,
+            "next_url": back_url,
+            "disable_htmx": True,
         },
         status=400 if request.method == "POST" else 200,
     )

@@ -15,8 +15,11 @@
     </ul>
   {% endif %}
 
-  <form method="post" action="{{ form_action }}" hx-post="{{ form_action }}" hx-target="#form-card" hx-swap="outerHTML" class="stack mt-16">
+  <form method="post" action="{{ form_action }}"{% if not disable_htmx %} hx-post="{{ form_action }}" hx-target="#form-card" hx-swap="outerHTML"{% endif %} class="stack mt-16">
     {% csrf_token %}
+    {% if next_url %}
+      <input type="hidden" name="next" value="{{ next_url }}">
+    {% endif %}
     {% for hidden in form.hidden_fields %}
       {{ hidden }}
     {% endfor %}
@@ -55,4 +58,3 @@
     </script>
   {% endif %}
 </section>
-

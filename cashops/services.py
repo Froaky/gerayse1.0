@@ -11,6 +11,7 @@ from django.utils import timezone
 from .models import (
     AlertaOperativa,
     Caja,
+    CajaCorreccion,
     CanalIngreso,
     CierreCaja,
     Justificacion,
@@ -131,6 +132,14 @@ def describe_box_follow_up(caja: Caja, movements) -> dict:
     last_movement = movements[0] if movements else None
     last_activity_at = caja.cerrada_en or (last_movement.creado_en if last_movement else caja.abierta_en)
 
+    if caja.estado == Caja.Estado.ANULADA:
+        return {
+            "label": "Eliminada",
+            "badge_class": "badge-danger",
+            "detail": "Caja eliminada/anulada y conservada solo por auditoría.",
+            "last_activity_at": last_activity_at,
+            "post_opening_count": len(post_opening_movements),
+        }
     if caja.estado == Caja.Estado.CERRADA:
         return {
             "label": "Cerrada",
@@ -431,7 +440,7 @@ def _period_boxes_for_operational_scope(
     boxes = Caja.objects.select_related("sucursal", "turno", "usuario", "cierre").filter(
         fecha_operativa__gte=date_from,
         fecha_operativa__lte=date_to,
-    )
+    ).exclude(estado=Caja.Estado.ANULADA)
     if sucursal is not None:
         boxes = boxes.filter(sucursal=sucursal)
     elif empresa_ids is not None:
@@ -794,7 +803,7 @@ def build_operational_period_summary(*, date_from: date, date_to: date, sucursal
     movement_qs = MovimientoCaja.objects.filter(
         caja__fecha_operativa__gte=date_from,
         caja__fecha_operativa__lte=date_to,
-    ).exclude(tipo=MovimientoCaja.Tipo.APERTURA).filter(estado=MovimientoCaja.Estado.REGISTRADO)
+    ).exclude(caja__estado=Caja.Estado.ANULADA).exclude(tipo=MovimientoCaja.Tipo.APERTURA).filter(estado=MovimientoCaja.Estado.REGISTRADO)
     if sucursal is not None:
         movement_qs = movement_qs.filter(caja__sucursal=sucursal)
     elif empresa_ids is not None:
@@ -959,7 +968,7 @@ def build_management_daily_matrix(*, date_from: date, date_to: date, sucursal: S
     ).filter(
         caja__fecha_operativa__gte=date_from,
         caja__fecha_operativa__lte=date_to,
-    ).exclude(tipo=MovimientoCaja.Tipo.APERTURA).filter(estado=MovimientoCaja.Estado.REGISTRADO)
+    ).exclude(caja__estado=Caja.Estado.ANULADA).exclude(tipo=MovimientoCaja.Tipo.APERTURA).filter(estado=MovimientoCaja.Estado.REGISTRADO)
     if sucursal is not None:
         movement_qs = movement_qs.filter(caja__sucursal=sucursal)
     elif empresa_ids is not None:
@@ -1653,6 +1662,145 @@ def _recalculate_closed_box_after_correction(caja: Caja, *, actor=None, motivo: 
 
     resync_operational_control_for_caja(caja)
     return cierre
+
+
+def _snapshot_box_values(caja: Caja) -> dict:
+    return {
+        "estado": caja.estado,
+        "usuario": caja.usuario,
+        "sucursal": caja.sucursal,
+        "turno": caja.turno,
+        "fecha_operativa": caja.fecha_operativa,
+        "monto_inicial": caja.monto_inicial,
+    }
+
+
+def _create_box_correction(
+    *,
+    caja: Caja,
+    accion: str,
+    motivo: str,
+    previous: dict,
+    actor=None,
+) -> CajaCorreccion:
+    return CajaCorreccion.objects.create(
+        caja=caja,
+        accion=accion,
+        motivo=motivo,
+        estado_anterior=previous["estado"],
+        estado_nuevo=caja.estado,
+        usuario_anterior=previous["usuario"],
+        usuario_nuevo=caja.usuario,
+        sucursal_anterior=previous["sucursal"],
+        sucursal_nueva=caja.sucursal,
+        turno_anterior=previous["turno"],
+        turno_nuevo=caja.turno,
+        fecha_operativa_anterior=previous["fecha_operativa"],
+        fecha_operativa_nueva=caja.fecha_operativa,
+        monto_inicial_anterior=previous["monto_inicial"],
+        monto_inicial_nuevo=caja.monto_inicial,
+        creado_por=actor,
+    )
+
+
+def _validate_box_for_full_correction(caja: Caja, *, actor) -> Caja:
+    _require_actor(actor)
+    ensure_closed_box_correction(actor)
+    caja = Caja.objects.select_for_update().select_related("turno", "sucursal", "usuario").get(pk=caja.pk)
+    if caja.estado == Caja.Estado.ANULADA:
+        raise ValidationError({"caja": "La caja ya fue eliminada."})
+    return caja
+
+
+@transaction.atomic
+def update_box_metadata(
+    *,
+    caja: Caja,
+    usuario,
+    sucursal: Sucursal,
+    turno: Turno,
+    fecha_operativa: date,
+    monto_inicial: Decimal,
+    motivo: str,
+    actor=None,
+) -> Caja:
+    caja = _validate_box_for_full_correction(caja, actor=actor)
+    motivo = (motivo or "").strip()
+    if not motivo:
+        raise ValidationError({"motivo": "El motivo de la edición es obligatorio."})
+    if monto_inicial < 0:
+        raise ValidationError({"monto_inicial": "El efectivo inicial no puede ser negativo."})
+    if sucursal.empresa_id != turno.empresa_id:
+        raise ValidationError({"turno": "El turno debe pertenecer a la misma empresa de la sucursal."})
+    if not can_assign_box_to_user(actor, usuario):
+        raise PermissionDenied("No tenés permiso para asignar esta caja a ese usuario.")
+    if caja.estado == Caja.Estado.ABIERTA and Caja.objects.filter(
+        estado=Caja.Estado.ABIERTA,
+        usuario=usuario,
+        turno=turno,
+        sucursal=sucursal,
+    ).exclude(pk=caja.pk).exists():
+        raise ValidationError({"caja": "Ya existe una caja abierta para ese responsable, sucursal y turno."})
+
+    previous = _snapshot_box_values(caja)
+    caja.usuario = usuario
+    caja.sucursal = sucursal
+    caja.turno = turno
+    caja.fecha_operativa = fecha_operativa
+    caja.monto_inicial = monto_inicial
+    caja.full_clean()
+    caja.save(update_fields=["usuario", "sucursal", "turno", "fecha_operativa", "monto_inicial"])
+
+    _create_box_correction(
+        caja=caja,
+        accion=CajaCorreccion.Accion.EDICION,
+        motivo=motivo,
+        previous=previous,
+        actor=actor,
+    )
+    if caja.estado == Caja.Estado.CERRADA and hasattr(caja, "cierre"):
+        _recalculate_closed_box_after_correction(caja, actor=actor, motivo=motivo)
+    else:
+        resync_operational_control_for_caja(caja)
+    return caja
+
+
+@transaction.atomic
+def annul_box(
+    *,
+    caja: Caja,
+    motivo: str,
+    actor=None,
+) -> Caja:
+    caja = _validate_box_for_full_correction(caja, actor=actor)
+    motivo = (motivo or "").strip()
+    if not motivo:
+        raise ValidationError({"motivo": "El motivo de la eliminación es obligatorio."})
+
+    previous = _snapshot_box_values(caja)
+    now = timezone.now()
+    MovimientoCaja.objects.filter(caja=caja, estado=MovimientoCaja.Estado.REGISTRADO).update(
+        estado=MovimientoCaja.Estado.ANULADO,
+        motivo_anulacion=motivo,
+        anulado_por=actor,
+        anulado_en=now,
+        actualizado_por=actor,
+        actualizado_en=now,
+    )
+    caja.estado = Caja.Estado.ANULADA
+    if caja.cerrada_en is None:
+        caja.cerrada_en = now
+        caja.cerrada_por = actor
+    caja.save(update_fields=["estado", "cerrada_en", "cerrada_por"])
+    _create_box_correction(
+        caja=caja,
+        accion=CajaCorreccion.Accion.ANULACION,
+        motivo=motivo,
+        previous=previous,
+        actor=actor,
+    )
+    AlertaOperativa.objects.filter(caja=caja, resuelta=False).update(resuelta=True)
+    return caja
 
 
 @transaction.atomic

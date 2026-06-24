@@ -953,8 +953,16 @@ Last updated: 2026-06-12
   - cause: closed-box edit/delete views returned a normal redirect to an HTMX form submit, so the browser could keep the interaction inside the form target instead of navigating back to box detail.
   - fix: successful edit/delete now returns `HX-Redirect` for HTMX requests and normal `redirect()` for non-HTMX requests; invalid submissions still render the form partial.
   - follow-up fix: edit/delete links now carry a safe `next` URL so confirmation returns to the exact previous screen/filter, and success messages identify the caja and movement, e.g. `Caja #X: movimiento #Y eliminado correctamente.`
-  - files touched: `cashops/views.py`, `cashops/tests.py`.
-  - evidence: `py -3.14 manage.py test cashops.tests.CashopsViewTests.test_closed_box_detail_shows_correction_actions_only_with_permission cashops.tests.CashopsViewTests.test_closed_box_movement_edit_view_updates_movement cashops.tests.CashopsViewTests.test_closed_box_movement_delete_view_requires_specific_permission cashops.tests.CashopsViewTests.test_closed_box_movement_delete_view_annuls_movement cashops.tests.CashopsViewTests.test_closed_box_movement_delete_view_redirects_htmx_to_box_detail -v 2` => 5 OK; `py -3.14 -m compileall cashops` => OK.
+  - final hardening: closed-box edit/delete confirmation forms disable `hx-post` and use plain POST with hidden `next`, so production does not depend on HTMX/CDN behavior for critical deletion confirmation.
+  - files touched: `cashops/views.py`, `cashops/tests.py`, `templates/cashops/partials/form_card.html`.
+  - evidence: `py -3.14 manage.py test cashops.tests.CashopsViewTests.test_closed_box_movement_delete_confirmation_uses_plain_post cashops.tests.CashopsViewTests.test_closed_box_movement_delete_view_requires_specific_permission cashops.tests.CashopsViewTests.test_closed_box_movement_delete_view_annuls_movement cashops.tests.CashopsViewTests.test_closed_box_movement_delete_view_redirects_htmx_to_box_detail cashops.tests.CashopsViewTests.test_closed_box_movement_edit_view_updates_movement -v 2` => 5 OK; `py -3.14 -m compileall cashops` => OK; `py -3.14 manage.py makemigrations --check --dry-run` => no changes detected.
+- Whole-box edit/delete 2026-06-24:
+  - user clarified they meant edit/delete complete cajas from `Seguimiento`, not only individual movements inside a caja.
+  - implemented `Caja.Estado.ANULADA` and `CajaCorreccion` audit log; deleting a caja is logical annulment, not physical delete.
+  - behavior: tracking cards with `cashops_closed_fix` permission show `Editar` and `Eliminar`; editing can correct responsible user, branch, shift, operational date and initial cash with mandatory reason; deleting annuls the caja and all registered movements, resolves box alerts, hides it from normal tracking and excludes it from period totals.
+  - guardrail: all whole-box edits/deletes require the same specific closed-box correction permission and keep a reason/user/timestamp audit trail.
+  - files touched: `cashops/models.py`, `cashops/forms.py`, `cashops/services.py`, `cashops/views.py`, `cashops/urls.py`, `templates/cashops/box_tracking.html`, `templates/cashops/partials/form_card.html`, `cashops/tests.py`, migration `cashops/0020_alter_caja_estado_cajacorreccion.py`.
+  - evidence: `py -3.14 manage.py test cashops.tests.CashopsServiceTests cashops.tests.CashopsViewTests -v 1` => 88 OK; `py -3.14 -m compileall cashops` => OK; `py -3.14 manage.py makemigrations --check --dry-run` => no changes detected.
 
 ## Useful Commands
 

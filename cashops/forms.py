@@ -309,6 +309,87 @@ class ClosedBoxMovementAnnulForm(forms.Form):
             field.widget.attrs.setdefault("class", "input textarea")
 
 
+class BoxEditForm(forms.Form):
+    usuario = forms.ModelChoiceField(queryset=User.objects.none(), label="Responsable")
+    sucursal = forms.ModelChoiceField(queryset=Sucursal.objects.none())
+    turno = forms.ModelChoiceField(queryset=Turno.objects.none(), label="Turno")
+    fecha_operativa = forms.DateField(
+        label="Fecha operativa",
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+    monto_inicial = forms.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        min_value=Decimal("0.00"),
+        label="Efectivo inicial",
+        widget=forms.NumberInput(attrs={"step": "0.01", "placeholder": "0.00"}),
+    )
+    motivo = forms.CharField(
+        label="Motivo de edición",
+        widget=forms.Textarea(attrs={"placeholder": "Explica por qué se edita esta caja completa"}),
+    )
+
+    def __init__(self, *args, box=None, actor=None, empresa_ids=None, **kwargs):
+        self.box = box
+        self.actor = actor
+        initial = kwargs.setdefault("initial", {})
+        if box is not None:
+            initial.setdefault("usuario", box.usuario_id)
+            initial.setdefault("sucursal", box.sucursal_id)
+            initial.setdefault("turno", box.turno_id)
+            initial.setdefault("fecha_operativa", box.fecha_operativa)
+            initial.setdefault("monto_inicial", box.monto_inicial)
+        super().__init__(*args, **kwargs)
+        self.fields["usuario"].queryset = User.objects.filter(is_active=True)
+        if actor and not is_cashops_admin(actor):
+            self.fields["usuario"].queryset = User.objects.filter(pk=actor.pk, is_active=True)
+        if empresa_ids is not None:
+            self.fields["sucursal"].queryset = Sucursal.objects.filter(activa=True, empresa_id__in=empresa_ids)
+            self.fields["turno"].queryset = Turno.objects.filter(empresa_id__in=empresa_ids)
+        else:
+            self.fields["sucursal"].queryset = Sucursal.objects.filter(activa=True)
+            self.fields["turno"].queryset = Turno.objects.all()
+        for field in self.fields.values():
+            if isinstance(field.widget, forms.Textarea):
+                field.widget.attrs.setdefault("class", "input textarea")
+            elif isinstance(field.widget, forms.Select):
+                field.widget.attrs.setdefault("class", "input select")
+            else:
+                field.widget.attrs.setdefault("class", "input")
+
+    def clean(self):
+        cleaned_data = super().clean()
+        usuario = cleaned_data.get("usuario")
+        sucursal = cleaned_data.get("sucursal")
+        turno = cleaned_data.get("turno")
+        if self.actor and usuario and not can_assign_box_to_user(self.actor, usuario):
+            self.add_error("usuario", "No podés asignar una caja a otro usuario.")
+        if sucursal and turno and sucursal.empresa_id != turno.empresa_id:
+            self.add_error("turno", "El turno debe pertenecer a la misma empresa de la sucursal.")
+        if (
+            self.actor
+            and not is_cashops_admin(self.actor)
+            and usuario
+            and getattr(usuario, "usuario_fijo", False)
+        ):
+            base_sucursal_id = getattr(usuario, "sucursal_base_id", None)
+            if base_sucursal_id and sucursal and sucursal.id != base_sucursal_id:
+                self.add_error("sucursal", "El usuario fijo solo puede operar en su sucursal base.")
+        return cleaned_data
+
+
+class BoxAnnulForm(forms.Form):
+    motivo = forms.CharField(
+        label="Motivo de eliminación",
+        widget=forms.Textarea(attrs={"placeholder": "Explica por qué se elimina/anula esta caja completa"}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs.setdefault("class", "input textarea")
+
+
 class VentaGeneralForm(forms.Form):
     tipo_venta = forms.ChoiceField(choices=[], label="Medio de ingreso")
     rubro = forms.ModelChoiceField(
