@@ -12,8 +12,8 @@ from django.test import RequestFactory, TestCase, TransactionTestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from cashops.models import Empresa, RubroOperativo, Sucursal, Turno
-from cashops.services import open_box, register_card_sale, register_cash_income, register_expense
+from cashops.models import CanalIngreso, Empresa, MovimientoCaja, RubroOperativo, Sucursal, Turno
+from cashops.services import open_box, register_card_sale, register_cash_income, register_expense, register_general_sale
 from users.models import PermissionModule, Role, RolePermission
 
 from .admin import (
@@ -1394,6 +1394,120 @@ class TreasuryServiceTests(TreasuryTestCase):
         self.assertEqual(item["total_expense"], Decimal("250.00"))
         self.assertEqual(snapshot["treasury_unmapped_expenses_total"], Decimal("40.00"))
         self.assertEqual(snapshot["treasury_unmapped_expenses_count"], 1)
+
+    def test_economic_period_snapshot_excludes_panificacion_and_annulled_cash_movements(self):
+        CanalIngreso.objects.update_or_create(
+            codigo="PANIFICACION",
+            defaults={
+                "nombre": "PANIFICACION",
+                "impacta_saldo_caja": False,
+                "excluir_de_totales": True,
+                "activo": True,
+                "orden": 10,
+            },
+        )
+        empresa = Empresa.objects.create(nombre="Empresa Ventas Economicas")
+        branch = Sucursal.objects.create(
+            codigo="SUC-VE",
+            nombre="Sucursal Ventas Economicas",
+            razon_social="Ventas Economicas SRL",
+            empresa=empresa,
+        )
+        rubro = RubroOperativo.objects.create(nombre="Ventas mostrador")
+        turno = Turno.objects.create(empresa=empresa, tipo=Turno.Tipo.MANANA, creado_por=self.admin)
+        box = open_box(
+            user=self.operator,
+            turno=turno,
+            sucursal=branch,
+            fecha_operativa=timezone.datetime(2026, 5, 12).date(),
+            monto_inicial=Decimal("0.00"),
+            actor=self.admin,
+        )
+        register_general_sale(
+            caja=box,
+            monto=Decimal("1000.00"),
+            tipo_venta=MovimientoCaja.Tipo.INGRESO_EFECTIVO,
+            rubro=rubro,
+            observacion="Venta base",
+            actor=self.operator,
+        )
+        register_general_sale(
+            caja=box,
+            monto=Decimal("8000.00"),
+            tipo_venta="PANIFICACION",
+            rubro=rubro,
+            observacion="Facturacion panificacion",
+            actor=self.operator,
+        )
+        annulled = register_general_sale(
+            caja=box,
+            monto=Decimal("400.00"),
+            tipo_venta=MovimientoCaja.Tipo.INGRESO_EFECTIVO,
+            rubro=rubro,
+            observacion="Venta duplicada",
+            actor=self.operator,
+        )
+        annulled.estado = MovimientoCaja.Estado.ANULADO
+        annulled.motivo_anulacion = "Carga duplicada"
+        annulled.anulado_por = self.admin
+        annulled.anulado_en = timezone.now()
+        annulled.save(update_fields=["estado", "motivo_anulacion", "anulado_por", "anulado_en"])
+
+        snapshot = build_economic_period_snapshot(
+            date_from=timezone.datetime(2026, 5, 1).date(),
+            date_to=timezone.datetime(2026, 5, 31).date(),
+            sucursal=branch,
+            empresa_ids=[empresa.pk],
+        )
+
+        self.assertEqual(snapshot["sales_total"], Decimal("1000.00"))
+        item = next(current for current in snapshot["items"] if current["rubro_nombre"] == "Ventas mostrador")
+        self.assertEqual(item["sales_total"], Decimal("1000.00"))
+
+    def test_financial_period_snapshot_excludes_annulled_cash_movements(self):
+        empresa = Empresa.objects.create(nombre="Empresa Financiera Caja")
+        branch = Sucursal.objects.create(
+            codigo="SUC-FC",
+            nombre="Sucursal Financiera Caja",
+            razon_social="Financiera Caja SRL",
+            empresa=empresa,
+        )
+        turno = Turno.objects.create(empresa=empresa, tipo=Turno.Tipo.MANANA, creado_por=self.admin)
+        box = open_box(
+            user=self.operator,
+            turno=turno,
+            sucursal=branch,
+            fecha_operativa=timezone.datetime(2026, 5, 12).date(),
+            monto_inicial=Decimal("0.00"),
+            actor=self.admin,
+        )
+        register_cash_income(
+            caja=box,
+            monto=Decimal("700.00"),
+            categoria="Venta valida",
+            actor=self.operator,
+        )
+        annulled = register_cash_income(
+            caja=box,
+            monto=Decimal("300.00"),
+            categoria="Venta duplicada",
+            actor=self.operator,
+        )
+        annulled.estado = MovimientoCaja.Estado.ANULADO
+        annulled.motivo_anulacion = "Carga duplicada"
+        annulled.anulado_por = self.admin
+        annulled.anulado_en = timezone.now()
+        annulled.save(update_fields=["estado", "motivo_anulacion", "anulado_por", "anulado_en"])
+
+        snapshot = build_financial_period_snapshot(
+            date_from=timezone.datetime(2026, 5, 1).date(),
+            date_to=timezone.datetime(2026, 5, 31).date(),
+            sucursal=branch,
+            empresa_ids=[empresa.pk],
+        )
+
+        self.assertEqual(snapshot["cash_income"], Decimal("700.00"))
+        self.assertEqual(snapshot["cash_net"], Decimal("700.00"))
 
     def test_economic_rubro_detail_matches_summary_total_for_selected_period_and_branch(self):
         empresa = Empresa.objects.create(nombre="Empresa Detalle Economico")

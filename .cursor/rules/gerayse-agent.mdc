@@ -1,0 +1,35 @@
+---
+description: Reglas de desarrollo asistido para Gerayse
+alwaysApply: true
+---
+
+# Reglas Cursor para Gerayse
+
+Segui `AGENTS.md` como contrato principal del repo.
+
+Antes de cambios sustanciales:
+
+1. Lee `context.md`.
+2. Lee `docs/engineering-guidelines.md`.
+3. Lee `docs/ai/AI_CHANGE_PROTOCOL.md`.
+4. Lee el skill relevante en `.agents/skills/` si el cambio toca caja, tesoreria, usuarios, UI, rentabilidad o testing.
+
+Reglas obligatorias:
+
+- Trabajar por slices chicos y aislados.
+- No mezclar bugfix con refactor global.
+- No cambiar reglas de negocio en templates.
+- No duplicar formulas de dinero, deuda, saldos, cierres o snapshots.
+- No hacer delete fisico de movimientos financieros/operativos auditables.
+- Todo cambio con dinero, deuda, pago, cierre, banco, caja central o dashboard debe pasar por servicios y tener tests proporcionales.
+- Todo cambio con empresa/sucursal debe revisar fuga cross-company.
+- Antes de implementar, clasificar la opcion como OPTIMA, ACEPTABLE o NO OPTIMA.
+
+Formato de cierre esperado:
+
+- Que cambie.
+- Por que la opcion es optima/aceptable/no optima.
+- Archivos tocados.
+- Tests ejecutados.
+- Riesgos pendientes.
+- Si se actualizo `context.md`.

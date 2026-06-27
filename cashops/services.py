@@ -1712,6 +1712,37 @@ def _validate_box_for_full_correction(caja: Caja, *, actor) -> Caja:
     return caja
 
 
+def _reverse_central_cash_closure_for_box(caja: Caja, *, actor) -> None:
+    from django.apps import apps
+
+    MovimientoCajaCentral = apps.get_model("treasury", "MovimientoCajaCentral")
+    reversal_concept = f"Anulacion cierre caja #{caja.id}"
+    if MovimientoCajaCentral.objects.filter(concepto=reversal_concept).exists():
+        return
+
+    closure_concepts = [f"Cierre caja #{caja.id}", f"Cierre caja #{caja.id} - saldo negativo"]
+    closure_movements = MovimientoCajaCentral.objects.filter(
+        concepto__in=closure_concepts,
+        tipo__in=["INGRESO_CAJA", "AJUSTE_NEGATIVO"],
+    )
+    for movement in closure_movements:
+        if movement.tipo == "INGRESO_CAJA":
+            reversal_type = "AJUSTE_NEGATIVO"
+            observations = "Reversa auditada por anulacion de caja cerrada."
+        else:
+            reversal_type = "AJUSTE_POSITIVO"
+            observations = "Reversa auditada de saldo negativo por anulacion de caja cerrada."
+        MovimientoCajaCentral.objects.create(
+            caja_central=movement.caja_central,
+            fecha=movement.fecha,
+            tipo=reversal_type,
+            monto=movement.monto,
+            concepto=reversal_concept,
+            observaciones=observations,
+            creado_por=actor,
+        )
+
+
 @transaction.atomic
 def update_box_metadata(
     *,
@@ -1779,6 +1810,7 @@ def annul_box(
 
     previous = _snapshot_box_values(caja)
     now = timezone.now()
+    _reverse_central_cash_closure_for_box(caja, actor=actor)
     MovimientoCaja.objects.filter(caja=caja, estado=MovimientoCaja.Estado.REGISTRADO).update(
         estado=MovimientoCaja.Estado.ANULADO,
         motivo_anulacion=motivo,

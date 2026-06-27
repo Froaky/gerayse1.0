@@ -1,6 +1,6 @@
 # Context
 
-Last updated: 2026-06-12
+Last updated: 2026-06-27
 
 ## Product Snapshot
 
@@ -60,6 +60,36 @@ Last updated: 2026-06-12
   - changes touching money, debt, permissions, migrations, dashboards or operational controls require proportional tests
 
 ## Current Session
+
+### Dashboard/Economic Totals Investigation 2026-06-27
+
+- User reported mismatches in dashboard and economic readings:
+  - `Caja fuerte general` shows about 66M ARS difference.
+  - `Situacion economica` `Ventas base` should exclude panificacion billing and include only the intended period base.
+  - `Resultado economico` should subtract caja expenses, treasury expenses and period debt from base sales.
+  - Central cash book should show period income/expense totals to identify the branch/source where a movement is missing.
+  - Some mistaken duplicated caja entries cannot yet be removed cleanly from the user's flow.
+- Findings:
+  - `build_economic_period_snapshot()` counted all active income channel codes, including channels marked `excluir_de_totales` such as `PANIFICACION`.
+  - Treasury financial/economic snapshots did not filter out `MovimientoCaja.estado=ANULADO` or `Caja.estado=ANULADA`, while cashops period reports already did.
+  - Anulling a closed box annulled its operational movements but did not reverse the `MovimientoCajaCentral` created by `close_box()`, leaving central cash inflated by deleted/duplicated boxes.
+- Behavior changed:
+  - Economic `Ventas base` now excludes income channels configured with `excluir_de_totales` and ignores annulled movements/boxes.
+  - Financial cash period totals and digital sales now ignore annulled movements/boxes.
+  - Whole-box annulment now creates an audited central-cash reversal movement for the closing transfer instead of deleting the original central-cash record.
+- User-facing impact: panification billing and annulled duplicate cajas stop inflating dashboard/economic totals; deleting a closed duplicated caja also corrects `Caja fuerte general`.
+- Files touched: `treasury/services.py`, `treasury/tests.py`, `cashops/services.py`, `cashops/tests.py`, `context.md`.
+- Validation:
+  - `py -3.13 manage.py test treasury.tests.TreasuryServiceTests.test_economic_period_snapshot_excludes_panificacion_and_annulled_cash_movements treasury.tests.TreasuryServiceTests.test_financial_period_snapshot_excludes_annulled_cash_movements cashops.tests.CashopsViewTests.test_annul_closed_box_reverses_central_cash_closure_movement -v 2` with `PYTHONPATH=.venv\Lib\site-packages`: 3 OK.
+  - `py -3.13 manage.py test treasury.tests.TreasuryServiceTests treasury.tests.TreasuryViewTests -v 1` with `PYTHONPATH=.venv\Lib\site-packages`: 75 OK.
+  - `py -3.13 manage.py test cashops.tests.CashopsServiceTests cashops.tests.CashopsViewTests -v 1` with `PYTHONPATH=.venv\Lib\site-packages`: 89 OK.
+  - `py -3.13 -m compileall cashops treasury` with `PYTHONPATH=.venv\Lib\site-packages`: OK.
+  - `py -3.13 manage.py makemigrations --check --dry-run` with `PYTHONPATH=.venv\Lib\site-packages`: no changes detected.
+  - `py -3.14` was unavailable in this environment; used installed Python 3.13.
+- Client-verification note:
+  - To validate panification exclusion, client must check that internal sales were loaded with income channel `PANIFICACION` or another channel marked `excluir_de_totales`; exclusion is by channel, not by rubro name alone.
+  - To validate treasury expenses in economic view, client must load them from `Registrar egreso` with `Rubro`, `Sucursal correspondiente`, and `Periodo que se esta pagando`; manual central-cash adjustments without those fields affect financial cash but do not enter economic expenses.
+  - Focused recheck 2026-06-27: panification/excluded income, treasury expense persistence, and dashboard economic/financial tests passed; one initial test command used a wrong test name and was rerun with the correct dashboard test.
 
 ### Bank Movement Corrections And User Settings 2026-06-19
 

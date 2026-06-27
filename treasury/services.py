@@ -1294,28 +1294,38 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
     if date_to < date_from:
         raise ValidationError({"fecha_hasta": "La fecha hasta no puede ser anterior a la fecha desde."})
 
-    from cashops.models import CanalIngreso, MovimientoCaja, RubroOperativo
+    from cashops.models import Caja, CanalIngreso, MovimientoCaja, RubroOperativo
     from cashops.services import get_income_channel_map
 
     period_from = _first_day_of_month(date_from)
     period_to = _first_day_of_month(date_to)
     month_starts = _month_starts_between(period_from, period_to)
     _all_income_codes = list(get_income_channel_map().keys())
-    _digital_codes = [c for c in _all_income_codes if c != MovimientoCaja.Tipo.INGRESO_EFECTIVO]
-    sale_query = Q(tipo__in=_digital_codes) | Q(
+    _excluded_income_codes = set(
+        CanalIngreso.objects.filter(activo=True, excluir_de_totales=True).values_list("codigo", flat=True)
+    )
+    _included_income_codes = [code for code in _all_income_codes if code not in _excluded_income_codes]
+    _digital_codes = [c for c in _included_income_codes if c != MovimientoCaja.Tipo.INGRESO_EFECTIVO]
+    sale_query = Q(sentido=MovimientoCaja.Sentido.INGRESO) & (
+        Q(tipo__in=_digital_codes) | Q(
         tipo=MovimientoCaja.Tipo.INGRESO_EFECTIVO,
         rubro_operativo__isnull=False,
+        )
     )
     sales = MovimientoCaja.objects.filter(
         caja__fecha_operativa__gte=date_from,
         caja__fecha_operativa__lte=date_to,
+        estado=MovimientoCaja.Estado.REGISTRADO,
     ).filter(sale_query)
     expenses = MovimientoCaja.objects.filter(
         caja__fecha_operativa__gte=date_from,
         caja__fecha_operativa__lte=date_to,
         tipo=MovimientoCaja.Tipo.GASTO,
         rubro_operativo__isnull=False,
+        estado=MovimientoCaja.Estado.REGISTRADO,
     )
+    sales = sales.exclude(caja__estado=Caja.Estado.ANULADA)
+    expenses = expenses.exclude(caja__estado=Caja.Estado.ANULADA)
     if sucursal is not None:
         sales = sales.filter(caja__sucursal=sucursal)
         expenses = expenses.filter(caja__sucursal=sucursal)
@@ -1609,7 +1619,7 @@ def build_economic_rubro_detail(*, rubro_id: int, date_from: date, date_to: date
     if date_to < date_from:
         raise ValidationError({"fecha_hasta": "La fecha hasta no puede ser anterior a la fecha desde."})
 
-    from cashops.models import MovimientoCaja, RubroOperativo
+    from cashops.models import Caja, MovimientoCaja, RubroOperativo
 
     period_from = _first_day_of_month(date_from)
     period_to = _first_day_of_month(date_to)
@@ -1620,7 +1630,9 @@ def build_economic_rubro_detail(*, rubro_id: int, date_from: date, date_to: date
         caja__fecha_operativa__lte=date_to,
         tipo=MovimientoCaja.Tipo.GASTO,
         rubro_operativo=rubro,
+        estado=MovimientoCaja.Estado.REGISTRADO,
     ).select_related("caja", "caja__sucursal")
+    cash_expenses = cash_expenses.exclude(caja__estado=Caja.Estado.ANULADA)
     if sucursal is not None:
         cash_expenses = cash_expenses.filter(caja__sucursal=sucursal)
     elif empresa_ids is not None:
@@ -1757,13 +1769,14 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     if date_to < date_from:
         raise ValidationError({"fecha_hasta": "La fecha hasta no puede ser anterior a la fecha desde."})
 
-    from cashops.models import MovimientoCaja
+    from cashops.models import Caja, MovimientoCaja
 
     cash_movements = MovimientoCaja.objects.filter(
         caja__fecha_operativa__gte=date_from,
         caja__fecha_operativa__lte=date_to,
         impacta_saldo_caja=True,
-    ).exclude(tipo=MovimientoCaja.Tipo.APERTURA)
+        estado=MovimientoCaja.Estado.REGISTRADO,
+    ).exclude(caja__estado=Caja.Estado.ANULADA).exclude(tipo=MovimientoCaja.Tipo.APERTURA)
     if sucursal is not None:
         cash_movements = cash_movements.filter(caja__sucursal=sucursal)
     elif empresa_ids is not None:
@@ -1830,7 +1843,8 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
         caja__fecha_operativa__gte=date_from,
         caja__fecha_operativa__lte=date_to,
         tipo=MovimientoCaja.Tipo.VENTA_TARJETA,
-    )
+        estado=MovimientoCaja.Estado.REGISTRADO,
+    ).exclude(caja__estado=Caja.Estado.ANULADA)
     if accreditation_empresa_ids:
         digital_sales = digital_sales.filter(caja__sucursal__empresa_id__in=accreditation_empresa_ids)
     digital_sales_total = digital_sales.aggregate(total=Sum("monto"))["total"] or Decimal("0.00")

@@ -30,6 +30,7 @@ from .models import (
 from .permissions import can_operate_box, ensure_can_operate_box, is_cashops_admin
 from .services import (
     BRANCH_TRANSFER_DISABLED_REASON,
+    annul_box,
     annul_closed_box_movement,
     build_box_control_scope,
     build_branch_control_scope,
@@ -1662,6 +1663,29 @@ class CashopsViewTests(CashopsTestCase):
         tracking = self.client.get(next_url)
         self.assertEqual(len(tracking.context["rows"]), 0)
         self.assertContains(tracking, f"Caja #{self.owned_box.pk} eliminada correctamente.", html=False)
+
+    def test_annul_closed_box_reverses_central_cash_closure_movement(self):
+        from treasury.models import CajaCentral, MovimientoCajaCentral
+
+        self._grant_closed_box_fix(self.operator)
+        register_cash_income(
+            caja=self.owned_box,
+            monto=Decimal("40.00"),
+            categoria="Ingreso a caja fuerte",
+            creado_por=self.operator,
+            actor=self.operator,
+        )
+        close_box(caja=self.owned_box, saldo_fisico=Decimal("1040.00"), cerrado_por=self.operator, actor=self.operator)
+        caja_central = CajaCentral.objects.get(sucursal=self.branch_a)
+        self.assertEqual(caja_central.saldo_actual, Decimal("1040.00"))
+
+        annul_box(caja=self.owned_box, motivo="Caja duplicada", actor=self.operator)
+
+        caja_central.refresh_from_db()
+        reversal = MovimientoCajaCentral.objects.get(concepto=f"Anulacion cierre caja #{self.owned_box.pk}")
+        self.assertEqual(reversal.tipo, MovimientoCajaCentral.Tipo.AJUSTE_NEGATIVO)
+        self.assertEqual(reversal.monto, Decimal("1040.00"))
+        self.assertEqual(caja_central.saldo_actual, Decimal("0.00"))
 
     def test_box_detail_shows_sales_breakdown_and_history(self):
         register_cash_income(
