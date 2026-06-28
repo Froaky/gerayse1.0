@@ -109,21 +109,25 @@
         <strong>{{ snapshot.central_cash_expense_period|money }}</strong>
         <small class="muted">Tesorería central imputada al alcance</small>
       </div>
-      <div class="summary">
-        <span class="muted">Banco creditos</span>
-        <strong>{{ snapshot.bank_credits|money }}</strong>
-        <small class="muted">Ingresos bancarios del periodo</small>
-      </div>
+      {% if snapshot.show_bank_credit_cards %}
+        <div class="summary">
+          <span class="muted">Banco creditos</span>
+          <strong>{{ snapshot.bank_credits|money }}</strong>
+          <small class="muted">Ingresos bancarios del periodo</small>
+        </div>
+      {% endif %}
       <div class="summary">
         <span class="muted">Banco debitos</span>
         <strong>{{ snapshot.bank_debits|money }}</strong>
         <small class="muted">Egresos bancarios del periodo</small>
       </div>
-      <div class="summary">
-        <span class="muted">Banco neto</span>
-        <strong>{{ snapshot.bank_net|money }}</strong>
-        <small class="muted">Período seleccionado</small>
-      </div>
+      {% if snapshot.show_bank_credit_cards %}
+        <div class="summary">
+          <span class="muted">Banco neto</span>
+          <strong>{{ snapshot.bank_net|money }}</strong>
+          <small class="muted">Período seleccionado</small>
+        </div>
+      {% endif %}
     </div>
   </section>
 

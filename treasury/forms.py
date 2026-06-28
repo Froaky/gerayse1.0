@@ -844,12 +844,23 @@ class DisponibilidadesFilterForm(TreasuryStyledFormMixin, forms.Form):
         label="Sucursal",
         empty_label="Todas las sucursales (Consolidado)"
     )
+    imputacion = forms.ChoiceField(
+        label="Imputacion",
+        required=False,
+        choices=[
+            ("", "Todos los movimientos"),
+            ("pendientes", "Pendientes de imputacion"),
+            ("imputados", "Egresos imputados completos"),
+        ],
+    )
 
-    def __init__(self, *args, empresa_ids=None, **kwargs):
+    def __init__(self, *args, empresa_ids=None, include_imputacion=False, **kwargs):
         super().__init__(*args, **kwargs)
         today = timezone.localdate()
         self.fields["year"].initial = today.year
         self.fields["month"].initial = today.month
+        if not include_imputacion:
+            self.fields.pop("imputacion")
         if empresa_ids is not None:
             self.fields["sucursal"].queryset = Sucursal.objects.filter(
                 empresa_id__in=empresa_ids

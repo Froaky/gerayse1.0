@@ -2079,15 +2079,17 @@ def disponibilidades_report(request):
 def central_cash_movements(request):
     _require_treasury_admin(request)
     empresa_ids = _get_empresa_ids(request)
-    form = DisponibilidadesFilterForm(request.GET or None, empresa_ids=empresa_ids)
+    form = DisponibilidadesFilterForm(request.GET or None, empresa_ids=empresa_ids, include_imputacion=True)
     if form.is_valid():
         year = int(form.cleaned_data["year"])
         month = int(form.cleaned_data["month"])
         sucursal = form.cleaned_data.get("sucursal")
+        imputacion = form.cleaned_data.get("imputacion") or ""
     else:
         today = timezone.localdate()
         year, month = today.year, today.month
         sucursal = None
+        imputacion = ""
 
     first_day = timezone.datetime(year, month, 1).date()
     if month == 12:
@@ -2107,6 +2109,21 @@ def central_cash_movements(request):
         sucursal=sucursal,
         empresa_ids=empresa_ids,
     )
+    if imputacion == "pendientes":
+        movements = movements.filter(
+            tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
+        ).filter(
+            Q(rubro_operativo__isnull=True)
+            | Q(sucursal_gasto__isnull=True)
+            | Q(periodo_pago__isnull=True)
+        )
+    elif imputacion == "imputados":
+        movements = movements.filter(
+            tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
+            rubro_operativo__isnull=False,
+            sucursal_gasto__isnull=False,
+            periodo_pago__isnull=False,
+        )
     totals = movements.aggregate(
         ingresos=Sum("monto", filter=Q(tipo__in=CENTRAL_CASH_IN_TYPES)),
         egresos=Sum("monto", filter=Q(tipo__in=CENTRAL_CASH_OUT_TYPES)),
@@ -2130,7 +2147,12 @@ def central_cash_movements(request):
         elif m.caja_central.sucursal_id:
             sucursal_label = m.caja_central.sucursal.nombre
         rubro_label = m.rubro_operativo.nombre if m.rubro_operativo_id else "sin rubro"
-        periodo_label = f"{m.periodo_pago:%m/%Y}" if m.periodo_pago else "sin periodo"
+        if m.periodo_pago:
+            periodo_label = f"{m.periodo_pago:%m/%Y}"
+        elif m.tipo == MovimientoCajaCentral.Tipo.INGRESO_CAJA:
+            periodo_label = f"{m.fecha:%m/%Y} por fecha de caja"
+        else:
+            periodo_label = "sin periodo"
         usuario_label = m.creado_por.get_username() if m.creado_por_id else "sin usuario"
 
         items.append({
@@ -2149,6 +2171,10 @@ def central_cash_movements(request):
         f"Periodo {first_day:%m/%Y}. Ingresos: {_money(total_ingresos)}. "
         f"Egresos: {_money(total_egresos)}. Saldo actual: {_money(caja.saldo_actual)}."
     )
+    if imputacion == "pendientes":
+        subtitle += " Mostrando solo egresos administrativos con sucursal, rubro o periodo pendiente."
+    elif imputacion == "imputados":
+        subtitle += " Mostrando solo egresos administrativos completos para lectura economica."
     return render(request, "treasury/list_page.html", {
         "title": "Libro de Efectivo Central",
         "filter_form": form,

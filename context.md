@@ -90,6 +90,13 @@ Last updated: 2026-06-27
   - To validate panification exclusion, client must check that internal sales were loaded with income channel `PANIFICACION` or another channel marked `excluir_de_totales`; exclusion is by channel, not by rubro name alone.
   - To validate treasury expenses in economic view, client must load them from `Registrar egreso` with `Rubro`, `Sucursal correspondiente`, and `Periodo que se esta pagando`; manual central-cash adjustments without those fields affect financial cash but do not enter economic expenses.
   - Focused recheck 2026-06-27: panification/excluded income, treasury expense persistence, and dashboard economic/financial tests passed; one initial test command used a wrong test name and was rerun with the correct dashboard test.
+- Client-closeout fixes 2026-06-28:
+  - Branch financial `Banco debitos` now follows `MovimientoBancario.sucursal_gasto` for debits, with account branch only as a legacy fallback when no expense branch exists. This covers expenses paid from Terminal/global bank but assigned to Heladeria or another branch.
+  - Branch dashboard hides `Banco creditos` and `Banco neto`; those remain consolidated-only because card/bank accreditations are common money without branch assignment. Branch view still shows bank debits imputable to that branch.
+  - Economic snapshot already uses `sucursal_gasto`/`periodo_pago` for treasury cash/bank expenses; added regression coverage for central cash paid from one branch but economically assigned to another.
+  - Central cash book now has an opt-in `Imputacion` filter for pending or complete admin expenses, so administration can list expenses missing branch/rubro/period. `INGRESO_CAJA` rows without `periodo_pago` show the period derived from the cash date instead of `sin periodo`.
+  - Files touched: `treasury/services.py`, `treasury/forms.py`, `treasury/views.py`, `templates/treasury/dashboard.html`, `treasury/tests.py`, `context.md`.
+  - Evidence: focused 4-test regression OK; `py -3.13 manage.py test treasury.tests.TreasuryServiceTests treasury.tests.TreasuryViewTests -v 1` with `PYTHONPATH=.venv\Lib\site-packages` => 78 OK; `py -3.13 manage.py makemigrations --check --dry-run` => no changes detected; `py -3.13 -m compileall treasury cashops` => OK; `git diff --check` => only CRLF working-copy warnings.
 
 ### Bank Movement Corrections And User Settings 2026-06-19
 

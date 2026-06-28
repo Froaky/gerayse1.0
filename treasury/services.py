@@ -1795,7 +1795,14 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
         fecha__lte=date_to,
     )
     if sucursal is not None:
-        bank_movements = bank_movements.filter(cuenta_bancaria__sucursal=sucursal)
+        bank_movements = bank_movements.filter(
+            Q(tipo=MovimientoBancario.Tipo.DEBITO, sucursal_gasto=sucursal)
+            | Q(
+                tipo=MovimientoBancario.Tipo.DEBITO,
+                sucursal_gasto__isnull=True,
+                cuenta_bancaria__sucursal=sucursal,
+            )
+        )
     elif empresa_ids is not None:
         bank_movements = bank_movements.filter(_bank_movement_empresa_scope_query(empresa_ids))
 
@@ -1923,6 +1930,7 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
         "bank_credits": bank_credits,
         "bank_debits": bank_debits,
         "bank_net": bank_credits - bank_debits,
+        "show_bank_credit_cards": sucursal is None,
         "central_cash_income_period": central_cash_income_period,
         "central_cash_expense_period": central_cash_expense_period,
         "central_cash_net_period": central_cash_income_period - central_cash_expense_period,

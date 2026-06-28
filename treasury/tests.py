@@ -1509,6 +1509,107 @@ class TreasuryServiceTests(TreasuryTestCase):
         self.assertEqual(snapshot["cash_income"], Decimal("700.00"))
         self.assertEqual(snapshot["cash_net"], Decimal("700.00"))
 
+    def test_financial_period_snapshot_branch_bank_debits_follow_expense_branch(self):
+        empresa = Empresa.objects.create(nombre="Empresa Banco Imputado")
+        terminal = Sucursal.objects.create(
+            codigo="TERM-BI",
+            nombre="Terminal Banco",
+            razon_social="Terminal Banco SRL",
+            empresa=empresa,
+        )
+        heladeria = Sucursal.objects.create(
+            codigo="HEL-BI",
+            nombre="Heladeria Banco",
+            razon_social="Heladeria Banco SRL",
+            empresa=empresa,
+        )
+        terminal_account = create_bank_account(
+            nombre="Cuenta Terminal Banco",
+            banco="Banco Imputado",
+            tipo_cuenta=CuentaBancaria.Tipo.CUENTA_CORRIENTE,
+            numero_cuenta="BI-001",
+            sucursal=terminal,
+            actor=self.admin,
+        )
+        create_bank_movement(
+            cuenta_bancaria=terminal_account,
+            tipo=MovimientoBancario.Tipo.DEBITO,
+            clase=MovimientoBancario.Clase.OTRO_EGRESO,
+            rubro_operativo=self.rubro_servicios,
+            sucursal_gasto=heladeria,
+            fecha=timezone.datetime(2026, 6, 7).date(),
+            monto=Decimal("296503.00"),
+            concepto="Bebida sin alcohol imputada a heladeria",
+            actor=self.admin,
+        )
+
+        heladeria_snapshot = build_financial_period_snapshot(
+            date_from=timezone.datetime(2026, 6, 1).date(),
+            date_to=timezone.datetime(2026, 6, 30).date(),
+            sucursal=heladeria,
+            empresa_ids=[empresa.pk],
+        )
+        terminal_snapshot = build_financial_period_snapshot(
+            date_from=timezone.datetime(2026, 6, 1).date(),
+            date_to=timezone.datetime(2026, 6, 30).date(),
+            sucursal=terminal,
+            empresa_ids=[empresa.pk],
+        )
+        consolidated_snapshot = build_financial_period_snapshot(
+            date_from=timezone.datetime(2026, 6, 1).date(),
+            date_to=timezone.datetime(2026, 6, 30).date(),
+            empresa_ids=[empresa.pk],
+        )
+
+        self.assertEqual(heladeria_snapshot["bank_debits"], Decimal("296503.00"))
+        self.assertEqual(terminal_snapshot["bank_debits"], Decimal("0.00"))
+        self.assertEqual(consolidated_snapshot["bank_debits"], Decimal("296503.00"))
+        self.assertFalse(heladeria_snapshot["show_bank_credit_cards"])
+        self.assertTrue(consolidated_snapshot["show_bank_credit_cards"])
+
+    def test_economic_period_snapshot_uses_expense_branch_even_when_central_cash_paid_elsewhere(self):
+        empresa = Empresa.objects.create(nombre="Empresa Caja Imputada")
+        terminal = Sucursal.objects.create(
+            codigo="TERM-CI",
+            nombre="Terminal Caja",
+            razon_social="Terminal Caja SRL",
+            empresa=empresa,
+        )
+        heladeria = Sucursal.objects.create(
+            codigo="HEL-CI",
+            nombre="Heladeria Caja",
+            razon_social="Heladeria Caja SRL",
+            empresa=empresa,
+        )
+        terminal_cash = CajaCentral.objects.create(nombre="Caja EC1 Terminal", sucursal=terminal)
+        MovimientoCajaCentral.objects.create(
+            caja_central=terminal_cash,
+            fecha=timezone.datetime(2026, 6, 7).date(),
+            tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
+            monto=Decimal("296503.00"),
+            concepto="Mercaderia pagada en terminal para heladeria",
+            rubro_operativo=self.rubro_servicios,
+            sucursal_gasto=heladeria,
+            periodo_pago=timezone.datetime(2026, 6, 1).date(),
+            creado_por=self.admin,
+        )
+
+        heladeria_snapshot = build_economic_period_snapshot(
+            date_from=timezone.datetime(2026, 6, 1).date(),
+            date_to=timezone.datetime(2026, 6, 30).date(),
+            sucursal=heladeria,
+            empresa_ids=[empresa.pk],
+        )
+        terminal_snapshot = build_economic_period_snapshot(
+            date_from=timezone.datetime(2026, 6, 1).date(),
+            date_to=timezone.datetime(2026, 6, 30).date(),
+            sucursal=terminal,
+            empresa_ids=[empresa.pk],
+        )
+
+        self.assertEqual(heladeria_snapshot["treasury_expense_total"], Decimal("296503.00"))
+        self.assertEqual(terminal_snapshot["treasury_expense_total"], Decimal("0.00"))
+
     def test_economic_rubro_detail_matches_summary_total_for_selected_period_and_branch(self):
         empresa = Empresa.objects.create(nombre="Empresa Detalle Economico")
         branch = Sucursal.objects.create(
@@ -2022,6 +2123,61 @@ class TreasuryViewTests(TreasuryTestCase):
         self.assertContains(response, f"Rubro: {self.rubro_servicios.nombre}")
         self.assertContains(response, "Periodo: 06/2026")
         self.assertContains(response, "Usuario: admin-treasury")
+
+    def test_central_cash_book_filters_pending_imputation_and_derives_box_income_period(self):
+        empresa = Empresa.objects.create(nombre="Empresa Libro Pendientes")
+        self.admin.empresas_permitidas.add(empresa)
+        self.sucursal.empresa = empresa
+        self.sucursal.save(update_fields=["empresa"])
+        period_day = timezone.datetime(2026, 6, 9).date()
+        register_central_cash_movement(
+            tipo=MovimientoCajaCentral.Tipo.INGRESO_CAJA,
+            monto=Decimal("700.00"),
+            concepto="Cierre caja terminal",
+            fecha=period_day,
+            actor=self.admin,
+        )
+        register_egreso_tesoreria(
+            fuente=EgresoTesoreriaForm.FUENTE_CAJA,
+            fecha=period_day,
+            monto=Decimal("120.00"),
+            concepto="Egreso completo",
+            rubro=self.rubro_servicios,
+            sucursal=self.sucursal,
+            periodo=period_day.replace(day=1),
+            actor=self.admin,
+        )
+        MovimientoCajaCentral.objects.create(
+            caja_central=CajaCentral.objects.create(nombre="Caja pendiente imputacion"),
+            fecha=period_day,
+            tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
+            monto=Decimal("55.00"),
+            concepto="Egreso pendiente imputacion",
+            creado_por=self.admin,
+        )
+        session = self.client.session
+        session["empresa_ids"] = [empresa.pk]
+        session.save()
+
+        full_response = self.client.get(
+            reverse("treasury:central_cash_list"),
+            {"year": 2026, "month": 6},
+        )
+        pending_response = self.client.get(
+            reverse("treasury:central_cash_list"),
+            {"year": 2026, "month": 6, "imputacion": "pendientes"},
+        )
+
+        self.assertEqual(full_response.status_code, 200)
+        self.assertContains(full_response, "Cierre caja terminal")
+        self.assertContains(full_response, "Periodo: 06/2026 por fecha de caja")
+        self.assertEqual(pending_response.status_code, 200)
+        self.assertContains(pending_response, "Egreso pendiente imputacion")
+        self.assertNotContains(pending_response, "Egreso completo")
+        self.assertContains(pending_response, "sin sucursal imputada")
+        self.assertContains(pending_response, "sin rubro")
+        self.assertContains(pending_response, "sin periodo")
+        self.assertContains(pending_response, "Egresos: $ 55,00")
 
     def test_supplier_create_persists_record(self):
         response = self.client.post(
@@ -2759,6 +2915,10 @@ class TreasuryViewTests(TreasuryTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Situación financiera por período")
         self.assertContains(response, "Situación económica y rentabilidad")
+        self.assertFalse(response.context["snapshot"]["show_bank_credit_cards"])
+        self.assertNotContains(response, "Banco creditos")
+        self.assertNotContains(response, "Banco neto")
+        self.assertContains(response, "Banco debitos")
         self.assertContains(response, "Gasto tesoreria")
         self.assertContains(response, "Resultado economico")
         self.assertContains(response, "Objetivo parametrizado")
