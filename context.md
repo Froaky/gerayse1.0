@@ -1,6 +1,6 @@
 # Context
 
-Last updated: 2026-06-27
+Last updated: 2026-06-30
 
 ## Product Snapshot
 
@@ -1000,6 +1000,17 @@ Last updated: 2026-06-27
   - guardrail: all whole-box edits/deletes require the same specific closed-box correction permission and keep a reason/user/timestamp audit trail.
   - files touched: `cashops/models.py`, `cashops/forms.py`, `cashops/services.py`, `cashops/views.py`, `cashops/urls.py`, `templates/cashops/box_tracking.html`, `templates/cashops/partials/form_card.html`, `cashops/tests.py`, migration `cashops/0020_alter_caja_estado_cajacorreccion.py`.
   - evidence: `py -3.14 manage.py test cashops.tests.CashopsServiceTests cashops.tests.CashopsViewTests -v 1` => 88 OK; `py -3.14 -m compileall cashops` => OK; `py -3.14 manage.py makemigrations --check --dry-run` => no changes detected.
+- Pull 2026-06-30:
+  - `git pull --ff-only` updated `main` from `1fb3fe9` to `786ff8c`; remote added agent docs/protocol files and changes in `cashops`, `treasury`, templates, tests and `context.md`.
+  - No app tests run; this task only synchronized the local branch.
+- Dashboard expense clarification 2026-06-30:
+  - User reported that `Egresos caja fuerte` and `Gasto tesoreria` look inconsistent, and that the economic view still misses expenses.
+  - Decision: do not make economic totals subtract all central-cash outflows blindly because that would mix payments/deposits/adjustments with period expenses and can double-count payable debt.
+  - Behavior changed: dashboard now labels total central-cash outflows as `Salidas caja fuerte`, adds `Gastos caja fuerte` for `EGRESO_ADMIN`, keeps `Gasto tesoreria` as economic expenses already imputed by rubro/sucursal/period, and shows `Gasto sin imputar` when treasury expenses are missing those fields.
+  - User-facing impact: administration can see why `Salidas caja fuerte` may be higher than `Gasto tesoreria`, and can identify expenses that must be completed before entering economic/rubro totals.
+  - Files touched: `treasury/services.py`, `templates/treasury/dashboard.html`, `treasury/tests.py`, `context.md`.
+  - Evidence: focused 3-test regression OK; `python manage.py test treasury.tests.TreasuryServiceTests treasury.tests.TreasuryViewTests -v 1` with `PYTHONPATH=.venv\Lib\site-packages` => 79 OK; `python -m compileall treasury` with `PYTHONPATH=.venv\Lib\site-packages` => OK.
+  - Environment note: `.venv\Scripts\python.exe` points to missing `C:\Python312\python.exe`; used global Python 3.14 with venv `site-packages`.
 
 ## Useful Commands
 

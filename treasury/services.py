@@ -1915,9 +1915,11 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     central_cash_period_totals = central_cash_period_movements.aggregate(
         ingresos=Sum("monto", filter=Q(tipo__in=CENTRAL_CASH_IN_TYPES)),
         egresos=Sum("monto", filter=Q(tipo__in=CENTRAL_CASH_OUT_TYPES)),
+        egresos_admin=Sum("monto", filter=Q(tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN)),
     )
     central_cash_income_period = central_cash_period_totals["ingresos"] or Decimal("0.00")
     central_cash_expense_period = central_cash_period_totals["egresos"] or Decimal("0.00")
+    central_cash_admin_expense_period = central_cash_period_totals["egresos_admin"] or Decimal("0.00")
 
     return {
         "date_from": date_from,
@@ -1933,6 +1935,8 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
         "show_bank_credit_cards": sucursal is None,
         "central_cash_income_period": central_cash_income_period,
         "central_cash_expense_period": central_cash_expense_period,
+        "central_cash_admin_expense_period": central_cash_admin_expense_period,
+        "central_cash_other_out_period": central_cash_expense_period - central_cash_admin_expense_period,
         "central_cash_net_period": central_cash_income_period - central_cash_expense_period,
         "bank_balances": bank_balances,
         "total_bank_balance": total_bank_balance,

@@ -105,9 +105,14 @@
         <small class="muted">Período seleccionado</small>
       </div>
       <div class="summary">
-        <span class="muted">Egresos caja fuerte</span>
+        <span class="muted">Salidas caja fuerte</span>
         <strong>{{ snapshot.central_cash_expense_period|money }}</strong>
-        <small class="muted">Tesorería central imputada al alcance</small>
+        <small class="muted">Incluye pagos, depositos, ajustes y gastos</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Gastos caja fuerte</span>
+        <strong>{{ snapshot.central_cash_admin_expense_period|money }}</strong>
+        <small class="muted">Solo egresos administrativos de tesoreria</small>
       </div>
       {% if snapshot.show_bank_credit_cards %}
         <div class="summary">
@@ -155,6 +160,13 @@
         <strong>{{ economic_snapshot.treasury_expense_total|money }}</strong>
         <small class="muted">Egresos administrativos imputados por rubro y sucursal</small>
       </div>
+      {% if economic_snapshot.treasury_unmapped_expenses_count %}
+        <div class="summary">
+          <span class="muted">Gasto sin imputar</span>
+          <strong>{{ economic_snapshot.treasury_unmapped_expenses_total|money }}</strong>
+          <small class="muted">{{ economic_snapshot.treasury_unmapped_expenses_count }} egreso{{ economic_snapshot.treasury_unmapped_expenses_count|pluralize }} sin sucursal, rubro o periodo</small>
+        </div>
+      {% endif %}
       <div class="summary">
         <span class="muted">Deuda del periodo</span>
         <strong>{{ economic_snapshot.debt_period_total|money }}</strong>
@@ -168,7 +180,7 @@
       <div class="summary">
         <span class="muted">Resultado economico</span>
         <strong>{{ economic_snapshot.economic_result|money }}</strong>
-        <small class="muted">Ventas menos gasto caja y deuda del periodo</small>
+        <small class="muted">Ventas menos gasto caja, tesoreria y deuda del periodo</small>
       </div>
       <div class="summary">
         <span class="muted">Margen estimado</span>
@@ -208,7 +220,7 @@
       <p class="muted mt-16">
         Hay {{ economic_snapshot.treasury_unmapped_expenses_count }} egreso{{ economic_snapshot.treasury_unmapped_expenses_count|pluralize }}
         de tesoreria pendiente{{ economic_snapshot.treasury_unmapped_expenses_count|pluralize }} de imputacion por {{ economic_snapshot.treasury_unmapped_expenses_total|money }}.
-        No se suma al gasto economico por rubro hasta tener sucursal, rubro y periodo.
+        No se suma al gasto economico por rubro hasta tener sucursal, rubro y periodo; revisalo desde Caja fuerte con el filtro Imputacion pendiente.
       </p>
     {% endif %}
     <div class="list mt-16">

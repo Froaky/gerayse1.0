@@ -1213,8 +1213,48 @@ class TreasuryServiceTests(TreasuryTestCase):
         )
 
         self.assertEqual(branch_snapshot["central_cash_expense_period"], Decimal("85.00"))
+        self.assertEqual(branch_snapshot["central_cash_admin_expense_period"], Decimal("85.00"))
+        self.assertEqual(branch_snapshot["central_cash_other_out_period"], Decimal("0.00"))
         self.assertEqual(branch_snapshot["central_cash_net_period"], Decimal("-85.00"))
         self.assertEqual(branch_snapshot["central_cash_total"], Decimal("-85.00"))
+
+    def test_financial_period_snapshot_separates_central_cash_admin_expense_from_other_outflows(self):
+        empresa = Empresa.objects.create(nombre="Empresa Salidas Caja Fuerte")
+        branch = Sucursal.objects.create(
+            codigo="SCF",
+            nombre="Sucursal Salidas Caja Fuerte",
+            razon_social="Salidas Caja Fuerte SRL",
+            empresa=empresa,
+        )
+        central_cash = CajaCentral.objects.create(nombre="Caja fuerte salidas", sucursal=branch)
+        MovimientoCajaCentral.objects.create(
+            caja_central=central_cash,
+            fecha=timezone.datetime(2026, 6, 5).date(),
+            tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
+            monto=Decimal("100.00"),
+            concepto="Gasto administrativo",
+            sucursal_gasto=branch,
+            creado_por=self.admin,
+        )
+        MovimientoCajaCentral.objects.create(
+            caja_central=central_cash,
+            fecha=timezone.datetime(2026, 6, 6).date(),
+            tipo=MovimientoCajaCentral.Tipo.DEPOSITO_BANCO,
+            monto=Decimal("250.00"),
+            concepto="Deposito de disponibilidad",
+            creado_por=self.admin,
+        )
+
+        snapshot = build_financial_period_snapshot(
+            date_from=timezone.datetime(2026, 6, 1).date(),
+            date_to=timezone.datetime(2026, 6, 30).date(),
+            sucursal=branch,
+            empresa_ids=[empresa.pk],
+        )
+
+        self.assertEqual(snapshot["central_cash_expense_period"], Decimal("350.00"))
+        self.assertEqual(snapshot["central_cash_admin_expense_period"], Decimal("100.00"))
+        self.assertEqual(snapshot["central_cash_other_out_period"], Decimal("250.00"))
 
     def test_economic_period_snapshot_groups_sales_cash_expense_and_period_debt_by_rubro(self):
         branch = Sucursal.objects.create(codigo="SUC-E", nombre="Sucursal Economica", razon_social="Economica SRL")
@@ -2885,6 +2925,14 @@ class TreasuryViewTests(TreasuryTestCase):
             periodo=timezone.localdate().replace(day=1),
             actor=self.admin,
         )
+        MovimientoCajaCentral.objects.create(
+            caja_central=CajaCentral.objects.create(nombre="Caja dashboard pendiente", sucursal=branch),
+            fecha=timezone.localdate(),
+            tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
+            monto=Decimal("25.00"),
+            concepto="Egreso dashboard sin imputar",
+            creado_por=self.admin,
+        )
         register_payable(
             sucursal=branch,
             proveedor=self.supplier,
@@ -2925,14 +2973,19 @@ class TreasuryViewTests(TreasuryTestCase):
         self.assertContains(response, "Desvio vs objetivo")
         self.assertContains(response, "Dashboard Rubro")
         self.assertContains(response, "Caja fuerte general")
-        self.assertContains(response, "Egresos caja fuerte")
-        self.assertContains(response, "Tesorería central imputada al alcance")
+        self.assertContains(response, "Salidas caja fuerte")
+        self.assertContains(response, "Gastos caja fuerte")
+        self.assertContains(response, "Incluye pagos, depositos, ajustes y gastos")
+        self.assertContains(response, "Solo egresos administrativos de tesoreria")
+        self.assertContains(response, "Gasto sin imputar")
+        self.assertContains(response, "Ventas menos gasto caja, tesoreria y deuda del periodo")
         self.assertContains(response, "Pendiente de acreditación")
         self.assertContains(response, "Vence hoy")
         self.assertContains(response, "$ 120,00")
         self.assertContains(response, "$ 30,00")
         self.assertContains(response, "$ 150,00")
         self.assertContains(response, "$ 45,00")
+        self.assertContains(response, "$ 25,00")
         self.assertContains(response, "Ver composición")
 
     def test_economic_rubro_detail_view_explains_dashboard_total(self):
