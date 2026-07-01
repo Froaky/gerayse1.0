@@ -7,7 +7,7 @@ from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 
 from cashops.models import Empresa, Sucursal
-from users.forms import PersonalForm
+from users.forms import PersonalForm, UserCreateForm
 from users.models import PermissionModule, Role, RolePermission, User, UserPermission
 
 
@@ -120,6 +120,19 @@ class UserCompanyAccessFormTests(TestCase):
 
         self.assertFalse(form.is_valid())
         self.assertIn("empresa_principal", form.errors)
+
+    def test_user_create_form_only_requires_minimal_identity_and_temporary_password(self):
+        form = UserCreateForm(
+            data={
+                "username": "nuevo_minimo",
+                "first_name": "Nuevo",
+                "last_name": "Minimo",
+                "password": "secret12345",
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(list(form.fields), ["username", "first_name", "last_name", "password"])
 
 
 class AdminRegistrationTests(TestCase):
@@ -405,31 +418,44 @@ class PersonalViewTests(TestCase):
         self.assertFalse(form.is_valid())
         self.assertIn("sucursal_base", form.errors)
 
-    def test_personal_create_persists_fixed_user_assignment(self):
+    def test_personal_create_uses_minimal_fields_and_redirects_to_user_list(self):
         self.client.force_login(self.admin)
 
         response = self.client.post(
             reverse("users:personal_create"),
             {
-                "username": "operadora_fija",
+                "username": "operadora_minima",
                 "first_name": "Marta",
                 "last_name": "Caja",
-                "dni": "",
-                "telefono": "",
-                "email": "",
-                "role": self.operator_role.pk,
-                "usuario_fijo": "on",
-                "sucursal_base": self.sucursal_centro.pk,
-                "is_active": "on",
                 "password": "secret12345",
             },
+            follow=True,
         )
 
-        self.assertEqual(response.status_code, 302)
-        created_user = User.objects.get(username="operadora_fija")
-        self.assertTrue(created_user.usuario_fijo)
-        self.assertEqual(created_user.sucursal_base, self.sucursal_centro)
+        self.assertRedirects(response, reverse("users:user_list"))
+        self.assertContains(response, "usuario creado correctamente")
+        created_user = User.objects.get(username="operadora_minima")
+        self.assertEqual(created_user.first_name, "Marta")
+        self.assertEqual(created_user.last_name, "Caja")
+        self.assertIsNone(created_user.role)
+        self.assertFalse(created_user.usuario_fijo)
+        self.assertIsNone(created_user.sucursal_base)
         self.assertTrue(created_user.must_change_password)
+
+    def test_personal_create_page_hides_non_minimal_fields(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("users:personal_create"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Usuario")
+        self.assertContains(response, "Nombre")
+        self.assertContains(response, "Apellido")
+        self.assertContains(response, "Contraseña temporal")
+        self.assertNotContains(response, "DNI")
+        self.assertNotContains(response, "Rol / Permisos")
+        self.assertNotContains(response, "Usuario fijo")
+        self.assertNotContains(response, "Sucursal base")
 
     def test_personal_update_can_disable_fixed_assignment(self):
         self.operator.usuario_fijo = True

@@ -125,6 +125,42 @@ class PersonalForm(forms.ModelForm):
         return user
 
 
+class UserCreateForm(forms.ModelForm):
+    password = forms.CharField(
+        label="Contraseña temporal",
+        widget=forms.PasswordInput(attrs={"placeholder": "Contraseña temporal"}),
+        required=True,
+        help_text="El usuario deberá cambiarla al primer ingreso.",
+    )
+
+    class Meta:
+        model = User
+        fields = ["username", "first_name", "last_name"]
+        labels = {
+            "username": "Usuario",
+            "first_name": "Nombre",
+            "last_name": "Apellido",
+        }
+        widgets = {
+            "username": forms.TextInput(attrs={"placeholder": "juan.perez"}),
+            "first_name": forms.TextInput(attrs={"placeholder": "Juan"}),
+            "last_name": forms.TextInput(attrs={"placeholder": "Perez"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        _apply_operational_classes(self)
+
+    def save(self, commit=True):
+        user = super().save(commit=False)
+        user.set_password(self.cleaned_data["password"])
+        user.must_change_password = True
+        if commit:
+            user.save()
+            self.save_m2m()
+        return user
+
+
 class UserAccessForm(forms.ModelForm):
     empresas_permitidas = forms.ModelMultipleChoiceField(
         queryset=Empresa.objects.filter(activa=True).order_by("nombre"),

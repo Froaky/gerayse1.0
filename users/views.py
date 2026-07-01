@@ -14,7 +14,7 @@ from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.views.decorators.http import require_POST
 
-from .forms import OwnProfileForm, PersonalForm, RoleForm, UserAccessForm
+from .forms import OwnProfileForm, PersonalForm, RoleForm, UserAccessForm, UserCreateForm
 from .models import PermissionModule, Role, RolePermission, UserPermission
 
 User = get_user_model()
@@ -241,17 +241,18 @@ def user_list(request):
 def user_create(request):
     _ensure_users_permission(request, "write")
 
-    form = PersonalForm(request.POST or None)
+    form = UserCreateForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
-        user = form.save()
-        messages.success(request, f"Usuario {_display_name(user)} creado. Ya tiene link de primer ingreso.")
-        return _hx_redirect(reverse("users:user_detail", args=[user.pk])) if _is_htmx(request) else redirect("users:user_detail", user.pk)
+        form.save()
+        messages.success(request, "usuario creado correctamente")
+        list_url = reverse("users:user_list")
+        return _hx_redirect(list_url) if _is_htmx(request) else redirect("users:user_list")
 
     return _render_form(
         request,
         {
             "title": "Nuevo Usuario",
-            "subtitle": "Carga los datos de acceso, rol operativo y contraseña default.",
+            "subtitle": "Carga solo los datos mínimos de acceso.",
             "form": form,
             "submit_label": "Crear usuario",
             "back_url": reverse("users:user_list"),

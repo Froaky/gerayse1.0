@@ -61,6 +61,14 @@ Last updated: 2026-06-30
 
 ## Current Session
 
+### Users Minimal Create Flow 2026-07-01
+
+- User requested that creating an operational user should only ask for username, first name, last name and a temporary password, then return to the user list with a temporary bottom-right success message.
+- Behavior changed: `user_create` now uses a minimal create-only form, sets the temporary password, marks `must_change_password=True`, redirects to `users:user_list`, and shows `usuario creado correctamente` through Django messages.
+- Compatibility: full user editing, role assignment, fixed-user branch assignment, company access and active state remain available through edit/detail flows; fields were hidden from creation only, not removed from the model.
+- Files touched: `users/forms.py`, `users/views.py`, `templates/cashops/layout.html`, `users/tests.py`, `context.md`.
+- Evidence: `py -3.14 manage.py test users.tests -v 1` with `PYTHONPATH=.venv\Lib\site-packages` => 40 OK; `py -3.14 -m compileall users` => OK; `py -3.14 manage.py makemigrations --check --dry-run` => no changes detected.
+
 ### Dashboard/Economic Totals Investigation 2026-06-27
 
 - User reported mismatches in dashboard and economic readings:
