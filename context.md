@@ -1,6 +1,6 @@
 # Context
 
-Last updated: 2026-06-30
+Last updated: 2026-07-01
 
 ## Product Snapshot
 
@@ -60,6 +60,14 @@ Last updated: 2026-06-30
   - changes touching money, debt, permissions, migrations, dashboards or operational controls require proportional tests
 
 ## Current Session
+
+### Treasury Dashboard Visual Alignment 2026-07-01
+
+- User reported the lower treasury dashboard cards looked overlapped, asymmetric and visually rough.
+- Behavior changed: the three lower two-column dashboard rows now use a dashboard-only `dashboard-pair` class so paired cards stretch to the same row height, reducing uneven gaps without moving data, formulas, filters or actions.
+- Scope: UI/layout only; no changes to treasury services, views, models, permissions or financial calculations.
+- Files touched: `templates/treasury/dashboard.html`, `templates/treasury/layout.html`, `context.md`.
+- Evidence: `py -3.14 manage.py test treasury.tests.TreasuryViewTests.test_dashboard_supports_period_and_branch_financial_view -v 2` with `PYTHONPATH=.venv\Lib\site-packages` => OK; `py -3.14 -m compileall treasury` => OK; `py -3.14 manage.py makemigrations --check --dry-run` => no changes detected.
 
 ### Users Minimal Create Flow 2026-07-01
 
