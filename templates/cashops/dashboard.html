@@ -298,23 +298,23 @@
         </div>
         <span class="badge-muted">{{ dashboard_snapshot.items|length }} rubros</span>
       </div>
-      <div class="list" style="margin-top:12px;">
+      <div class="list semaphore-list">
         {% for item in dashboard_snapshot.items %}
-          <article class="list-item">
-            <div class="row">
+          <article class="list-item semaphore-item">
+            <div class="row semaphore-item__header">
               <strong>{{ item.rubro.nombre }}</strong>
               <span class="badge {{ item.badge_class }}">{{ item.estado_label }}</span>
             </div>
-            <div class="summary-grid" style="margin-top:12px;">
-              <div class="summary">
+            <div class="semaphore-metrics">
+              <div class="summary semaphore-metric">
                 <span class="muted">Gastado</span>
                 <strong>${{ item.total_gastado }}</strong>
               </div>
-              <div class="summary">
+              <div class="summary semaphore-metric">
                 <span class="muted">% consumido</span>
                 <strong>{{ item.porcentaje_consumido }}%</strong>
               </div>
-              <div class="summary">
+              <div class="summary semaphore-metric">
                 <span class="muted">Limite</span>
                 {% if item.has_limit %}
                   <strong>{{ item.porcentaje_maximo }}%</strong>

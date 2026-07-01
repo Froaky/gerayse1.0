@@ -61,6 +61,14 @@ Last updated: 2026-07-01
 
 ## Current Session
 
+### Cashops Semaphore Compact UI 2026-07-01
+
+- User requested the `Semaforo operativo` cards take less vertical screen space.
+- Behavior changed: the operational semaphore now uses dashboard-only compact classes for its item wrapper and metric cells, reducing padding, gaps and metric height while preserving the same rubro, spent amount, consumed percentage, limit and status labels.
+- Scope: UI/layout only; no changes to cashops services, views, models, permissions, alert rules or dashboard formulas.
+- Files touched: `templates/cashops/dashboard.html`, `templates/cashops/layout.html`, `context.md`.
+- Evidence: `py -3.14 manage.py test cashops.tests.CashopsViewTests.test_dashboard_shows_operational_semaphore_and_active_alert -v 2` with `PYTHONPATH=.venv\Lib\site-packages` => OK; `py -3.14 -m compileall cashops` => OK; `py -3.14 manage.py makemigrations --check --dry-run` => no changes detected. A first focused test command used an outdated test name and was rerun with the correct test name.
+
 ### Treasury Dashboard Visual Alignment 2026-07-01
 
 - User reported the lower treasury dashboard cards looked overlapped, asymmetric and visually rough.

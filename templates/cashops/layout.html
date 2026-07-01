@@ -204,6 +204,39 @@
       }
       .list-item:hover { border-color: rgba(31, 138, 110, 0.3); }
       .list-item.is-muted { opacity: 0.72; }
+      .semaphore-list {
+        gap: 6px;
+        margin-top: 10px;
+      }
+      .semaphore-item {
+        padding: 10px 12px;
+      }
+      .semaphore-item__header {
+        gap: 8px;
+      }
+      .semaphore-item__header strong {
+        font-size: 0.9rem;
+        line-height: 1.2;
+      }
+      .semaphore-metrics {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        margin-top: 8px;
+      }
+      .semaphore-metric {
+        min-height: 54px;
+        padding: 8px 10px;
+      }
+      .semaphore-metric span,
+      .semaphore-metric small {
+        font-size: 0.78rem;
+        line-height: 1.2;
+      }
+      .semaphore-metric strong {
+        font-size: 0.98rem;
+        line-height: 1.15;
+      }
       .list-actions {
         display: flex;
         flex-wrap: wrap;
@@ -270,6 +303,7 @@
         .card { padding: 14px; }
         .grid-2, .grid-4 { grid-template-columns: 1fr; }
         .summary-grid { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+        .semaphore-metrics { grid-template-columns: 1fr; }
         .row { flex-direction: column; align-items: flex-start; }
         .row .list-actions { width: 100%; }
         .messages { right: 12px; bottom: 12px; }
