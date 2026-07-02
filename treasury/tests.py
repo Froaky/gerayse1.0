@@ -2458,6 +2458,53 @@ class TreasuryViewTests(TreasuryTestCase):
         self.assertContains(response, f'value="{EgresoTesoreriaForm.FUENTE_BANCO}"')
         self.assertContains(response, 'account.disabled = !requiresAccount')
 
+    def test_economic_period_snapshot_includes_treasury_expenses_with_any_day_inside_period_month(self):
+        period_start = timezone.datetime(2026, 6, 1).date()
+        period_end = timezone.datetime(2026, 6, 30).date()
+        caja_central = CajaCentral.objects.create(nombre="Caja periodo completo")
+        MovimientoCajaCentral.objects.create(
+            caja_central=caja_central,
+            fecha=timezone.datetime(2026, 6, 10).date(),
+            tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
+            monto=Decimal("70.00"),
+            concepto="Egreso central con periodo dia intermedio",
+            rubro_operativo=self.rubro_servicios,
+            sucursal_gasto=self.sucursal,
+            periodo_pago=timezone.datetime(2026, 6, 20).date(),
+            creado_por=self.admin,
+        )
+        bank_movement = MovimientoBancario(
+            cuenta_bancaria=self.bank_account,
+            tipo=MovimientoBancario.Tipo.DEBITO,
+            clase=MovimientoBancario.Clase.OTRO_EGRESO,
+            origen=MovimientoBancario.Origen.EGRESO_TESORERIA,
+            fecha=timezone.datetime(2026, 6, 11).date(),
+            monto=Decimal("30.00"),
+            concepto="Egreso banco con periodo dia intermedio",
+            rubro_operativo=self.rubro_servicios,
+            sucursal_gasto=self.sucursal,
+            periodo_pago=timezone.datetime(2026, 6, 25).date(),
+            creado_por=self.admin,
+        )
+        bank_movement.full_clean()
+        bank_movement.save()
+
+        snapshot = build_economic_period_snapshot(
+            date_from=period_start,
+            date_to=period_end,
+            sucursal=self.sucursal,
+            empresa_ids=[self.empresa.pk],
+        )
+        next_month_snapshot = build_economic_period_snapshot(
+            date_from=timezone.datetime(2026, 7, 1).date(),
+            date_to=timezone.datetime(2026, 7, 31).date(),
+            sucursal=self.sucursal,
+            empresa_ids=[self.empresa.pk],
+        )
+
+        self.assertEqual(snapshot["treasury_expense_total"], Decimal("100.00"))
+        self.assertEqual(next_month_snapshot["treasury_expense_total"], Decimal("0.00"))
+
     def test_egreso_tesoreria_cash_source_ignores_submitted_bank_account(self):
         today = timezone.localdate()
         response = self.client.post(

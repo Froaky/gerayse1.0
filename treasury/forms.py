@@ -800,6 +800,12 @@ class EgresoTesoreriaForm(TreasuryStyledFormMixin, forms.Form):
             self.fields["cuenta_bancaria"].widget.attrs["disabled"] = "disabled"
         self._apply_input_classes()
 
+    def clean_periodo(self):
+        periodo = self.cleaned_data.get("periodo")
+        if periodo:
+            return periodo.replace(day=1)
+        return periodo
+
     def clean(self):
         cleaned_data = super().clean()
         fuente = cleaned_data.get("fuente")

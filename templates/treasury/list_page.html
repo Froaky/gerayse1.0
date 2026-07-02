@@ -38,6 +38,19 @@
         </div>
       </form>
     {% endif %}
+    {% if summaries %}
+      <div class="summary-grid mt-16">
+        {% for summary in summaries %}
+          <div class="summary">
+            <span class="muted">{{ summary.label }}</span>
+            <strong>{{ summary.value }}</strong>
+            {% if summary.small %}
+              <small class="muted">{{ summary.small }}</small>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
   </section>
   <section class="card">
     {% include "treasury/partials/list_items.html" %}

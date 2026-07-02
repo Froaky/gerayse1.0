@@ -46,6 +46,13 @@ def _first_day_of_month(value: date) -> date:
     return value.replace(day=1)
 
 
+def _first_day_of_next_month(value: date) -> date:
+    first_day = _first_day_of_month(value)
+    if first_day.month == 12:
+        return date(first_day.year + 1, 1, 1)
+    return date(first_day.year, first_day.month + 1, 1)
+
+
 def _validate_payable_category_mapping(*, activo: bool, rubro_operativo) -> None:
     if activo and rubro_operativo is None:
         raise ValidationError({"rubro_operativo": "El rubro operativo es obligatorio para categorias activas."})
@@ -1332,6 +1339,7 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
 
     period_from = _first_day_of_month(date_from)
     period_to = _first_day_of_month(date_to)
+    period_end_exclusive = _first_day_of_next_month(period_to)
     month_starts = _month_starts_between(period_from, period_to)
     _all_income_codes = list(get_income_channel_map().keys())
     _excluded_income_codes = set(
@@ -1393,14 +1401,14 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
     central_treasury_expenses = MovimientoCajaCentral.objects.filter(
         tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
         periodo_pago__gte=period_from,
-        periodo_pago__lte=period_to,
+        periodo_pago__lt=period_end_exclusive,
         rubro_operativo__isnull=False,
         sucursal_gasto__isnull=False,
     )
     bank_treasury_expenses = _mapped_bank_treasury_expenses(
         MovimientoBancario.objects.filter(
             periodo_pago__gte=period_from,
-            periodo_pago__lte=period_to,
+            periodo_pago__lt=period_end_exclusive,
         )
     )
     if sucursal is not None:
@@ -1465,7 +1473,7 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
         estado=CuentaPorPagar.Estado.ANULADA
     ).filter(
         periodo_referencia__gte=period_from,
-        periodo_referencia__lte=period_to,
+        periodo_referencia__lt=period_end_exclusive,
     )
     if sucursal is not None:
         period_payables = period_payables.filter(sucursal=sucursal)
@@ -1654,6 +1662,7 @@ def build_economic_rubro_detail(*, rubro_id: int, date_from: date, date_to: date
 
     period_from = _first_day_of_month(date_from)
     period_to = _first_day_of_month(date_to)
+    period_end_exclusive = _first_day_of_next_month(period_to)
     rubro = RubroOperativo.objects.get(pk=rubro_id)
 
     cash_expenses = MovimientoCaja.objects.filter(
@@ -1672,14 +1681,14 @@ def build_economic_rubro_detail(*, rubro_id: int, date_from: date, date_to: date
     central_treasury_expenses = MovimientoCajaCentral.objects.filter(
         tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
         periodo_pago__gte=period_from,
-        periodo_pago__lte=period_to,
+        periodo_pago__lt=period_end_exclusive,
         rubro_operativo=rubro,
         sucursal_gasto__isnull=False,
     ).select_related("sucursal_gasto")
     bank_treasury_expenses = _mapped_bank_treasury_expenses(
         MovimientoBancario.objects.filter(
             periodo_pago__gte=period_from,
-            periodo_pago__lte=period_to,
+            periodo_pago__lt=period_end_exclusive,
             rubro_operativo=rubro,
         )
     ).select_related("sucursal_gasto", "cuenta_bancaria")
@@ -1694,7 +1703,7 @@ def build_economic_rubro_detail(*, rubro_id: int, date_from: date, date_to: date
         estado=CuentaPorPagar.Estado.ANULADA
     ).filter(
         periodo_referencia__gte=period_from,
-        periodo_referencia__lte=period_to,
+        periodo_referencia__lt=period_end_exclusive,
         categoria__rubro_operativo=rubro,
     ).select_related("proveedor", "categoria", "sucursal")
     if sucursal is not None:
@@ -2175,6 +2184,7 @@ def register_egreso_tesoreria(
         imputation_errors["periodo"] = "El periodo es obligatorio para el egreso administrativo."
     if imputation_errors:
         raise ValidationError(imputation_errors)
+    periodo = _first_day_of_month(periodo)
 
     if fuente == "BANCO":
         if cuenta_bancaria is None:

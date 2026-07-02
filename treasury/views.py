@@ -1595,6 +1595,25 @@ def bank_movements_list(request):
         if sucursal:
             movements = movements.filter(Q(cuenta_bancaria__sucursal=sucursal) | Q(sucursal_gasto=sucursal))
 
+    bank_totals = movements.aggregate(
+        creditos=Sum("monto", filter=Q(tipo=MovimientoBancario.Tipo.CREDITO)),
+        debitos=Sum("monto", filter=Q(tipo=MovimientoBancario.Tipo.DEBITO)),
+        egresos_tesoreria=Sum(
+            "monto",
+            filter=Q(
+                tipo=MovimientoBancario.Tipo.DEBITO,
+                origen=MovimientoBancario.Origen.EGRESO_TESORERIA,
+                rubro_operativo__isnull=False,
+                sucursal_gasto__isnull=False,
+                periodo_pago__isnull=False,
+            ),
+        ),
+    )
+    total_creditos = bank_totals["creditos"] or Decimal("0.00")
+    total_debitos = bank_totals["debitos"] or Decimal("0.00")
+    total_egresos_tesoreria = bank_totals["egresos_tesoreria"] or Decimal("0.00")
+    filtered_count = movements.count()
+
     items = []
     for m in movements[:50]:
         items.append({
@@ -1609,10 +1628,24 @@ def bank_movements_list(request):
             ),
         })
 
+    subtitle = "Egresos e ingresos reales en cuentas bancarias"
+    if filtered_count > len(items):
+        subtitle += f". Mostrando {len(items)} de {filtered_count} movimientos filtrados"
+
     return render(request, "treasury/list_page.html", {
         "title": "Movimientos Bancarios",
-        "subtitle": "Egresos e ingresos reales en cuentas bancarias",
+        "subtitle": subtitle,
         "filter_form": filter_form,
+        "summaries": [
+            {"label": "Total creditos del filtro", "value": _money(total_creditos), "badge_class": "badge-success"},
+            {"label": "Total debitos del filtro", "value": _money(total_debitos), "badge_class": "badge-danger"},
+            {
+                "label": "Egresos bancarios de tesoreria",
+                "value": _money(total_egresos_tesoreria),
+                "small": "Con rubro, sucursal y periodo",
+                "badge_class": "badge-info",
+            },
+        ],
         "items": items,
         "empty_message": "No hay movimientos bancarios para los filtros aplicados.",
         "create_url": reverse("treasury:bank_movements_create"),
@@ -2098,7 +2131,7 @@ def central_cash_movements(request):
         next_month = timezone.datetime(year, month + 1, 1).date()
     last_day = next_month - timezone.timedelta(days=1)
 
-    movements = scope_central_cash_movements(
+    period_movements = scope_central_cash_movements(
         MovimientoCajaCentral.objects.filter(fecha__range=(first_day, last_day)).select_related(
             "pago_tesoreria",
             "creado_por",
@@ -2109,6 +2142,16 @@ def central_cash_movements(request):
         sucursal=sucursal,
         empresa_ids=empresa_ids,
     )
+    imputed_admin_expenses = period_movements.filter(
+        tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
+        rubro_operativo__isnull=False,
+        sucursal_gasto__isnull=False,
+        periodo_pago__isnull=False,
+    )
+    imputed_admin_total = imputed_admin_expenses.aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
+    imputed_admin_count = imputed_admin_expenses.count()
+
+    movements = period_movements
     if imputacion == "pendientes":
         movements = movements.filter(
             tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
@@ -2130,6 +2173,7 @@ def central_cash_movements(request):
     )
     total_ingresos = totals["ingresos"] or Decimal("0.00")
     total_egresos = totals["egresos"] or Decimal("0.00")
+    filtered_count = movements.count()
     
     items = []
     for m in movements[:100]:
@@ -2175,10 +2219,22 @@ def central_cash_movements(request):
         subtitle += " Mostrando solo egresos administrativos con sucursal, rubro o periodo pendiente."
     elif imputacion == "imputados":
         subtitle += " Mostrando solo egresos administrativos completos para lectura economica."
+    if filtered_count > len(items):
+        subtitle += f" Mostrando {len(items)} de {filtered_count} movimientos filtrados."
     return render(request, "treasury/list_page.html", {
         "title": "Libro de Efectivo Central",
         "filter_form": form,
         "subtitle": subtitle,
+        "summaries": [
+            {"label": "Total ingresos del filtro", "value": _money(total_ingresos), "badge_class": "badge-success"},
+            {"label": "Total egresos del filtro", "value": _money(total_egresos), "badge_class": "badge-danger"},
+            {
+                "label": "Gastos de tesoreria imputados",
+                "value": _money(imputed_admin_total),
+                "small": f"{imputed_admin_count} movimientos con rubro, sucursal y periodo",
+                "badge_class": "badge-info",
+            },
+        ],
         "items": items,
         "actions": [
             {"label": "Cargar saldo inicial", "href": reverse("treasury:carga_inicial_caja_central"), "kind": "secondary"},
