@@ -1073,3 +1073,13 @@ Last updated: 2026-07-01
 - Next EP-11 candidates in order:
   - `EP-11` quedo funcionalmente cerrada otra vez tras `US-11.7`.
   - reevaluar si hace falta un comando de migracion asistida para categorias legacy sin rubro si negocio quiere limpiar historicos
+
+### Treasury Economic Unmapped Bank Debit Fix 2026-07-02
+
+- User reported that `Situacion economica` showed a large `Gasto sin imputar` while `Libro de Efectivo Central` had no pending imputation rows; this inflated the apparent margin because generic bank debits were being counted as pending treasury expenses.
+- Behavior changed: bank debits created through `Registrar egreso` now use explicit origin `EGRESO_TESORERIA`; economic snapshots only treat explicit treasury bank expenses, plus legacy complete manual bank expenses with rubro/sucursal/periodo, as treasury expenses.
+- Incomplete generic manual bank debits are no longer counted as `Gasto sin imputar`; pending bank treasury expenses are limited to explicit `EGRESO_TESORERIA` records missing imputation data.
+- `register_egreso_tesoreria()` now validates rubro, sucursal and periodo at service level before creating either cash-central or bank expenses.
+- Compatibility: complete legacy bank expenses created before `EGRESO_TESORERIA` remain included in `Gasto tesoreria`; incomplete manual bank movements remain bank ledger movements but no longer pollute the economic pending-imputation alert.
+- Files touched: `treasury/models.py`, `treasury/services.py`, `treasury/tests.py`, `treasury/migrations/0021_bank_treasury_expense_origin.py`, `context.md`.
+- Evidence: focused economic/service/view tests OK; `TreasuryServiceTests` 48 OK; `TreasuryViewTests` 35 OK; `treasury.tests_ep05` 8 OK; `makemigrations --check --dry-run` no changes detected; `compileall treasury` OK. Commands emitted an environment warning from `sitecustomize` about missing PIL `_imaging`, but Django checks/tests completed successfully.

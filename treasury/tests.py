@@ -1435,6 +1435,92 @@ class TreasuryServiceTests(TreasuryTestCase):
         self.assertEqual(snapshot["treasury_unmapped_expenses_total"], Decimal("40.00"))
         self.assertEqual(snapshot["treasury_unmapped_expenses_count"], 1)
 
+    def test_economic_period_snapshot_ignores_manual_bank_debits_as_unmapped_treasury_expenses(self):
+        period_day = timezone.datetime(2026, 7, 10).date()
+        create_bank_movement(
+            cuenta_bancaria=self.bank_account,
+            tipo=MovimientoBancario.Tipo.DEBITO,
+            clase=MovimientoBancario.Clase.OTRO_EGRESO,
+            fecha=period_day,
+            monto=Decimal("29390519.40"),
+            concepto="Debito bancario manual sin imputacion economica",
+            actor=self.admin,
+        )
+
+        snapshot = build_economic_period_snapshot(
+            date_from=period_day.replace(day=1),
+            date_to=timezone.datetime(2026, 7, 31).date(),
+            sucursal=self.sucursal,
+            empresa_ids=[self.empresa.pk],
+        )
+
+        self.assertEqual(snapshot["treasury_expense_total"], Decimal("0.00"))
+        self.assertEqual(snapshot["treasury_unmapped_expenses_total"], Decimal("0.00"))
+        self.assertEqual(snapshot["treasury_unmapped_expenses_count"], 0)
+
+    def test_economic_period_snapshot_keeps_legacy_complete_manual_bank_treasury_expenses(self):
+        period_day = timezone.datetime(2026, 7, 11).date()
+        movement = MovimientoBancario(
+            cuenta_bancaria=self.bank_account,
+            tipo=MovimientoBancario.Tipo.DEBITO,
+            clase=MovimientoBancario.Clase.OTRO_EGRESO,
+            origen=MovimientoBancario.Origen.MANUAL,
+            fecha=period_day,
+            monto=Decimal("90.00"),
+            concepto="Egreso banco legacy completo",
+            rubro_operativo=self.rubro_servicios,
+            sucursal_gasto=self.sucursal,
+            periodo_pago=period_day.replace(day=1),
+            creado_por=self.admin,
+        )
+        movement.full_clean()
+        movement.save()
+
+        snapshot = build_economic_period_snapshot(
+            date_from=period_day.replace(day=1),
+            date_to=timezone.datetime(2026, 7, 31).date(),
+            sucursal=self.sucursal,
+            empresa_ids=[self.empresa.pk],
+        )
+
+        self.assertEqual(snapshot["treasury_expense_total"], Decimal("90.00"))
+        self.assertEqual(snapshot["treasury_unmapped_expenses_total"], Decimal("0.00"))
+        self.assertEqual(snapshot["treasury_unmapped_expenses_count"], 0)
+
+    def test_bank_treasury_expense_origin_requires_economic_imputation(self):
+        period_day = timezone.datetime(2026, 7, 12).date()
+        movement = MovimientoBancario(
+            cuenta_bancaria=self.bank_account,
+            tipo=MovimientoBancario.Tipo.DEBITO,
+            clase=MovimientoBancario.Clase.OTRO_EGRESO,
+            origen=MovimientoBancario.Origen.EGRESO_TESORERIA,
+            fecha=period_day,
+            monto=Decimal("10.00"),
+            concepto="Egreso tesoreria incompleto",
+            creado_por=self.admin,
+        )
+
+        with self.assertRaises(ValidationError) as context:
+            movement.full_clean()
+
+        self.assertIn("rubro_operativo", context.exception.message_dict)
+        self.assertIn("sucursal_gasto", context.exception.message_dict)
+        self.assertIn("periodo_pago", context.exception.message_dict)
+
+    def test_register_egreso_tesoreria_requires_economic_imputation(self):
+        with self.assertRaises(ValidationError) as context:
+            register_egreso_tesoreria(
+                fuente=EgresoTesoreriaForm.FUENTE_CAJA,
+                fecha=timezone.datetime(2026, 7, 13).date(),
+                monto=Decimal("10.00"),
+                concepto="Egreso sin imputacion",
+                actor=self.admin,
+            )
+
+        self.assertIn("rubro", context.exception.message_dict)
+        self.assertIn("sucursal", context.exception.message_dict)
+        self.assertIn("periodo", context.exception.message_dict)
+
     def test_economic_period_snapshot_excludes_panificacion_and_annulled_cash_movements(self):
         CanalIngreso.objects.update_or_create(
             codigo="PANIFICACION",
@@ -2478,6 +2564,7 @@ class TreasuryViewTests(TreasuryTestCase):
         self.assertEqual(mov.rubro_operativo, self.rubro_servicios)
         self.assertEqual(mov.sucursal_gasto, self.sucursal)
         self.assertEqual(mov.periodo_pago, periodo)
+        self.assertEqual(mov.origen, MovimientoBancario.Origen.EGRESO_TESORERIA)
 
     def test_special_commitment_create_list_and_authorize_flow(self):
         payable = register_payable(

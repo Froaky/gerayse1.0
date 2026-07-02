@@ -904,6 +904,7 @@ class MovimientoBancario(models.Model):
         MANUAL = "MANUAL", "Manual"
         ACREDITACION_TARJETA = "ACREDITACION_TARJETA", "Acreditacion tarjeta"
         PAGO_TESORERIA = "PAGO_TESORERIA", "Pago tesoreria"
+        EGRESO_TESORERIA = "EGRESO_TESORERIA", "Egreso tesoreria"
 
     cuenta_bancaria = models.ForeignKey(
         CuentaBancaria,
@@ -1059,6 +1060,17 @@ class MovimientoBancario(models.Model):
                 errors["categoria"] = "La categoria debe coincidir con la obligacion pagada."
         elif self.origen == self.Origen.PAGO_TESORERIA:
             errors["pago_tesoreria"] = "El origen pago de tesoreria requiere un pago vinculado."
+        if self.origen == self.Origen.EGRESO_TESORERIA:
+            if self.tipo != self.Tipo.DEBITO:
+                errors["tipo"] = "Un egreso de tesoreria bancario solo puede ser debito."
+            if self.pago_tesoreria_id:
+                errors["pago_tesoreria"] = "Un egreso administrativo de tesoreria no debe vincularse a un pago."
+            if not self.rubro_operativo_id:
+                errors["rubro_operativo"] = "El rubro es obligatorio para egresos administrativos de tesoreria."
+            if not self.sucursal_gasto_id:
+                errors["sucursal_gasto"] = "La sucursal es obligatoria para egresos administrativos de tesoreria."
+            if not self.periodo_pago:
+                errors["periodo_pago"] = "El periodo es obligatorio para egresos administrativos de tesoreria."
         if self.origen == self.Origen.ACREDITACION_TARJETA and self.clase != self.Clase.ACREDITACION:
             errors["clase"] = "Las acreditaciones de tarjeta deben quedar tipificadas como acreditación."
         if errors:

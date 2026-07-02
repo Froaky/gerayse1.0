@@ -1250,6 +1250,39 @@ CENTRAL_CASH_OUT_TYPES = [
 ]
 
 
+def _mapped_bank_treasury_expenses(base_queryset):
+    """Bank debits that are safe to read as economic treasury expenses.
+
+    `MANUAL` is kept only for legacy bank expenses already complete before
+    EGRESO_TESORERIA existed. Incomplete manual bank debits are generic bank
+    movements and must not inflate the economic pending-imputation alert.
+    """
+    return base_queryset.filter(
+        estado=MovimientoBancario.Estado.REGISTRADO,
+        tipo=MovimientoBancario.Tipo.DEBITO,
+        origen__in=[
+            MovimientoBancario.Origen.EGRESO_TESORERIA,
+            MovimientoBancario.Origen.MANUAL,
+        ],
+        rubro_operativo__isnull=False,
+        sucursal_gasto__isnull=False,
+        periodo_pago__isnull=False,
+    )
+
+
+def _pending_bank_treasury_expenses(base_queryset):
+    """Explicit treasury bank expenses that still lack economic imputation."""
+    return base_queryset.filter(
+        estado=MovimientoBancario.Estado.REGISTRADO,
+        tipo=MovimientoBancario.Tipo.DEBITO,
+        origen=MovimientoBancario.Origen.EGRESO_TESORERIA,
+    ).filter(
+        Q(rubro_operativo__isnull=True)
+        | Q(sucursal_gasto__isnull=True)
+        | Q(periodo_pago__isnull=True)
+    )
+
+
 def scope_central_cash_movements(movements, *, sucursal=None, empresa_ids=None):
     if sucursal is not None:
         return movements.filter(
@@ -1364,13 +1397,11 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
         rubro_operativo__isnull=False,
         sucursal_gasto__isnull=False,
     )
-    bank_treasury_expenses = MovimientoBancario.objects.filter(
-        estado=MovimientoBancario.Estado.REGISTRADO,
-        tipo=MovimientoBancario.Tipo.DEBITO,
-        periodo_pago__gte=period_from,
-        periodo_pago__lte=period_to,
-        rubro_operativo__isnull=False,
-        sucursal_gasto__isnull=False,
+    bank_treasury_expenses = _mapped_bank_treasury_expenses(
+        MovimientoBancario.objects.filter(
+            periodo_pago__gte=period_from,
+            periodo_pago__lte=period_to,
+        )
     )
     if sucursal is not None:
         central_treasury_expenses = central_treasury_expenses.filter(sucursal_gasto=sucursal)
@@ -1400,12 +1431,12 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
         fecha__gte=date_from,
         fecha__lte=date_to,
     ).filter(Q(rubro_operativo__isnull=True) | Q(sucursal_gasto__isnull=True) | Q(periodo_pago__isnull=True))
-    pending_bank_treasury_expenses = MovimientoBancario.objects.filter(
-        estado=MovimientoBancario.Estado.REGISTRADO,
-        tipo=MovimientoBancario.Tipo.DEBITO,
-        fecha__gte=date_from,
-        fecha__lte=date_to,
-    ).filter(Q(rubro_operativo__isnull=True) | Q(sucursal_gasto__isnull=True) | Q(periodo_pago__isnull=True))
+    pending_bank_treasury_expenses = _pending_bank_treasury_expenses(
+        MovimientoBancario.objects.filter(
+            fecha__gte=date_from,
+            fecha__lte=date_to,
+        )
+    )
     if sucursal is not None:
         pending_central_treasury_expenses = pending_central_treasury_expenses.filter(
             Q(sucursal_gasto=sucursal) | Q(sucursal_gasto__isnull=True)
@@ -1645,13 +1676,12 @@ def build_economic_rubro_detail(*, rubro_id: int, date_from: date, date_to: date
         rubro_operativo=rubro,
         sucursal_gasto__isnull=False,
     ).select_related("sucursal_gasto")
-    bank_treasury_expenses = MovimientoBancario.objects.filter(
-        estado=MovimientoBancario.Estado.REGISTRADO,
-        tipo=MovimientoBancario.Tipo.DEBITO,
-        periodo_pago__gte=period_from,
-        periodo_pago__lte=period_to,
-        rubro_operativo=rubro,
-        sucursal_gasto__isnull=False,
+    bank_treasury_expenses = _mapped_bank_treasury_expenses(
+        MovimientoBancario.objects.filter(
+            periodo_pago__gte=period_from,
+            periodo_pago__lte=period_to,
+            rubro_operativo=rubro,
+        )
     ).select_related("sucursal_gasto", "cuenta_bancaria")
     if sucursal is not None:
         central_treasury_expenses = central_treasury_expenses.filter(sucursal_gasto=sucursal)
@@ -2136,6 +2166,15 @@ def register_egreso_tesoreria(
         raise ValidationError({"concepto": "El concepto es obligatorio para el egreso administrativo."})
     if monto <= 0:
         raise ValidationError({"monto": "El importe debe ser mayor que cero."})
+    imputation_errors = {}
+    if rubro is None:
+        imputation_errors["rubro"] = "El rubro es obligatorio para el egreso administrativo."
+    if sucursal is None:
+        imputation_errors["sucursal"] = "La sucursal es obligatoria para el egreso administrativo."
+    if periodo is None:
+        imputation_errors["periodo"] = "El periodo es obligatorio para el egreso administrativo."
+    if imputation_errors:
+        raise ValidationError(imputation_errors)
 
     if fuente == "BANCO":
         if cuenta_bancaria is None:
@@ -2144,7 +2183,7 @@ def register_egreso_tesoreria(
             cuenta_bancaria=cuenta_bancaria,
             tipo=MovimientoBancario.Tipo.DEBITO,
             clase=MovimientoBancario.Clase.OTRO_EGRESO,
-            origen=MovimientoBancario.Origen.MANUAL,
+            origen=MovimientoBancario.Origen.EGRESO_TESORERIA,
             fecha=fecha,
             monto=monto,
             concepto=concepto,
