@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from django.core.management.base import BaseCommand
+from django.db.models import Sum
 
 from treasury.models import (
     CompromisoEspecial,
@@ -11,166 +14,179 @@ from treasury.models import (
 )
 
 
+ANCHO = 74
+
+
 class Command(BaseCommand):
     help = (
-        "Reporte de solo lectura: lista los registros de tesoreria que tienen sucursal "
-        "(o sucursal_gasto) en NULL. Un registro sin sucursal es visible para todas las "
-        "empresas. Este comando NO modifica ningun dato; sirve para decidir si esos "
-        "registros son gastos compartidos a proposito o cargas a las que les falto la sucursal."
+        "Informe de solo lectura, pensado para administracion: lista los registros que hoy "
+        "no tienen sucursal asignada y explica en lenguaje simple que consecuencia tiene. "
+        "NO modifica ningun dato."
     )
 
     def add_arguments(self, parser):
         parser.add_argument(
-            "--detalle",
+            "--max",
             type=int,
-            default=20,
-            help="Cantidad maxima de filas de detalle a mostrar por grupo (default 20).",
+            default=0,
+            help="Maximo de filas por seccion. 0 (default) muestra todas.",
         )
 
     def handle(self, *args, **options):
-        limite = options["detalle"]
+        tope = options["max"]
 
-        self.stdout.write(self.style.MIGRATE_HEADING(
-            "Registros de tesoreria SIN sucursal (visibles para todas las empresas)"
-        ))
-        self.stdout.write("Modo solo lectura: no se modifica ningun dato.\n")
-
-        # --- Deudas ---
-        self._reportar(
-            "CuentaPorPagar (deudas) sin sucursal",
-            CuentaPorPagar.objects.filter(sucursal__isnull=True).order_by("-creado_en"),
-            limite,
-            lambda o: [
-                f"#{o.pk}",
-                f"{o.fecha_emision}",
-                f"${o.importe_total}",
-                f"pend ${o.saldo_pendiente}",
-                o.get_estado_display(),
-                (o.proveedor.razon_social if o.proveedor_id else "-"),
-                (o.concepto or "")[:40],
-                f"creado {o.creado_en:%Y-%m-%d}",
-            ],
+        self._titulo("REGISTROS SIN SUCURSAL ASIGNADA")
+        self.stdout.write("Informe de solo lectura. No se modifica ningun dato.\n")
+        self.stdout.write(
+            "Muestra los registros que hoy NO tienen una sucursal asignada.\n"
+            "Esto tiene dos consecuencias:\n"
+            "  1) Las cuentas de banco sin empresa se ven desde las dos empresas.\n"
+            "  2) Los gastos del banco sin sucursal NO se cuentan en la rentabilidad\n"
+            "     de ningun local (aparecen aparte como \"Gasto sin imputar\").\n"
         )
 
-        # --- Compromisos especiales ---
-        self._reportar(
-            "CompromisoEspecial sin sucursal",
-            CompromisoEspecial.objects.filter(sucursal__isnull=True).order_by("-id"),
-            limite,
-            lambda o: [
-                f"#{o.pk}",
-                o.get_tipo_display(),
-                o.get_estado_display(),
-                (o.concepto or "")[:40],
-                (o.organismo or o.beneficiario or "-")[:30],
-            ],
-        )
+        self._seccion_cuentas(tope)
+        self._seccion_gastos_banco(tope)
+        self._seccion_correcto()
 
-        # --- Cuentas bancarias ---
-        self._reportar(
-            "CuentaBancaria sin sucursal",
-            CuentaBancaria.objects.filter(sucursal__isnull=True).order_by("-creado_en"),
-            limite,
-            lambda o: [
-                f"#{o.pk}",
-                o.nombre,
-                o.banco,
-                ("activa" if o.activa else "inactiva"),
-                f"creado {o.creado_en:%Y-%m-%d}",
-            ],
-        )
+        self._linea()
+        self.stdout.write("Fin del informe. Ningun dato fue modificado.")
 
-        # --- Movimientos bancarios: solo los EGRESOS (debitos) son imputables por sucursal ---
-        # Los creditos/acreditaciones sin sucursal_gasto son plata comun por diseno.
-        self._reportar(
-            "MovimientoBancario DEBITO (egreso) sin sucursal_gasto [potencialmente imputable]",
-            MovimientoBancario.objects.filter(
-                sucursal_gasto__isnull=True,
-                tipo=MovimientoBancario.Tipo.DEBITO,
-                estado=MovimientoBancario.Estado.REGISTRADO,
-            ).select_related("cuenta_bancaria").order_by("-fecha"),
-            limite,
-            lambda o: [
-                f"#{o.pk}",
-                f"{o.fecha}",
-                f"${o.monto}",
-                o.get_clase_display(),
-                o.get_origen_display(),
-                (o.concepto or "")[:40],
-            ],
-        )
-        self._contar_por_diseno(
-            "MovimientoBancario CREDITO sin sucursal_gasto (comun por diseno, no requiere accion)",
-            MovimientoBancario.objects.filter(
-                sucursal_gasto__isnull=True,
-                tipo=MovimientoBancario.Tipo.CREDITO,
-            ),
-        )
+    # ------------------------------------------------------------------ secciones
 
-        # --- Caja central: solo los egresos administrativos son imputables por sucursal ---
-        self._reportar(
-            "MovimientoCajaCentral egreso admin sin sucursal_gasto [potencialmente imputable]",
-            MovimientoCajaCentral.objects.filter(
-                sucursal_gasto__isnull=True,
-                tipo__in=[
-                    MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
-                    MovimientoCajaCentral.Tipo.EGRESO_PAGO,
-                ],
-            ).order_by("-fecha"),
-            limite,
-            lambda o: [
-                f"#{o.pk}",
-                f"{o.fecha}",
-                f"${o.monto}",
-                o.get_tipo_display(),
-                (o.concepto or "")[:40],
-            ],
-        )
-        self._contar_por_diseno(
-            "MovimientoCajaCentral otros tipos sin sucursal_gasto (ingresos/aportes/ajustes, no imputables)",
-            MovimientoCajaCentral.objects.filter(sucursal_gasto__isnull=True).exclude(
-                tipo__in=[
-                    MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
-                    MovimientoCajaCentral.Tipo.EGRESO_PAGO,
-                ]
-            ),
-        )
-
-        self._explicacion()
-
-        self.stdout.write("\n" + self.style.SUCCESS(
-            "Fin del reporte. Ningun dato fue modificado."
-        ))
-
-    def _explicacion(self):
-        self.stdout.write("\n" + self.style.MIGRATE_HEADING("Que significa esto"))
-        lineas = [
-            "Los egresos bancarios (debitos: impuestos, comisiones, transferencias) cargados SIN",
-            "sucursal NO se suman al renglon 'Gasto tesoreria' de la Situacion economica, que es",
-            "el gasto imputado por rubro y sucursal (la rentabilidad de cada local).",
-            "",
-            "En su lugar aparecen aparte, en el renglon 'Gasto sin imputar', y NO impactan la",
-            "rentabilidad de ninguna sucursal hasta que se les asigne sucursal (mas rubro y periodo).",
-            "",
-            "Si siguen contando en el saldo del banco y en la disponibilidad (la plata igual salio),",
-            "pero no en el resultado economico por sucursal.",
-            "",
-            "Las cuentas bancarias sin sucursal, ademas, hoy son visibles para todas las empresas.",
-        ]
-        for linea in lineas:
-            self.stdout.write("  " + linea)
-
-    def _reportar(self, titulo, queryset, limite, fila_fn):
-        total = queryset.count()
-        self.stdout.write("\n" + self.style.MIGRATE_LABEL(f"{titulo}: {total}"))
+    def _seccion_cuentas(self, tope):
+        cuentas = CuentaBancaria.objects.filter(sucursal__isnull=True).order_by("-creado_en")
+        total = cuentas.count()
+        self._encabezado_seccion(f"CUENTAS DE BANCO SIN EMPRESA ASIGNADA: {total}")
         if total == 0:
+            self.stdout.write("  No hay. Todo correcto.\n")
             return
-        for obj in queryset[:limite]:
-            self.stdout.write("  " + " | ".join(str(c) for c in fila_fn(obj)))
-        if total > limite:
-            self.stdout.write(self.style.WARNING(
-                f"  ... {total - limite} fila(s) mas no mostradas (usar --detalle {total})."
-            ))
+        self.stdout.write("  Estas cuentas hoy se ven desde las dos empresas (MAPOGO y ARMADI).\n")
+        self.stdout.write(
+            "  "
+            + "Cuenta".ljust(22)
+            + "Banco".ljust(16)
+            + "Estado".ljust(10)
+            + "Alta"
+        )
+        for c in self._acotar(cuentas, tope):
+            self.stdout.write(
+                "  "
+                + (c.nombre or "-")[:20].ljust(22)
+                + (c.banco or "-")[:14].ljust(16)
+                + ("Activa" if c.activa else "Inactiva").ljust(10)
+                + self._fecha(c.creado_en)
+            )
+        self._nota_acotado(total, tope)
+        self.stdout.write("")
 
-    def _contar_por_diseno(self, titulo, queryset):
-        self.stdout.write("  " + self.style.HTTP_INFO(f"{titulo}: {queryset.count()}"))
+    def _seccion_gastos_banco(self, tope):
+        # Solo los egresos (debitos) son imputables por sucursal; los ingresos no.
+        gastos = MovimientoBancario.objects.filter(
+            sucursal_gasto__isnull=True,
+            tipo=MovimientoBancario.Tipo.DEBITO,
+            estado=MovimientoBancario.Estado.REGISTRADO,
+        ).order_by("-fecha")
+        total = gastos.count()
+        suma = gastos.aggregate(t=Sum("monto"))["t"] or Decimal("0.00")
+        self._encabezado_seccion(
+            f"GASTOS DEL BANCO SIN SUCURSAL: {total}   Total: {self._pesos(suma)}"
+        )
+        if total == 0:
+            self.stdout.write("  No hay. Todo correcto.\n")
+            return
+        self.stdout.write(
+            "  Estos gastos salieron del banco pero no estan imputados a ninguna sucursal,\n"
+            "  asi que no impactan la rentabilidad por local.\n"
+        )
+        self.stdout.write(
+            "  "
+            + "Fecha".ljust(12)
+            + "Importe".rjust(16)
+            + "   "
+            + "Tipo de gasto".ljust(26)
+            + "Detalle"
+        )
+        for m in self._acotar(gastos, tope):
+            self.stdout.write(
+                "  "
+                + self._fecha(m.fecha).ljust(12)
+                + self._pesos(m.monto).rjust(16)
+                + "   "
+                + self._tipo_gasto(m).ljust(26)
+                + (m.concepto or "")[:28]
+            )
+        self._nota_acotado(total, tope)
+        self.stdout.write("")
+
+    def _seccion_correcto(self):
+        self._encabezado_seccion("LO QUE ESTA CORRECTO (no requiere accion)")
+        deudas = CuentaPorPagar.objects.filter(sucursal__isnull=True).count()
+        compromisos = CompromisoEspecial.objects.filter(sucursal__isnull=True).count()
+        caja_egresos = MovimientoCajaCentral.objects.filter(
+            sucursal_gasto__isnull=True,
+            tipo__in=[
+                MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
+                MovimientoCajaCentral.Tipo.EGRESO_PAGO,
+            ],
+        ).count()
+        creditos = MovimientoBancario.objects.filter(
+            sucursal_gasto__isnull=True, tipo=MovimientoBancario.Tipo.CREDITO
+        ).count()
+        caja_ingresos = MovimientoCajaCentral.objects.filter(sucursal_gasto__isnull=True).exclude(
+            tipo__in=[
+                MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
+                MovimientoCajaCentral.Tipo.EGRESO_PAGO,
+            ]
+        ).count()
+        self.stdout.write(f"  Deudas sin sucursal: {deudas}")
+        self.stdout.write(f"  Compromisos sin sucursal: {compromisos}")
+        self.stdout.write(f"  Egresos de caja fuerte sin sucursal: {caja_egresos}")
+        self.stdout.write(
+            f"  Ingresos, aportes y creditos sin sucursal: {creditos + caja_ingresos} "
+            "(es plata comun, esta bien que no tengan sucursal)"
+        )
+        self.stdout.write("")
+
+    # ------------------------------------------------------------------ helpers
+
+    def _titulo(self, texto):
+        self.stdout.write("=" * ANCHO)
+        self.stdout.write("  " + texto)
+        self.stdout.write("=" * ANCHO)
+
+    def _encabezado_seccion(self, texto):
+        self._linea()
+        self.stdout.write(texto)
+        self._linea()
+
+    def _linea(self):
+        self.stdout.write("-" * ANCHO)
+
+    def _acotar(self, queryset, tope):
+        if tope and tope > 0:
+            return queryset[:tope]
+        return queryset
+
+    def _nota_acotado(self, total, tope):
+        if tope and tope > 0 and total > tope:
+            self.stdout.write(f"  ... {total - tope} fila(s) mas (correr sin --max para ver todas).")
+
+    def _fecha(self, valor):
+        if valor is None:
+            return "-"
+        return valor.strftime("%d/%m/%Y")
+
+    def _pesos(self, value):
+        # Formato argentino: $ 1.234.567,89
+        texto = f"{value:,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
+        return f"$ {texto}"
+
+    def _tipo_gasto(self, movimiento):
+        # El nombre interno suele empezar con "Egreso por ..."; lo simplificamos.
+        etiqueta = movimiento.get_clase_display()
+        prefijo = "Egreso por "
+        if etiqueta.startswith(prefijo):
+            etiqueta = etiqueta[len(prefijo):]
+            etiqueta = etiqueta[:1].upper() + etiqueta[1:]
+        return etiqueta[:24]

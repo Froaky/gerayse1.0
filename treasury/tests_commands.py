@@ -9,7 +9,7 @@ from django.utils import timezone
 from users.models import Role
 
 from cashops.models import RubroOperativo
-from treasury.models import CuentaPorPagar
+from treasury.models import CuentaBancaria, CuentaPorPagar, MovimientoBancario
 from treasury.services import create_payable_category, create_supplier, register_payable
 
 
@@ -33,8 +33,8 @@ class ReporteSinSucursalCommandTests(TestCase):
         call_command("reporte_sin_sucursal", stdout=out, **options)
         return out.getvalue()
 
-    def test_reporta_deuda_sin_sucursal(self):
-        register_payable(
+    def _crear_deuda_sin_sucursal(self):
+        return register_payable(
             proveedor=self.supplier,
             categoria=self.category,
             concepto="Factura comun",
@@ -43,22 +43,63 @@ class ReporteSinSucursalCommandTests(TestCase):
             importe_total=Decimal("100.00"),
             actor=self.admin,
         )
+
+    def _cuenta(self):
+        if not hasattr(self, "_cuenta_cache"):
+            self._cuenta_cache = CuentaBancaria.objects.create(
+                nombre="Cuenta Test", banco="Banco Test", tipo_cuenta="CC", numero_cuenta="123"
+            )
+        return self._cuenta_cache
+
+    def _crear_gasto_banco_sin_sucursal(self, monto):
+        return MovimientoBancario.objects.create(
+            cuenta_bancaria=self._cuenta(),
+            tipo=MovimientoBancario.Tipo.DEBITO,
+            clase=MovimientoBancario.Clase.IMPUESTO,
+            estado=MovimientoBancario.Estado.REGISTRADO,
+            fecha=timezone.localdate(),
+            monto=monto,
+            concepto="AFIP",
+            sucursal_gasto=None,
+        )
+
+    def test_base_vacia_reporta_cero_y_sin_modificar(self):
+        output = self._run()
+        self.assertIn("Deudas sin sucursal: 0", output)
+        self.assertIn("CUENTAS DE BANCO SIN EMPRESA ASIGNADA: 0", output)
+        self.assertIn("GASTOS DEL BANCO SIN SUCURSAL: 0", output)
+        self.assertIn("Ningun dato fue modificado", output)
+
+    def test_reporta_deuda_sin_sucursal(self):
+        self._crear_deuda_sin_sucursal()
+        output = self._run()
+        self.assertIn("Deudas sin sucursal: 1", output)
+
+    def test_reporta_gastos_banco_con_total_e_importe_formateado(self):
+        self._crear_gasto_banco_sin_sucursal(Decimal("64500.00"))
+        self._crear_gasto_banco_sin_sucursal(Decimal("500.00"))
 
         output = self._run()
 
-        self.assertIn("CuentaPorPagar (deudas) sin sucursal: 1", output)
-        self.assertIn("Ningun dato fue modificado", output)
+        self.assertIn("GASTOS DEL BANCO SIN SUCURSAL: 2", output)
+        # Total y montos en formato argentino ($ 65.000,00 / $ 64.500,00).
+        self.assertIn("$ 65.000,00", output)
+        self.assertIn("$ 64.500,00", output)
+        # El tipo se simplifica quitando el prefijo "Egreso por".
+        self.assertIn("Impuestos", output)
+
+    def test_muestra_todas_las_filas_por_defecto(self):
+        for i in range(25):
+            self._crear_gasto_banco_sin_sucursal(Decimal("10.00") + i)
+
+        output = self._run()
+
+        self.assertIn("GASTOS DEL BANCO SIN SUCURSAL: 25", output)
+        # Sin --max no debe truncar.
+        self.assertNotIn("fila(s) mas", output)
 
     def test_no_modifica_datos(self):
-        register_payable(
-            proveedor=self.supplier,
-            categoria=self.category,
-            concepto="Factura comun",
-            fecha_emision=timezone.localdate(),
-            fecha_vencimiento=timezone.localdate(),
-            importe_total=Decimal("100.00"),
-            actor=self.admin,
-        )
+        self._crear_deuda_sin_sucursal()
         before = list(
             CuentaPorPagar.objects.values_list("pk", "sucursal_id", "saldo_pendiente")
         )
@@ -69,7 +110,3 @@ class ReporteSinSucursalCommandTests(TestCase):
             CuentaPorPagar.objects.values_list("pk", "sucursal_id", "saldo_pendiente")
         )
         self.assertEqual(before, after)
-
-    def test_base_vacia_reporta_cero(self):
-        output = self._run()
-        self.assertIn("CuentaPorPagar (deudas) sin sucursal: 0", output)
