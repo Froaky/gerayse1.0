@@ -59,7 +59,12 @@
       "Bash(gh run *)",
       "Bash(export DATABASE_URL=\"sqlite:////tmp/gerayse_diag2.db\")",
       "Bash(unset DATABASE_URL)",
-      "Bash(py -3.14 manage.py test treasury.tests_commands -v 1)"
+      "Bash(py -3.14 manage.py test treasury.tests_commands -v 1)",
+      "Bash(grep -nA 10 \"^def create_bank_account\" treasury/services.py)",
+      "Bash(grep -nA 14 \"^def create_bank_movement\" treasury/services.py)",
+      "Bash(export DATABASE_URL=\"sqlite:////tmp/gerayse_fmt2.db\")",
+      "Bash(py -3.14 manage.py shell -c ' *)",
+      "Bash(git commit -q -m 'feat\\(treasury\\): informe reporte_sin_sucursal legible para administracion' -m '- Muestra TODAS las filas por defecto \\(antes cortaba en 20; --max para limitar\\). *)"
     ],
     "additionalDirectories": [
       "\\tmp"
