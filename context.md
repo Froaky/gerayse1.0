@@ -34,8 +34,25 @@ Last updated: 2026-07-03
 - OBSERVACION de seguridad (no actuada): en Railway el superusuario es `admin` /
   `admin123!` (`DJANGO_SUPERUSER_*`). Conviene rotar a una password fuerte; queda a decision
   del usuario.
-- Pendiente: P1-6 (`sucursal=NULL` cross-company) como mini-proyecto en 3 pasos
-  (listar -> backfill -> endurecer), no se toca todavia.
+- Diagnostico P1-6 corrido en prod (`reporte_sin_sucursal`): deudas, compromisos y egresos
+  admin de caja central sin sucursal = 0 (lo sensible esta limpio). Unicos NULL relevantes:
+  2 cuentas bancarias sin sucursal y 73 debitos bancarios sin `sucursal_gasto`.
+- Reglas de dominio CONFIRMADAS por cliente 2026-07-03 (ver detalle en skill de tesoreria,
+  `references/gerayse-tesoreria-scope.md` seccion 10):
+  - `MAPOGO SRL` = 1 sola sucursal (`Vivre`); su cuenta de banco es de esa empresa.
+  - `ARMADI SRL` = varias sucursales, TODAS sincronizadas a UNA sola cuenta -> la cuenta es a
+    nivel EMPRESA, no de una sucursal. => la cuenta bancaria debe poder pertenecer a una empresa.
+  - No hay cuentas compartidas entre empresas; solo 2 bancos.
+  - TODO gasto bancario (impuestos, comisiones, transferencias) se imputa POR SUCURSAL; no
+    existe gasto bancario "comun" por diseno. Un DEBITO sin `sucursal_gasto` es un hueco de carga.
+  - Efecto de un egreso sin `sucursal_gasto`: cae en "Gasto sin imputar" de Situacion economica
+    y NO suma al gasto economico por rubro/sucursal hasta tener rubro+sucursal+periodo; si afecta
+    saldo bancario/disponibilidad.
+- Plan P1-6 (pendiente de OK del usuario):
+  - Slice A (fix fuga cross-company, migracion compatible): agregar `empresa` a `CuentaBancaria`,
+    backfill cuenta#2->MAPOGO / cuenta#1->ARMADI, scopear cuentas y movimientos por empresa.
+  - Slice B (calidad de imputacion, sin migracion de datos): exigir `sucursal_gasto` en alta de
+    debitos/egresos bancarios + vista/worklist para que la usuaria complete los 73 existentes.
 
 ## Product Snapshot
 
