@@ -136,9 +136,29 @@ class Command(BaseCommand):
             ),
         )
 
+        self._explicacion()
+
         self.stdout.write("\n" + self.style.SUCCESS(
             "Fin del reporte. Ningun dato fue modificado."
         ))
+
+    def _explicacion(self):
+        self.stdout.write("\n" + self.style.MIGRATE_HEADING("Que significa esto"))
+        lineas = [
+            "Los egresos bancarios (debitos: impuestos, comisiones, transferencias) cargados SIN",
+            "sucursal NO se suman al renglon 'Gasto tesoreria' de la Situacion economica, que es",
+            "el gasto imputado por rubro y sucursal (la rentabilidad de cada local).",
+            "",
+            "En su lugar aparecen aparte, en el renglon 'Gasto sin imputar', y NO impactan la",
+            "rentabilidad de ninguna sucursal hasta que se les asigne sucursal (mas rubro y periodo).",
+            "",
+            "Si siguen contando en el saldo del banco y en la disponibilidad (la plata igual salio),",
+            "pero no en el resultado economico por sucursal.",
+            "",
+            "Las cuentas bancarias sin sucursal, ademas, hoy son visibles para todas las empresas.",
+        ]
+        for linea in lineas:
+            self.stdout.write("  " + linea)
 
     def _reportar(self, titulo, queryset, limite, fila_fn):
         total = queryset.count()
