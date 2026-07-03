@@ -58,24 +58,30 @@ class ResyncOperationalEngineCommandTests(TestCase):
                     tipo,
                     sentido,
                     monto,
+                    estado,
                     impacta_saldo_caja,
                     categoria,
                     observacion,
+                    motivo_anulacion,
                     creado_en,
+                    actualizado_en,
                     caja_id,
                     transferencia_id,
                     creado_por_id,
                     rubro_operativo_id
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 [
                     MovimientoCaja.Tipo.GASTO,
                     MovimientoCaja.Sentido.EGRESO,
                     Decimal("50.00"),
+                    MovimientoCaja.Estado.REGISTRADO,
                     True,
                     "Legacy",
                     "Gasto antiguo",
+                    "",
+                    timezone.now(),
                     timezone.now(),
                     self.box.pk,
                     None,
