@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from django.core.management.base import BaseCommand
-from django.db.models import Sum
+from django.db.models import Q, Sum
 
 from treasury.models import (
     CompromisoEspecial,
@@ -38,19 +38,59 @@ class Command(BaseCommand):
         self._titulo("REGISTROS SIN SUCURSAL ASIGNADA")
         self.stdout.write("Informe de solo lectura. No se modifica ningun dato.\n")
         self.stdout.write(
-            "Muestra los registros que hoy NO tienen una sucursal asignada.\n"
+            "Muestra los registros que hoy NO tienen sucursal (u otro dato) asignado.\n"
             "Esto tiene dos consecuencias:\n"
             "  1) Las cuentas de banco sin empresa se ven desde las dos empresas.\n"
-            "  2) Los gastos del banco sin sucursal NO se cuentan en la rentabilidad\n"
-            "     de ningun local (aparecen aparte como \"Gasto sin imputar\").\n"
+            "  2) Los gastos del banco incompletos NO se cuentan en la rentabilidad\n"
+            "     por sucursal (les falta rubro, sucursal o periodo).\n"
         )
 
         self._seccion_cuentas(tope)
         self._seccion_gastos_banco(tope)
+        self._cuadre_debitos_banco()
         self._seccion_correcto()
 
         self._linea()
         self.stdout.write("Fin del informe. Ningun dato fue modificado.")
+
+    def _cuadre_debitos_banco(self):
+        """Cuadre: todo debito del banco cae en exactamente un balde. Nada se pierde."""
+        base = MovimientoBancario.objects.filter(tipo=MovimientoBancario.Tipo.DEBITO)
+        universo = base.count()
+        universo_monto = base.aggregate(t=Sum("monto"))["t"] or Decimal("0.00")
+
+        anulados = base.filter(estado=MovimientoBancario.Estado.ANULADO)
+        registrados = base.filter(estado=MovimientoBancario.Estado.REGISTRADO)
+        completos = registrados.filter(
+            rubro_operativo__isnull=False,
+            sucursal_gasto__isnull=False,
+            periodo_pago__isnull=False,
+        )
+        incompletos = registrados.filter(
+            Q(rubro_operativo__isnull=True)
+            | Q(sucursal_gasto__isnull=True)
+            | Q(periodo_pago__isnull=True)
+        )
+
+        def par(qs):
+            return qs.count(), (qs.aggregate(t=Sum("monto"))["t"] or Decimal("0.00"))
+
+        n_anul, m_anul = par(anulados)
+        n_comp, m_comp = par(completos)
+        n_inc, m_inc = par(incompletos)
+
+        self._encabezado_seccion("CUADRE DE DEBITOS DEL BANCO (control: nada queda afuera)")
+        self.stdout.write(f"  Universo (todos los debitos):        {universo:>4}   {self._pesos(universo_monto)}")
+        self.stdout.write(f"  (=) Cuentan en rentabilidad:         {n_comp:>4}   {self._pesos(m_comp)}")
+        self.stdout.write(f"  (+) NO cuentan (incompletos):        {n_inc:>4}   {self._pesos(m_inc)}")
+        self.stdout.write(f"  (+) Anulados (excluidos por diseno): {n_anul:>4}   {self._pesos(m_anul)}")
+        suman = n_comp + n_inc + n_anul
+        monto_suma = m_comp + m_inc + m_anul
+        ok = (suman == universo) and (monto_suma == universo_monto)
+        estado = "CUADRA (no se pierde ningun dato)" if ok else "NO CUADRA - revisar"
+        self.stdout.write(f"  ------------------------------------------------------")
+        self.stdout.write(f"  Suma de baldes:                      {suman:>4}   {self._pesos(monto_suma)}   -> {estado}")
+        self.stdout.write("")
 
     # ------------------------------------------------------------------ secciones
 
@@ -82,42 +122,67 @@ class Command(BaseCommand):
 
     def _seccion_gastos_banco(self, tope):
         # Solo los egresos (debitos) son imputables por sucursal; los ingresos no.
+        # Para contar en la rentabilidad economica un debito necesita rubro +
+        # sucursal + periodo. Mostramos los que NO cumplen (les falta al menos uno).
         gastos = MovimientoBancario.objects.filter(
-            sucursal_gasto__isnull=True,
             tipo=MovimientoBancario.Tipo.DEBITO,
             estado=MovimientoBancario.Estado.REGISTRADO,
+        ).filter(
+            Q(rubro_operativo__isnull=True)
+            | Q(sucursal_gasto__isnull=True)
+            | Q(periodo_pago__isnull=True)
         ).order_by("-fecha")
         total = gastos.count()
         suma = gastos.aggregate(t=Sum("monto"))["t"] or Decimal("0.00")
         self._encabezado_seccion(
-            f"GASTOS DEL BANCO SIN SUCURSAL: {total}   Total: {self._pesos(suma)}"
+            f"GASTOS DEL BANCO QUE NO SE CUENTAN EN LA RENTABILIDAD: {total}"
+            f"   Total: {self._pesos(suma)}"
         )
         if total == 0:
             self.stdout.write("  No hay. Todo correcto.\n")
             return
+
+        sin_sucursal = gastos.filter(sucursal_gasto__isnull=True).count()
+        sin_periodo = gastos.filter(periodo_pago__isnull=True).count()
+        sin_rubro = gastos.filter(rubro_operativo__isnull=True).count()
         self.stdout.write(
-            "  Estos gastos salieron del banco pero no estan imputados a ninguna sucursal,\n"
-            "  asi que no impactan la rentabilidad por local.\n"
+            "  Para contar en la rentabilidad por sucursal, cada gasto necesita 3 datos:\n"
+            "  rubro, sucursal y periodo. A estos les falta al menos uno:\n"
+            f"    - sin SUCURSAL: {sin_sucursal}\n"
+            f"    - sin PERIODO:  {sin_periodo}\n"
+            f"    - sin RUBRO:    {sin_rubro}\n"
         )
         self.stdout.write(
             "  "
-            + "Fecha".ljust(12)
-            + "Importe".rjust(16)
-            + "   "
-            + "Tipo de gasto".ljust(26)
+            + "Fecha".ljust(11)
+            + "Importe".rjust(15)
+            + "  "
+            + "Le falta".ljust(26)
             + "Detalle"
         )
         for m in self._acotar(gastos, tope):
             self.stdout.write(
                 "  "
-                + self._fecha(m.fecha).ljust(12)
-                + self._pesos(m.monto).rjust(16)
-                + "   "
-                + self._tipo_gasto(m).ljust(26)
-                + (m.concepto or "")[:28]
+                + self._fecha(m.fecha).ljust(11)
+                + self._pesos(m.monto).rjust(15)
+                + "  "
+                + self._que_falta(m).ljust(26)
+                + (m.concepto or "")[:26]
             )
         self._nota_acotado(total, tope)
         self.stdout.write("")
+
+    def _que_falta(self, m):
+        faltan = []
+        if m.rubro_operativo_id is None:
+            faltan.append("rubro")
+        if m.sucursal_gasto_id is None:
+            faltan.append("sucursal")
+        if m.periodo_pago is None:
+            faltan.append("periodo")
+        if len(faltan) == 3:
+            return "los 3 (rubro/suc/periodo)"
+        return ", ".join(faltan)
 
     def _seccion_correcto(self):
         self._encabezado_seccion("LO QUE ESTA CORRECTO (no requiere accion)")
@@ -182,11 +247,3 @@ class Command(BaseCommand):
         texto = f"{value:,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
         return f"$ {texto}"
 
-    def _tipo_gasto(self, movimiento):
-        # El nombre interno suele empezar con "Egreso por ..."; lo simplificamos.
-        etiqueta = movimiento.get_clase_display()
-        prefijo = "Egreso por "
-        if etiqueta.startswith(prefijo):
-            etiqueta = etiqueta[len(prefijo):]
-            etiqueta = etiqueta[:1].upper() + etiqueta[1:]
-        return etiqueta[:24]

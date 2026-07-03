@@ -67,7 +67,7 @@ class ReporteSinSucursalCommandTests(TestCase):
         output = self._run()
         self.assertIn("Deudas sin sucursal: 0", output)
         self.assertIn("CUENTAS DE BANCO SIN EMPRESA ASIGNADA: 0", output)
-        self.assertIn("GASTOS DEL BANCO SIN SUCURSAL: 0", output)
+        self.assertIn("GASTOS DEL BANCO QUE NO SE CUENTAN EN LA RENTABILIDAD: 0", output)
         self.assertIn("Ningun dato fue modificado", output)
 
     def test_reporta_deuda_sin_sucursal(self):
@@ -81,12 +81,14 @@ class ReporteSinSucursalCommandTests(TestCase):
 
         output = self._run()
 
-        self.assertIn("GASTOS DEL BANCO SIN SUCURSAL: 2", output)
+        self.assertIn("GASTOS DEL BANCO QUE NO SE CUENTAN EN LA RENTABILIDAD: 2", output)
         # Total y montos en formato argentino ($ 65.000,00 / $ 64.500,00).
         self.assertIn("$ 65.000,00", output)
         self.assertIn("$ 64.500,00", output)
-        # El tipo se simplifica quitando el prefijo "Egreso por".
-        self.assertIn("Impuestos", output)
+        # Les falta todo (rubro, sucursal y periodo).
+        self.assertIn("los 3", output)
+        # El cuadre debe cerrar.
+        self.assertIn("CUADRA", output)
 
     def test_muestra_todas_las_filas_por_defecto(self):
         for i in range(25):
@@ -94,7 +96,7 @@ class ReporteSinSucursalCommandTests(TestCase):
 
         output = self._run()
 
-        self.assertIn("GASTOS DEL BANCO SIN SUCURSAL: 25", output)
+        self.assertIn("GASTOS DEL BANCO QUE NO SE CUENTAN EN LA RENTABILIDAD: 25", output)
         # Sin --max no debe truncar.
         self.assertNotIn("fila(s) mas", output)
 
