@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 import environ
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 env = environ.Env(
@@ -10,12 +11,32 @@ env = environ.Env(
 )
 environ.Env.read_env(BASE_DIR / ".env")
 
-SECRET_KEY = env(
-    "DJANGO_SECRET_KEY",
-    default="django-insecure-gerayse-dev-key-change-me",
-)
-DEBUG = env.bool("DEBUG", default=True)
+INSECURE_DEFAULT_SECRET_KEY = "django-insecure-gerayse-dev-key-change-me"
+SECRET_KEY = env("DJANGO_SECRET_KEY", default=INSECURE_DEFAULT_SECRET_KEY)
+# Default seguro: correr con DEBUG activo en produccion expone tracebacks y desactiva
+# cookies seguras. El entorno productivo debe setear DEBUG explicitamente.
+DEBUG = env.bool("DEBUG", default=False)
 RUNNING_DEV_SERVER = "runserver" in sys.argv
+RUNNING_TESTS = "test" in sys.argv
+
+# En produccion no arrancar con la SECRET_KEY insegura por default: es preferible
+# fallar el deploy a servir con una key publica. Se eximen los tests y el server de
+# desarrollo porque no sirven trafico productivo (asi CI y dev local siguen andando
+# sin .env). La guarda solo muerde al servir por WSGI/gunicorn con DEBUG=False.
+if (
+    not DEBUG
+    and not RUNNING_TESTS
+    and not RUNNING_DEV_SERVER
+    and SECRET_KEY == INSECURE_DEFAULT_SECRET_KEY
+):
+    raise ImproperlyConfigured(
+        "DJANGO_SECRET_KEY debe definirse con un valor propio cuando DEBUG=False."
+    )
+
+# Habilita el reinicio destructivo de datos operativos (borra TODO, sin scope de
+# empresa). Es una herramienta de testing: NUNCA debe quedar activa en produccion.
+# Por defecto sigue a DEBUG, asi el entorno decide y no depende de borrar codigo a mano.
+ENABLE_DANGER_RESET = env.bool("ENABLE_DANGER_RESET", default=DEBUG)
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1", "gerayse10-production.up.railway.app"])
 
 INSTALLED_APPS = [

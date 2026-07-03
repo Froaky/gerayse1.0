@@ -2,6 +2,7 @@ import csv
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -1509,8 +1510,8 @@ def empresa_list(request):
         "subtitle": "Razon social o unidad de negocio que agrupa sucursales.",
         "create_url": reverse("cashops:empresa_create"),
         "items": items,
-        "show_danger_zone": True,
-        "reset_url": reverse("cashops:reset_operational_data"),
+        "show_danger_zone": settings.ENABLE_DANGER_RESET,
+        "reset_url": reverse("cashops:reset_operational_data") if settings.ENABLE_DANGER_RESET else "",
     })
 
 
@@ -1730,6 +1731,9 @@ def canal_ingreso_toggle(request, canal_id: int):
 @login_required
 @require_http_methods(["GET", "POST"])
 def reset_operational_data(request):
+    if not settings.ENABLE_DANGER_RESET:
+        raise Http404("El reinicio de datos operativos no esta habilitado en este entorno.")
+
     _require_config_write(request)
 
     if request.method == "POST":

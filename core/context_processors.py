@@ -1,5 +1,10 @@
 def app_context(request):
-    ctx = {"app_name": "Gerayse"}
+    from django.conf import settings
+
+    ctx = {
+        "app_name": "Gerayse",
+        "enable_danger_reset": settings.ENABLE_DANGER_RESET,
+    }
     if not request.user.is_authenticated:
         return ctx
 

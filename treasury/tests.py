@@ -8,7 +8,7 @@ from django.contrib import admin as django_admin
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import close_old_connections, connection
-from django.test import RequestFactory, TestCase, TransactionTestCase
+from django.test import RequestFactory, TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -2154,6 +2154,7 @@ class TreasuryViewTests(TreasuryTestCase):
         self.assertContains(response, "Proveedor Uno SA")
         self.assertNotContains(response, "Otro proveedor")
 
+    @override_settings(ENABLE_DANGER_RESET=True)
     def test_disponibilidades_report_exposes_reset_and_company_scoped_global_cash(self):
         empresa = Empresa.objects.create(nombre="Empresa Vista Disponibilidades")
         self.sucursal.empresa = empresa

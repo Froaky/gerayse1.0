@@ -408,7 +408,7 @@
                     <a class="nav-menu__item" href="{% url 'users:user_list' %}">Usuarios</a>
                     <a class="nav-menu__item" href="{% url 'users:role_list' %}">Roles</a>
                   {% endif %}
-                  {% if request.user.can_write_config %}
+                  {% if request.user.can_write_config and enable_danger_reset %}
                     <div class="nav-menu__separator"></div>
                     <a class="nav-menu__item" href="{% url 'cashops:reset_operational_data' %}" style="color:#dd9598;">Reiniciar datos</a>
                   {% endif %}

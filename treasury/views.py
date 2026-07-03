@@ -1,5 +1,6 @@
 from decimal import Decimal, InvalidOperation
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -2104,7 +2105,7 @@ def disponibilidades_report(request):
         "snapshot": snapshot,
         "title": "Flujo de Disponibilidades",
         "subtitle": f"Consolidado de Efectivo y Bancos - {snapshot['first_day']:%m/%Y}" if not sucursal else f"Sucursal: {sucursal.nombre} - {snapshot['first_day']:%m/%Y}",
-        "reset_url": reverse("cashops:reset_operational_data"),
+        "reset_url": reverse("cashops:reset_operational_data") if settings.ENABLE_DANGER_RESET else "",
     })
 
 

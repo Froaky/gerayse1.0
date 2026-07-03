@@ -1,32 +1,32 @@
 # Notas para puesta en produccion
 
-## IMPORTANTE — Leer antes de hacer el deploy productivo
+## Boton "Reiniciar datos" — ahora gateado por entorno (no requiere borrar codigo)
 
-### Boton "Reiniciar datos" — DEBE ELIMINARSE ANTES DE PRODUCCION
+El reinicio destructivo de datos operativos (`cashops:reset_operational_data`) borra TODO
+el estado operativo/financiero (cajas, movimientos, cierres, cuentas por pagar, efectivo
+central, etc.) sin scope de empresa. Es una herramienta de testing.
 
-Existe un boton de "Reiniciar datos de cajas" visible en:
-- La pagina de Empresas (Config → Empresas, zona inferior)
-- El dropdown de Config en la barra de navegacion ("Reiniciar datos")
+Desde 2026-07-03 esta protegido por el setting `ENABLE_DANGER_RESET`:
 
-**Este boton elimina TODOS los datos operativos del sistema** (cajas, movimientos, cierres, cuentas por pagar, efectivo central, etc.) con solo dos confirmaciones. Es una herramienta de testing, no debe existir en produccion.
+- Por defecto sigue a `DEBUG` (`ENABLE_DANGER_RESET = env.bool("ENABLE_DANGER_RESET", default=DEBUG)`).
+- En produccion, con `DEBUG=False`, la vista responde **404** y el boton no se renderiza
+  en ningun template (menu Config, Empresas, Disponibilidades).
+- Ya **no** hace falta borrar codigo a mano antes del deploy.
 
-### Que eliminar antes del deploy:
+### Como habilitarlo puntualmente en un entorno controlado
 
-1. **`cashops/views.py`** — eliminar la funcion `reset_operational_data` (al final del archivo, bajo el comentario `# --- Reinicio de datos operativos`)
+Setear la variable de entorno `ENABLE_DANGER_RESET=True`. Volver a `False` (o quitarla)
+para dejarlo inaccesible.
 
-2. **`cashops/urls.py`** — eliminar la linea:
-   ```python
-   path("config/reiniciar/", views.reset_operational_data, name="reset_operational_data"),
-   ```
+### Verificacion en produccion
 
-3. **`templates/cashops/layout.html`** — eliminar las dos lineas del separador y el link "Reiniciar datos" en el dropdown de Config.
+Confirmar en el entorno productivo que:
 
-4. **`templates/cashops/list_page.html`** — eliminar el bloque `{% if show_danger_zone %}...{% endif %}` al final del template.
-
-5. **`templates/cashops/reset_confirm.html`** — eliminar el archivo completo.
-
-6. Este archivo `PRODUCCION.md` tambien puede eliminarse.
+- `DEBUG=False`.
+- `ENABLE_DANGER_RESET` NO esta seteada en `True`.
+- `GET /config/reiniciar/` responde 404.
 
 ---
 
-_Nota generada el 2026-05-05. Confirmar que ninguna de estas rutas quede expuesta en el entorno productivo._
+_Nota actualizada el 2026-07-03: el boton dejo de depender de una eliminacion manual de codigo
+y pasa a estar controlado por entorno (`ENABLE_DANGER_RESET`)._

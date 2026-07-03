@@ -5,7 +5,7 @@ from urllib.parse import urlencode
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -1509,6 +1509,7 @@ class CashopsViewTests(CashopsTestCase):
             html=False,
         )
 
+    @override_settings(ENABLE_DANGER_RESET=True)
     def test_reset_confirmation_lists_operational_and_financial_data_to_delete(self):
         self.client.force_login(self.admin)
 
@@ -1521,6 +1522,28 @@ class CashopsViewTests(CashopsTestCase):
         self.assertContains(response, "Todas las acreditaciones de tarjeta, descuentos y lotes POS")
         self.assertContains(response, "Todas las cuentas por pagar y pagos de tesoreria")
         self.assertContains(response, "Todos los cierres mensuales de tesoreria")
+
+    @override_settings(ENABLE_DANGER_RESET=False)
+    def test_reset_view_returns_404_when_disabled(self):
+        self.client.force_login(self.admin)
+
+        get_response = self.client.get(reverse("cashops:reset_operational_data"))
+        post_response = self.client.post(
+            reverse("cashops:reset_operational_data"), {"step": "2"}
+        )
+
+        self.assertEqual(get_response.status_code, 404)
+        self.assertEqual(post_response.status_code, 404)
+
+    @override_settings(ENABLE_DANGER_RESET=False)
+    def test_empresa_list_hides_danger_zone_when_disabled(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("cashops:empresa_list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context["show_danger_zone"])
+        self.assertNotContains(response, "Reiniciar datos de cajas")
 
     def test_regular_user_gets_403_for_foreign_box_close(self):
         self.client.force_login(self.operator)
