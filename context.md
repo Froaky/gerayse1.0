@@ -1,6 +1,41 @@
 # Context
 
-Last updated: 2026-07-01
+Last updated: 2026-07-03
+
+## Current Session
+
+### Hardening de produccion 2026-07-03 (slices seguros, sin migraciones)
+
+- Auditoria general del sistema pedida por el usuario; se acordo aplicar mejoras sin
+  tocar datos ni esquema (esta en produccion). Ninguna de estas slices agrega migraciones.
+- Slice 1 (suite verde): `cashops/tests_commands.py` fallaba con `NOT NULL constraint failed`
+  porque el INSERT raw de `_create_legacy_expense_without_category` no seteaba columnas que
+  se volvieron NOT NULL (`actualizado_en`, `estado`, `motivo_anulacion`). Se completaron. Fix
+  solo de test, sin impacto en producto.
+- Slice 2 (boton "Reiniciar datos"): antes solo lo protegia una nota manual en `PRODUCCION.md`.
+  Ahora esta gateado por setting `ENABLE_DANGER_RESET` (default = `DEBUG`). La vista
+  `cashops.reset_operational_data` responde 404 si esta apagado; el boton no se renderiza
+  (menu Config, Empresas, Disponibilidades) via `enable_danger_reset` en el context processor.
+  Archivos: `config/settings.py`, `core/context_processors.py`, `cashops/views.py`,
+  `treasury/views.py`, `templates/cashops/layout.html`, `PRODUCCION.md`, tests en cashops/treasury.
+- Slice 3 (higiene): se quitaron del tracking `runserver.err.log`/`runserver.out.log` (eran de
+  otra maquina, ruta `C:\code\gerayse1.0`) y se agrego `*.log` al `.gitignore`.
+- Slice 4 (defaults seguros): confirmado en Railway que prod setea `DEBUG=False` y
+  `DJANGO_SECRET_KEY` real. En `config/settings.py`: `DEBUG` ahora default `False`; si
+  `DEBUG=False` con la SECRET_KEY insegura por default, se levanta `ImproperlyConfigured`
+  (fail-hard). La guarda exime `runserver` y `test` (RUNNING_DEV_SERVER / RUNNING_TESTS) para
+  que dev local y CI anden sin `.env`. Solo muerde al servir por WSGI/gunicorn con key insegura.
+  Se agrego `.env` local minimo (gitignoreado, solo `DEBUG=True`, sin DATABASE_URL -> SQLite)
+  para mantener el flujo de dev previo. Verificado: prod key-real arranca (reset off), prod
+  key-insegura falla; env vars de Railway pisan al `.env`.
+- Slice 5 (CI): nuevo `.github/workflows/ci.yml` que en push/PR a main corre check,
+  makemigrations --check, compileall y la suite completa (Python 3.13, SQLite, DEBUG=True).
+- Estado suite: 257 tests OK (1 skip), makemigrations sin drift, cero migraciones agregadas.
+- OBSERVACION de seguridad (no actuada): en Railway el superusuario es `admin` /
+  `admin123!` (`DJANGO_SUPERUSER_*`). Conviene rotar a una password fuerte; queda a decision
+  del usuario.
+- Pendiente: P1-6 (`sucursal=NULL` cross-company) como mini-proyecto en 3 pasos
+  (listar -> backfill -> endurecer), no se toca todavia.
 
 ## Product Snapshot
 
