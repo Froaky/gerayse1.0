@@ -62,6 +62,16 @@
         <strong>{{ snapshot.pending_total|money }}</strong>
         <small class="muted">{{ snapshot.pending_count }} compromiso{{ snapshot.pending_count|pluralize }}</small>
       </div>
+      {% if not snapshot.sucursal %}
+      <div class="summary">
+        <span class="muted">Banco menos deuda pendiente</span>
+        <strong>{{ snapshot.debt_vs_bank_difference|money }}</strong>
+        <small class="muted">
+          {% if snapshot.debt_vs_bank_covered %}El banco cubre la deuda pendiente{% else %}El banco no alcanza para cubrir la deuda pendiente{% endif %}
+          al {{ snapshot.reference_date|date:"d/m/Y" }}. Solo saldo bancario real; no incluye caja fuerte ni acreditaciones por cobrar.
+        </small>
+      </div>
+      {% endif %}
       <div class="summary">
         <span class="muted">Critico (menos de 4 dias)</span>
         <strong>{{ snapshot.red_total|money }}</strong>

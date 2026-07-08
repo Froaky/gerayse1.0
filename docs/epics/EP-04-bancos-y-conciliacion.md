@@ -13,6 +13,7 @@ Llevar al sistema lo que hoy se controla en el lado `MAPOGO - BANCO` y en los ci
 - relacion pago tesoreria vs banco
 - conciliacion simple de ventas y acreditaciones
 - carga inicial auditada de saldo bancario por cuenta
+- cuenta bancaria asociada a una empresa duena, no solo a una sucursal puntual
 
 ## No incluye todavia
 
@@ -21,6 +22,7 @@ Llevar al sistema lo que hoy se controla en el lado `MAPOGO - BANCO` y en los ci
 - conciliacion automatica contra todos los operadores y marcas
 - conciliacion bancaria automatica de cualquier tipo sin decision explicita posterior
 - cierre contable formal
+- reparto o prorrateo de acreditaciones entre las sucursales de una misma empresa
 
 ## Reglas de negocio
 
@@ -30,6 +32,8 @@ Llevar al sistema lo que hoy se controla en el lado `MAPOGO - BANCO` y en los ci
 - un pago de tesoreria con impacto bancario debe tener reflejo bancario trazable
 - el saldo inicial bancario se carga por cuenta bancaria y debe quedar auditado; no reemplaza movimientos reales posteriores
 - hasta nueva decision de negocio, la conciliacion bancaria se opera de forma manual asistida por el sistema y no por matching automatico
+- una cuenta bancaria pertenece a una empresa; puede ademas estar asociada a una sucursal puntual cuando la cuenta es exclusiva de un solo local, pero no lo exige
+- cuando una empresa opera varias sucursales sobre una unica cuenta bancaria, el ingreso de esa cuenta (acreditaciones y creditos) se lee como fondo comun de la empresa, no como reparto por sucursal
 
 ## User Stories
 
@@ -132,10 +136,29 @@ Criterios:
 - [x] el sistema evita que existan saldos iniciales ambiguos para la misma cuenta y fecha de referencia
 - [x] los totales bancarios posteriores se calculan desde saldo inicial mas movimientos reales del periodo
 
+### [x] US-4.9 Cuenta bancaria con empresa propietaria
+
+Como tesoreria
+Quiero que una cuenta bancaria pueda asociarse a una empresa ademas de, opcionalmente, una sucursal
+Para reflejar que la cuenta de `ARMADI SRL` es comun a todas sus sucursales y la de `MAPOGO SRL` es propia de `Vivre`, sin inventar un reparto por sucursal que no existe en la operacion real
+
+Criterios:
+- [x] `CuentaBancaria` tiene un campo `empresa` (FK), independiente del campo `sucursal` que ya existe
+- [x] la carga de una cuenta bancaria exige empresa propietaria (si se elige sucursal, la empresa se deriva de esa sucursal)
+- [x] migracion compatible con backfill de datos existentes: hereda la empresa de la sucursal cuando existe; si la cuenta no tiene sucursal, infiere la empresa solo cuando todos los egresos imputados de la cuenta apuntan a sucursales de una unica empresa; los casos ambiguos quedan sin empresa y se completan desde la edicion de la cuenta, sin tocar movimientos historicos
+- [x] listados, formularios, filtros y totales de cuentas bancarias y movimientos bancarios respetan la empresa activa seleccionada, igual que el resto del sistema (las cuentas legacy sin empresa asignada siguen visibles hasta que administracion las complete)
+- [x] una cuenta de una empresa con varias sucursales no exige elegir una sucursal puntual para poder operar
+- [x] las acreditaciones y creditos de una cuenta bancaria de empresa siguen leyendose como ingreso consolidado de esa empresa, sin repartirse ni prorratearse entre sucursales (mantiene la regla ya vigente de `US-10.11`)
+- [x] los egresos bancarios de esa cuenta pueden seguir imputandose a una sucursal puntual mediante `sucursal_gasto`, porque la regla de imputacion por sucursal aplica a gastos, no a la propiedad de la cuenta ni a los ingresos
+- [x] los tests cubren que una cuenta bancaria y sus movimientos no aparecen si la empresa duena no esta en el contexto activo, que el acceso directo por URL devuelve 404, y que el ingreso consolidado no cambia al filtrar por una sucursal de esa empresa
+
+Nota de alcance: los formularios de pagos, lotes POS y acreditaciones siguen ofreciendo todas las cuentas activas (comportamiento previo); el scoping por empresa activa se aplico a listados, totales, y a los formularios de cuenta bancaria. Scopear los selectores de cuenta del resto de los formularios queda como mejora incremental.
+
 ## Dependencias
 
 - EP-03 cerrada
 - ventas por tarjeta correctamente separadas de caja
+- regla de aislamiento por empresa vigente (`EP-12`)
 
 ## Orden tecnico sugerido
 
@@ -146,6 +169,7 @@ Criterios:
 5. resolver conciliacion simple de venta, lote y banco
 6. cerrar dashboard bancario del periodo
 7. agregar carga inicial auditada de saldo bancario por cuenta
+8. asociar cuenta bancaria a empresa propietaria con backfill auditado
 
 ## Criterio de cierre
 
@@ -153,3 +177,4 @@ Criterios:
 - una acreditacion y sus descuentos quedan explicados desde el sistema
 - ya se puede detectar diferencia entre venta, lote y acreditacion
 - tesoreria puede iniciar una cuenta bancaria con saldo real auditado sin cargar un movimiento ficticio
+- una cuenta bancaria compartida por varias sucursales de una misma empresa queda modelada como cuenta de empresa, sin depender de una sucursal ficticia

@@ -1,5 +1,6 @@
 from datetime import timedelta
 from decimal import Decimal
+from importlib import import_module
 from queue import Queue
 from threading import Barrier, BrokenBarrierError, Thread
 from unittest import skipUnless
@@ -24,7 +25,7 @@ from .admin import (
     PagoTesoreriaAdmin,
     ProveedorAdmin,
 )
-from .forms import EgresoTesoreriaForm
+from .forms import BankAccountForm, BankMovementImputationForm, EgresoTesoreriaForm
 from .models import (
     AcreditacionTarjeta,
     CategoriaCuentaPagar,
@@ -63,8 +64,11 @@ from .services import (
     register_special_commitment,
     register_transfer_payment,
     set_initial_bank_balance,
+    toggle_bank_account,
     toggle_payable_category,
     annul_bank_movement,
+    complete_bank_movement_imputation,
+    update_bank_account,
     update_bank_movement,
 )
 
@@ -106,6 +110,7 @@ class TreasuryTestCase(TestCase):
             tipo_cuenta=CuentaBancaria.Tipo.CUENTA_CORRIENTE,
             numero_cuenta="123-456",
             cbu="2850590940090418135201",
+            empresa=self.empresa,
             actor=self.admin,
         )
 
@@ -577,6 +582,8 @@ class TreasuryServiceTests(TreasuryTestCase):
             tipo=MovimientoBancario.Tipo.DEBITO,
             clase=MovimientoBancario.Clase.OTRO_EGRESO,
             rubro_operativo=self.rubro_servicios,
+            sucursal_gasto=self.sucursal,
+            periodo_pago=timezone.localdate(),
             fecha=timezone.localdate(),
             monto=Decimal("65.00"),
             concepto="Correccion debito",
@@ -644,6 +651,9 @@ class TreasuryServiceTests(TreasuryTestCase):
             tipo=MovimientoBancario.Tipo.DEBITO,
             clase=MovimientoBancario.Clase.OTRO_EGRESO,
             categoria=self.category,
+            rubro_operativo=self.rubro_servicios,
+            sucursal_gasto=self.sucursal,
+            periodo_pago=timezone.localdate(),
             fecha=timezone.localdate(),
             monto=Decimal("120.00"),
             concepto="Debito banco",
@@ -682,6 +692,9 @@ class TreasuryServiceTests(TreasuryTestCase):
             tipo=MovimientoBancario.Tipo.DEBITO,
             clase=MovimientoBancario.Clase.OTRO_EGRESO,
             categoria=self.category,
+            rubro_operativo=self.rubro_servicios,
+            sucursal_gasto=self.sucursal,
+            periodo_pago=timezone.localdate(),
             fecha=timezone.localdate(),
             monto=Decimal("120.00"),
             concepto="Debito vinculado",
@@ -811,6 +824,9 @@ class TreasuryServiceTests(TreasuryTestCase):
         create_bank_movement(
             cuenta_bancaria=self.bank_account,
             tipo=MovimientoBancario.Tipo.DEBITO,
+            rubro_operativo=self.rubro_servicios,
+            sucursal_gasto=self.sucursal,
+            periodo_pago=reference_date,
             fecha=reference_date + timedelta(days=1),
             monto=Decimal("90.00"),
             concepto="Debito posterior",
@@ -844,6 +860,7 @@ class TreasuryServiceTests(TreasuryTestCase):
             banco="Banco Test",
             tipo_cuenta=CuentaBancaria.Tipo.CUENTA_CORRIENTE,
             numero_cuenta="999-888",
+            empresa=empresa,
             sucursal=branch,
             actor=self.admin,
         )
@@ -900,6 +917,9 @@ class TreasuryServiceTests(TreasuryTestCase):
         create_bank_movement(
             cuenta_bancaria=branch_account,
             tipo=MovimientoBancario.Tipo.DEBITO,
+            rubro_operativo=rubro,
+            sucursal_gasto=branch,
+            periodo_pago=timezone.localdate(),
             fecha=timezone.localdate(),
             monto=Decimal("40.00"),
             concepto="Debito bancario",
@@ -1037,6 +1057,7 @@ class TreasuryServiceTests(TreasuryTestCase):
             banco="Banco Global",
             tipo_cuenta=CuentaBancaria.Tipo.CUENTA_CORRIENTE,
             numero_cuenta="GLO-001",
+            empresa=empresa,
             sucursal=None,
             actor=self.admin,
         )
@@ -1080,6 +1101,7 @@ class TreasuryServiceTests(TreasuryTestCase):
             banco="Banco Periodo",
             tipo_cuenta=CuentaBancaria.Tipo.CUENTA_CORRIENTE,
             numero_cuenta="321-654",
+            empresa=empresa,
             sucursal=branch,
             actor=self.admin,
         )
@@ -1435,16 +1457,19 @@ class TreasuryServiceTests(TreasuryTestCase):
         self.assertEqual(snapshot["treasury_unmapped_expenses_total"], Decimal("40.00"))
         self.assertEqual(snapshot["treasury_unmapped_expenses_count"], 1)
 
-    def test_economic_period_snapshot_ignores_manual_bank_debits_as_unmapped_treasury_expenses(self):
+    def test_economic_period_snapshot_flags_incomplete_manual_bank_debits_as_unmapped(self):
+        # US-10.13: los debitos manuales historicos sin rubro/sucursal/periodo
+        # (creados antes de la regla, por eso objects.create) quedan visibles
+        # como gasto sin imputar en lugar de desaparecer de la lectura economica.
         period_day = timezone.datetime(2026, 7, 10).date()
-        create_bank_movement(
+        MovimientoBancario.objects.create(
             cuenta_bancaria=self.bank_account,
             tipo=MovimientoBancario.Tipo.DEBITO,
             clase=MovimientoBancario.Clase.OTRO_EGRESO,
             fecha=period_day,
             monto=Decimal("29390519.40"),
             concepto="Debito bancario manual sin imputacion economica",
-            actor=self.admin,
+            creado_por=self.admin,
         )
 
         snapshot = build_economic_period_snapshot(
@@ -1455,8 +1480,8 @@ class TreasuryServiceTests(TreasuryTestCase):
         )
 
         self.assertEqual(snapshot["treasury_expense_total"], Decimal("0.00"))
-        self.assertEqual(snapshot["treasury_unmapped_expenses_total"], Decimal("0.00"))
-        self.assertEqual(snapshot["treasury_unmapped_expenses_count"], 0)
+        self.assertEqual(snapshot["treasury_unmapped_expenses_total"], Decimal("29390519.40"))
+        self.assertEqual(snapshot["treasury_unmapped_expenses_count"], 1)
 
     def test_economic_period_snapshot_keeps_legacy_complete_manual_bank_treasury_expenses(self):
         period_day = timezone.datetime(2026, 7, 11).date()
@@ -1663,6 +1688,7 @@ class TreasuryServiceTests(TreasuryTestCase):
             clase=MovimientoBancario.Clase.OTRO_EGRESO,
             rubro_operativo=self.rubro_servicios,
             sucursal_gasto=heladeria,
+            periodo_pago=timezone.datetime(2026, 6, 1).date(),
             fecha=timezone.datetime(2026, 6, 7).date(),
             monto=Decimal("296503.00"),
             concepto="Bebida sin alcohol imputada a heladeria",
@@ -2006,12 +2032,14 @@ class TreasuryConcurrencyTests(TransactionTestCase):
             actor=self.admin,
         )
         self.supplier = create_supplier(razon_social="Proveedor Concurrencia SA", identificador_fiscal="30-99999999-9", actor=self.admin)
+        self.empresa = Empresa.objects.create(nombre="Empresa Concurrencia SA")
         self.bank_account = create_bank_account(
             nombre="Cuenta concurrencia",
             banco="Banco Dos",
             tipo_cuenta=CuentaBancaria.Tipo.CUENTA_CORRIENTE,
             numero_cuenta="999-123",
             cbu="2850590940090418135210",
+            empresa=self.empresa,
             actor=self.admin,
         )
         self.payable = register_payable(
@@ -2074,6 +2102,7 @@ class TreasuryViewTests(TreasuryTestCase):
             can_write=False,
         )
         read_user = User.objects.create_user(username="tesoreria-read", password="test", role=read_role)
+        read_user.empresas_permitidas.set([self.empresa])
         set_initial_bank_balance(
             cuenta_bancaria=self.bank_account,
             fecha_referencia=timezone.localdate().replace(day=1),
@@ -2733,6 +2762,7 @@ class TreasuryViewTests(TreasuryTestCase):
                 "rubro_operativo": self.rubro_servicios.pk,
                 "proveedor": "",
                 "sucursal_gasto": self.sucursal.pk,
+                "periodo_pago": timezone.localdate().isoformat(),
                 "fecha": timezone.localdate(),
                 "monto": "85.00",
                 "concepto": "ARCA abril",
@@ -2747,6 +2777,7 @@ class TreasuryViewTests(TreasuryTestCase):
         self.assertIsNone(movement.categoria)
         self.assertEqual(movement.rubro_operativo, self.rubro_servicios)
         self.assertEqual(movement.sucursal_gasto, self.sucursal)
+        self.assertEqual(movement.periodo_pago, timezone.localdate().replace(day=1))
         self.assertRedirects(response, reverse("treasury:bank_movements_detail", args=[movement.pk]))
 
     def test_bank_movement_create_form_uses_rubro_and_visible_submit(self):
@@ -2782,7 +2813,8 @@ class TreasuryViewTests(TreasuryTestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "El rubro es obligatorio para este tipo de movimiento.")
+        self.assertContains(response, "El rubro es obligatorio para egresos bancarios.")
+        self.assertContains(response, "El periodo es obligatorio para egresos bancarios.")
         self.assertFalse(MovimientoBancario.objects.filter(referencia="IMP-SIN-RUBRO").exists())
 
     def test_bank_movement_detail_exposes_edit_and_delete_for_manual_active_movement(self):
@@ -2791,6 +2823,8 @@ class TreasuryViewTests(TreasuryTestCase):
             tipo=MovimientoBancario.Tipo.DEBITO,
             clase=MovimientoBancario.Clase.OTRO_EGRESO,
             rubro_operativo=self.rubro_servicios,
+            sucursal_gasto=self.sucursal,
+            periodo_pago=timezone.localdate(),
             fecha=timezone.localdate(),
             monto=Decimal("75.00"),
             concepto="Debito editable",
@@ -2830,6 +2864,7 @@ class TreasuryViewTests(TreasuryTestCase):
                 "rubro_operativo": self.rubro_servicios.pk,
                 "proveedor": "",
                 "sucursal_gasto": self.sucursal.pk,
+                "periodo_pago": timezone.localdate().isoformat(),
                 "fecha": timezone.localdate().isoformat(),
                 "monto": "55.00",
                 "concepto": "Debito corregido",
@@ -2882,12 +2917,19 @@ class TreasuryViewTests(TreasuryTestCase):
         self.assertContains(detail, "Movimiento duplicado en extracto")
 
     def test_bank_movement_list_finds_by_amount_and_sucursal_gasto(self):
+        otra_sucursal = Sucursal.objects.create(
+            nombre="Sucursal Lejana",
+            codigo="SL01",
+            razon_social="Empresa Demo SA",
+            empresa=self.empresa,
+        )
         create_bank_movement(
             cuenta_bancaria=self.bank_account,
             tipo=MovimientoBancario.Tipo.DEBITO,
             clase=MovimientoBancario.Clase.IMPUESTO,
             rubro_operativo=self.rubro_servicios,
             sucursal_gasto=self.sucursal,
+            periodo_pago=timezone.localdate(),
             fecha=timezone.localdate(),
             monto=Decimal("345.67"),
             concepto="Transferencia Coca alquiler",
@@ -2899,6 +2941,8 @@ class TreasuryViewTests(TreasuryTestCase):
             tipo=MovimientoBancario.Tipo.DEBITO,
             clase=MovimientoBancario.Clase.IMPUESTO,
             rubro_operativo=self.rubro_servicios,
+            sucursal_gasto=otra_sucursal,
+            periodo_pago=timezone.localdate(),
             fecha=timezone.localdate(),
             monto=Decimal("100.00"),
             concepto="Otro movimiento",
@@ -2922,7 +2966,9 @@ class TreasuryViewTests(TreasuryTestCase):
             activo=True,
             creado_por=self.admin,
         )
-        create_bank_movement(
+        # Movimiento historico previo a US-10.13: sin rubro/sucursal/periodo,
+        # creado directo porque el alta por servicio ya no lo permite.
+        MovimientoBancario.objects.create(
             cuenta_bancaria=self.bank_account,
             tipo=MovimientoBancario.Tipo.DEBITO,
             clase=MovimientoBancario.Clase.IMPUESTO,
@@ -2931,7 +2977,7 @@ class TreasuryViewTests(TreasuryTestCase):
             monto=Decimal("90.00"),
             concepto="Debito legacy",
             referencia="LEG-BANCO",
-            actor=self.admin,
+            creado_por=self.admin,
         )
 
         response = self.client.get(reverse("treasury:bank_movements_list"), {"q": "LEG-BANCO"})
@@ -3198,3 +3244,711 @@ class TreasuryViewTests(TreasuryTestCase):
         self.assertContains(detail_response, "Factura almacen vista")
         self.assertContains(detail_response, "$ 200,00")
         self.assertContains(detail_response, "Debe coincidir con el total explicado")
+
+
+class EP04BankAccountEmpresaTests(TreasuryTestCase):
+    """US-4.9: cuenta bancaria con empresa propietaria y aislamiento por empresa."""
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(self.admin)
+        self.empresa_b = Empresa.objects.create(nombre="Empresa Ajena SA")
+        self.sucursal_b = Sucursal.objects.create(
+            nombre="Sucursal Ajena",
+            codigo="SA01",
+            razon_social="Empresa Ajena SA",
+            empresa=self.empresa_b,
+        )
+        self.admin.empresas_permitidas.set([self.empresa, self.empresa_b])
+
+    def _set_company_context(self, empresas):
+        session = self.client.session
+        session["empresa_ids"] = [empresa.pk for empresa in empresas]
+        session.save()
+
+    def _create_foreign_account(self, **overrides):
+        params = {
+            "nombre": "Cuenta Ajena",
+            "banco": "Banco Ajeno",
+            "tipo_cuenta": CuentaBancaria.Tipo.CUENTA_CORRIENTE,
+            "numero_cuenta": "AJ-001",
+            "empresa": self.empresa_b,
+            "actor": self.admin,
+        }
+        params.update(overrides)
+        return create_bank_account(**params)
+
+    def test_create_bank_account_requires_empresa_when_no_branch(self):
+        with self.assertRaises(ValidationError) as context:
+            create_bank_account(
+                nombre="Cuenta Sin Empresa",
+                banco="Banco Sin Empresa",
+                tipo_cuenta=CuentaBancaria.Tipo.CUENTA_CORRIENTE,
+                numero_cuenta="SE-001",
+                actor=self.admin,
+            )
+        self.assertIn("empresa", context.exception.message_dict)
+
+    def test_create_bank_account_derives_empresa_from_branch(self):
+        account = create_bank_account(
+            nombre="Cuenta Derivada",
+            banco="Banco Derivado",
+            tipo_cuenta=CuentaBancaria.Tipo.CUENTA_CORRIENTE,
+            numero_cuenta="DE-001",
+            sucursal=self.sucursal,
+            actor=self.admin,
+        )
+        self.assertEqual(account.empresa_id, self.empresa.pk)
+
+    def test_create_bank_account_rejects_branch_of_other_company(self):
+        with self.assertRaises(ValidationError) as context:
+            create_bank_account(
+                nombre="Cuenta Cruzada",
+                banco="Banco Cruzado",
+                tipo_cuenta=CuentaBancaria.Tipo.CUENTA_CORRIENTE,
+                numero_cuenta="CR-001",
+                empresa=self.empresa,
+                sucursal=self.sucursal_b,
+                actor=self.admin,
+            )
+        self.assertIn("sucursal", context.exception.message_dict)
+
+    def test_bank_account_list_hides_other_company_accounts(self):
+        self._create_foreign_account()
+        self._set_company_context([self.empresa])
+
+        response = self.client.get(reverse("treasury:cuentas_bancarias_list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Cuenta principal")
+        self.assertNotContains(response, "Cuenta Ajena")
+
+        self._set_company_context([self.empresa_b])
+        response = self.client.get(reverse("treasury:cuentas_bancarias_list"))
+        self.assertContains(response, "Cuenta Ajena")
+        self.assertNotContains(response, "Cuenta principal")
+
+    def test_bank_account_direct_access_respects_company_context(self):
+        foreign_account = self._create_foreign_account()
+        self._set_company_context([self.empresa])
+
+        update_response = self.client.get(
+            reverse("treasury:cuentas_bancarias_update", args=[foreign_account.pk])
+        )
+        toggle_response = self.client.post(
+            reverse("treasury:cuentas_bancarias_toggle", args=[foreign_account.pk])
+        )
+
+        self.assertEqual(update_response.status_code, 404)
+        self.assertEqual(toggle_response.status_code, 404)
+
+    def test_bank_movements_list_hides_other_company_account_movements(self):
+        foreign_account = self._create_foreign_account()
+        create_bank_movement(
+            cuenta_bancaria=foreign_account,
+            tipo=MovimientoBancario.Tipo.CREDITO,
+            clase=MovimientoBancario.Clase.OTRO_INGRESO,
+            fecha=timezone.localdate(),
+            monto=Decimal("321.00"),
+            concepto="Credito cuenta ajena",
+            actor=self.admin,
+        )
+        self._set_company_context([self.empresa])
+
+        response = self.client.get(reverse("treasury:bank_movements_list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "Credito cuenta ajena")
+
+        self._set_company_context([self.empresa_b])
+        response = self.client.get(reverse("treasury:bank_movements_list"))
+        self.assertContains(response, "Credito cuenta ajena")
+
+    def test_financial_snapshot_scopes_bank_balance_by_empresa(self):
+        reference_date = timezone.localdate()
+        set_initial_bank_balance(
+            cuenta_bancaria=self.bank_account,
+            fecha_referencia=reference_date,
+            importe=Decimal("100.00"),
+            motivo="Inicio cuenta propia",
+            actor=self.admin,
+        )
+        foreign_account = self._create_foreign_account()
+        set_initial_bank_balance(
+            cuenta_bancaria=foreign_account,
+            fecha_referencia=reference_date,
+            importe=Decimal("40.00"),
+            motivo="Inicio cuenta ajena",
+            actor=self.admin,
+        )
+
+        snapshot_a = build_financial_period_snapshot(
+            date_from=reference_date,
+            date_to=reference_date,
+            empresa_ids=[self.empresa.pk],
+        )
+        snapshot_b = build_financial_period_snapshot(
+            date_from=reference_date,
+            date_to=reference_date,
+            empresa_ids=[self.empresa_b.pk],
+        )
+
+        self.assertEqual(snapshot_a["total_bank_balance"], Decimal("100.00"))
+        self.assertEqual(snapshot_b["total_bank_balance"], Decimal("40.00"))
+
+    def test_legacy_account_without_empresa_stays_visible_and_completable(self):
+        legacy_account = CuentaBancaria.objects.create(
+            nombre="Cuenta Legacy",
+            banco="Banco Legacy",
+            tipo_cuenta=CuentaBancaria.Tipo.CUENTA_CORRIENTE,
+            numero_cuenta="LEG-001",
+            creado_por=self.admin,
+        )
+        self._set_company_context([self.empresa])
+
+        response = self.client.get(reverse("treasury:cuentas_bancarias_list"))
+        self.assertContains(response, "Cuenta Legacy")
+        self.assertContains(response, "Sin empresa asignada")
+
+        toggled = toggle_bank_account(bank_account=legacy_account, actor=self.admin)
+        self.assertFalse(toggled.activa)
+
+        completed = update_bank_account(
+            bank_account=legacy_account,
+            nombre="Cuenta Legacy",
+            banco="Banco Legacy",
+            tipo_cuenta=CuentaBancaria.Tipo.CUENTA_CORRIENTE,
+            numero_cuenta="LEG-001",
+            empresa=self.empresa,
+            activa=True,
+            actor=self.admin,
+        )
+        self.assertEqual(completed.empresa_id, self.empresa.pk)
+
+    def test_bank_account_form_requires_empresa_and_scopes_choices(self):
+        form = BankAccountForm(
+            data={
+                "nombre": "Cuenta Form",
+                "banco": "Banco Form",
+                "tipo_cuenta": CuentaBancaria.Tipo.CUENTA_CORRIENTE,
+                "numero_cuenta": "FO-001",
+                "activa": "on",
+            },
+            empresa_ids=[self.empresa.pk],
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("empresa", form.errors)
+        self.assertIn(self.empresa, form.fields["empresa"].queryset)
+        self.assertNotIn(self.empresa_b, form.fields["empresa"].queryset)
+        self.assertIn(self.sucursal, form.fields["sucursal"].queryset)
+        self.assertNotIn(self.sucursal_b, form.fields["sucursal"].queryset)
+
+    def test_backfill_migration_assigns_empresa_from_branch_and_movements(self):
+        migration = import_module("treasury.migrations.0023_backfill_cuenta_bancaria_empresa")
+        from django.apps import apps as live_apps
+
+        branch_account = CuentaBancaria.objects.create(
+            nombre="Backfill Sucursal",
+            banco="Banco Backfill",
+            tipo_cuenta=CuentaBancaria.Tipo.CUENTA_CORRIENTE,
+            numero_cuenta="BF-001",
+            sucursal=self.sucursal,
+            creado_por=self.admin,
+        )
+        unanimous_account = CuentaBancaria.objects.create(
+            nombre="Backfill Movimientos",
+            banco="Banco Backfill",
+            tipo_cuenta=CuentaBancaria.Tipo.CUENTA_CORRIENTE,
+            numero_cuenta="BF-002",
+            creado_por=self.admin,
+        )
+        ambiguous_account = CuentaBancaria.objects.create(
+            nombre="Backfill Ambigua",
+            banco="Banco Backfill",
+            tipo_cuenta=CuentaBancaria.Tipo.CUENTA_CORRIENTE,
+            numero_cuenta="BF-003",
+            creado_por=self.admin,
+        )
+        for index, sucursal_gasto in enumerate([self.sucursal_b, self.sucursal_b]):
+            MovimientoBancario.objects.create(
+                cuenta_bancaria=unanimous_account,
+                tipo=MovimientoBancario.Tipo.DEBITO,
+                clase=MovimientoBancario.Clase.OTRO_EGRESO,
+                fecha=timezone.localdate(),
+                monto=Decimal("10.00"),
+                concepto=f"Debito unanimidad {index}",
+                sucursal_gasto=sucursal_gasto,
+            )
+        for index, sucursal_gasto in enumerate([self.sucursal, self.sucursal_b]):
+            MovimientoBancario.objects.create(
+                cuenta_bancaria=ambiguous_account,
+                tipo=MovimientoBancario.Tipo.DEBITO,
+                clase=MovimientoBancario.Clase.OTRO_EGRESO,
+                fecha=timezone.localdate(),
+                monto=Decimal("10.00"),
+                concepto=f"Debito ambiguo {index}",
+                sucursal_gasto=sucursal_gasto,
+            )
+
+        migration.backfill_empresa(live_apps, None)
+
+        branch_account.refresh_from_db()
+        unanimous_account.refresh_from_db()
+        ambiguous_account.refresh_from_db()
+        self.assertEqual(branch_account.empresa_id, self.empresa.pk)
+        self.assertEqual(unanimous_account.empresa_id, self.empresa_b.pk)
+        self.assertIsNone(ambiguous_account.empresa_id)
+
+
+class EP10BankDebitImputationTests(TreasuryTestCase):
+    """US-10.13: rubro, sucursal y periodo obligatorios en todo debito bancario."""
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(self.admin)
+
+    def _create_historic_incomplete_debit(self, **overrides):
+        params = {
+            "cuenta_bancaria": self.bank_account,
+            "tipo": MovimientoBancario.Tipo.DEBITO,
+            "clase": MovimientoBancario.Clase.OTRO_EGRESO,
+            "fecha": timezone.datetime(2026, 7, 10).date(),
+            "monto": Decimal("500.00"),
+            "concepto": "Debito historico sin imputar",
+            "creado_por": self.admin,
+        }
+        params.update(overrides)
+        return MovimientoBancario.objects.create(**params)
+
+    def test_manual_debit_creation_requires_rubro_sucursal_and_periodo(self):
+        with self.assertRaises(ValidationError) as context:
+            create_bank_movement(
+                cuenta_bancaria=self.bank_account,
+                tipo=MovimientoBancario.Tipo.DEBITO,
+                clase=MovimientoBancario.Clase.OTRO_EGRESO,
+                fecha=timezone.localdate(),
+                monto=Decimal("50.00"),
+                concepto="Debito manual incompleto",
+                actor=self.admin,
+            )
+
+        self.assertIn("rubro_operativo", context.exception.message_dict)
+        self.assertIn("sucursal_gasto", context.exception.message_dict)
+        self.assertIn("periodo_pago", context.exception.message_dict)
+
+    def test_credit_movements_do_not_require_imputation(self):
+        movement = create_bank_movement(
+            cuenta_bancaria=self.bank_account,
+            tipo=MovimientoBancario.Tipo.CREDITO,
+            fecha=timezone.localdate(),
+            monto=Decimal("50.00"),
+            concepto="Credito sin imputacion",
+            actor=self.admin,
+        )
+        self.assertIsNone(movement.rubro_operativo)
+        self.assertIsNone(movement.sucursal_gasto)
+        self.assertIsNone(movement.periodo_pago)
+
+    def test_linking_payment_inherits_imputation_from_payable(self):
+        payable = register_payable(
+            sucursal=self.sucursal,
+            proveedor=self.supplier,
+            categoria=self.category,
+            concepto="Factura con sucursal",
+            fecha_emision=timezone.localdate(),
+            fecha_vencimiento=timezone.localdate(),
+            importe_total=Decimal("500.00"),
+            actor=self.admin,
+        )
+        payment = register_transfer_payment(
+            payable=payable,
+            bank_account=self.bank_account,
+            fecha_pago=timezone.localdate(),
+            monto=Decimal("120.00"),
+            referencia="TRF-HEREDA",
+            actor=self.admin,
+        )
+        movement = self._create_historic_incomplete_debit(
+            monto=Decimal("120.00"),
+            concepto="Debito historico a vincular",
+        )
+
+        link_payment_to_bank_movement(payment=payment, bank_movement=movement, actor=self.admin)
+
+        movement.refresh_from_db()
+        self.assertEqual(movement.origen, MovimientoBancario.Origen.PAGO_TESORERIA)
+        self.assertEqual(movement.sucursal_gasto, self.sucursal)
+        self.assertEqual(movement.periodo_pago, payable.periodo_referencia)
+        self.assertEqual(movement.rubro_operativo, self.rubro_servicios)
+
+    def test_linking_payment_blocks_when_imputation_stays_incomplete(self):
+        payable = register_payable(
+            proveedor=self.supplier,
+            categoria=self.category,
+            concepto="Factura sin sucursal",
+            fecha_emision=timezone.localdate(),
+            fecha_vencimiento=timezone.localdate(),
+            importe_total=Decimal("500.00"),
+            actor=self.admin,
+        )
+        payment = register_transfer_payment(
+            payable=payable,
+            bank_account=self.bank_account,
+            fecha_pago=timezone.localdate(),
+            monto=Decimal("120.00"),
+            referencia="TRF-BLOQUEA",
+            actor=self.admin,
+        )
+        movement = self._create_historic_incomplete_debit(
+            monto=Decimal("120.00"),
+            concepto="Debito historico sin sucursal posible",
+        )
+
+        with self.assertRaises(ValidationError) as context:
+            link_payment_to_bank_movement(payment=payment, bank_movement=movement, actor=self.admin)
+
+        self.assertIn("sucursal_gasto", context.exception.message_dict)
+        movement.refresh_from_db()
+        self.assertEqual(movement.origen, MovimientoBancario.Origen.MANUAL)
+        self.assertIsNone(movement.pago_tesoreria_id)
+
+    def test_completing_historic_debit_moves_it_into_economic_treasury_expense(self):
+        movement = self._create_historic_incomplete_debit()
+        period_from = timezone.datetime(2026, 7, 1).date()
+        period_to = timezone.datetime(2026, 7, 31).date()
+
+        before = build_economic_period_snapshot(
+            date_from=period_from,
+            date_to=period_to,
+            sucursal=self.sucursal,
+            empresa_ids=[self.empresa.pk],
+        )
+        self.assertEqual(before["treasury_expense_total"], Decimal("0.00"))
+        self.assertEqual(before["treasury_unmapped_expenses_total"], Decimal("500.00"))
+        self.assertEqual(before["treasury_unmapped_expenses_count"], 1)
+
+        complete_bank_movement_imputation(
+            movement=movement,
+            rubro_operativo=self.rubro_servicios,
+            sucursal_gasto=self.sucursal,
+            periodo_pago=timezone.datetime(2026, 7, 15).date(),
+            actor=self.admin,
+        )
+
+        movement.refresh_from_db()
+        self.assertEqual(movement.periodo_pago, timezone.datetime(2026, 7, 1).date())
+        after = build_economic_period_snapshot(
+            date_from=period_from,
+            date_to=period_to,
+            sucursal=self.sucursal,
+            empresa_ids=[self.empresa.pk],
+        )
+        self.assertEqual(after["treasury_expense_total"], Decimal("500.00"))
+        self.assertEqual(after["treasury_unmapped_expenses_total"], Decimal("0.00"))
+        self.assertEqual(after["treasury_unmapped_expenses_count"], 0)
+
+    def test_annulling_historic_incomplete_debit_still_works(self):
+        movement = self._create_historic_incomplete_debit()
+
+        annul_bank_movement(movement=movement, motivo="Carga duplicada historica", actor=self.admin)
+
+        movement.refresh_from_db()
+        self.assertEqual(movement.estado, MovimientoBancario.Estado.ANULADO)
+
+    def test_bank_withdrawal_to_central_cash_does_not_require_imputation(self):
+        # Un retiro banco -> caja fuerte mueve fondos, no es gasto: no exige
+        # rubro/sucursal/periodo y no entra al gasto tesoreria ni al pendiente.
+        movement = create_bank_movement(
+            cuenta_bancaria=self.bank_account,
+            tipo=MovimientoBancario.Tipo.DEBITO,
+            clase=MovimientoBancario.Clase.RETIRO,
+            fecha=timezone.datetime(2026, 7, 10).date(),
+            monto=Decimal("500.00"),
+            concepto="Retiro para caja fuerte",
+            actor=self.admin,
+        )
+        self.assertIsNone(movement.rubro_operativo)
+
+        snapshot = build_economic_period_snapshot(
+            date_from=timezone.datetime(2026, 7, 1).date(),
+            date_to=timezone.datetime(2026, 7, 31).date(),
+            sucursal=self.sucursal,
+            empresa_ids=[self.empresa.pk],
+        )
+        self.assertEqual(snapshot["treasury_expense_total"], Decimal("0.00"))
+        self.assertEqual(snapshot["treasury_unmapped_expenses_total"], Decimal("0.00"))
+        self.assertEqual(snapshot["treasury_unmapped_expenses_count"], 0)
+
+        response = self.client.get(
+            reverse("treasury:bank_movements_imputation", args=[movement.pk]), follow=True
+        )
+        self.assertContains(
+            response, "Solo se puede completar la imputacion de un egreso bancario registrado."
+        )
+
+    def test_incomplete_debit_of_other_company_stays_out_of_economic_alert_and_worklist(self):
+        empresa_b = Empresa.objects.create(nombre="Empresa Ajena Alerta")
+        foreign_account = create_bank_account(
+            nombre="Cuenta Ajena Alerta",
+            banco="Banco Ajeno Alerta",
+            tipo_cuenta=CuentaBancaria.Tipo.CUENTA_CORRIENTE,
+            numero_cuenta="AJA-001",
+            empresa=empresa_b,
+            actor=self.admin,
+        )
+        self._create_historic_incomplete_debit(
+            cuenta_bancaria=foreign_account,
+            concepto="Debito ajeno sin imputar",
+        )
+
+        snapshot = build_economic_period_snapshot(
+            date_from=timezone.datetime(2026, 7, 1).date(),
+            date_to=timezone.datetime(2026, 7, 31).date(),
+            empresa_ids=[self.empresa.pk],
+        )
+        self.assertEqual(snapshot["treasury_unmapped_expenses_total"], Decimal("0.00"))
+        self.assertEqual(snapshot["treasury_unmapped_expenses_count"], 0)
+
+        imputation_response = self.client.post(
+            reverse(
+                "treasury:bank_movements_imputation",
+                args=[MovimientoBancario.objects.get(concepto="Debito ajeno sin imputar").pk],
+            ),
+            {
+                "rubro_operativo": self.rubro_servicios.pk,
+                "sucursal_gasto": self.sucursal.pk,
+                "periodo_pago": timezone.datetime(2026, 7, 1).date().isoformat(),
+            },
+        )
+        self.assertEqual(imputation_response.status_code, 404)
+
+    def test_imputation_rejects_sucursal_of_other_company(self):
+        empresa_b = Empresa.objects.create(nombre="Empresa Ajena Imputacion")
+        sucursal_b = Sucursal.objects.create(
+            nombre="Sucursal Ajena Imputacion",
+            codigo="SAI01",
+            razon_social="Empresa Ajena Imputacion",
+            empresa=empresa_b,
+        )
+        self.bank_account.empresa = self.empresa
+        self.bank_account.save(update_fields=["empresa"])
+        movement = self._create_historic_incomplete_debit(concepto="Debito cruce empresa")
+
+        with self.assertRaises(ValidationError) as context:
+            complete_bank_movement_imputation(
+                movement=movement,
+                rubro_operativo=self.rubro_servicios,
+                sucursal_gasto=sucursal_b,
+                periodo_pago=timezone.datetime(2026, 7, 1).date(),
+                actor=self.admin,
+            )
+        self.assertIn("sucursal_gasto", context.exception.message_dict)
+
+        form = BankMovementImputationForm(instance=movement, empresa_ids=[self.empresa.pk])
+        self.assertIn(self.sucursal, form.fields["sucursal_gasto"].queryset)
+        self.assertNotIn(sucursal_b, form.fields["sucursal_gasto"].queryset)
+
+    def test_worklist_filter_and_imputation_view_complete_historic_debit(self):
+        movement = self._create_historic_incomplete_debit(concepto="Debito worklist banco")
+
+        pending_list = self.client.get(
+            reverse("treasury:bank_movements_list"), {"imputacion": "pendientes"}
+        )
+        self.assertEqual(pending_list.status_code, 200)
+        self.assertContains(pending_list, "Debito worklist banco")
+        self.assertContains(pending_list, "PENDIENTE DE IMPUTAR")
+        self.assertContains(pending_list, "Egresos pendientes de imputacion")
+
+        detail = self.client.get(reverse("treasury:bank_movements_detail", args=[movement.pk]))
+        self.assertContains(detail, "Completar imputacion")
+
+        response = self.client.post(
+            reverse("treasury:bank_movements_imputation", args=[movement.pk]),
+            {
+                "rubro_operativo": self.rubro_servicios.pk,
+                "sucursal_gasto": self.sucursal.pk,
+                "periodo_pago": timezone.datetime(2026, 7, 20).date().isoformat(),
+            },
+        )
+        self.assertRedirects(response, reverse("treasury:bank_movements_detail", args=[movement.pk]))
+
+        movement.refresh_from_db()
+        self.assertEqual(movement.rubro_operativo, self.rubro_servicios)
+        self.assertEqual(movement.sucursal_gasto, self.sucursal)
+        self.assertEqual(movement.periodo_pago, timezone.datetime(2026, 7, 1).date())
+
+        pending_after = self.client.get(
+            reverse("treasury:bank_movements_list"), {"imputacion": "pendientes"}
+        )
+        self.assertNotContains(pending_after, "Debito worklist banco")
+
+    def test_imputation_view_completes_payment_linked_historic_debit(self):
+        payable = register_payable(
+            proveedor=self.supplier,
+            categoria=self.category,
+            concepto="Factura legacy vinculada",
+            fecha_emision=timezone.localdate(),
+            fecha_vencimiento=timezone.localdate(),
+            importe_total=Decimal("500.00"),
+            actor=self.admin,
+        )
+        payment = register_transfer_payment(
+            payable=payable,
+            bank_account=self.bank_account,
+            fecha_pago=timezone.localdate(),
+            monto=Decimal("120.00"),
+            referencia="TRF-LEGACY",
+            actor=self.admin,
+        )
+        movement = self._create_historic_incomplete_debit(
+            monto=Decimal("120.00"),
+            concepto="Debito legacy vinculado a pago",
+            clase=MovimientoBancario.Clase.TRANSFERENCIA_TERCEROS,
+            origen=MovimientoBancario.Origen.PAGO_TESORERIA,
+            pago_tesoreria=payment,
+            proveedor=self.supplier,
+            categoria=self.category,
+        )
+
+        response = self.client.post(
+            reverse("treasury:bank_movements_imputation", args=[movement.pk]),
+            {
+                "rubro_operativo": self.rubro_servicios.pk,
+                "sucursal_gasto": self.sucursal.pk,
+                "periodo_pago": timezone.datetime(2026, 7, 5).date().isoformat(),
+            },
+        )
+        self.assertRedirects(response, reverse("treasury:bank_movements_detail", args=[movement.pk]))
+
+        movement.refresh_from_db()
+        self.assertEqual(movement.origen, MovimientoBancario.Origen.PAGO_TESORERIA)
+        self.assertEqual(movement.rubro_operativo, self.rubro_servicios)
+        self.assertEqual(movement.sucursal_gasto, self.sucursal)
+        self.assertEqual(movement.periodo_pago, timezone.datetime(2026, 7, 1).date())
+
+
+class EP10DebtVsBankCoverageTests(TreasuryTestCase):
+    """US-10.14: diferencia entre deuda pendiente y disponibilidad real en banco."""
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(self.admin)
+
+    def _register_pending_payable(self, importe):
+        return register_payable(
+            sucursal=self.sucursal,
+            proveedor=self.supplier,
+            categoria=self.category,
+            concepto="Deuda para cobertura",
+            fecha_emision=timezone.localdate(),
+            fecha_vencimiento=timezone.localdate() + timedelta(days=5),
+            importe_total=importe,
+            actor=self.admin,
+        )
+
+    def test_snapshot_reports_positive_coverage_and_ignores_central_cash(self):
+        reference_date = timezone.localdate()
+        set_initial_bank_balance(
+            cuenta_bancaria=self.bank_account,
+            fecha_referencia=reference_date,
+            importe=Decimal("1000.00"),
+            motivo="Base para cobertura",
+            actor=self.admin,
+        )
+        self._register_pending_payable(Decimal("400.00"))
+        register_central_cash_movement(
+            tipo=MovimientoCajaCentral.Tipo.APORTE,
+            monto=Decimal("999.00"),
+            concepto="Efectivo que no debe sumar al banco",
+            fecha=reference_date,
+            actor=self.admin,
+        )
+
+        snapshot = build_financial_period_snapshot(
+            date_from=reference_date,
+            date_to=reference_date,
+        )
+
+        self.assertEqual(snapshot["total_bank_balance"], Decimal("1000.00"))
+        self.assertEqual(snapshot["pending_total"], Decimal("400.00"))
+        self.assertEqual(snapshot["debt_vs_bank_difference"], Decimal("600.00"))
+        self.assertTrue(snapshot["debt_vs_bank_covered"])
+
+    def test_snapshot_reports_negative_coverage_when_debt_exceeds_bank(self):
+        reference_date = timezone.localdate()
+        set_initial_bank_balance(
+            cuenta_bancaria=self.bank_account,
+            fecha_referencia=reference_date,
+            importe=Decimal("100.00"),
+            motivo="Base chica para cobertura",
+            actor=self.admin,
+        )
+        self._register_pending_payable(Decimal("400.00"))
+
+        snapshot = build_financial_period_snapshot(
+            date_from=reference_date,
+            date_to=reference_date,
+        )
+
+        self.assertEqual(snapshot["debt_vs_bank_difference"], Decimal("-300.00"))
+        self.assertFalse(snapshot["debt_vs_bank_covered"])
+
+    def test_dashboard_shows_coverage_card_with_cutoff_date(self):
+        reference_date = timezone.localdate()
+        set_initial_bank_balance(
+            cuenta_bancaria=self.bank_account,
+            fecha_referencia=reference_date,
+            importe=Decimal("100.00"),
+            motivo="Base dashboard cobertura",
+            actor=self.admin,
+        )
+        self._register_pending_payable(Decimal("400.00"))
+
+        response = self.client.get(reverse("treasury:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Banco menos deuda pendiente")
+        self.assertContains(response, "El banco no alcanza para cubrir la deuda pendiente")
+        self.assertContains(response, reference_date.strftime("%d/%m/%Y"))
+        self.assertEqual(
+            response.context["snapshot"]["debt_vs_bank_difference"], Decimal("-300.00")
+        )
+        self.assertFalse(response.context["snapshot"]["debt_vs_bank_covered"])
+
+        # La tarjeta es del consolidado: en la vista particular por sucursal el
+        # banco por sucursal no incluye cuentas de empresa y el numero enganaria.
+        branch_response = self.client.get(
+            reverse("treasury:dashboard"), {"sucursal": self.sucursal.pk}
+        )
+        self.assertEqual(branch_response.status_code, 200)
+        self.assertNotContains(branch_response, "Banco menos deuda pendiente")
+
+    def test_pending_debt_includes_legacy_payables_without_branch_under_company_scope(self):
+        reference_date = timezone.localdate()
+        set_initial_bank_balance(
+            cuenta_bancaria=self.bank_account,
+            fecha_referencia=reference_date,
+            importe=Decimal("100.00"),
+            motivo="Base cobertura legacy",
+            actor=self.admin,
+        )
+        register_payable(
+            proveedor=self.supplier,
+            categoria=self.category,
+            concepto="Deuda legacy sin sucursal",
+            fecha_emision=reference_date,
+            fecha_vencimiento=reference_date + timedelta(days=5),
+            importe_total=Decimal("400.00"),
+            actor=self.admin,
+        )
+
+        snapshot = build_financial_period_snapshot(
+            date_from=reference_date,
+            date_to=reference_date,
+            empresa_ids=[self.empresa.pk],
+        )
+
+        self.assertEqual(snapshot["pending_total"], Decimal("400.00"))
+        self.assertEqual(snapshot["debt_vs_bank_difference"], Decimal("-300.00"))
+        self.assertFalse(snapshot["debt_vs_bank_covered"])

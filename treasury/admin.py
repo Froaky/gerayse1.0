@@ -80,8 +80,8 @@ class ObjetivoRubroEconomicoAdmin(TreasuryNoDeleteAdminMixin, admin.ModelAdmin):
 
 @admin.register(CuentaBancaria)
 class CuentaBancariaAdmin(TreasuryNoDeleteAdminMixin, admin.ModelAdmin):
-    list_display = ("nombre", "banco", "tipo_cuenta", "numero_cuenta", "activa")
-    list_filter = ("activa", "tipo_cuenta", "banco")
+    list_display = ("nombre", "banco", "tipo_cuenta", "numero_cuenta", "empresa", "activa")
+    list_filter = ("activa", "tipo_cuenta", "banco", "empresa")
     search_fields = ("nombre", "banco", "numero_cuenta", "alias", "cbu")
     autocomplete_fields = ("creado_por",)
 

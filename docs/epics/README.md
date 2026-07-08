@@ -12,13 +12,13 @@ Estado actual:
 - `EP-01`: caja operativa, movimientos y cierres. Implementada.
 - `EP-02`: alertas y semaforos operativos. Implementada.
 - `EP-03`: tesoreria central base. Implementada.
-- `EP-04`: bancos y conciliacion. Implementada hasta `US-4.8`; bancos ya permite saldo inicial auditado por cuenta.
+- `EP-04`: bancos y conciliacion. Implementada hasta `US-4.9`: la cuenta bancaria tiene empresa propietaria con backfill auditado y aislamiento por empresa activa. Cerrada 2026-07-08.
 - `EP-05`: flujo de disponibilidades. Implementada.
 - `EP-06`: control de gestion y alertas. Implementada.
 - `EP-07`: impuestos, planes y autorizaciones. Implementada.
 - `EP-08`: ajustes operativos de caja y sucursales. Reabierta: implementada hasta `US-8.13` y `US-8.16` a `US-8.18`; pendiente correccion auditada de cargas y control explicito de cajas faltantes por fecha/turno/sucursal (`US-8.14`, `US-8.15`).
 - `EP-09`: usuarios operativos y datos minimos. Reabierta: gestion operativa de usuarios, roles y permisos por modulo implementados; pendiente granularidad por sucursal/empresa/lugar (`US-9.11`).
-- `EP-10`: situacion financiera y alertas consolidadas. Implementada.
+- `EP-10`: situacion financiera y alertas consolidadas. Implementada hasta `US-10.14`: todo egreso bancario nuevo exige rubro/sucursal/periodo con worklist para completar historicos, y el consolidado muestra la diferencia entre deuda pendiente y banco. Cerrada 2026-07-08 (queda una nota de alcance a confirmar con el cliente en `US-10.14`).
 - `EP-11`: rentabilidad y situacion economica. Reabierta: implementada hasta US-11.7 y US-11.10; pendiente reimputar gastos historicos y excluir ventas especiales de la base general (`US-11.8`, `US-11.9`).
 - `EP-12`: empresas, contexto activo y navegacion. Implementada. Cerrada 2026-04-28.
 
@@ -57,6 +57,9 @@ Principios de implementacion:
 - toda excepcion debe quedar auditada
 - toda vista con contexto de empresa debe filtrar y validar datos contra la empresa activa
 - el sistema debe reconstruir cierres, deuda, pagos, flujo y dashboard sin retoques manuales
+
+Propuestas para presupuestar (no aprobadas, no implementar sin OK explicito):
+- [PROPUESTA-EP-13-cajeros-y-validacion-efectivo.md](/C:/Users/MateoCoca/Documents/REPOS/gerayse/docs/epics/PROPUESTA-EP-13-cajeros-y-validacion-efectivo.md): usuarios cajero por sucursal, validacion de efectivo antes de contar, permisos por accion, egreso de caja como deuda. Pedido 2026-07-08, queda fuera del orden de implementacion hasta aprobacion.
 
 Criterio de cierre global:
 - un mes completo de operacion debe poder reconstruirse desde la base sin editar planillas

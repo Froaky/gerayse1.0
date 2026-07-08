@@ -95,7 +95,7 @@ class Command(BaseCommand):
     # ------------------------------------------------------------------ secciones
 
     def _seccion_cuentas(self, tope):
-        cuentas = CuentaBancaria.objects.filter(sucursal__isnull=True).order_by("-creado_en")
+        cuentas = CuentaBancaria.objects.filter(empresa__isnull=True).order_by("-creado_en")
         total = cuentas.count()
         self._encabezado_seccion(f"CUENTAS DE BANCO SIN EMPRESA ASIGNADA: {total}")
         if total == 0:

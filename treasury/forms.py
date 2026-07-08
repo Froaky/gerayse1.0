@@ -20,7 +20,7 @@ from .models import (
     Proveedor,
     SaldoInicialCuentaBancaria,
 )
-from cashops.models import RubroOperativo, Sucursal
+from cashops.models import Empresa, RubroOperativo, Sucursal
 
 
 class TreasuryStyledFormMixin:
@@ -130,9 +130,17 @@ class BankAccountForm(TreasuryStyledFormMixin, forms.ModelForm):
             "alias",
             "cbu",
             "sucursal_bancaria",
+            "empresa",
             "sucursal",
             "activa",
         ]
+        labels = {
+            "empresa": "Empresa propietaria",
+        }
+        help_texts = {
+            "empresa": "Duena de la cuenta. Las acreditaciones se leen como fondo comun de esta empresa.",
+            "sucursal": "Opcional: solo si la cuenta es exclusiva de un local puntual.",
+        }
         widgets = {
             "nombre": forms.TextInput(attrs={"placeholder": "Cuenta operativa"}),
             "banco": forms.TextInput(attrs={"placeholder": "Banco Galicia"}),
@@ -142,8 +150,20 @@ class BankAccountForm(TreasuryStyledFormMixin, forms.ModelForm):
             "sucursal_bancaria": forms.TextInput(attrs={"placeholder": "Sucursal"}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, empresa_ids=None, **kwargs):
         super().__init__(*args, **kwargs)
+        empresas = Empresa.objects.filter(activa=True).order_by("nombre")
+        sucursales = Sucursal.objects.order_by("nombre")
+        if empresa_ids is not None:
+            empresas = empresas.filter(pk__in=empresa_ids)
+            sucursales = sucursales.filter(empresa_id__in=empresa_ids)
+        if self.instance.pk and self.instance.empresa_id:
+            empresas = Empresa.objects.filter(
+                pk__in=[*empresas.values_list("pk", flat=True), self.instance.empresa_id]
+            ).order_by("nombre")
+        self.fields["empresa"].queryset = empresas
+        self.fields["empresa"].required = True
+        self.fields["sucursal"].queryset = sucursales
         self._apply_input_classes()
 
 
@@ -496,6 +516,7 @@ class BankMovementForm(TreasuryStyledFormMixin, forms.ModelForm):
             "rubro_operativo",
             "proveedor",
             "sucursal_gasto",
+            "periodo_pago",
             "fecha",
             "monto",
             "concepto",
@@ -504,6 +525,7 @@ class BankMovementForm(TreasuryStyledFormMixin, forms.ModelForm):
         ]
         widgets = {
             "fecha": forms.DateInput(attrs={"type": "date"}),
+            "periodo_pago": forms.DateInput(attrs={"type": "date"}),
             "monto": forms.NumberInput(attrs={"step": "0.01", "placeholder": "0.00"}),
             "concepto": forms.TextInput(attrs={"placeholder": "Comision bancaria / Intereses / etc."}),
             "referencia": forms.TextInput(attrs={"placeholder": "Nro de operacion"}),
@@ -519,11 +541,14 @@ class BankMovementForm(TreasuryStyledFormMixin, forms.ModelForm):
         self.fields["rubro_operativo"].required = False
         self.fields["proveedor"].required = False
         self.fields["sucursal_gasto"].required = False
+        self.fields["periodo_pago"].required = False
         self.fields["sucursal_gasto"].label = "Sucursal"
         self.fields["sucursal_gasto"].empty_label = "Sin asignar"
         self.fields["clase"].label = "Tipo financiero"
         self.fields["rubro_operativo"].label = "Rubro"
         self.fields["rubro_operativo"].empty_label = "Sin asignar"
+        self.fields["periodo_pago"].label = "Periodo que se esta pagando"
+        self.fields["periodo_pago"].help_text = "Obligatorio en egresos: mes al que corresponde el gasto."
         tipo_actual = self.data.get(self.add_prefix("tipo")) if self.is_bound else None
         self.show_sucursal_field = tipo_actual == MovimientoBancario.Tipo.DEBITO or not tipo_actual
         self.conditional_sucursal = True
@@ -531,16 +556,32 @@ class BankMovementForm(TreasuryStyledFormMixin, forms.ModelForm):
         self.sucursal_field_id = self["sucursal_gasto"].id_for_label
         self.sucursal_field_name = "sucursal_gasto"
         self.sucursal_required_value = MovimientoBancario.Tipo.DEBITO
+        self.conditional_periodo = True
+        self.periodo_field_id = self["periodo_pago"].id_for_label
+        self.periodo_field_name = "periodo_pago"
         self._apply_input_classes()
+
+    def clean_periodo_pago(self):
+        periodo = self.cleaned_data.get("periodo_pago")
+        if periodo:
+            return periodo.replace(day=1)
+        return periodo
 
     def clean(self):
         cleaned_data = super().clean()
         if cleaned_data.get("tipo") != MovimientoBancario.Tipo.DEBITO:
             cleaned_data["sucursal_gasto"] = None
+            cleaned_data["periodo_pago"] = None
         return cleaned_data
 
 
 class BankMovementFilterForm(TreasuryStyledFormMixin, forms.Form):
+    IMPUTACION_CHOICES = (
+        ("", "Imputacion: todas"),
+        ("pendientes", "Egresos pendientes de imputacion"),
+        ("imputados", "Egresos imputados completos"),
+    )
+
     q = forms.CharField(required=False, label="Buscar", widget=forms.TextInput(attrs={"placeholder": "Concepto o referencia"}))
     cuenta_bancaria = forms.ModelChoiceField(queryset=CuentaBancaria.objects.none(), required=False, empty_label="Todas las cuentas")
     tipo = forms.ChoiceField(required=False, choices=(("", "Todos los tipos"),) + tuple(MovimientoBancario.Tipo.choices))
@@ -548,11 +589,49 @@ class BankMovementFilterForm(TreasuryStyledFormMixin, forms.Form):
     fecha_desde = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
     fecha_hasta = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
     sucursal = forms.ModelChoiceField(queryset=Sucursal.objects.all(), required=False, empty_label="Todas las sucursales")
+    imputacion = forms.ChoiceField(required=False, choices=IMPUTACION_CHOICES, label="Imputacion")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["cuenta_bancaria"].queryset = CuentaBancaria.objects.order_by("banco", "nombre")
         self._apply_input_classes()
+
+
+class BankMovementImputationForm(TreasuryStyledFormMixin, forms.ModelForm):
+    class Meta:
+        model = MovimientoBancario
+        fields = ["rubro_operativo", "sucursal_gasto", "periodo_pago"]
+        widgets = {
+            "periodo_pago": forms.DateInput(attrs={"type": "date"}),
+        }
+
+    def __init__(self, *args, empresa_ids=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["rubro_operativo"].queryset = RubroOperativo.objects.filter(activo=True, es_sistema=False).order_by("nombre")
+        sucursales = Sucursal.objects.filter(activa=True).order_by("nombre")
+        account_empresa_id = (
+            self.instance.cuenta_bancaria.empresa_id
+            if self.instance.pk and self.instance.cuenta_bancaria_id
+            else None
+        )
+        if account_empresa_id:
+            sucursales = sucursales.filter(empresa_id=account_empresa_id)
+        elif empresa_ids is not None:
+            sucursales = sucursales.filter(empresa_id__in=empresa_ids)
+        self.fields["sucursal_gasto"].queryset = sucursales
+        self.fields["rubro_operativo"].required = True
+        self.fields["sucursal_gasto"].required = True
+        self.fields["periodo_pago"].required = True
+        self.fields["rubro_operativo"].label = "Rubro"
+        self.fields["sucursal_gasto"].label = "Sucursal correspondiente"
+        self.fields["periodo_pago"].label = "Periodo que se esta pagando"
+        self._apply_input_classes()
+
+    def clean_periodo_pago(self):
+        periodo = self.cleaned_data.get("periodo_pago")
+        if periodo:
+            return periodo.replace(day=1)
+        return periodo
 
 
 class BankMovementAnnulForm(TreasuryStyledFormMixin, forms.Form):

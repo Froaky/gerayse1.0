@@ -18,6 +18,8 @@ Unificar la lectura financiera diaria entre cajas, tesoreria y bancos para tener
 - vista total de disponibilidades
 - egresos de caja fuerte central imputados en vistas particulares por sucursal
 - alertas de vencimientos
+- rubro, sucursal y periodo obligatorios en todo movimiento bancario de egreso, sin importar el origen
+- diferencia visible entre deuda pendiente del periodo y disponibilidad real en banco
 
 ## No incluye todavia
 
@@ -40,6 +42,9 @@ Unificar la lectura financiera diaria entre cajas, tesoreria y bancos para tener
 - los rubros cargados en el maestro operativo deben estar disponibles para clasificar movimientos bancarios cuando el usuario de tesoreria deba elegir un rubro
 - en movimientos bancarios la UI debe hablar de rubro, no de categoria, salvo que se este administrando compatibilidad historica
 - un movimiento bancario registrado correctamente debe aparecer luego en la lista o filtro correspondiente a la misma cuenta, sucursal, empresa activa o seleccion usada por el usuario
+- todo movimiento bancario de egreso (debito) debe tener rubro, sucursal y periodo para poder contarse en la situacion economica por rubro/sucursal; sin los tres datos completos queda como gasto sin imputar, aunque igual afecte el saldo bancario real
+- el campo periodo de un movimiento bancario (`periodo_pago`) ya existe en el modelo; lo que falta es exigirlo junto con rubro y sucursal en todo egreso bancario y no solo en los egresos administrativos de tesoreria
+- el consolidado debe explicar, con un numero y no solo con listas separadas, si la deuda pendiente del periodo esta cubierta por la disponibilidad real en banco
 
 ## User Stories
 
@@ -201,6 +206,38 @@ Criterios:
 - [x] el filtro por empresa activa no mezcla egresos de sucursales fuera del contexto seleccionado
 - [x] los tests deben cubrir que un egreso central imputado a una sucursal afecta el total particular de esa sucursal
 
+### [x] US-10.13 Rubro, sucursal y periodo obligatorios en todo movimiento bancario de egreso
+
+Como administracion
+Quiero que todo movimiento bancario de egreso exija rubro, sucursal y periodo sin importar su origen
+Para que un debito cargado manualmente o vinculado a un pago quede clasificado igual que un egreso administrativo de tesoreria, y no se repitan huecos de imputacion como los detectados en el diagnostico `reporte_sin_sucursal`
+
+Criterios:
+- [x] a partir de esta historia, toda alta o edicion de `MovimientoBancario` de tipo debito exige `rubro_operativo`, `sucursal_gasto` y `periodo_pago`, sin importar si el origen es manual, pago de tesoreria o egreso de tesoreria (al vincular un pago, el debito hereda sucursal y periodo de la deuda pagada cuando le faltan; si sigue incompleto, la vinculacion se bloquea)
+- [x] los creditos bancarios (acreditaciones y otros ingresos) no exigen estos tres campos, porque son plata comun sin imputacion por sucursal
+- [x] los retiros de banco (`clase=RETIRO`, fondeo de caja fuerte) tampoco exigen imputacion ni cuentan como gasto tesoreria: mueven fondos entre banco y caja fuerte, no son un gasto; contarlos duplicaria el gasto contra los egresos de caja fuerte imputados
+- [x] los movimientos historicos que ya existan sin estos tres datos completos no se bloquean ni se ocultan; el listado de banco tiene filtro `Imputacion: pendientes/imputados`, un resumen con total y cantidad de egresos pendientes, y una accion `Completar imputacion` que funciona para cualquier origen (incluidos debitos vinculados a pagos, que la edicion manual bloquea); la anulacion de un historico incompleto sigue funcionando
+- [x] al completar los tres datos en un movimiento historico, ese egreso pasa a sumar en `Gasto tesoreria` por rubro/sucursal en la situacion economica en lugar de quedar en `Gasto sin imputar` (los debitos manuales incompletos ahora tambien cuentan como `Gasto sin imputar`; antes eran invisibles a esa alerta)
+- [x] el mensaje de error identifica exactamente que dato falta (rubro, sucursal o periodo) en vez de un error generico
+- [x] los tests cubren: alta bloqueada de un debito manual sin los tres datos, alta bloqueada de un debito vinculado a un pago de tesoreria sin los tres datos, y edicion de un historico incompleto que pasa a completo
+
+### [x] US-10.14 Diferencia entre deuda pendiente y disponibilidad en banco
+
+Como administracion
+Quiero ver en el consolidado la diferencia entre la deuda pendiente del periodo y la disponibilidad real en banco
+Para saber si el banco alcanza para cubrir los compromisos pendientes antes de que se generen vencimientos sin fondos
+
+Criterios:
+- [x] el consolidado muestra la deuda pendiente del periodo segun `CuentaPorPagar` no anulada en estado pendiente o parcial (usa el mismo numero que la tarjeta `Deuda pendiente` ya existente: toda la deuda viva a la fecha de corte, sin filtrar por periodo de referencia)
+- [x] el consolidado muestra la disponibilidad real en banco a la fecha de corte, calculada como saldo inicial mas movimientos reales (misma base que `US-4.8`/`US-10.6`)
+- [x] el consolidado muestra la diferencia entre ambos numeros con signo, indicando si el banco cubre o no cubre la deuda pendiente (tarjeta `Banco menos deuda pendiente` en el dashboard de tesoreria; solo en la vista consolidada, porque en la vista por sucursal el banco por sucursal no incluye las cuentas de empresa y el numero enganaria)
+- [x] bajo contexto de empresa, la deuda pendiente incluye las deudas legacy sin sucursal (igual que la lectura economica), para no sobreestimar la cobertura
+- [x] el calculo no mezcla caja fuerte central dentro del numero de banco, ni mezcla acreditacion pendiente de cobrar dentro de la deuda pendiente
+- [x] la fecha de corte usada para el calculo queda visible junto al numero
+- [x] los tests cubren el calculo con deuda mayor a la disponibilidad bancaria y con disponibilidad bancaria mayor a la deuda pendiente
+
+Nota de alcance a confirmar con el cliente: esta historia interpreta "pendiente" como deuda pendiente de pago (`CuentaPorPagar`), distinta de la acreditacion pendiente de cobrar que ya cubren `US-10.5`/`US-10.11`. Si el pedido original se referia a la acreditacion pendiente, la fuente de datos cambia pero el criterio de "mostrar una diferencia explicita en el consolidado" se mantiene igual. Segunda decision tomada: "deuda pendiente del periodo" se implemento como la deuda viva total a la fecha de corte (igual que la tarjeta `Deuda pendiente`), no como deuda del mes de referencia; si el cliente esperaba solo la deuda del mes, es un ajuste chico de filtro.
+
 ## Dependencias
 
 - EP-03 tesoreria central base
@@ -220,6 +257,8 @@ Criterios:
 8. validar que el boton principal del formulario siempre tenga etiqueta visible
 9. ajustar lectura de acreditaciones para que sea consolidada y no se reparta por sucursal
 10. incorporar egresos de caja fuerte central imputados a vistas financieras particulares por sucursal
+11. exigir rubro, sucursal y periodo en todo egreso bancario y habilitar worklist de historicos incompletos
+12. agregar diferencia explicita entre deuda pendiente y disponibilidad en banco al consolidado
 
 ## Criterio de cierre
 
@@ -229,3 +268,5 @@ Criterios:
 - tesoreria puede cargar una transferencia bancaria con rubro operativo, verla inmediatamente en el contexto correcto y entender la accion principal del formulario sin botones vacios
 - las acreditaciones se leen como ingreso comun y los egresos mantienen imputacion por sucursal cuando corresponda
 - el estado financiero particular de una sucursal incluye egresos de caja fuerte central imputados a esa sucursal y periodo
+- ningun egreso bancario nuevo puede cargarse sin rubro, sucursal y periodo, y los historicos incompletos tienen un camino claro para completarse
+- el consolidado explica con un numero si la deuda pendiente del periodo esta cubierta por lo disponible en banco

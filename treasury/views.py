@@ -5,7 +5,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError
-from django.db.models import Q, Sum
+from django.db.models import Count, Q, Sum
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -19,6 +19,7 @@ from .forms import (
     BankMovementAnnulForm,
     BankMovementFilterForm,
     BankMovementForm,
+    BankMovementImputationForm,
     BankReconciliationFilterForm,
     CardAccreditationFilterForm,
     CardAccreditationForm,
@@ -69,6 +70,7 @@ from .permissions import ensure_treasury_permission
 from .services import (
     annul_payable,
     annul_payment,
+    bank_account_empresa_scope_query,
     build_bank_reconciliation_snapshot,
     build_economic_period_snapshot,
     build_economic_rubro_detail,
@@ -81,6 +83,7 @@ from .services import (
     CENTRAL_CASH_OUT_TYPES,
     annul_bank_movement,
     close_treasury_month,
+    complete_bank_movement_imputation,
     create_bank_account,
     create_bank_movement,
     create_payable_category,
@@ -140,6 +143,7 @@ TREASURY_WRITE_VIEW_NAMES = {
     "bank_movements_update",
     "bank_movements_delete_confirm",
     "bank_movements_link",
+    "bank_movements_imputation",
     "pos_batches_create",
     "card_accreditations_register",
     "central_cash_create",
@@ -313,10 +317,11 @@ def _bank_account_item(bank_account: CuentaBancaria) -> dict:
             f"{meta} | Saldo inicial: {_money(initial_balance.importe)} "
             f"desde {initial_balance.fecha_referencia:%d/%m/%Y}"
         )
+    empresa_label = bank_account.empresa.nombre if bank_account.empresa_id else "Sin empresa asignada"
     return {
         "href": reverse("treasury:cuentas_bancarias_update", args=[bank_account.pk]),
         "title": bank_account.nombre,
-        "subtitle": f"{bank_account.banco} - {bank_account.get_tipo_cuenta_display()}",
+        "subtitle": f"{bank_account.banco} - {bank_account.get_tipo_cuenta_display()} | {empresa_label}",
         "badge": "Activa" if bank_account.activa else "Inactiva",
         "badge_class": "badge-success" if bank_account.activa else "badge-muted",
         "meta": meta,
@@ -760,13 +765,14 @@ def categorias_toggle(request, category_id: int):
 def cuentas_bancarias_list(request):
     _require_treasury_admin(request)
     form = BankAccountFilterForm(request.GET or None)
-    queryset = CuentaBancaria.objects.prefetch_related("saldos_iniciales").order_by("banco", "nombre")
+    queryset = (
+        CuentaBancaria.objects.select_related("empresa")
+        .prefetch_related("saldos_iniciales")
+        .order_by("banco", "nombre")
+    )
     empresa_ids = _get_empresa_ids(request)
     if empresa_ids is not None:
-        if not empresa_ids:
-            queryset = queryset.none()
-        else:
-            queryset = queryset.filter(Q(sucursal__empresa_id__in=empresa_ids) | Q(sucursal__isnull=True))
+        queryset = queryset.filter(bank_account_empresa_scope_query(empresa_ids))
     if form.is_valid():
         q = (form.cleaned_data.get("q") or "").strip()
         active = form.cleaned_data.get("activa")
@@ -797,11 +803,19 @@ def cuentas_bancarias_list(request):
     )
 
 
+def _get_scoped_bank_account_or_404(request, bank_account_id: int) -> CuentaBancaria:
+    queryset = CuentaBancaria.objects.all()
+    empresa_ids = _get_empresa_ids(request)
+    if empresa_ids is not None:
+        queryset = queryset.filter(bank_account_empresa_scope_query(empresa_ids))
+    return get_object_or_404(queryset, pk=bank_account_id)
+
+
 @login_required
 @require_http_methods(["GET", "POST"])
 def cuentas_bancarias_create(request):
     _require_treasury_admin(request)
-    form = BankAccountForm(request.POST or None)
+    form = BankAccountForm(request.POST or None, empresa_ids=_get_empresa_ids(request))
     if request.method == "POST" and form.is_valid():
         try:
             create_bank_account(actor=request.user, **form.cleaned_data)
@@ -829,8 +843,12 @@ def cuentas_bancarias_create(request):
 @require_http_methods(["GET", "POST"])
 def cuentas_bancarias_update(request, bank_account_id: int):
     _require_treasury_admin(request)
-    bank_account = get_object_or_404(CuentaBancaria, pk=bank_account_id)
-    form = BankAccountForm(request.POST or None, instance=bank_account)
+    bank_account = _get_scoped_bank_account_or_404(request, bank_account_id)
+    form = BankAccountForm(
+        request.POST or None,
+        instance=bank_account,
+        empresa_ids=_get_empresa_ids(request),
+    )
     if request.method == "POST" and form.is_valid():
         try:
             update_bank_account(bank_account=bank_account, actor=request.user, **form.cleaned_data)
@@ -858,7 +876,7 @@ def cuentas_bancarias_update(request, bank_account_id: int):
 @require_http_methods(["POST"])
 def cuentas_bancarias_toggle(request, bank_account_id: int):
     _require_treasury_admin(request)
-    bank_account = get_object_or_404(CuentaBancaria, pk=bank_account_id)
+    bank_account = _get_scoped_bank_account_or_404(request, bank_account_id)
     bank_account = toggle_bank_account(bank_account=bank_account, actor=request.user)
     messages.success(
         request,
@@ -878,8 +896,7 @@ def bank_initial_balances_list(request):
     empresa_ids = _get_empresa_ids(request)
     if empresa_ids is not None:
         balances = balances.filter(
-            Q(cuenta_bancaria__sucursal__empresa_id__in=empresa_ids)
-            | Q(cuenta_bancaria__sucursal__isnull=True)
+            bank_account_empresa_scope_query(empresa_ids, prefix="cuenta_bancaria__")
         )
     items = []
     for balance in balances[:100]:
@@ -1561,11 +1578,23 @@ def bank_movements_list(request):
     )
     empresa_ids = _get_empresa_ids(request)
     if empresa_ids is not None:
-        movements = movements.filter(
-            Q(cuenta_bancaria__sucursal__empresa_id__in=empresa_ids)
-            | Q(cuenta_bancaria__sucursal__isnull=True)
-            | Q(sucursal_gasto__empresa_id__in=empresa_ids)
-        )
+        movement_scope = bank_account_empresa_scope_query(empresa_ids, prefix="cuenta_bancaria__")
+        if empresa_ids:
+            movement_scope = movement_scope | Q(sucursal_gasto__empresa_id__in=empresa_ids)
+        movements = movements.filter(movement_scope)
+
+    # Backlog real de imputacion del contexto activo, antes de los filtros del
+    # usuario: si no, filtrar por creditos mostraria "0 pendientes" enganoso.
+    pending_imputation = movements.filter(
+        tipo=MovimientoBancario.Tipo.DEBITO,
+        estado=MovimientoBancario.Estado.REGISTRADO,
+    ).exclude(clase=MovimientoBancario.Clase.RETIRO).filter(
+        Q(rubro_operativo__isnull=True)
+        | Q(sucursal_gasto__isnull=True)
+        | Q(periodo_pago__isnull=True)
+    ).aggregate(total=Sum("monto"), cantidad=Count("id"))
+    pending_imputation_total = pending_imputation["total"] or Decimal("0.00")
+    pending_imputation_count = pending_imputation["cantidad"] or 0
 
     if filter_form.is_valid():
         q = filter_form.cleaned_data.get("q")
@@ -1595,6 +1624,23 @@ def bank_movements_list(request):
             movements = movements.filter(fecha__lte=dt)
         if sucursal:
             movements = movements.filter(Q(cuenta_bancaria__sucursal=sucursal) | Q(sucursal_gasto=sucursal))
+        imputacion = filter_form.cleaned_data.get("imputacion")
+        if imputacion == "pendientes":
+            movements = movements.filter(
+                tipo=MovimientoBancario.Tipo.DEBITO,
+                estado=MovimientoBancario.Estado.REGISTRADO,
+            ).exclude(clase=MovimientoBancario.Clase.RETIRO).filter(
+                Q(rubro_operativo__isnull=True)
+                | Q(sucursal_gasto__isnull=True)
+                | Q(periodo_pago__isnull=True)
+            )
+        elif imputacion == "imputados":
+            movements = movements.filter(
+                tipo=MovimientoBancario.Tipo.DEBITO,
+                rubro_operativo__isnull=False,
+                sucursal_gasto__isnull=False,
+                periodo_pago__isnull=False,
+            )
 
     bank_totals = movements.aggregate(
         creditos=Sum("monto", filter=Q(tipo=MovimientoBancario.Tipo.CREDITO)),
@@ -1617,16 +1663,27 @@ def bank_movements_list(request):
 
     items = []
     for m in movements[:50]:
+        meta = (
+            f"Origen: {m.get_origen_display()} | Ref: {m.referencia or '-'}"
+            f" | Rubro: {_bank_movement_rubro_label(m)}"
+        )
+        if m.tipo == MovimientoBancario.Tipo.DEBITO:
+            sucursal_label = m.sucursal_gasto.nombre if m.sucursal_gasto_id else "sin sucursal"
+            periodo_label = m.periodo_pago.strftime("%m/%Y") if m.periodo_pago else "sin periodo"
+            meta += f" | Sucursal: {sucursal_label} | Periodo: {periodo_label}"
+            if (
+                m.estado == MovimientoBancario.Estado.REGISTRADO
+                and m.clase != MovimientoBancario.Clase.RETIRO
+                and not (m.rubro_operativo_id and m.sucursal_gasto_id and m.periodo_pago)
+            ):
+                meta = f"PENDIENTE DE IMPUTAR | {meta}"
         items.append({
             "title": f"{m.get_clase_display()} - {m.concepto}",
             "subtitle": f"{m.fecha.strftime('%d/%m/%Y')} | {m.cuenta_bancaria}",
             "badge": _money(m.monto),
             "badge_class": "badge-success" if m.tipo == MovimientoBancario.Tipo.CREDITO else "badge-danger",
             "href": reverse("treasury:bank_movements_detail", args=[m.pk]),
-            "meta": (
-                f"Origen: {m.get_origen_display()} | Ref: {m.referencia or '-'}"
-                f" | Rubro: {_bank_movement_rubro_label(m)}"
-            ),
+            "meta": meta,
         })
 
     subtitle = "Egresos e ingresos reales en cuentas bancarias"
@@ -1645,6 +1702,12 @@ def bank_movements_list(request):
                 "value": _money(total_egresos_tesoreria),
                 "small": "Con rubro, sucursal y periodo",
                 "badge_class": "badge-info",
+            },
+            {
+                "label": "Egresos pendientes de imputacion",
+                "value": _money(pending_imputation_total),
+                "small": f"{pending_imputation_count} movimiento{'s' if pending_imputation_count != 1 else ''} sin rubro, sucursal o periodo",
+                "badge_class": "badge-warning" if pending_imputation_count else "badge-success",
             },
         ],
         "items": items,
@@ -1735,6 +1798,71 @@ def bank_movements_update(request, pk):
 
 @login_required
 @require_http_methods(["GET", "POST"])
+def bank_movements_imputation(request, pk):
+    _require_treasury_admin(request)
+    empresa_ids = _get_empresa_ids(request)
+    movement_qs = MovimientoBancario.objects.select_related("cuenta_bancaria", "cuenta_bancaria__empresa")
+    if empresa_ids is not None:
+        movement_qs = movement_qs.filter(
+            bank_account_empresa_scope_query(empresa_ids, prefix="cuenta_bancaria__")
+        )
+    movement = get_object_or_404(movement_qs, pk=pk)
+    if (
+        movement.estado != MovimientoBancario.Estado.REGISTRADO
+        or movement.tipo != MovimientoBancario.Tipo.DEBITO
+        or movement.clase == MovimientoBancario.Clase.RETIRO
+    ):
+        messages.error(request, "Solo se puede completar la imputacion de un egreso bancario registrado.")
+        return redirect("treasury:bank_movements_detail", pk=movement.pk)
+    if not movement.cuenta_bancaria.activa:
+        messages.error(
+            request,
+            "La cuenta bancaria esta inactiva. Reactivala para completar la imputacion de este egreso.",
+        )
+        return redirect("treasury:bank_movements_detail", pk=movement.pk)
+    form = BankMovementImputationForm(
+        request.POST or None,
+        instance=movement,
+        empresa_ids=empresa_ids,
+    )
+    if request.method == "POST" and form.is_valid():
+        try:
+            movement = complete_bank_movement_imputation(
+                movement=movement,
+                rubro_operativo=form.cleaned_data["rubro_operativo"],
+                sucursal_gasto=form.cleaned_data["sucursal_gasto"],
+                periodo_pago=form.cleaned_data["periodo_pago"],
+                actor=request.user,
+            )
+        except ValidationError as error:
+            _handle_operation_error(form, error, "No se pudo completar la imputacion del movimiento.")
+        else:
+            messages.success(
+                request,
+                "Imputacion completada. El egreso ya suma en la situacion economica por rubro y sucursal.",
+            )
+            return redirect("treasury:bank_movements_detail", pk=movement.pk)
+    return _render_form(
+        request,
+        {
+            "title": "Completar imputacion del egreso",
+            "subtitle": (
+                f"{movement.concepto} - {_money(movement.monto)}. "
+                "Solo se completan rubro, sucursal y periodo; monto, fecha y cuenta no cambian. "
+                "Si este debito corresponde al pago de una deuda ya cargada, usa Vincular a pago "
+                "en lugar de imputarlo, para no contar el gasto dos veces en la lectura economica."
+            ),
+            "form": form,
+            "submit_label": "Guardar imputacion",
+            "back_url": reverse("treasury:bank_movements_detail", args=[movement.pk]),
+            "form_action": reverse("treasury:bank_movements_imputation", args=[movement.pk]),
+        },
+        status=400 if request.method == "POST" and not form.is_valid() else 200,
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
 def bank_movements_delete_confirm(request, pk):
     _require_treasury_admin(request)
     movement = get_object_or_404(MovimientoBancario, pk=pk)
@@ -1800,6 +1928,7 @@ def bank_movements_detail(request, pk):
         {"label": "Rubro", "value": _bank_movement_rubro_label(movement)},
         {"label": "Proveedor", "value": movement.proveedor.razon_social if movement.proveedor_id else "No aplica"},
         {"label": "Sucursal", "value": movement.sucursal_gasto.nombre if movement.sucursal_gasto_id else "Sin asignar"},
+        {"label": "Periodo", "value": movement.periodo_pago.strftime("%m/%Y") if movement.periodo_pago else "Sin periodo"},
         {"label": "Concepto", "value": movement.concepto},
         {"label": "Referencia", "value": movement.referencia or "Sin referencia"},
         {"label": "Origen", "value": movement.get_origen_display()},
@@ -1826,6 +1955,15 @@ def bank_movements_detail(request, pk):
         and movement.tipo == MovimientoBancario.Tipo.DEBITO
     ):
         actions.append(_action(reverse("treasury:bank_movements_link", args=[movement.pk]), "Vincular a pago", "primary"))
+    if (
+        movement.estado == MovimientoBancario.Estado.REGISTRADO
+        and movement.tipo == MovimientoBancario.Tipo.DEBITO
+        and movement.clase != MovimientoBancario.Clase.RETIRO
+        and not (movement.rubro_operativo_id and movement.sucursal_gasto_id and movement.periodo_pago)
+    ):
+        actions.append(
+            _action(reverse("treasury:bank_movements_imputation", args=[movement.pk]), "Completar imputacion", "primary")
+        )
 
     extra_sections = []
     if movement.pago_tesoreria:
@@ -1870,7 +2008,7 @@ def bank_movements_link(request, pk):
                 messages.success(request, "Vinculacion exitosa.")
                 return redirect("treasury:bank_movements_detail", pk=movement.pk)
             except ValidationError as e:
-                messages.error(request, str(e))
+                messages.error(request, " ".join(e.messages))
     
     items = []
     for p in payments:
@@ -1898,7 +2036,7 @@ def pos_batches_list(request):
     batches = LotePOS.objects.all().select_related("cuenta_bancaria", "creado_por")
     empresa_ids = _get_empresa_ids(request)
     if empresa_ids is not None:
-        batches = batches.filter(cuenta_bancaria__sucursal__empresa_id__in=empresa_ids)
+        batches = batches.filter(bank_account_empresa_scope_query(empresa_ids, prefix="cuenta_bancaria__"))
 
     if filter_form.is_valid():
         q = filter_form.cleaned_data.get("q")
@@ -1969,7 +2107,9 @@ def card_accreditations_list(request):
     ).select_related("movimiento_bancario__cuenta_bancaria", "lote_pos")
     empresa_ids = _get_empresa_ids(request)
     if empresa_ids is not None:
-        accreditations = accreditations.filter(movimiento_bancario__cuenta_bancaria__sucursal__empresa_id__in=empresa_ids)
+        accreditations = accreditations.filter(
+            bank_account_empresa_scope_query(empresa_ids, prefix="movimiento_bancario__cuenta_bancaria__")
+        )
 
     if filter_form.is_valid():
         canal = filter_form.cleaned_data.get("canal")

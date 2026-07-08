@@ -220,6 +220,13 @@ class CuentaBancaria(models.Model):
     alias = models.CharField(max_length=80, blank=True)
     cbu = models.CharField(max_length=22, blank=True)
     sucursal_bancaria = models.CharField(max_length=80, blank=True)
+    empresa = models.ForeignKey(
+        "cashops.Empresa",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="cuentas_bancarias",
+    )
     sucursal = models.ForeignKey(
         "cashops.Sucursal",
         on_delete=models.SET_NULL,
@@ -276,6 +283,19 @@ class CuentaBancaria(models.Model):
             raise ValidationError({"banco": "El banco es obligatorio."})
         if not self.numero_cuenta:
             raise ValidationError({"numero_cuenta": "El numero de cuenta es obligatorio."})
+        if not self.empresa_id and self.sucursal_id and self.sucursal.empresa_id:
+            self.empresa_id = self.sucursal.empresa_id
+        if self._state.adding and not self.empresa_id:
+            raise ValidationError({"empresa": "La empresa propietaria es obligatoria."})
+        if (
+            self.empresa_id
+            and self.sucursal_id
+            and self.sucursal.empresa_id
+            and self.sucursal.empresa_id != self.empresa_id
+        ):
+            raise ValidationError(
+                {"sucursal": "La sucursal no pertenece a la empresa propietaria de la cuenta."}
+            )
 
     def __str__(self) -> str:
         return f"{self.nombre} - {self.banco}"
@@ -1020,14 +1040,24 @@ class MovimientoBancario(models.Model):
             errors["clase"] = "La clase elegida no corresponde a un crédito bancario."
         if self.tipo == self.Tipo.DEBITO and self.clase not in debit_classes:
             errors["clase"] = "La clase elegida no corresponde a un debito bancario."
-        if self.clase in {
-            self.Clase.CHEQUE,
-            self.Clase.ECHEQ,
-            self.Clase.IMPUESTO,
-            self.Clase.COMISION_BANCARIA,
-            self.Clase.TRANSFERENCIA_TERCEROS,
-        } and not self.rubro_operativo_id and not self.categoria_id:
-            errors["rubro_operativo"] = "El rubro es obligatorio para este tipo de movimiento."
+        if (
+            self.tipo == self.Tipo.DEBITO
+            and self.estado == self.Estado.REGISTRADO
+            and self.clase != self.Clase.RETIRO
+        ):
+            # US-10.13: todo egreso bancario vigente exige imputacion completa,
+            # sin importar el origen. Los historicos solo se validan al editarse;
+            # la anulacion (estado ANULADO) queda exenta para no bloquear reversas.
+            # Los retiros quedan afuera: mueven fondos (banco -> caja fuerte),
+            # no son un gasto imputable y no deben entrar al gasto economico.
+            if not self.rubro_operativo_id:
+                errors["rubro_operativo"] = "El rubro es obligatorio para egresos bancarios."
+            if not self.sucursal_gasto_id:
+                errors["sucursal_gasto"] = "La sucursal es obligatoria para egresos bancarios."
+            if not self.periodo_pago:
+                errors["periodo_pago"] = "El periodo es obligatorio para egresos bancarios."
+        if self.periodo_pago:
+            self.periodo_pago = self.periodo_pago.replace(day=1)
         if self.rubro_operativo_id and (not self.rubro_operativo.activo or self.rubro_operativo.es_sistema):
             errors["rubro_operativo"] = "El rubro debe estar activo y no puede ser de sistema."
         if self.clase in {
@@ -1065,12 +1095,6 @@ class MovimientoBancario(models.Model):
                 errors["tipo"] = "Un egreso de tesoreria bancario solo puede ser debito."
             if self.pago_tesoreria_id:
                 errors["pago_tesoreria"] = "Un egreso administrativo de tesoreria no debe vincularse a un pago."
-            if not self.rubro_operativo_id:
-                errors["rubro_operativo"] = "El rubro es obligatorio para egresos administrativos de tesoreria."
-            if not self.sucursal_gasto_id:
-                errors["sucursal_gasto"] = "La sucursal es obligatoria para egresos administrativos de tesoreria."
-            if not self.periodo_pago:
-                errors["periodo_pago"] = "El periodo es obligatorio para egresos administrativos de tesoreria."
         if self.origen == self.Origen.ACREDITACION_TARJETA and self.clase != self.Clase.ACREDITACION:
             errors["clase"] = "Las acreditaciones de tarjeta deben quedar tipificadas como acreditación."
         if errors:

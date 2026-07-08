@@ -1,8 +1,144 @@
 # Context
 
-Last updated: 2026-07-03
+Last updated: 2026-07-08
 
 ## Current Session
+
+### EP-04/EP-10 Runtime Slices 2026-07-08 (US-4.9, US-10.13, US-10.14)
+
+- Usuario pidio avanzar con las US/epicas pendientes. Se implemento el trio de tesoreria
+  ya diagnosticado (plan P1-6 Slice A y B + consolidado):
+- `US-4.9` (EP-04, cerrada): `CuentaBancaria.empresa` FK a `cashops.Empresa` (PROTECT,
+  nullable por legacy). `clean()` deriva empresa desde la sucursal si falta, la exige solo
+  en altas nuevas (`_state.adding`) y rechaza sucursal de otra empresa. Migraciones:
+  `treasury/0022` (AddField) y `0023` (backfill: sucursal.empresa; si no hay sucursal,
+  empresa unanime de los `sucursal_gasto` de sus movimientos; ambiguo queda NULL para
+  completar por UI). Scoping centralizado en `bank_account_empresa_scope_query(empresa_ids,
+  prefix=...)` (services.py) con escape legacy para cuentas sin empresa: se usa en
+  listados de cuentas/saldos iniciales/movimientos/lotes/acreditaciones, snapshots y
+  acceso directo por URL (update/toggle devuelven 404 fuera de contexto). `BankAccountForm`
+  exige empresa y scopea empresa/sucursal por contexto activo. NOTA: los selectores de
+  cuenta en forms de pagos/lotes/acreditaciones siguen sin scopear (comportamiento previo,
+  anotado en la epica como mejora incremental).
+- `US-10.13` (EP-10): `MovimientoBancario.clean()` exige rubro/sucursal/periodo para TODO
+  debito `REGISTRADO` sin importar origen; `estado=ANULADO` queda exento (anular historicos
+  incompletos sigue funcionando). Se elimino la regla vieja "rubro o categoria por clase"
+  (subsumida; una categoria legacy sola ya no alcanza). `periodo_pago` se normaliza a dia 1
+  en `clean()`. `create/update_bank_movement` ganaron `periodo_pago`; `BankMovementForm`
+  ahora incluye periodo. `link_payment_to_bank_movement` hereda sucursal/periodo de la
+  deuda pagada cuando faltan y valida con `full_clean` (antes hacia `save()` directo sin
+  validar). Nuevo servicio `complete_bank_movement_imputation` + vista/URL
+  `bancos/<pk>/imputar/` (en `TREASURY_WRITE_VIEW_NAMES`) que completa imputacion de
+  cualquier origen, incluidos debitos vinculados a pagos que la edicion manual bloquea.
+  Listado de banco: filtro `imputacion` (pendientes/imputados), resumen "Egresos pendientes
+  de imputacion" y marca "PENDIENTE DE IMPUTAR" por fila; detalle muestra Periodo y boton
+  "Completar imputación". DECISION ECONOMICA: `_pending_bank_treasury_expenses` ahora
+  incluye origen MANUAL (antes solo EGRESO_TESORERIA), asi los 73 debitos historicos de
+  prod aparecen en "Gasto sin imputar" hasta completarse; PAGO_TESORERIA sigue fuera del
+  gasto tesoreria economico (esa plata ya entro como deuda, evitar doble conteo).
+- `US-10.14` (EP-10): `build_financial_period_snapshot` devuelve `debt_vs_bank_difference`
+  (= `total_bank_balance` - `pending_total`, misma base US-4.8/US-10.6, sin caja fuerte ni
+  acreditacion pendiente) y `debt_vs_bank_covered`; tarjeta "Banco menos deuda pendiente"
+  en el dashboard con fecha de corte y leyenda cubre/no cubre. SUPUESTO documentado en la
+  epica: "deuda pendiente del periodo" = deuda viva total a la fecha de corte (mismo numero
+  que la tarjeta "Deuda pendiente"), no deuda del mes de referencia; y sigue abierta la
+  ambiguedad deuda-vs-acreditacion-pendiente anotada el 2026-07-08 para confirmar con
+  el cliente.
+- Files touched: `treasury/models.py`, `treasury/services.py`, `treasury/forms.py`,
+  `treasury/views.py`, `treasury/urls.py`, `treasury/admin.py`,
+  `treasury/management/commands/reporte_sin_sucursal.py` (cuentas sin empresa ahora se
+  reportan por `empresa__isnull`), `templates/treasury/dashboard.html`,
+  `treasury/migrations/0022-0023`, `treasury/tests.py` (21 tests nuevos en
+  `EP04BankAccountEmpresaTests`, `EP10BankDebitImputationTests`,
+  `EP10DebtVsBankCoverageTests`; fixtures de debitos actualizados con imputacion completa;
+  tests de historicos pasados a `objects.create` para simular filas pre-regla),
+  `docs/epics/EP-04...md`, `docs/epics/EP-10...md`, `docs/epics/README.md`, `context.md`.
+- Validacion: suite completa `py -3.14 manage.py test` con `PYTHONPATH=.venv\Lib\site-packages`
+  => 283 tests OK (1 skip); `makemigrations --check --dry-run` => sin drift;
+  `compileall cashops treasury users core` => OK. En esta maquina `py -3.13` no existe;
+  usar `py -3.14` (el `.venv\Scripts\python.exe` sigue roto, solo sirve su `site-packages`).
+- Deploy note: al deployar corren `0022`+`0023`; en prod las 2 cuentas sin sucursal quedan
+  con empresa si sus egresos imputados son unanimes; si alguna queda "Sin empresa asignada"
+  en el listado de cuentas, se completa editandola (el form ya exige empresa).
+- Review adversarial post-implementacion (workflow multi-agente) confirmo defectos que se
+  corrigieron en la misma sesion:
+  - `clase=RETIRO` quedo EXENTO de la imputacion obligatoria y EXCLUIDO de gasto tesoreria
+    mapeado/pendiente: un retiro banco->caja fuerte mueve fondos, no es gasto; contarlo
+    duplicaba contra los `EGRESO_ADMIN` de caja fuerte. `reporte_sin_sucursal` sigue
+    listando retiros sin sucursal como incompletos (diagnostico read-only, no bloquea);
+    ajustarlo queda como detalle menor pendiente.
+  - "Gasto sin imputar" economico ahora tambien scopea por empresa DUENA DE LA CUENTA
+    (los pendientes tienen sucursal NULL y el escape isnull los filtraba a TODAS las
+    empresas); el resumen del listado de banco y la alerta economica vuelven a coincidir.
+  - La vista/form de imputacion quedaron scopeados: URL directa a movimiento de cuenta de
+    otra empresa -> 404; el selector de sucursal se limita a la empresa de la cuenta (o al
+    contexto activo si la cuenta es legacy sin empresa); el servicio rechaza cruce
+    cuenta-empresa vs sucursal-empresa. Cuenta inactiva -> mensaje claro en vez de error
+    de campo inexistente. OJO: detail/update/link de movimientos siguen sin scoping por
+    empresa (gap PRE-EXISTENTE, no se toco en este slice; anotar si se quiere cerrar).
+  - Tarjeta "Banco menos deuda pendiente" gateada a la vista consolidada (en vista por
+    sucursal el banco excluye cuentas de empresa sin sucursal y el numero enganaba).
+  - `pending_total` (deuda pendiente del snapshot financiero) bajo contexto de empresa
+    ahora INCLUYE deudas sin sucursal (antes las omitia y sobreestimaba cobertura); con
+    contexto vacio devuelve 0. Esto tambien afecta la tarjeta "Deuda pendiente".
+  - `link_payment_to_bank_movement` ya no pisa un rubro cargado con el rubro NULL de una
+    categoria legacy; el error de vinculacion se muestra legible (join de messages, no
+    dict crudo).
+  - `periodo_pago` se oculta/limpia en el form de movimiento bancario cuando tipo=CREDITO
+    (mismo mecanismo JS que sucursal, generalizado en `form_card.html`).
+  - Resumen "Egresos pendientes de imputacion" del listado se calcula ANTES de los
+    filtros del usuario (backlog real del contexto, no del filtro).
+  - Copy unificado sin acentos en el flujo de imputacion ("Completar imputacion").
+  - Riesgo residual documentado (sin fix automatico posible): un debito manual que en
+    realidad pago una `CuentaPorPagar` y se "completa" por el worklist en vez de
+    vincularse duplica el gasto economico (deuda + gasto banco). Mitigacion: el form de
+    imputacion advierte explicitamente usar "Vincular a pago" en ese caso.
+- Validacion final post-fixes: suite completa 287 tests OK (1 skip), `makemigrations
+  --check` sin drift, `compileall` OK. Los agentes del review dejaron 4 archivos
+  `treasury/test_*_tmp.py` sueltos que fueron eliminados (no eran del repo).
+
+### Backlog Intake 2026-07-08
+
+- Usuario pidio traducir 4 pedidos funcionales a epicas/US tecnicas para avanzar, y ademas
+  dejar un plan/workflow separado de presupuesto para otro grupo de pedidos, explicito como
+  "no implementar sin mi OK".
+- Grupo 1 (agregado a backlog activo, para avanzar):
+  - "las acreditaciones van todas juntas, por empresa no por sucursal" -> gap real es que
+    `CuentaBancaria` no tiene campo `empresa` (solo `sucursal` opcional); la lectura financiera
+    ya consolida acreditaciones sin repartir por sucursal desde `EP-10` `US-10.11`. Agregado
+    `EP-04` `US-4.9`.
+  - "agregar periodo en movimiento bancario" -> el campo `periodo_pago` ya existe en
+    `MovimientoBancario`; lo que falta es exigirlo (con rubro y sucursal) en todo egreso
+    bancario, no solo en `origen=EGRESO_TESORERIA`. Cubierto junto con el siguiente punto.
+  - "todo lo que sea banco, obligatorio los 3 parametros" -> mismo gap: hoy `rubro_operativo`,
+    `sucursal_gasto` y `periodo_pago` solo son obligatorios para `origen=EGRESO_TESORERIA`
+    (ver `treasury/models.py` `MovimientoBancario.clean()`); coincide con el plan P1-6 Slice B
+    ya anotado el 2026-07-03. Agregado `EP-10` `US-10.13`.
+  - "en el consolidado, diferencia entre pendiente y banco" -> interpretado como deuda
+    pendiente (`CuentaPorPagar`) vs disponibilidad real en banco, distinto de la acreditacion
+    pendiente que ya cubre `US-10.5`. Queda anotada la ambiguedad para confirmar con el
+    cliente. Agregado `EP-10` `US-10.14`.
+  - Backlog files actualizados: `docs/epics/EP-04-bancos-y-conciliacion.md` (US-4.9),
+    `docs/epics/EP-10-situacion-financiera-y-alertas-consolidadas.md` (US-10.13, US-10.14),
+    `docs/epics/README.md` (EP-04 y EP-10 reabiertas).
+- Grupo 2 (propuesta para presupuestar, NO aprobada, NO implementar sin OK):
+  - usuarios cajero por sucursal con egreso de caja cargado como deuda; validacion de efectivo
+    para que un ingreso cargado por un cajero no cuente hasta ser validado por un usuario con
+    permiso especifico; permisos mas finos (por accion, no solo lectura/escritura); deudas
+    impactando situacion economica al cargarse y financiera al pagarse.
+  - Diagnostico: caja por sucursal ya existe (`EP-08`); rol "cajero" acotado y permiso por
+    accion NO existen (hoy los permisos son por modulo completo, `EP-09` `US-9.11` sigue
+    pendiente); estado "pendiente de validar" para efectivo NO existe; egreso de caja generando
+    `CuentaPorPagar` automatica NO existe; la regla de deuda en economica (al cargarse) vs
+    financiera (al pagarse) YA esta implementada hoy (`build_economic_period_snapshot` usa
+    `importe_total` de deuda no anulada; `build_financial_period_snapshot` solo refleja pagos
+    reales), pendiente solo blindarla con tests explicitos.
+  - Nuevo documento: `docs/epics/PROPUESTA-EP-13-cajeros-y-validacion-efectivo.md`, con slices,
+    orden sugerido, riesgos y preguntas abiertas para cotizar. Referenciado en
+    `docs/epics/README.md` bajo una seccion separada de "Propuestas para presupuestar", fuera
+    del orden de implementacion activo.
+- Validacion: solo se tocaron archivos markdown de backlog y este archivo; no se corrio
+  la suite porque no hubo cambio de codigo ni de esquema.
 
 ### Hardening de produccion 2026-07-03 (slices seguros, sin migraciones)
 

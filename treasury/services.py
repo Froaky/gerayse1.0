@@ -264,6 +264,7 @@ def create_bank_account(
     alias="",
     cbu="",
     sucursal_bancaria="",
+    empresa=None,
     sucursal=None,
     activa=True,
     actor=None,
@@ -277,6 +278,7 @@ def create_bank_account(
         alias=alias,
         cbu=cbu,
         sucursal_bancaria=sucursal_bancaria,
+        empresa=empresa,
         sucursal=sucursal,
         activa=activa,
         creado_por=actor,
@@ -294,6 +296,7 @@ def update_bank_account(
     alias="",
     cbu="",
     sucursal_bancaria="",
+    empresa=None,
     sucursal=None,
     activa=True,
     actor=None,
@@ -306,6 +309,7 @@ def update_bank_account(
     bank_account.alias = alias
     bank_account.cbu = cbu
     bank_account.sucursal_bancaria = sucursal_bancaria
+    bank_account.empresa = empresa
     bank_account.sucursal = sucursal
     bank_account.activa = activa
     bank_account.actualizado_por = actor
@@ -853,24 +857,35 @@ def _bank_accreditation_movement_scope_query(*, date_from: date, date_to: date) 
     )
 
 
-def _bank_account_empresa_scope_query(empresa_ids) -> Q:
+def bank_account_empresa_scope_query(empresa_ids, *, prefix: str = "") -> Q:
     """
-    Company scope for bank accounts used by treasury dashboards.
+    Company scope for bank accounts used by treasury lists and dashboards.
 
-    Bank accounts can be left without branch because real bank movements are
-    consolidated and not always discriminated by branch. If the user has an
-    active company scope, include both accounts linked to that company's
-    branches and global accounts without branch.
+    The owning company is the `empresa` FK (US-4.9). Legacy accounts without
+    an assigned company keep their previous visibility: they are included when
+    they have no branch (global accounts) or when their branch belongs to the
+    selected company scope, until administration completes the owner.
     """
     if not empresa_ids:
-        return Q(pk__in=[])
-    return Q(sucursal__empresa_id__in=empresa_ids) | Q(sucursal__isnull=True)
+        return Q(**{f"{prefix}pk__in": []})
+    return (
+        Q(**{f"{prefix}empresa_id__in": empresa_ids})
+        | Q(**{f"{prefix}empresa__isnull": True, f"{prefix}sucursal__isnull": True})
+        | Q(
+            **{
+                f"{prefix}empresa__isnull": True,
+                f"{prefix}sucursal__empresa_id__in": empresa_ids,
+            }
+        )
+    )
+
+
+def _bank_account_empresa_scope_query(empresa_ids) -> Q:
+    return bank_account_empresa_scope_query(empresa_ids)
 
 
 def _bank_movement_empresa_scope_query(empresa_ids) -> Q:
-    if not empresa_ids:
-        return Q(pk__in=[])
-    return Q(cuenta_bancaria__sucursal__empresa_id__in=empresa_ids) | Q(cuenta_bancaria__sucursal__isnull=True)
+    return bank_account_empresa_scope_query(empresa_ids, prefix="cuenta_bancaria__")
 
 
 def _bank_balance_until(account: CuentaBancaria, reference_date: date) -> dict:
@@ -941,6 +956,7 @@ def create_bank_movement(
     rubro_operativo=None,
     proveedor: Proveedor = None,
     sucursal_gasto=None,
+    periodo_pago: date = None,
     referencia: str = "",
     observaciones: str = "",
     origen: str = MovimientoBancario.Origen.MANUAL,
@@ -959,6 +975,7 @@ def create_bank_movement(
         rubro_operativo=rubro_operativo,
         proveedor=proveedor,
         sucursal_gasto=sucursal_gasto,
+        periodo_pago=periodo_pago,
         referencia=referencia,
         observaciones=observaciones,
         origen=origen,
@@ -981,6 +998,7 @@ def update_bank_movement(
     rubro_operativo=None,
     proveedor: Proveedor = None,
     sucursal_gasto=None,
+    periodo_pago: date = None,
     referencia: str = "",
     observaciones: str = "",
     actor=None,
@@ -997,6 +1015,7 @@ def update_bank_movement(
     movement.rubro_operativo = rubro_operativo
     movement.proveedor = proveedor
     movement.sucursal_gasto = sucursal_gasto
+    movement.periodo_pago = periodo_pago
     movement.referencia = referencia
     movement.observaciones = observaciones
     movement.actualizado_por = actor
@@ -1013,6 +1032,45 @@ def annul_bank_movement(*, movement: MovimientoBancario, motivo: str, actor=None
     movement.motivo_anulacion = motivo
     movement.anulado_por = actor
     movement.anulado_en = timezone.now()
+    movement.actualizado_por = actor
+    return _save_instance(movement)
+
+
+def complete_bank_movement_imputation(
+    *,
+    movement: MovimientoBancario,
+    rubro_operativo,
+    sucursal_gasto,
+    periodo_pago: date,
+    actor=None,
+) -> MovimientoBancario:
+    """US-10.13: completa rubro/sucursal/periodo de un debito historico.
+
+    A diferencia de la edicion manual, aplica a cualquier origen (manual,
+    pago de tesoreria o egreso) porque solo toca los campos de imputacion
+    economica y no altera monto, fecha, cuenta ni vinculos del movimiento.
+    """
+    _require_actor(actor)
+    if movement.estado != MovimientoBancario.Estado.REGISTRADO:
+        raise ValidationError({"__all__": "Solo se puede imputar un movimiento bancario registrado."})
+    if movement.tipo != MovimientoBancario.Tipo.DEBITO:
+        raise ValidationError({"__all__": "Solo los egresos bancarios llevan imputacion por sucursal."})
+    if movement.clase == MovimientoBancario.Clase.RETIRO:
+        raise ValidationError(
+            {"__all__": "Un retiro de banco mueve fondos a caja fuerte y no lleva imputacion economica."}
+        )
+    if (
+        sucursal_gasto is not None
+        and sucursal_gasto.empresa_id
+        and movement.cuenta_bancaria.empresa_id
+        and sucursal_gasto.empresa_id != movement.cuenta_bancaria.empresa_id
+    ):
+        raise ValidationError(
+            {"sucursal_gasto": "La sucursal debe pertenecer a la empresa duena de la cuenta bancaria."}
+        )
+    movement.rubro_operativo = rubro_operativo
+    movement.sucursal_gasto = sucursal_gasto
+    movement.periodo_pago = periodo_pago
     movement.actualizado_por = actor
     return _save_instance(movement)
 
@@ -1169,11 +1227,21 @@ def link_payment_to_bank_movement(
         origen=MovimientoBancario.Origen.PAGO_TESORERIA,
         payment=payment,
     )
-    bank_movement.proveedor = payment.cuenta_por_pagar.proveedor
-    bank_movement.categoria = payment.cuenta_por_pagar.categoria
-    bank_movement.rubro_operativo = payment.cuenta_por_pagar.categoria.rubro_operativo
+    payable = payment.cuenta_por_pagar
+    bank_movement.proveedor = payable.proveedor
+    bank_movement.categoria = payable.categoria
+    # US-10.13: el debito vinculado hereda la imputacion de la deuda pagada
+    # cuando el movimiento no la tenia; si sigue incompleta, full_clean bloquea
+    # la vinculacion indicando exactamente que dato falta. Una categoria legacy
+    # sin rubro no pisa un rubro ya cargado en el movimiento.
+    if payable.categoria.rubro_operativo_id:
+        bank_movement.rubro_operativo = payable.categoria.rubro_operativo
+    if not bank_movement.sucursal_gasto_id and payable.sucursal_id:
+        bank_movement.sucursal_gasto = payable.sucursal
+    if not bank_movement.periodo_pago and payable.periodo_referencia:
+        bank_movement.periodo_pago = payable.periodo_referencia
     bank_movement.actualizado_por = actor
-    bank_movement.save()
+    _save_instance(bank_movement)
 
     # Update payment status if it was REGISTERED to something indicating bank reflection
     # (Actually PagoTesoreria has estado_bancario)
@@ -1260,9 +1328,10 @@ CENTRAL_CASH_OUT_TYPES = [
 def _mapped_bank_treasury_expenses(base_queryset):
     """Bank debits that are safe to read as economic treasury expenses.
 
-    `MANUAL` is kept only for legacy bank expenses already complete before
-    EGRESO_TESORERIA existed. Incomplete manual bank debits are generic bank
-    movements and must not inflate the economic pending-imputation alert.
+    `MANUAL` covers legacy bank expenses loaded before EGRESO_TESORERIA
+    existed plus manual debits completed via the imputation worklist.
+    `PAGO_TESORERIA` stays out: that expense already entered the economic
+    reading as debt (`CuentaPorPagar.importe_total`) when it was loaded.
     """
     return base_queryset.filter(
         estado=MovimientoBancario.Estado.REGISTRADO,
@@ -1274,16 +1343,24 @@ def _mapped_bank_treasury_expenses(base_queryset):
         rubro_operativo__isnull=False,
         sucursal_gasto__isnull=False,
         periodo_pago__isnull=False,
-    )
+    ).exclude(clase=MovimientoBancario.Clase.RETIRO)
 
 
 def _pending_bank_treasury_expenses(base_queryset):
-    """Explicit treasury bank expenses that still lack economic imputation."""
+    """Treasury bank expenses that still lack economic imputation.
+
+    US-10.13: manual historic debits count as pending too, so the economic
+    alert matches the imputation worklist and `reporte_sin_sucursal`. Once
+    completed they move into `_mapped_bank_treasury_expenses`.
+    """
     return base_queryset.filter(
         estado=MovimientoBancario.Estado.REGISTRADO,
         tipo=MovimientoBancario.Tipo.DEBITO,
-        origen=MovimientoBancario.Origen.EGRESO_TESORERIA,
-    ).filter(
+        origen__in=[
+            MovimientoBancario.Origen.EGRESO_TESORERIA,
+            MovimientoBancario.Origen.MANUAL,
+        ],
+    ).exclude(clase=MovimientoBancario.Clase.RETIRO).filter(
         Q(rubro_operativo__isnull=True)
         | Q(sucursal_gasto__isnull=True)
         | Q(periodo_pago__isnull=True)
@@ -1452,6 +1529,13 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
         pending_bank_treasury_expenses = pending_bank_treasury_expenses.filter(
             Q(sucursal_gasto=sucursal) | Q(sucursal_gasto__isnull=True)
         )
+        if sucursal.empresa_id:
+            # Los pendientes sin sucursal imputada solo pueden venir de cuentas
+            # de la misma empresa; sin este corte, un debito historico de otra
+            # empresa apareceria como gasto sin imputar en todas las vistas.
+            pending_bank_treasury_expenses = pending_bank_treasury_expenses.filter(
+                bank_account_empresa_scope_query([sucursal.empresa_id], prefix="cuenta_bancaria__")
+            )
     elif empresa_ids is not None:
         if not empresa_ids:
             pending_central_treasury_expenses = pending_central_treasury_expenses.none()
@@ -1462,6 +1546,8 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
             )
             pending_bank_treasury_expenses = pending_bank_treasury_expenses.filter(
                 Q(sucursal_gasto__empresa_id__in=empresa_ids) | Q(sucursal_gasto__isnull=True)
+            ).filter(
+                bank_account_empresa_scope_query(empresa_ids, prefix="cuenta_bancaria__")
             )
     treasury_unmapped_expenses_total = (
         (pending_central_treasury_expenses.aggregate(total=Sum("monto"))["total"] or Decimal("0.00"))
@@ -1871,7 +1957,15 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     if sucursal is not None:
         pending_payables = pending_payables.filter(sucursal=sucursal)
     elif empresa_ids is not None:
-        pending_payables = pending_payables.filter(sucursal__empresa_id__in=empresa_ids)
+        if not empresa_ids:
+            pending_payables = pending_payables.none()
+        else:
+            # Las deudas legacy sin sucursal siguen siendo deuda viva: se
+            # incluyen bajo contexto de empresa igual que en la lectura
+            # economica, para no sobreestimar la cobertura de deuda en banco.
+            pending_payables = pending_payables.filter(
+                Q(sucursal__empresa_id__in=empresa_ids) | Q(sucursal__isnull=True)
+            )
 
     reference_date = date_to
     red_threshold = reference_date + timedelta(days=4)
@@ -1925,7 +2019,9 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     if sucursal is not None:
         recent_batches = recent_batches.filter(cuenta_bancaria__sucursal=sucursal)
     elif empresa_ids is not None:
-        recent_batches = recent_batches.filter(cuenta_bancaria__sucursal__empresa_id__in=empresa_ids)
+        recent_batches = recent_batches.filter(
+            bank_account_empresa_scope_query(empresa_ids, prefix="cuenta_bancaria__")
+        )
     recent_batches = recent_batches.select_related("cuenta_bancaria").order_by("-fecha_lote", "-id")[:5]
 
     recent_payments = PagoTesoreria.objects.filter(
@@ -1960,6 +2056,8 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     central_cash_expense_period = central_cash_period_totals["egresos"] or Decimal("0.00")
     central_cash_admin_expense_period = central_cash_period_totals["egresos_admin"] or Decimal("0.00")
 
+    pending_debt_total = pending_payables.aggregate(total=Sum("saldo_pendiente"))["total"] or Decimal("0.00")
+
     return {
         "date_from": date_from,
         "date_to": date_to,
@@ -1987,7 +2085,12 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
         "accreditation_discounts": accreditation_discounts,
         "pending_accreditation_total": pending_accreditation_total,
         "pending_count": pending_payables.count(),
-        "pending_total": pending_payables.aggregate(total=Sum("saldo_pendiente"))["total"] or Decimal("0.00"),
+        "pending_total": pending_debt_total,
+        # US-10.14: cobertura de la deuda pendiente con la disponibilidad real
+        # en banco a la fecha de corte. Solo banco (saldo inicial + movimientos
+        # reales); no mezcla caja fuerte central ni acreditacion pendiente.
+        "debt_vs_bank_difference": total_bank_balance - pending_debt_total,
+        "debt_vs_bank_covered": total_bank_balance >= pending_debt_total,
         "red_count": red_payables.count(),
         "red_total": red_payables.aggregate(total=Sum("saldo_pendiente"))["total"] or Decimal("0.00"),
         "yellow_count": yellow_payables.count(),
