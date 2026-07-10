@@ -28,6 +28,10 @@ PERMISSION_MODULE_META = {
         "label": "Corrección de cajas cerradas",
         "scope": "Editar o anular movimientos de cajas cerradas con motivo, auditoría y recálculo operativo.",
     },
+    PermissionModule.CASHOPS_VALIDATE: {
+        "label": "Validación de efectivo",
+        "scope": "Ver cajas pendientes de validación y validar o rechazar el efectivo entregado.",
+    },
     PermissionModule.CONFIG: {
         "label": "Configuración",
         "scope": "Rubros, limites, empresas, sucursales, turnos y reinicio de datos.",

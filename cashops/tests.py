@@ -27,7 +27,13 @@ from .models import (
     Transferencia,
     Turno,
 )
-from .permissions import can_operate_box, ensure_can_operate_box, is_cashops_admin
+from .permissions import (
+    can_operate_box,
+    can_validate_cash,
+    ensure_can_operate_box,
+    ensure_cash_validation,
+    is_cashops_admin,
+)
 from .services import (
     BRANCH_TRANSFER_DISABLED_REASON,
     annul_box,
@@ -2666,3 +2672,91 @@ class EP12DashboardCanalTests(CashopsTestCase):
         )
         self.assertEqual(summary["total_ventas_digitales"], Decimal("150.00"))
         self.assertIsNone(summary["saldo_efectivo_caja"])
+
+
+class EP13CajeroScopeTests(CashopsTestCase):
+    def setUp(self):
+        super().setUp()
+        self.cajero_role = Role.objects.get(code="CAJERO")
+        self.cajero = User.objects.create_user(
+            username="cajero",
+            password="test",
+            role=self.cajero_role,
+            usuario_fijo=True,
+            sucursal_base=self.branch_a,
+        )
+        self.cajero.empresas_permitidas.set([self.empresa_a])
+
+    def test_cajero_opens_and_loads_own_box_in_base_branch(self):
+        caja = open_box(
+            user=self.cajero,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("100.00"),
+            actor=self.cajero,
+        )
+        register_cash_income(
+            caja=caja,
+            monto=Decimal("50.00"),
+            categoria="Venta mostrador",
+            observacion="Carga del cajero",
+            actor=self.cajero,
+        )
+
+        self.assertEqual(caja.saldo_esperado, Decimal("150.00"))
+
+    def test_cajero_cannot_open_box_outside_base_branch(self):
+        with self.assertRaises(ValidationError):
+            open_box(
+                user=self.cajero,
+                turno=self.turno_b,
+                sucursal=self.branch_b,
+                fecha_operativa=self.fecha_op,
+                monto_inicial=Decimal("0.00"),
+                actor=self.cajero,
+            )
+
+    def test_cajero_cannot_open_box_for_another_user(self):
+        with self.assertRaises(PermissionDenied):
+            open_box(
+                user=self.operator,
+                turno=self.turno_a,
+                sucursal=self.branch_a,
+                fecha_operativa=self.fecha_op,
+                monto_inicial=Decimal("0.00"),
+                actor=self.cajero,
+            )
+
+    def test_cajero_cannot_operate_foreign_box(self):
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("0.00"),
+            actor=self.operator,
+        )
+
+        with self.assertRaises(PermissionDenied):
+            register_cash_income(
+                caja=caja,
+                monto=Decimal("10.00"),
+                categoria="Intento ajeno",
+                observacion="",
+                actor=self.cajero,
+            )
+
+    def test_cajero_has_no_treasury_config_users_access(self):
+        self.client.force_login(self.cajero)
+
+        self.assertEqual(self.client.get(reverse("cashops:dashboard")).status_code, 200)
+        self.assertEqual(self.client.get(reverse("treasury:dashboard")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("users:user_list")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("cashops:sucursal_create")).status_code, 403)
+
+    def test_cajero_cannot_validate_cash_by_default(self):
+        self.assertFalse(can_validate_cash(self.cajero))
+        self.assertTrue(can_validate_cash(self.admin))
+        with self.assertRaises(PermissionDenied):
+            ensure_cash_validation(self.cajero)

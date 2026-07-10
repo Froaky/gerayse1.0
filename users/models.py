@@ -6,6 +6,9 @@ from django.db import models
 class PermissionModule(models.TextChoices):
     CASHOPS = "cashops", "Caja operativa"
     CASHOPS_CLOSED_FIX = "cashops_closed_fix", "Corrección de cajas cerradas"
+    # EP-13: permiso por accion. Habilita validar o rechazar el efectivo de
+    # cajas pendientes; no otorga ningun otro acceso de caja.
+    CASHOPS_VALIDATE = "cashops_validate", "Validación de efectivo"
     CONFIG = "config", "Configuración"
     TREASURY = "treasury", "Tesorería"
     USERS = "users", "Usuarios"
@@ -133,6 +136,9 @@ class User(AbstractUser):
 
     def can_write_cashops(self) -> bool:
         return self.has_module_permission(PermissionModule.CASHOPS, "write")
+
+    def can_validate_efectivo(self) -> bool:
+        return self.has_module_permission(PermissionModule.CASHOPS_VALIDATE, "write")
 
     def can_read_config(self) -> bool:
         return self.has_module_permission(PermissionModule.CONFIG, "read")

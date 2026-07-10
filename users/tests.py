@@ -560,7 +560,7 @@ class PersonalViewTests(TestCase):
 
         self.assertEqual(create_response.status_code, 302)
         role = Role.objects.get(code="LECTURA")
-        self.assertEqual(role.permissions.count(), 5)
+        self.assertEqual(role.permissions.count(), 6)
 
         toggle_response = self.client.post(
             reverse(
@@ -734,3 +734,82 @@ class FirstAccessPasswordTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "El link no está vigente")
+
+
+class EP13ValidateActionPermissionTests(TestCase):
+    def setUp(self):
+        self.admin_role = Role.objects.create(code="ADMIN", name="Administrador")
+        self.operator_role = Role.objects.create(code="ENCARGADO", name="Encargado")
+        self.users_admin = User.objects.create_user(
+            username="admin-perms",
+            password="secret12345",
+            role=self.admin_role,
+        )
+        self.operator = User.objects.create_user(
+            username="operador-perms",
+            password="secret12345",
+            role=self.operator_role,
+        )
+
+    def test_admin_role_can_validate_by_default_and_operator_cannot(self):
+        self.assertTrue(self.users_admin.can_validate_efectivo())
+        self.assertFalse(self.operator.can_validate_efectivo())
+
+    def test_role_default_grants_cash_validation(self):
+        RolePermission.objects.create(
+            role=self.operator_role,
+            module=PermissionModule.CASHOPS_VALIDATE,
+            can_write=True,
+        )
+
+        self.assertTrue(self.operator.can_validate_efectivo())
+
+    def test_user_override_toggle_enables_and_disables_cash_validation(self):
+        self.client.force_login(self.users_admin)
+
+        enable_response = self.client.post(
+            reverse(
+                "users:user_permission_toggle",
+                args=[self.operator.pk, PermissionModule.CASHOPS_VALIDATE, "write"],
+            )
+        )
+
+        self.assertEqual(enable_response.status_code, 302)
+        override = UserPermission.objects.get(user=self.operator, module=PermissionModule.CASHOPS_VALIDATE)
+        self.assertTrue(override.can_write)
+        self.assertTrue(self.operator.can_validate_efectivo())
+
+        disable_response = self.client.post(
+            reverse(
+                "users:user_permission_toggle",
+                args=[self.operator.pk, PermissionModule.CASHOPS_VALIDATE, "write"],
+            )
+        )
+
+        self.assertEqual(disable_response.status_code, 302)
+        override.refresh_from_db()
+        self.assertFalse(override.can_write)
+        self.assertFalse(self.operator.can_validate_efectivo())
+
+    def test_user_detail_matrix_shows_cash_validation_row(self):
+        self.client.force_login(self.users_admin)
+
+        response = self.client.get(reverse("users:user_detail", args=[self.operator.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Validación de efectivo")
+
+    def test_cajero_seed_role_only_writes_cashops(self):
+        cajero = Role.objects.get(code="CAJERO")
+        by_module = {permission.module: permission for permission in cajero.permissions.all()}
+
+        self.assertTrue(by_module[PermissionModule.CASHOPS].can_write)
+        for module in (
+            PermissionModule.CASHOPS_CLOSED_FIX,
+            PermissionModule.CASHOPS_VALIDATE,
+            PermissionModule.CONFIG,
+            PermissionModule.TREASURY,
+            PermissionModule.USERS,
+        ):
+            self.assertFalse(by_module[module].can_read)
+            self.assertFalse(by_module[module].can_write)

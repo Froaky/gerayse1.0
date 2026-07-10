@@ -40,6 +40,15 @@ def ensure_closed_box_correction(user) -> None:
         raise PermissionDenied("No tenes permisos para corregir cajas cerradas.")
 
 
+def can_validate_cash(user) -> bool:
+    return _has_module_permission(user, PermissionModule.CASHOPS_VALIDATE, "write")
+
+
+def ensure_cash_validation(user) -> None:
+    if not can_validate_cash(user):
+        raise PermissionDenied("No tenes permiso para validar efectivo.")
+
+
 def ensure_config_read(user) -> None:
     if not _has_module_permission(user, PermissionModule.CONFIG, "read"):
         raise PermissionDenied("No tenes permisos para ver configuracion.")
