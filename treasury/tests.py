@@ -43,6 +43,7 @@ from .models import (
 )
 from .permissions import is_treasury_admin
 from .services import (
+    annul_payable,
     annul_payment,
     build_economic_period_snapshot,
     build_economic_rubro_detail,
@@ -56,6 +57,7 @@ from .services import (
     decide_special_commitment,
     link_payment_to_bank_movement,
     register_card_accreditation,
+    register_cash_payment,
     register_central_cash_movement,
     register_cheque_payment,
     register_echeq_payment,
@@ -3952,3 +3954,172 @@ class EP10DebtVsBankCoverageTests(TreasuryTestCase):
         self.assertEqual(snapshot["pending_total"], Decimal("400.00"))
         self.assertEqual(snapshot["debt_vs_bank_difference"], Decimal("-300.00"))
         self.assertFalse(snapshot["debt_vs_bank_covered"])
+
+
+class EP13DebtEconomicFinancialTests(TreasuryTestCase):
+    """US-13.1: la deuda impacta la economica al cargarse y la financiera solo al pagarse."""
+
+    def _register_may_payable(self, importe, referencia):
+        return register_payable(
+            sucursal=self.sucursal,
+            proveedor=self.supplier,
+            categoria=self.category,
+            concepto="Factura de servicios del periodo",
+            fecha_emision=timezone.datetime(2026, 5, 10).date(),
+            fecha_vencimiento=timezone.datetime(2026, 5, 25).date(),
+            periodo_referencia=timezone.datetime(2026, 5, 1).date(),
+            importe_total=Decimal(importe),
+            referencia_comprobante=referencia,
+            actor=self.admin,
+        )
+
+    def test_registered_payable_enters_economic_reading_before_any_payment(self):
+        self._register_may_payable("300.00", "EP13-A-1")
+
+        snapshot = build_economic_period_snapshot(
+            date_from=timezone.datetime(2026, 5, 1).date(),
+            date_to=timezone.datetime(2026, 5, 31).date(),
+            sucursal=self.sucursal,
+        )
+
+        self.assertEqual(snapshot["debt_period_total"], Decimal("300.00"))
+        self.assertEqual(snapshot["sales_total"], Decimal("0.00"))
+        self.assertEqual(snapshot["economic_result"], Decimal("-300.00"))
+        servicios_item = next(item for item in snapshot["items"] if item["rubro_nombre"] == "Servicios")
+        self.assertEqual(servicios_item["total_expense"], Decimal("300.00"))
+
+    def test_unpaid_payable_does_not_move_any_financial_flow(self):
+        self._register_may_payable("300.00", "EP13-B-1")
+
+        snapshot = build_financial_period_snapshot(
+            date_from=timezone.datetime(2026, 5, 1).date(),
+            date_to=timezone.datetime(2026, 5, 31).date(),
+        )
+
+        self.assertEqual(snapshot["cash_income"], Decimal("0.00"))
+        self.assertEqual(snapshot["cash_expense"], Decimal("0.00"))
+        self.assertEqual(snapshot["cash_net"], Decimal("0.00"))
+        self.assertEqual(snapshot["bank_credits"], Decimal("0.00"))
+        self.assertEqual(snapshot["bank_debits"], Decimal("0.00"))
+        self.assertEqual(snapshot["central_cash_income_period"], Decimal("0.00"))
+        self.assertEqual(snapshot["central_cash_expense_period"], Decimal("0.00"))
+        self.assertEqual(snapshot["central_cash_total"], Decimal("0.00"))
+        self.assertEqual(snapshot["total_consolidated"], Decimal("0.00"))
+        self.assertEqual(snapshot["pending_count"], 1)
+        self.assertEqual(snapshot["pending_total"], Decimal("300.00"))
+
+    def test_cash_payment_moves_financial_in_its_period_without_duplicating_economic(self):
+        payable = self._register_may_payable("300.00", "EP13-C-1")
+        register_central_cash_movement(
+            tipo=MovimientoCajaCentral.Tipo.APORTE,
+            monto=Decimal("1000.00"),
+            concepto="Fondo inicial de caja central",
+            fecha=timezone.datetime(2026, 6, 1).date(),
+            actor=self.admin,
+        )
+
+        register_cash_payment(
+            payable=payable,
+            fecha_pago=timezone.datetime(2026, 6, 5).date(),
+            monto=Decimal("300.00"),
+            actor=self.admin,
+        )
+
+        payable.refresh_from_db()
+        self.assertEqual(payable.estado, CuentaPorPagar.Estado.PAGADA)
+        self.assertEqual(payable.saldo_pendiente, Decimal("0.00"))
+        economic_may = build_economic_period_snapshot(
+            date_from=timezone.datetime(2026, 5, 1).date(),
+            date_to=timezone.datetime(2026, 5, 31).date(),
+            sucursal=self.sucursal,
+        )
+        self.assertEqual(economic_may["debt_period_total"], Decimal("300.00"))
+        economic_june = build_economic_period_snapshot(
+            date_from=timezone.datetime(2026, 6, 1).date(),
+            date_to=timezone.datetime(2026, 6, 30).date(),
+            sucursal=self.sucursal,
+        )
+        self.assertEqual(economic_june["debt_period_total"], Decimal("0.00"))
+        self.assertEqual(economic_june["economic_result"], Decimal("0.00"))
+        financial_june = build_financial_period_snapshot(
+            date_from=timezone.datetime(2026, 6, 1).date(),
+            date_to=timezone.datetime(2026, 6, 30).date(),
+        )
+        self.assertEqual(financial_june["central_cash_expense_period"], Decimal("300.00"))
+        self.assertEqual(financial_june["central_cash_total"], Decimal("700.00"))
+        self.assertEqual(financial_june["pending_total"], Decimal("0.00"))
+
+    def test_transfer_payment_hits_financial_only_with_real_bank_movement(self):
+        payable = register_payable(
+            sucursal=self.sucursal,
+            proveedor=self.supplier,
+            categoria=self.category,
+            concepto="Factura pagada por transferencia",
+            fecha_emision=timezone.datetime(2026, 6, 5).date(),
+            fecha_vencimiento=timezone.datetime(2026, 6, 20).date(),
+            periodo_referencia=timezone.datetime(2026, 6, 1).date(),
+            importe_total=Decimal("400.00"),
+            referencia_comprobante="EP13-D-1",
+            actor=self.admin,
+        )
+        register_transfer_payment(
+            payable=payable,
+            bank_account=self.bank_account,
+            fecha_pago=timezone.datetime(2026, 6, 10).date(),
+            monto=Decimal("400.00"),
+            referencia="TRF-EP13",
+            actor=self.admin,
+        )
+
+        before = build_financial_period_snapshot(
+            date_from=timezone.datetime(2026, 6, 1).date(),
+            date_to=timezone.datetime(2026, 6, 30).date(),
+        )
+        self.assertEqual(before["bank_debits"], Decimal("0.00"))
+
+        movement = create_bank_movement(
+            cuenta_bancaria=self.bank_account,
+            tipo=MovimientoBancario.Tipo.DEBITO,
+            fecha=timezone.datetime(2026, 6, 10).date(),
+            monto=Decimal("400.00"),
+            concepto="Transferencia a proveedor",
+            categoria=self.category,
+            rubro_operativo=self.rubro_servicios,
+            proveedor=self.supplier,
+            sucursal_gasto=self.sucursal,
+            periodo_pago=timezone.datetime(2026, 6, 1).date(),
+            actor=self.admin,
+        )
+        payment = payable.pagos.get()
+        link_payment_to_bank_movement(payment=payment, bank_movement=movement, actor=self.admin)
+
+        after = build_financial_period_snapshot(
+            date_from=timezone.datetime(2026, 6, 1).date(),
+            date_to=timezone.datetime(2026, 6, 30).date(),
+        )
+        self.assertEqual(after["bank_debits"], Decimal("400.00"))
+        self.assertEqual(after["pending_total"], Decimal("0.00"))
+        economic_june = build_economic_period_snapshot(
+            date_from=timezone.datetime(2026, 6, 1).date(),
+            date_to=timezone.datetime(2026, 6, 30).date(),
+            sucursal=self.sucursal,
+        )
+        self.assertEqual(economic_june["debt_period_total"], Decimal("400.00"))
+        self.assertEqual(economic_june["economic_result"], Decimal("-400.00"))
+
+    def test_annulled_payable_leaves_economic_and_pending_readings(self):
+        payable = self._register_may_payable("250.00", "EP13-E-1")
+        annul_payable(payable=payable, motivo="Carga duplicada", actor=self.admin)
+
+        economic_may = build_economic_period_snapshot(
+            date_from=timezone.datetime(2026, 5, 1).date(),
+            date_to=timezone.datetime(2026, 5, 31).date(),
+            sucursal=self.sucursal,
+        )
+        self.assertEqual(economic_may["debt_period_total"], Decimal("0.00"))
+        self.assertEqual(economic_may["economic_result"], Decimal("0.00"))
+        financial_may = build_financial_period_snapshot(
+            date_from=timezone.datetime(2026, 5, 1).date(),
+            date_to=timezone.datetime(2026, 5, 31).date(),
+        )
+        self.assertEqual(financial_may["pending_total"], Decimal("0.00"))
