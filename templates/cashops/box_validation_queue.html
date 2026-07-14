@@ -1,0 +1,68 @@
+{% extends "cashops/layout.html" %}
+{% block title %}Pendientes de validación | Gerayse{% endblock %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Pendientes de validación</h1>
+        <p class="muted">Cajas cerradas con efectivo declarado. Coteja el efectivo físico que te entregaron y valida o rechaza: hasta validarse no contabilizan en ningún total del sistema.</p>
+      </div>
+      <a class="button-secondary" href="{% url 'cashops:dashboard' %}">Volver a caja</a>
+    </div>
+  </section>
+
+  <section class="card mt-16">
+    <div class="row">
+      <h2>Cajas pendientes</h2>
+      <span class="badge-muted">{{ rows|length }} caja{% if rows|length != 1 %}s{% endif %}</span>
+    </div>
+    <div class="list" style="margin-top:16px;">
+      {% for row in rows %}
+        <article class="list-item">
+          <div class="row">
+            <div>
+              <strong>Caja #{{ row.box.id }}</strong>
+              <div class="muted mt-8">{{ row.box.sucursal.nombre }} · {{ row.box.turno.get_tipo_display }} · {{ row.box.fecha_operativa|date:"d/m/Y" }}</div>
+            </div>
+            {% if row.is_rejected %}
+              <span class="badge badge-danger">Validación rechazada</span>
+            {% else %}
+              <span class="badge badge-warning">Pendiente de validación</span>
+            {% endif %}
+          </div>
+          <div class="summary-grid mt-12">
+            <div class="summary">
+              <span class="muted">Responsable</span>
+              <strong>{{ row.box.usuario }}</strong>
+            </div>
+            <div class="summary">
+              <span class="muted">Efectivo declarado al cierre</span>
+              <strong>${{ row.cierre.saldo_fisico }}</strong>
+            </div>
+            <div class="summary">
+              <span class="muted">Saldo esperado por sistema</span>
+              <strong>${{ row.cierre.saldo_esperado }}</strong>
+            </div>
+            <div class="summary">
+              <span class="muted">Diferencia del cierre</span>
+              <strong>${{ row.cierre.diferencia }}</strong>
+            </div>
+          </div>
+          {% if row.last_rejection %}
+            <p class="muted mt-12">Último rechazo: {{ row.last_rejection.motivo }} ({{ row.last_rejection.usuario }}, {{ row.last_rejection.creado_en|date:"d/m/Y H:i" }})</p>
+          {% endif %}
+          <div class="list-actions">
+            <form method="post" action="{{ row.validate_url }}">
+              {% csrf_token %}
+              <button class="button" type="submit">Validar</button>
+            </form>
+            <a class="button-secondary" href="{{ row.reject_url }}">Rechazar</a>
+            <a class="button-secondary" href="{{ row.detail_url }}">Ver detalle</a>
+          </div>
+        </article>
+      {% empty %}
+        <p class="muted">No hay cajas pendientes de validación. Todo el efectivo entregado ya está confirmado.</p>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

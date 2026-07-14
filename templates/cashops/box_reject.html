@@ -1,0 +1,51 @@
+{% extends "cashops/layout.html" %}
+{% block title %}Rechazar validación caja #{{ box.id }} | Gerayse{% endblock %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Rechazar validación de caja #{{ box.id }}</h1>
+        <p class="muted">{{ box.sucursal.nombre }} · {{ box.turno.get_tipo_display }} · {{ box.fecha_operativa|date:"d/m/Y" }} · Responsable {{ box.usuario }}</p>
+      </div>
+      <a class="button-secondary" href="{% url 'cashops:box_validation_queue' %}">Volver a pendientes</a>
+    </div>
+    {% if cierre %}
+      <div class="summary-grid mt-16">
+        <div class="summary">
+          <span class="muted">Efectivo declarado al cierre</span>
+          <strong>${{ cierre.saldo_fisico }}</strong>
+        </div>
+        <div class="summary">
+          <span class="muted">Saldo esperado por sistema</span>
+          <strong>${{ cierre.saldo_esperado }}</strong>
+        </div>
+      </div>
+    {% endif %}
+    <form method="post" class="stack mt-16">
+      {% csrf_token %}
+      {% if form.non_field_errors %}
+        <ul class="errors">
+          {% for error in form.non_field_errors %}
+            <li>{{ error }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      <div class="field">
+        <label for="{{ form.motivo.id_for_label }}">{{ form.motivo.label }}</label>
+        {{ form.motivo }}
+        {% if form.motivo.errors %}
+          <ul class="errors">
+            {% for error in form.motivo.errors %}
+              <li>{{ error }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+        <small class="muted">La caja queda observada y sigue sin contabilizar hasta corregirse y validarse.</small>
+      </div>
+      <div class="list-actions">
+        <button class="button-danger button" type="submit">Rechazar validación</button>
+        <a class="button-secondary" href="{% url 'cashops:box_validation_queue' %}">Cancelar</a>
+      </div>
+    </form>
+  </section>
+{% endblock %}

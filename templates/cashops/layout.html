@@ -383,6 +383,9 @@
           <div class="nav-primary">
             <a class="chip" href="{% url 'cashops:dashboard' %}">Caja</a>
             <a class="chip" href="{% url 'cashops:box_tracking' %}">Seguimiento</a>
+            {% if request.user.can_validate_efectivo %}
+              <a class="chip" href="{% url 'cashops:box_validation_queue' %}">Validaciones</a>
+            {% endif %}
             {% if request.user.can_write_cashops %}
               <a class="chip" href="{% url 'cashops:box_open' %}">Abrir caja</a>
             {% endif %}

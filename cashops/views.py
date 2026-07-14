@@ -20,6 +20,7 @@ from .forms import (
     BoxAnnulForm,
     BoxEditForm,
     CajaAperturaForm,
+    CajaValidacionRechazoForm,
     CanalIngresoForm,
     ClosedBoxMovementAnnulForm,
     ClosedBoxMovementEditForm,
@@ -35,8 +36,16 @@ from .forms import (
     TransferenciaEntreSucursalesForm,
     VentaGeneralForm,
 )
-from .models import CanalIngreso, Caja, CierreCaja, Empresa, LimiteRubroOperativo, MovimientoCaja, MovimientoCajaCorreccion, RubroOperativo, Sucursal, Turno
-from .permissions import can_correct_closed_box, ensure_cashops_read, ensure_cashops_write, ensure_closed_box_correction, ensure_config_read, ensure_config_write
+from .models import CajaValidacion, CanalIngreso, Caja, CierreCaja, Empresa, LimiteRubroOperativo, MovimientoCaja, MovimientoCajaCorreccion, RubroOperativo, Sucursal, Turno
+from .permissions import (
+    can_correct_closed_box,
+    ensure_cash_validation,
+    ensure_cashops_read,
+    ensure_cashops_write,
+    ensure_closed_box_correction,
+    ensure_config_read,
+    ensure_config_write,
+)
 from .services import (
     annul_box,
     annul_closed_box_movement,
@@ -62,11 +71,13 @@ from .services import (
     register_cash_income,
     register_general_sale,
     register_expense,
+    reject_box_cash,
     resync_operational_control_for_rubro,
     transfer_between_boxes,
     transfer_between_branches,
     update_box_metadata,
     update_closed_box_movement,
+    validate_box_cash,
 )
 def _boxes_for_request(request):
     queryset = Caja.objects.select_related("sucursal", "turno", "usuario").exclude(estado=Caja.Estado.ANULADA)
@@ -1775,3 +1786,83 @@ def reset_operational_data(request):
         return render(request, "cashops/reset_confirm.html", {"step": 2})
 
     return render(request, "cashops/reset_confirm.html", {"step": 1})
+
+
+@login_required
+def box_validation_queue(request):
+    ensure_cash_validation(request.user)
+    empresa_ids = _get_empresa_ids(request)
+    boxes = (
+        Caja.objects.select_related("sucursal", "turno", "usuario", "cierre")
+        .filter(
+            estado=Caja.Estado.CERRADA,
+            validacion_estado__in=Caja.VALIDACION_BLOQUEA_TOTALES,
+            sucursal__empresa_id__in=empresa_ids,
+        )
+        .order_by("fecha_operativa", "id")
+    )
+    rows = []
+    for box in boxes:
+        cierre = getattr(box, "cierre", None)
+        last_rejection = None
+        if box.validacion_estado == Caja.ValidacionEstado.RECHAZADA:
+            last_rejection = box.validaciones.filter(accion=CajaValidacion.Accion.RECHAZO).first()
+        rows.append(
+            {
+                "box": box,
+                "cierre": cierre,
+                "is_rejected": box.validacion_estado == Caja.ValidacionEstado.RECHAZADA,
+                "last_rejection": last_rejection,
+                "detail_url": reverse("cashops:box_detail", args=[box.pk]),
+                "validate_url": reverse("cashops:box_validate", args=[box.pk]),
+                "reject_url": reverse("cashops:box_reject", args=[box.pk]),
+            }
+        )
+    return render(request, "cashops/box_validation_queue.html", {"rows": rows})
+
+
+@login_required
+@require_http_methods(["POST"])
+def box_validate_view(request, box_id: int):
+    ensure_cash_validation(request.user)
+    box = get_object_or_404(Caja.objects.select_related("sucursal"), pk=box_id)
+    if box.sucursal.empresa_id not in _get_empresa_ids(request):
+        raise PermissionDenied("Esta caja no pertenece a las empresas seleccionadas.")
+    try:
+        validate_box_cash(caja=box, actor=request.user)
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        messages.success(request, f"Caja #{box.pk} validada. El efectivo ya contabiliza en el sistema.")
+    url = reverse("cashops:box_validation_queue")
+    return _hx_redirect(url) if _is_htmx(request) else redirect(url)
+
+
+@login_required
+def box_reject_view(request, box_id: int):
+    ensure_cash_validation(request.user)
+    box = get_object_or_404(Caja.objects.select_related("sucursal", "turno", "usuario", "cierre"), pk=box_id)
+    if box.sucursal.empresa_id not in _get_empresa_ids(request):
+        raise PermissionDenied("Esta caja no pertenece a las empresas seleccionadas.")
+    form = CajaValidacionRechazoForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        try:
+            reject_box_cash(caja=box, motivo=form.cleaned_data["motivo"], actor=request.user)
+        except ValidationError as exc:
+            form.add_error(None, exc)
+        else:
+            messages.success(
+                request,
+                f"Caja #{box.pk} rechazada. Sigue sin contabilizar hasta corregirse y validarse.",
+            )
+            url = reverse("cashops:box_validation_queue")
+            return _hx_redirect(url) if _is_htmx(request) else redirect(url)
+    return render(
+        request,
+        "cashops/box_reject.html",
+        {
+            "box": box,
+            "cierre": getattr(box, "cierre", None),
+            "form": form,
+        },
+    )

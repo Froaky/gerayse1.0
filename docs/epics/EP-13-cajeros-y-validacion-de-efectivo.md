@@ -16,6 +16,7 @@ Permitir que empleados cajero carguen su caja por sucursal con permisos acotados
 - una caja sin efectivo contabiliza normal, sin paso de validacion
 - el gasto cargado desde caja crea una deuda pendiente y el efectivo no sale de la caja; el pago real lo hace tesoreria despues
 - la deuda impacta la situacion economica al cargarse y la financiera solo al pagarse (regla ya vigente, se blinda con tests)
+- (2026-07-14) mientras la caja esta abierta contabiliza normal en los tableros del dia; el estado pendiente de validacion nace al CIERRE de la caja y desde ahi no contabiliza nada hasta validarse
 
 ## Incluye
 
@@ -37,7 +38,8 @@ Permitir que empleados cajero carguen su caja por sucursal con permisos acotados
 ## Reglas de negocio
 
 - la validacion de efectivo es un permiso por accion asignable por rol (default) o por usuario (override)
-- toda caja con movimientos de efectivo requiere validacion antes de contabilizar
+- toda caja que al cierre involucro efectivo (movimientos, monto inicial o saldo fisico declarado) requiere validacion antes de seguir contabilizando
+- una caja abierta contabiliza normal; la exclusion de totales rige desde el cierre hasta la validacion
 - una caja pendiente de validacion no aporta a ningun saldo, dashboard, snapshot, reporte, total ni alerta del sistema
 - una caja sin movimientos de efectivo contabiliza normal sin validacion
 - validar y rechazar exigen usuario responsable y quedan auditados; el rechazo exige motivo
@@ -49,7 +51,7 @@ Permitir que empleados cajero carguen su caja por sucursal con permisos acotados
 
 ## User Stories
 
-### [ ] US-13.1 Regresion de deuda en economica vs financiera
+### [x] US-13.1 Regresion de deuda en economica vs financiera
 
 Como administracion
 Quiero evidencia automatizada de que una deuda impacta la economica al cargarse y la financiera al pagarse
@@ -62,7 +64,7 @@ Criterios:
 - una deuda anulada no impacta la economica
 - los tests corren con la suite estandar del repo
 
-### [ ] US-13.2 Permisos por accion configurables
+### [x] US-13.2 Permisos por accion configurables
 
 Como administracion
 Quiero asignar permisos por accion especifica, por ejemplo validar efectivo, desde la ficha de usuario y de rol
@@ -75,7 +77,7 @@ Criterios:
 - usuarios y roles existentes conservan su comportamiento hasta recibir acciones explicitas
 - la ficha de usuario muestra las acciones efectivas igual que muestra lectura/escritura
 
-### [ ] US-13.3 Rol cajero con alcance por sucursal
+### [x] US-13.3 Rol cajero con alcance por sucursal
 
 Como administracion
 Quiero usuarios cajero que solo carguen la caja de su sucursal
@@ -89,21 +91,21 @@ Criterios:
 - usuarios legacy sin alcance explicito mantienen compatibilidad
 - cubre para caja la parte necesaria de `EP-09` `US-9.11`; generalizar a otros modulos queda en `EP-09`
 
-### [ ] US-13.4 Caja pendiente de validacion excluida de todos los totales
+### [x] US-13.4 Caja pendiente de validacion excluida de todos los totales
 
 Como administracion
 Quiero que una caja con efectivo no contabilice nada hasta ser validada
 Para que ningun saldo ni reporte cuente efectivo que todavia no fue confirmado fisicamente
 
 Criterios:
-- una caja con movimientos de efectivo queda en estado pendiente de validacion
+- al cerrarse, una caja que involucro efectivo queda en estado pendiente de validacion
 - mientras esta pendiente, la caja no aporta a dashboards, totales por sucursal/periodo, seguimiento, semaforos, disponibilidades, situacion financiera ni economica
 - una caja sin movimientos de efectivo no requiere validacion y contabiliza normal
 - al validarse, la caja contabiliza normalmente en todos los puntos anteriores sin recalculo manual
 - las cajas previas a esta funcionalidad quedan como validadas o no requeridas y no cambian ningun numero historico
 - los tests cubren cada punto de agregacion con una caja pendiente y una validada
 
-### [ ] US-13.5 Vista de pendientes de validacion
+### [x] US-13.5 Vista de pendientes de validacion
 
 Como responsable con permiso de validar efectivo
 Quiero ver las cajas pendientes, cotejar el efectivo que me entregan y validar o rechazar

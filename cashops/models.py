@@ -103,6 +103,14 @@ class Caja(models.Model):
         CERRADA = "CERRADA", "Cerrada"
         ANULADA = "ANULADA", "Anulada"
 
+    # EP-13: una caja con efectivo no contabiliza en ningun total del sistema
+    # hasta que un usuario con permiso la valide contra el efectivo fisico.
+    class ValidacionEstado(models.TextChoices):
+        NO_REQUERIDA = "NO_REQUERIDA", "No requiere validación"
+        PENDIENTE = "PENDIENTE", "Pendiente de validación"
+        RECHAZADA = "RECHAZADA", "Validación rechazada"
+        VALIDADA = "VALIDADA", "Validada"
+
     sucursal = models.ForeignKey(Sucursal, on_delete=models.PROTECT, related_name="cajas")
     turno = models.ForeignKey(Turno, on_delete=models.PROTECT, related_name="cajas")
     fecha_operativa = models.DateField()
@@ -122,6 +130,25 @@ class Caja(models.Model):
         blank=True,
         related_name="cajas_cerradas",
     )
+    validacion_estado = models.CharField(
+        max_length=20,
+        choices=ValidacionEstado.choices,
+        default=ValidacionEstado.NO_REQUERIDA,
+    )
+    validada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="cajas_validadas",
+    )
+    validada_en = models.DateTimeField(null=True, blank=True)
+
+    # Estados que excluyen la caja de todo saldo, snapshot, reporte o alerta.
+    VALIDACION_BLOQUEA_TOTALES = (
+        ValidacionEstado.PENDIENTE,
+        ValidacionEstado.RECHAZADA,
+    )
 
     class Meta:
         ordering = ["-abierta_en", "-id"]
@@ -140,6 +167,7 @@ class Caja(models.Model):
             models.Index(fields=["sucursal", "estado"]),
             models.Index(fields=["usuario", "estado"]),
             models.Index(fields=["fecha_operativa", "sucursal"]),
+            models.Index(fields=["estado", "validacion_estado"]),
         ]
 
     @property
@@ -654,6 +682,39 @@ class Justificacion(models.Model):
 
     def __str__(self) -> str:
         return f"Justificacion cierre {self.cierre_id}"
+
+
+class CajaValidacion(models.Model):
+    """EP-13: bitacora auditada de validaciones y rechazos de efectivo por caja."""
+
+    class Accion(models.TextChoices):
+        VALIDACION = "VALIDACION", "Validación"
+        RECHAZO = "RECHAZO", "Rechazo"
+
+    caja = models.ForeignKey(Caja, on_delete=models.CASCADE, related_name="validaciones")
+    accion = models.CharField(max_length=15, choices=Accion.choices)
+    motivo = models.TextField(blank=True)
+    efectivo_esperado = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="validaciones_de_caja",
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-creado_en", "-id"]
+        indexes = [
+            models.Index(fields=["caja", "accion"]),
+        ]
+
+    def clean(self) -> None:
+        super().clean()
+        if self.accion == self.Accion.RECHAZO and not (self.motivo or "").strip():
+            raise ValidationError({"motivo": "El motivo es obligatorio para rechazar una validación."})
+
+    def __str__(self) -> str:
+        return f"{self.get_accion_display()} caja {self.caja_id}"
 
 
 class AlertaOperativa(models.Model):

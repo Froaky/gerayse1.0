@@ -390,6 +390,18 @@ class BoxAnnulForm(forms.Form):
             field.widget.attrs.setdefault("class", "input textarea")
 
 
+class CajaValidacionRechazoForm(forms.Form):
+    motivo = forms.CharField(
+        label="Motivo del rechazo",
+        widget=forms.Textarea(attrs={"placeholder": "Explica por qué el efectivo entregado no coincide con lo cargado"}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs.setdefault("class", "input textarea")
+
+
 class VentaGeneralForm(forms.Form):
     tipo_venta = forms.ChoiceField(choices=[], label="Medio de ingreso")
     rubro = forms.ModelChoiceField(

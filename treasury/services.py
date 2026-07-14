@@ -1261,7 +1261,7 @@ def build_bank_reconciliation_snapshot(
     """
     US-4.6: Simple reconciliation logic.
     """
-    from cashops.models import MovimientoCaja
+    from cashops.models import Caja, MovimientoCaja
 
     # 1. Total sold by Card (from CashOps)
     # We map this to the bank account indirectly if possible, or just global for the period
@@ -1271,6 +1271,8 @@ def build_bank_reconciliation_snapshot(
         tipo=MovimientoCaja.Tipo.VENTA_TARJETA,
         creado_en__date__gte=date_from,
         creado_en__date__lte=date_to,
+    ).exclude(
+        caja__validacion_estado__in=Caja.VALIDACION_BLOQUEA_TOTALES
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
 
     # 2. Total recorded in POS Batches
@@ -1442,8 +1444,12 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
         rubro_operativo__isnull=False,
         estado=MovimientoCaja.Estado.REGISTRADO,
     )
-    sales = sales.exclude(caja__estado=Caja.Estado.ANULADA)
-    expenses = expenses.exclude(caja__estado=Caja.Estado.ANULADA)
+    sales = sales.exclude(caja__estado=Caja.Estado.ANULADA).exclude(
+        caja__validacion_estado__in=Caja.VALIDACION_BLOQUEA_TOTALES
+    )
+    expenses = expenses.exclude(caja__estado=Caja.Estado.ANULADA).exclude(
+        caja__validacion_estado__in=Caja.VALIDACION_BLOQUEA_TOTALES
+    )
     if sucursal is not None:
         sales = sales.filter(caja__sucursal=sucursal)
         expenses = expenses.filter(caja__sucursal=sucursal)
@@ -1758,7 +1764,9 @@ def build_economic_rubro_detail(*, rubro_id: int, date_from: date, date_to: date
         rubro_operativo=rubro,
         estado=MovimientoCaja.Estado.REGISTRADO,
     ).select_related("caja", "caja__sucursal")
-    cash_expenses = cash_expenses.exclude(caja__estado=Caja.Estado.ANULADA)
+    cash_expenses = cash_expenses.exclude(caja__estado=Caja.Estado.ANULADA).exclude(
+        caja__validacion_estado__in=Caja.VALIDACION_BLOQUEA_TOTALES
+    )
     if sucursal is not None:
         cash_expenses = cash_expenses.filter(caja__sucursal=sucursal)
     elif empresa_ids is not None:
@@ -1901,7 +1909,9 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
         caja__fecha_operativa__lte=date_to,
         impacta_saldo_caja=True,
         estado=MovimientoCaja.Estado.REGISTRADO,
-    ).exclude(caja__estado=Caja.Estado.ANULADA).exclude(tipo=MovimientoCaja.Tipo.APERTURA)
+    ).exclude(caja__estado=Caja.Estado.ANULADA).exclude(
+        caja__validacion_estado__in=Caja.VALIDACION_BLOQUEA_TOTALES
+    ).exclude(tipo=MovimientoCaja.Tipo.APERTURA)
     if sucursal is not None:
         cash_movements = cash_movements.filter(caja__sucursal=sucursal)
     elif empresa_ids is not None:
@@ -1984,7 +1994,9 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
         caja__fecha_operativa__lte=date_to,
         tipo=MovimientoCaja.Tipo.VENTA_TARJETA,
         estado=MovimientoCaja.Estado.REGISTRADO,
-    ).exclude(caja__estado=Caja.Estado.ANULADA)
+    ).exclude(caja__estado=Caja.Estado.ANULADA).exclude(
+        caja__validacion_estado__in=Caja.VALIDACION_BLOQUEA_TOTALES
+    )
     if accreditation_empresa_ids:
         digital_sales = digital_sales.filter(caja__sucursal__empresa_id__in=accreditation_empresa_ids)
     digital_sales_total = digital_sales.aggregate(total=Sum("monto"))["total"] or Decimal("0.00")

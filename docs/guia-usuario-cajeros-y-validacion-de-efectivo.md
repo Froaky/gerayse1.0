@@ -2,13 +2,13 @@
 
 > Estado: funcionalidad en desarrollo (rama `staging`). Esta guia describe como va a funcionar
 > el sistema cuando se active, para poder explicarselo al cliente. Se actualiza junto con el
-> desarrollo. Ultima actualizacion: 2026-07-10.
+> desarrollo. Ultima actualizacion: 2026-07-14.
 
 ## Que cambia, en una frase
 
-El efectivo que carga un empleado en su caja **no cuenta para el negocio hasta que una persona
-autorizada lo reciba fisicamente y lo valide en el sistema**; y los gastos ya no salen de la
-caja: quedan registrados como **deuda pendiente** que administracion paga despues.
+El efectivo que entrega un empleado al cerrar su caja **no cuenta para el negocio hasta que una
+persona autorizada lo reciba fisicamente y lo valide en el sistema**; y los gastos ya no salen
+de la caja: quedan registrados como **deuda pendiente** que administracion paga despues.
 
 ## 1. Nuevos permisos configurables
 
@@ -39,19 +39,20 @@ Los usuarios que ya existen siguen funcionando exactamente igual que hoy.
 ## 3. Validacion de efectivo, paso a paso
 
 1. El empleado abre su caja y carga las ventas del dia como siempre: efectivo, tarjeta,
-   debito, credito, QR, apps.
-2. Desde el momento en que la caja tiene **efectivo** cargado, esa caja queda
-   **pendiente de validacion**: sus numeros **no suman en ningun reporte, dashboard ni saldo**
-   del sistema. Ni el efectivo, ni las tarjetas, ni nada de esa caja. La caja se ve, con su
-   estado bien visible, pero no cuenta.
-3. Al terminar el turno, el empleado cierra la caja y **entrega el efectivo fisico** a la
+   debito, credito, QR, apps. **Mientras la caja esta abierta, los tableros muestran la
+   operacion del dia en vivo, como hasta ahora.**
+2. Al terminar el turno, el empleado **cierra la caja** y **entrega el efectivo fisico** a la
    persona responsable.
-4. La responsable (con el permiso *Validar efectivo*) entra a **Cajas → Pendientes de
-   validacion**. Ahi ve cada caja pendiente con su sucursal, fecha, turno, responsable y el
-   **efectivo esperado segun el sistema**.
+3. Desde el momento del cierre, si la caja tuvo **efectivo**, queda **pendiente de
+   validacion**: sus numeros **dejan de sumar en todos los reportes, dashboards y saldos**
+   del sistema. Ni el efectivo, ni las tarjetas, ni nada de esa caja. La caja se ve, con su
+   estado bien visible, pero no cuenta. La plata fisica tampoco entra a tesoreria todavia.
+4. La responsable (con el permiso *Validar efectivo*) entra a **Validaciones** (pendientes de
+   validacion). Ahi ve cada caja pendiente con su sucursal, fecha, turno, responsable y el
+   **efectivo declarado al cierre** contra el **esperado segun el sistema**.
 5. Cuenta el efectivo que le entregaron y lo coteja contra lo que dice la pantalla.
 6. **Si coincide**: aprieta **Validar**. Desde ese momento la caja contabiliza normalmente en
-   todo el sistema, como cualquier caja de hoy. Queda registrado quien valido y cuando.
+   todo el sistema y el efectivo entra a tesoreria. Queda registrado quien valido y cuando.
 7. **Si no coincide**: aprieta **Rechazar** e indica el motivo. La caja queda observada y sigue
    sin contar. Se corrige la carga con la correccion auditada de siempre (motivo, valor
    anterior y valor nuevo) y se vuelve a validar.
@@ -103,6 +104,10 @@ carga una caja alguien de administracion, puede validarla.
 
 **¿Que pasa si el empleado cargo solo tarjeta?**
 La caja cuenta normal sin validacion: no hay efectivo fisico que confirmar.
+
+**¿Y mientras la caja esta abierta durante el dia?**
+Cuenta normal en los tableros del dia, para no perder la vista en vivo de la operacion. El
+freno arranca cuando la caja se cierra y el efectivo queda en manos de alguien sin validar.
 
 **¿La caja pendiente "desaparece" de los reportes?**
 No desaparece: se ve en los listados con su estado *pendiente de validacion*. Lo que no hace es

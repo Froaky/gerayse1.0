@@ -12,6 +12,7 @@ from .models import (
     AlertaOperativa,
     Caja,
     CajaCorreccion,
+    CajaValidacion,
     CanalIngreso,
     CierreCaja,
     Justificacion,
@@ -23,7 +24,13 @@ from .models import (
     Transferencia,
     Turno,
 )
-from .permissions import can_assign_box_to_user, ensure_can_operate_box, ensure_closed_box_correction, is_cashops_admin
+from .permissions import (
+    can_assign_box_to_user,
+    ensure_can_operate_box,
+    ensure_cash_validation,
+    ensure_closed_box_correction,
+    is_cashops_admin,
+)
 
 
 CLOSING_DIFF_THRESHOLD = Decimal("10000.00")
@@ -140,6 +147,22 @@ def describe_box_follow_up(caja: Caja, movements) -> dict:
             "last_activity_at": last_activity_at,
             "post_opening_count": len(post_opening_movements),
         }
+    if caja.estado == Caja.Estado.CERRADA and caja.validacion_estado == Caja.ValidacionEstado.RECHAZADA:
+        return {
+            "label": "Validación rechazada",
+            "badge_class": "badge-danger",
+            "detail": "El efectivo entregado no coincidió: corregir la carga y volver a validar. No contabiliza en totales.",
+            "last_activity_at": last_activity_at,
+            "post_opening_count": len(post_opening_movements),
+        }
+    if caja.estado == Caja.Estado.CERRADA and caja.validacion_estado == Caja.ValidacionEstado.PENDIENTE:
+        return {
+            "label": "Pendiente de validación",
+            "badge_class": "badge-warning",
+            "detail": "Cerrada con efectivo declarado: no contabiliza en totales hasta que se valide.",
+            "last_activity_at": last_activity_at,
+            "post_opening_count": len(post_opening_movements),
+        }
     if caja.estado == Caja.Estado.CERRADA:
         return {
             "label": "Cerrada",
@@ -253,6 +276,21 @@ def build_box_activity_timeline(caja: Caja, movements) -> list[dict]:
                     "amount": None,
                 }
             )
+
+    for validacion in caja.validaciones.all():
+        is_rechazo = validacion.accion == CajaValidacion.Accion.RECHAZO
+        events.append(
+            {
+                "timestamp": validacion.creado_en,
+                "kind": "VALIDACION",
+                "badge_class": "badge-danger" if is_rechazo else "badge-success",
+                "badge_label": validacion.get_accion_display(),
+                "title": "Validación de efectivo rechazada" if is_rechazo else "Efectivo validado",
+                "detail": validacion.motivo or f"Efectivo esperado ${validacion.efectivo_esperado}.",
+                "user_label": str(validacion.usuario) if validacion.usuario else "Sin usuario",
+                "amount": validacion.efectivo_esperado,
+            }
+        )
 
     events.sort(key=lambda event: event["timestamp"], reverse=True)
     return events
@@ -440,7 +478,9 @@ def _period_boxes_for_operational_scope(
     boxes = Caja.objects.select_related("sucursal", "turno", "usuario", "cierre").filter(
         fecha_operativa__gte=date_from,
         fecha_operativa__lte=date_to,
-    ).exclude(estado=Caja.Estado.ANULADA)
+    ).exclude(estado=Caja.Estado.ANULADA).exclude(
+        validacion_estado__in=Caja.VALIDACION_BLOQUEA_TOTALES
+    )
     if sucursal is not None:
         boxes = boxes.filter(sucursal=sucursal)
     elif empresa_ids is not None:
@@ -663,6 +703,10 @@ def build_operational_control_snapshot(
     movement_qs = MovimientoCaja.objects.filter(_movement_scope_filter(scope)).exclude(
         tipo=MovimientoCaja.Tipo.APERTURA
     ).filter(estado=MovimientoCaja.Estado.REGISTRADO)
+    if getattr(scope, "caja", None) is None:
+        # EP-13: fuera de la pantalla propia de la caja, una caja pendiente
+        # de validacion no aporta a ningun total ni alerta.
+        movement_qs = movement_qs.exclude(caja__validacion_estado__in=Caja.VALIDACION_BLOQUEA_TOTALES)
     _channels = _get_active_channels()
     _excluded_income_codes = _excluded_income_channel_codes(_channels)
     totals = movement_qs.aggregate(
@@ -803,7 +847,9 @@ def build_operational_period_summary(*, date_from: date, date_to: date, sucursal
     movement_qs = MovimientoCaja.objects.filter(
         caja__fecha_operativa__gte=date_from,
         caja__fecha_operativa__lte=date_to,
-    ).exclude(caja__estado=Caja.Estado.ANULADA).exclude(tipo=MovimientoCaja.Tipo.APERTURA).filter(estado=MovimientoCaja.Estado.REGISTRADO)
+    ).exclude(caja__estado=Caja.Estado.ANULADA).exclude(
+        caja__validacion_estado__in=Caja.VALIDACION_BLOQUEA_TOTALES
+    ).exclude(tipo=MovimientoCaja.Tipo.APERTURA).filter(estado=MovimientoCaja.Estado.REGISTRADO)
     if sucursal is not None:
         movement_qs = movement_qs.filter(caja__sucursal=sucursal)
     elif empresa_ids is not None:
@@ -968,7 +1014,9 @@ def build_management_daily_matrix(*, date_from: date, date_to: date, sucursal: S
     ).filter(
         caja__fecha_operativa__gte=date_from,
         caja__fecha_operativa__lte=date_to,
-    ).exclude(caja__estado=Caja.Estado.ANULADA).exclude(tipo=MovimientoCaja.Tipo.APERTURA).filter(estado=MovimientoCaja.Estado.REGISTRADO)
+    ).exclude(caja__estado=Caja.Estado.ANULADA).exclude(
+        caja__validacion_estado__in=Caja.VALIDACION_BLOQUEA_TOTALES
+    ).exclude(tipo=MovimientoCaja.Tipo.APERTURA).filter(estado=MovimientoCaja.Estado.REGISTRADO)
     if sucursal is not None:
         movement_qs = movement_qs.filter(caja__sucursal=sucursal)
     elif empresa_ids is not None:
@@ -1988,40 +2036,130 @@ def close_box(
     caja.estado = Caja.Estado.CERRADA
     caja.cerrada_en = timezone.now()
     caja.cerrada_por = actor
-    caja.save(update_fields=["estado", "cerrada_en", "cerrada_por"])
+    # EP-13: toda caja que involucro efectivo (movimientos, monto inicial o
+    # saldo fisico declarado) queda pendiente de validacion y no contabiliza
+    # en ningun total hasta que un usuario con permiso la valide.
+    requires_validation = (
+        saldo_fisico != 0
+        or caja.monto_inicial > 0
+        or caja.movimientos.filter(
+            estado=MovimientoCaja.Estado.REGISTRADO,
+            impacta_saldo_caja=True,
+        ).exists()
+    )
+    caja.validacion_estado = (
+        Caja.ValidacionEstado.PENDIENTE if requires_validation else Caja.ValidacionEstado.NO_REQUERIDA
+    )
+    caja.save(update_fields=["estado", "cerrada_en", "cerrada_por", "validacion_estado"])
     caja_ref.estado = caja.estado
     caja_ref.cerrada_en = caja.cerrada_en
     caja_ref.cerrada_por = caja.cerrada_por
+    caja_ref.validacion_estado = caja.validacion_estado
 
-    if saldo_fisico != 0 and caja.sucursal_id:
-        from django.apps import apps
-        CajaCentral = apps.get_model("treasury", "CajaCentral")
-        MovimientoCajaCentral = apps.get_model("treasury", "MovimientoCajaCentral")
-        caja_central = CajaCentral.objects.filter(sucursal=caja.sucursal, activo=True).first()
-        if caja_central is None:
-            caja_central = CajaCentral.objects.create(
-                sucursal=caja.sucursal,
-                nombre=f"Caja Central {caja.sucursal.nombre}",
-                activo=True,
-            )
-        if saldo_fisico > 0:
-            central_type = "INGRESO_CAJA"
-            central_amount = saldo_fisico
-            central_concept = f"Cierre caja #{caja.id}"
-            central_observations = ""
-        else:
-            central_type = "AJUSTE_NEGATIVO"
-            central_amount = abs(saldo_fisico)
-            central_concept = f"Cierre caja #{caja.id} - saldo negativo"
-            central_observations = "Saldo fisico negativo informado al cierre de caja."
-        MovimientoCajaCentral.objects.create(
-            caja_central=caja_central,
-            fecha=caja.fecha_operativa,
-            tipo=central_type,
-            monto=central_amount,
-            concepto=central_concept,
-            observaciones=central_observations,
-            creado_por=actor,
-        )
+    # EP-13: el efectivo llega a la caja central de tesoreria recien al
+    # validarse la caja. Una caja sin efectivo no tiene nada que empujar.
+    if not requires_validation:
+        _push_box_closure_to_central_cash(caja, saldo_fisico=saldo_fisico, actor=actor)
 
     return cierre
+
+
+def _push_box_closure_to_central_cash(caja: Caja, *, saldo_fisico: Decimal, actor) -> None:
+    """Registra el saldo fisico del cierre en la caja central de la sucursal.
+
+    Idempotente: si el cierre de esta caja ya fue empujado, no duplica.
+    """
+    if saldo_fisico == 0 or not caja.sucursal_id:
+        return
+    from django.apps import apps
+
+    CajaCentral = apps.get_model("treasury", "CajaCentral")
+    MovimientoCajaCentral = apps.get_model("treasury", "MovimientoCajaCentral")
+    closure_concepts = [f"Cierre caja #{caja.id}", f"Cierre caja #{caja.id} - saldo negativo"]
+    if MovimientoCajaCentral.objects.filter(concepto__in=closure_concepts).exists():
+        return
+    caja_central = CajaCentral.objects.filter(sucursal=caja.sucursal, activo=True).first()
+    if caja_central is None:
+        caja_central = CajaCentral.objects.create(
+            sucursal=caja.sucursal,
+            nombre=f"Caja Central {caja.sucursal.nombre}",
+            activo=True,
+        )
+    if saldo_fisico > 0:
+        central_type = "INGRESO_CAJA"
+        central_amount = saldo_fisico
+        central_concept = f"Cierre caja #{caja.id}"
+        central_observations = ""
+    else:
+        central_type = "AJUSTE_NEGATIVO"
+        central_amount = abs(saldo_fisico)
+        central_concept = f"Cierre caja #{caja.id} - saldo negativo"
+        central_observations = "Saldo fisico negativo informado al cierre de caja."
+    MovimientoCajaCentral.objects.create(
+        caja_central=caja_central,
+        fecha=caja.fecha_operativa,
+        tipo=central_type,
+        monto=central_amount,
+        concepto=central_concept,
+        observaciones=central_observations,
+        creado_por=actor,
+    )
+
+
+@transaction.atomic
+def validate_box_cash(*, caja: Caja, actor=None) -> Caja:
+    """EP-13: valida el efectivo de una caja cerrada y la vuelve contable.
+
+    Solo un usuario con el permiso de accion validar efectivo puede hacerlo.
+    Al validar, el saldo fisico del cierre se empuja a la caja central y la
+    caja vuelve a aportar a todos los totales del sistema.
+    """
+    _require_actor(actor)
+    ensure_cash_validation(actor)
+    caja = Caja.objects.select_for_update().select_related("sucursal", "turno", "usuario").get(pk=caja.pk)
+    if caja.estado != Caja.Estado.CERRADA:
+        raise ValidationError({"caja": "Solo se puede validar el efectivo de una caja cerrada."})
+    if caja.validacion_estado not in Caja.VALIDACION_BLOQUEA_TOTALES:
+        raise ValidationError({"caja": "La caja no esta pendiente de validacion."})
+    cierre = getattr(caja, "cierre", None)
+    efectivo_esperado = cierre.saldo_fisico if cierre is not None else Decimal("0.00")
+    caja.validacion_estado = Caja.ValidacionEstado.VALIDADA
+    caja.validada_por = actor
+    caja.validada_en = timezone.now()
+    caja.save(update_fields=["validacion_estado", "validada_por", "validada_en"])
+    CajaValidacion.objects.create(
+        caja=caja,
+        accion=CajaValidacion.Accion.VALIDACION,
+        efectivo_esperado=efectivo_esperado,
+        usuario=actor,
+    )
+    if cierre is not None:
+        _push_box_closure_to_central_cash(caja, saldo_fisico=cierre.saldo_fisico, actor=actor)
+    resync_operational_control_for_caja(caja)
+    return caja
+
+
+@transaction.atomic
+def reject_box_cash(*, caja: Caja, motivo: str, actor=None) -> Caja:
+    """EP-13: rechaza la validacion con motivo; la caja sigue sin contabilizar."""
+    _require_actor(actor)
+    ensure_cash_validation(actor)
+    motivo = (motivo or "").strip()
+    if not motivo:
+        raise ValidationError({"motivo": "El motivo es obligatorio para rechazar la validacion."})
+    caja = Caja.objects.select_for_update().select_related("sucursal", "turno", "usuario").get(pk=caja.pk)
+    if caja.estado != Caja.Estado.CERRADA:
+        raise ValidationError({"caja": "Solo se puede rechazar la validacion de una caja cerrada."})
+    if caja.validacion_estado not in Caja.VALIDACION_BLOQUEA_TOTALES:
+        raise ValidationError({"caja": "La caja no esta pendiente de validacion."})
+    cierre = getattr(caja, "cierre", None)
+    caja.validacion_estado = Caja.ValidacionEstado.RECHAZADA
+    caja.save(update_fields=["validacion_estado"])
+    CajaValidacion.objects.create(
+        caja=caja,
+        accion=CajaValidacion.Accion.RECHAZO,
+        motivo=motivo,
+        efectivo_esperado=cierre.saldo_fisico if cierre is not None else Decimal("0.00"),
+        usuario=actor,
+    )
+    return caja
