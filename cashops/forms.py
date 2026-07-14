@@ -5,6 +5,8 @@ from django import forms
 from django.contrib.auth import get_user_model
 from django.db.models import Q
 
+from treasury.models import CategoriaCuentaPagar, Proveedor
+
 from .models import CanalIngreso, Caja, Empresa, LimiteRubroOperativo, MovimientoCaja, RubroOperativo, Sucursal, Transferencia, Turno
 from .permissions import can_assign_box_to_user, is_cashops_admin
 from .services import CLOSING_DIFF_THRESHOLD, MAX_OPERATIONAL_LIMIT_PERCENTAGE
@@ -388,6 +390,48 @@ class BoxAnnulForm(forms.Form):
         super().__init__(*args, **kwargs)
         for field in self.fields.values():
             field.widget.attrs.setdefault("class", "input textarea")
+
+
+class GastoComoDeudaForm(forms.Form):
+    proveedor = forms.ModelChoiceField(queryset=Proveedor.objects.none(), label="Proveedor")
+    categoria = forms.ModelChoiceField(queryset=CategoriaCuentaPagar.objects.none(), label="Categoría del gasto")
+    monto = forms.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        min_value=Decimal("0.01"),
+        widget=forms.NumberInput(attrs={"step": "0.01", "placeholder": "0.00"}),
+    )
+    concepto = forms.CharField(
+        max_length=160,
+        label="Concepto",
+        widget=forms.TextInput(attrs={"placeholder": "Que se compro o pago"}),
+    )
+    referencia_comprobante = forms.CharField(
+        max_length=60,
+        required=False,
+        label="Referencia o comprobante",
+        widget=forms.TextInput(attrs={"placeholder": "Numero de factura o remito (opcional)"}),
+    )
+    observacion = forms.CharField(
+        max_length=255,
+        required=False,
+        label="Observacion",
+        widget=forms.TextInput(attrs={"placeholder": "Detalle opcional"}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["proveedor"].queryset = Proveedor.objects.filter(activo=True).order_by("razon_social")
+        self.fields["categoria"].queryset = (
+            CategoriaCuentaPagar.objects.filter(
+                activo=True,
+                rubro_operativo__isnull=False,
+                rubro_operativo__activo=True,
+                rubro_operativo__es_sistema=False,
+            )
+            .select_related("rubro_operativo")
+            .order_by("nombre")
+        )
 
 
 class CajaValidacionRechazoForm(forms.Form):

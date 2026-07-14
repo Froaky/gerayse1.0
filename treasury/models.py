@@ -367,6 +367,15 @@ class CuentaPorPagar(models.Model):
         blank=True,
         related_name="cuentas_por_pagar",
     )
+    # EP-13 US-13.6: deuda nacida de un gasto cargado desde una caja
+    # operativa; el efectivo nunca salio de esa caja.
+    caja_origen = models.ForeignKey(
+        "cashops.Caja",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="deudas_originadas",
+    )
     proveedor = models.ForeignKey(
         Proveedor,
         on_delete=models.PROTECT,

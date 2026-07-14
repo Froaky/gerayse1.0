@@ -51,6 +51,7 @@ from .services import (
     open_box,
     register_cash_income,
     register_card_sale,
+    register_box_expense_debt,
     register_expense,
     reject_box_cash,
     transfer_between_boxes,
@@ -3038,3 +3039,201 @@ class EP13CashValidationViewTests(CashopsTestCase):
         response = self.client.get(reverse("cashops:box_tracking"))
 
         self.assertContains(response, "Pendiente de validación")
+
+
+class EP13BoxExpenseDebtTests(CashopsTestCase):
+    def setUp(self):
+        super().setUp()
+        from treasury.services import create_payable_category, create_supplier
+
+        self.cajero_role = Role.objects.get(code="CAJERO")
+        self.cajero = User.objects.create_user(
+            username="cajero-deuda",
+            password="test",
+            role=self.cajero_role,
+            usuario_fijo=True,
+            sucursal_base=self.branch_a,
+        )
+        self.cajero.empresas_permitidas.set([self.empresa_a])
+        self.supplier = create_supplier(razon_social="Proveedor Caja SA", actor=self.admin)
+        self.payable_category = create_payable_category(
+            nombre="Insumos de caja",
+            rubro_operativo=self.rubro_insumos,
+            actor=self.admin,
+        )
+        self.caja = open_box(
+            user=self.cajero,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("100.00"),
+            actor=self.cajero,
+        )
+
+    def _register_debt(self, monto="80.00", concepto="Harina para el turno", caja=None, actor=None):
+        return register_box_expense_debt(
+            caja=caja or self.caja,
+            proveedor=self.supplier,
+            categoria=self.payable_category,
+            monto=Decimal(monto),
+            concepto=concepto,
+            actor=actor or self.cajero,
+        )
+
+    def test_cajero_registers_expense_as_pending_debt_without_cash_out(self):
+        from treasury.models import CuentaPorPagar
+
+        saldo_antes = self.caja.saldo_esperado
+
+        deuda = self._register_debt()
+
+        self.assertEqual(deuda.estado, CuentaPorPagar.Estado.PENDIENTE)
+        self.assertEqual(deuda.saldo_pendiente, Decimal("80.00"))
+        self.assertEqual(deuda.sucursal, self.branch_a)
+        self.assertEqual(deuda.caja_origen, self.caja)
+        self.assertEqual(deuda.periodo_referencia, date(2026, 3, 1))
+        self.assertEqual(deuda.creado_por, self.cajero)
+        self.assertEqual(self.caja.saldo_esperado, saldo_antes)
+        self.assertEqual(self.caja.movimientos.filter(tipo=MovimientoCaja.Tipo.GASTO).count(), 0)
+
+    def test_debt_enters_economic_once_and_financial_only_when_paid(self):
+        from treasury.models import MovimientoCajaCentral
+        from treasury.services import (
+            build_economic_period_snapshot,
+            build_financial_period_snapshot,
+            register_cash_payment,
+            register_central_cash_movement,
+        )
+
+        deuda = self._register_debt()
+
+        economic = build_economic_period_snapshot(
+            date_from=self.fecha_op,
+            date_to=self.fecha_op,
+            sucursal=self.branch_a,
+        )
+        self.assertEqual(economic["debt_period_total"], Decimal("80.00"))
+        self.assertEqual(economic["cash_expense_total"], Decimal("0.00"))
+
+        financial = build_financial_period_snapshot(date_from=self.fecha_op, date_to=self.fecha_op)
+        self.assertEqual(financial["cash_expense"], Decimal("0.00"))
+        self.assertEqual(financial["pending_total"], Decimal("80.00"))
+
+        register_central_cash_movement(
+            tipo=MovimientoCajaCentral.Tipo.APORTE,
+            monto=Decimal("500.00"),
+            concepto="Fondo central",
+            fecha=self.fecha_op,
+            actor=self.admin,
+        )
+        register_cash_payment(
+            payable=deuda,
+            fecha_pago=self.fecha_op,
+            monto=Decimal("80.00"),
+            actor=self.admin,
+        )
+
+        financial_after = build_financial_period_snapshot(date_from=self.fecha_op, date_to=self.fecha_op)
+        self.assertEqual(financial_after["central_cash_expense_period"], Decimal("80.00"))
+        self.assertEqual(financial_after["pending_total"], Decimal("0.00"))
+        economic_after = build_economic_period_snapshot(
+            date_from=self.fecha_op,
+            date_to=self.fecha_op,
+            sucursal=self.branch_a,
+        )
+        self.assertEqual(economic_after["debt_period_total"], Decimal("80.00"))
+
+    def test_debt_requires_open_own_box_and_valid_data(self):
+        foreign = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("0.00"),
+            actor=self.operator,
+        )
+        with self.assertRaises(PermissionDenied):
+            self._register_debt(caja=foreign)
+
+        with self.assertRaises(ValidationError):
+            self._register_debt(monto="0.00")
+
+        with self.assertRaises(ValidationError):
+            self._register_debt(concepto="   ")
+
+        close_box(caja=self.caja, saldo_fisico=Decimal("100.00"), cerrado_por=self.cajero, actor=self.cajero)
+        with self.assertRaises(ValidationError):
+            self._register_debt()
+
+    def test_categoria_sin_rubro_is_rejected(self):
+        from treasury.models import CategoriaCuentaPagar
+
+        legacy_cat = CategoriaCuentaPagar.objects.create(nombre="Legacy sin rubro", creado_por=self.admin)
+
+        with self.assertRaises(ValidationError):
+            register_box_expense_debt(
+                caja=self.caja,
+                proveedor=self.supplier,
+                categoria=legacy_cat,
+                monto=Decimal("10.00"),
+                concepto="Gasto legacy",
+                actor=self.cajero,
+            )
+
+    def test_view_creates_debt_for_cajero(self):
+        from treasury.models import CuentaPorPagar
+
+        self.client.force_login(self.cajero)
+        url = reverse("cashops:box_expense_debt", args=[self.caja.pk])
+
+        get_response = self.client.get(url)
+        self.assertEqual(get_response.status_code, 200)
+
+        response = self.client.post(
+            url,
+            {
+                "proveedor": self.supplier.pk,
+                "categoria": self.payable_category.pk,
+                "monto": "45.50",
+                "concepto": "Velas y descartables",
+                "referencia_comprobante": "",
+                "observacion": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        deuda = CuentaPorPagar.objects.get(caja_origen=self.caja)
+        self.assertEqual(deuda.importe_total, Decimal("45.50"))
+        self.assertEqual(deuda.creado_por, self.cajero)
+
+    def test_view_rejects_foreign_box(self):
+        foreign = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("0.00"),
+            actor=self.operator,
+        )
+        self.client.force_login(self.cajero)
+
+        response = self.client.post(
+            reverse("cashops:box_expense_debt", args=[foreign.pk]),
+            {
+                "proveedor": self.supplier.pk,
+                "categoria": self.payable_category.pk,
+                "monto": "10.00",
+                "concepto": "Intento ajeno",
+            },
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_box_detail_timeline_shows_debt_event(self):
+        self._register_debt()
+        self.client.force_login(self.cajero)
+
+        response = self.client.get(reverse("cashops:box_detail", args=[self.caja.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Gasto registrado como deuda")

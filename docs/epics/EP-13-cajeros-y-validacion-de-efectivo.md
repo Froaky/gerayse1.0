@@ -119,7 +119,7 @@ Criterios:
 - una caja rechazada puede corregirse y volver a validarse
 - el estado de validacion es visible en los listados y detalle de caja existentes
 
-### [ ] US-13.6 Gasto desde caja como deuda pendiente
+### [x] US-13.6 Gasto desde caja como deuda pendiente
 
 Como empleado de sucursal
 Quiero registrar un gasto desde mi caja sin sacar efectivo

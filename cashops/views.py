@@ -22,6 +22,7 @@ from .forms import (
     CajaAperturaForm,
     CajaValidacionRechazoForm,
     CanalIngresoForm,
+    GastoComoDeudaForm,
     ClosedBoxMovementAnnulForm,
     ClosedBoxMovementEditForm,
     CierreCajaForm,
@@ -68,6 +69,7 @@ from .services import (
     get_income_channel_map,
     is_closed_box_movement_correctable,
     open_box,
+    register_box_expense_debt,
     register_cash_income,
     register_general_sale,
     register_expense,
@@ -1258,6 +1260,50 @@ def register_expense_view(request, box_id: int):
             "submit_label": "Guardar egreso",
             "back_url": f"{reverse('cashops:dashboard')}?scope=box&box={box.pk}",
             "form_action": reverse("cashops:box_expense", args=[box.pk]),
+        },
+        status=400 if request.method == "POST" and not form.is_valid() else 200,
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def register_box_expense_debt_view(request, box_id: int):
+    _require_cashops_write(request)
+    box = _get_box_for_request(request, box_id)
+    form = GastoComoDeudaForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        try:
+            register_box_expense_debt(
+                caja=box,
+                proveedor=form.cleaned_data["proveedor"],
+                categoria=form.cleaned_data["categoria"],
+                monto=form.cleaned_data["monto"],
+                concepto=form.cleaned_data["concepto"],
+                referencia_comprobante=form.cleaned_data["referencia_comprobante"],
+                observacion=form.cleaned_data["observacion"],
+                actor=request.user,
+            )
+        except (ValidationError, IntegrityError) as error:
+            _handle_operation_error(form, error, "No se pudo registrar el gasto como deuda.")
+        else:
+            messages.success(
+                request,
+                "Gasto registrado como deuda pendiente. No salió efectivo de la caja; tesorería lo paga después.",
+            )
+            url = f"{reverse('cashops:dashboard')}?scope=box&box={box.pk}"
+            return _hx_redirect(url) if _is_htmx(request) else redirect(url)
+
+    return _render_form(
+        request,
+        "cashops/form_page.html",
+        "cashops/partials/form_card.html",
+        {
+            "title": "Gasto como deuda",
+            "subtitle": f"Caja activa: {box.id}. El gasto queda como deuda pendiente y no descuenta efectivo de la caja.",
+            "form": form,
+            "submit_label": "Registrar gasto como deuda",
+            "back_url": f"{reverse('cashops:dashboard')}?scope=box&box={box.pk}",
+            "form_action": reverse("cashops:box_expense_debt", args=[box.pk]),
         },
         status=400 if request.method == "POST" and not form.is_valid() else 200,
     )

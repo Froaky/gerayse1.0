@@ -277,6 +277,20 @@ def build_box_activity_timeline(caja: Caja, movements) -> list[dict]:
                 }
             )
 
+    for deuda in caja.deudas_originadas.select_related("proveedor").all():
+        events.append(
+            {
+                "timestamp": deuda.creado_en,
+                "kind": "GASTO_DEUDA",
+                "badge_class": "badge-warning",
+                "badge_label": "Deuda",
+                "title": "Gasto registrado como deuda",
+                "detail": f"{deuda.proveedor} - {deuda.concepto}. No salio efectivo de la caja; tesoreria paga despues.",
+                "user_label": str(deuda.creado_por) if deuda.creado_por else "Sin usuario",
+                "amount": deuda.importe_total,
+            }
+        )
+
     for validacion in caja.validaciones.all():
         is_rechazo = validacion.accion == CajaValidacion.Accion.RECHAZO
         events.append(
@@ -1433,6 +1447,62 @@ def register_expense(
         )
     resync_operational_control_for_caja(caja)
     return movement
+
+
+@transaction.atomic
+def register_box_expense_debt(
+    *,
+    caja: Caja,
+    proveedor,
+    categoria,
+    monto: Decimal,
+    concepto: str,
+    referencia_comprobante: str = "",
+    observacion: str = "",
+    fecha_vencimiento=None,
+    actor=None,
+):
+    """EP-13 US-13.6: gasto desde caja registrado como deuda pendiente.
+
+    No crea ningun movimiento de caja: el efectivo no sale de la caja y el
+    gasto entra a la lectura economica una sola vez, como deuda del periodo
+    de la fecha operativa. Tesoreria registra el pago real despues y recien
+    ahi impacta la lectura financiera.
+    """
+    from treasury.models import CuentaPorPagar
+    from treasury.services import _ensure_payable_category_is_economic
+
+    _require_actor(actor)
+    caja = _validate_open_box(caja, actor=actor)
+    if monto <= 0:
+        raise ValidationError({"monto": "El monto debe ser mayor que cero."})
+    concepto = (concepto or "").strip()
+    if not concepto:
+        raise ValidationError({"concepto": "El concepto es obligatorio."})
+    if not proveedor.activo:
+        raise ValidationError({"proveedor": "El proveedor esta inactivo."})
+    if not categoria.activo:
+        raise ValidationError({"categoria": "La categoría está inactiva."})
+    _ensure_payable_category_is_economic(categoria)
+    payable = CuentaPorPagar(
+        sucursal=caja.sucursal,
+        caja_origen=caja,
+        proveedor=proveedor,
+        categoria=categoria,
+        concepto=concepto,
+        fecha_emision=caja.fecha_operativa,
+        fecha_vencimiento=fecha_vencimiento or caja.fecha_operativa,
+        periodo_referencia=caja.fecha_operativa.replace(day=1),
+        importe_total=monto,
+        saldo_pendiente=monto,
+        estado=CuentaPorPagar.Estado.PENDIENTE,
+        referencia_comprobante=referencia_comprobante,
+        observaciones=observacion,
+        creado_por=actor,
+    )
+    payable.full_clean()
+    payable.save()
+    return payable
 
 
 @transaction.atomic

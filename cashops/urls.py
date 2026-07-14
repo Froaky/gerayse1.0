@@ -40,6 +40,7 @@ urlpatterns = [
     path("cajas/movimientos/<int:movement_id>/editar/", views.closed_box_movement_edit_view, name="closed_box_movement_edit"),
     path("cajas/movimientos/<int:movement_id>/eliminar/", views.closed_box_movement_delete_view, name="closed_box_movement_delete"),
     path("cajas/<int:box_id>/gasto/", views.register_expense_view, name="box_expense"),
+    path("cajas/<int:box_id>/gasto-deuda/", views.register_box_expense_debt_view, name="box_expense_debt"),
     path("cajas/<int:box_id>/venta/", views.register_sale_view, name="register_sale"),
     path("cajas/<int:box_id>/ingreso/", views.register_cash_income_view, name="box_income"),
     path("cajas/<int:box_id>/cerrar/preview/", views.close_box_preview, name="box_close_preview"),

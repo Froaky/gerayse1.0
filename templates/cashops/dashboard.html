@@ -213,6 +213,10 @@
                 <span>Cobro en efectivo</span>
                 <small>dinero fisico que entra a la caja</small>
               </a>
+              <a class="action-card" href="{% url 'cashops:box_expense_debt' selected_box.id %}">
+                <span>Gasto como deuda</span>
+                <small>no sale efectivo: tesoreria lo paga despues</small>
+              </a>
               <a class="action-card" href="{% url 'cashops:box_expense' selected_box.id %}">
                 <span>Egreso operativo</span>
                 <small>gasto por rubro con trazabilidad</small>
