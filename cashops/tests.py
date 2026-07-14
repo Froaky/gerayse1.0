@@ -1,5 +1,5 @@
 from decimal import Decimal
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from urllib.parse import urlencode
 
 from django.contrib.auth import get_user_model
@@ -39,6 +39,7 @@ from .services import (
     BRANCH_TRANSFER_DISABLED_REASON,
     annul_box,
     annul_closed_box_movement,
+    build_alert_panel_queryset,
     build_box_control_scope,
     build_branch_control_scope,
     build_operational_category_overview,
@@ -2397,6 +2398,7 @@ class CashopsViewTests(CashopsTestCase):
             cerrado_por=self.operator,
             actor=self.operator,
         )
+        validate_box_cash(caja=self.owned_box, actor=self.admin)
         self.client.force_login(self.admin)
 
         response = self.client.get(
@@ -2506,6 +2508,7 @@ class CashopsViewTests(CashopsTestCase):
             cerrado_por=self.operator,
             actor=self.operator,
         )
+        validate_box_cash(caja=self.owned_box, actor=self.admin)
         self.client.force_login(self.admin)
 
         response = self.client.get(
@@ -2868,6 +2871,45 @@ class EP13CashValidationTests(CashopsTestCase):
         self.assertEqual(economic["sales_total"], Decimal("0.00"))
         self.assertEqual(economic["cash_expense_total"], Decimal("0.00"))
 
+        branch_snapshot = build_operational_control_snapshot(
+            build_branch_control_scope(fecha_operativa=self.fecha_op, sucursal=self.branch_a)
+        )
+        self.assertEqual(branch_snapshot["total_ingresos"], Decimal("0.00"))
+        self.assertEqual(branch_snapshot["total_egresos"], Decimal("0.00"))
+        global_snapshot = build_operational_control_snapshot(
+            build_global_control_scope(fecha_operativa=self.fecha_op)
+        )
+        self.assertEqual(global_snapshot["total_ingresos"], Decimal("0.00"))
+
+        from treasury.services import build_economic_rubro_detail
+
+        rubro_detail = build_economic_rubro_detail(
+            rubro_id=self.rubro_insumos.pk,
+            date_from=self.fecha_op,
+            date_to=self.fecha_op,
+            sucursal=self.branch_a,
+        )
+        self.assertEqual(rubro_detail["cash_expense_total"], Decimal("0.00"))
+
+        from treasury.models import CuentaBancaria
+        from treasury.services import build_bank_reconciliation_snapshot, create_bank_account
+
+        account = create_bank_account(
+            nombre="Cuenta conciliacion",
+            banco="Banco Test",
+            tipo_cuenta=CuentaBancaria.Tipo.CUENTA_CORRIENTE,
+            numero_cuenta="999-111",
+            cbu="2850590940090418135201",
+            empresa=self.empresa_a,
+            actor=self.admin,
+        )
+        reconciliation = build_bank_reconciliation_snapshot(
+            cuenta_bancaria=account,
+            date_from=timezone.localdate() - timedelta(days=1),
+            date_to=timezone.localdate() + timedelta(days=1),
+        )
+        self.assertEqual(reconciliation["total_sales"], Decimal("0.00"))
+
     def test_validate_box_restores_totals_and_pushes_central_cash_once(self):
         from treasury.models import MovimientoCajaCentral
 
@@ -2901,6 +2943,10 @@ class EP13CashValidationTests(CashopsTestCase):
         self.assertEqual(summary["total_ingresos"], Decimal("50.00"))
         self.assertEqual(summary["saldo_real_cajas_periodo"], Decimal("150.00"))
         self.assertEqual(summary["cajas_periodo_count"], 1)
+        branch_snapshot = build_operational_control_snapshot(
+            build_branch_control_scope(fecha_operativa=self.fecha_op, sucursal=self.branch_a)
+        )
+        self.assertEqual(branch_snapshot["total_ingresos"], Decimal("50.00"))
 
         with self.assertRaises(ValidationError):
             validate_box_cash(caja=caja, actor=self.admin)
@@ -2956,6 +3002,144 @@ class EP13CashValidationTests(CashopsTestCase):
         )
         self.assertEqual(summary["total_ventas_digitales"], Decimal("150.00"))
         self.assertEqual(summary["cajas_periodo_count"], 1)
+
+
+class EP13ReviewFixTests(CashopsTestCase):
+    def _pending_box(self, monto_inicial="100.00", income="50.00", fisico="150.00"):
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal(monto_inicial),
+            actor=self.operator,
+        )
+        if income:
+            register_cash_income(
+                caja=caja,
+                monto=Decimal(income),
+                categoria="Mostrador",
+                observacion="",
+                actor=self.operator,
+            )
+        close_box(caja=caja, saldo_fisico=Decimal(fisico), cerrado_por=self.operator, actor=self.operator)
+        caja.refresh_from_db()
+        return caja
+
+    def test_month_close_blocked_while_boxes_pending_validation(self):
+        from treasury.services import close_treasury_month
+
+        caja = self._pending_box()
+
+        with self.assertRaises(ValidationError):
+            close_treasury_month(2026, 3, actor=self.admin)
+
+        validate_box_cash(caja=caja, actor=self.admin)
+        closing = close_treasury_month(2026, 3, actor=self.admin)
+        self.assertTrue(closing.cerrado)
+
+    def test_validation_after_month_close_redates_central_push(self):
+        from treasury.models import MovimientoCajaCentral
+        from treasury.services import close_treasury_month
+
+        close_treasury_month(2026, 3, actor=self.admin)
+        caja = self._pending_box()
+
+        validate_box_cash(caja=caja, actor=self.admin)
+
+        push = MovimientoCajaCentral.objects.get(caja_cierre=caja)
+        self.assertEqual(push.monto, Decimal("150.00"))
+        self.assertEqual(push.fecha, timezone.localdate())
+        self.assertIn("mes de tesoreria ya cerrado", push.observaciones)
+
+    def test_forged_concept_cannot_suppress_validation_push(self):
+        from treasury.models import MovimientoCajaCentral
+        from treasury.services import register_central_cash_movement
+
+        caja = self._pending_box()
+        register_central_cash_movement(
+            tipo=MovimientoCajaCentral.Tipo.APORTE,
+            monto=Decimal("1.00"),
+            concepto=f"Cierre caja #{caja.pk}",
+            actor=self.admin,
+        )
+
+        validate_box_cash(caja=caja, actor=self.admin)
+
+        push = MovimientoCajaCentral.objects.get(caja_cierre=caja)
+        self.assertEqual(push.tipo, MovimientoCajaCentral.Tipo.INGRESO_CAJA)
+        self.assertEqual(push.monto, Decimal("150.00"))
+
+    def test_pending_box_alert_stays_out_of_panel_until_validated(self):
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("0.00"),
+            actor=self.operator,
+        )
+        register_cash_income(
+            caja=caja,
+            monto=Decimal("50.00"),
+            categoria="Mostrador",
+            observacion="",
+            actor=self.operator,
+        )
+        close_box(
+            caja=caja,
+            saldo_fisico=Decimal("20050.00"),
+            justificacion="Sobrante grande a revisar",
+            cerrado_por=self.operator,
+            actor=self.operator,
+        )
+        alerta = AlertaOperativa.objects.get(tipo=AlertaOperativa.Tipo.DIFERENCIA_GRAVE, caja=caja)
+        self.assertFalse(alerta.resuelta)
+
+        panel = build_alert_panel_queryset(estado="activas")
+        self.assertFalse(panel.filter(pk=alerta.pk).exists())
+
+        validate_box_cash(caja=caja, actor=self.admin)
+
+        panel = build_alert_panel_queryset(estado="activas")
+        self.assertTrue(panel.filter(pk=alerta.pk).exists())
+
+    def test_annul_pending_box_without_push_leaves_central_cash_untouched(self):
+        from treasury.models import MovimientoCajaCentral
+
+        caja = self._pending_box()
+        self._grant_closed_box_fix(self.operator)
+
+        annul_box(caja=caja, motivo="Caja duplicada", actor=self.operator)
+
+        caja.refresh_from_db()
+        self.assertEqual(caja.estado, Caja.Estado.ANULADA)
+        self.assertFalse(MovimientoCajaCentral.objects.exists())
+
+    @override_settings(ENABLE_DANGER_RESET=True)
+    def test_reset_survives_boxes_with_audited_corrections(self):
+        from .services import update_box_metadata
+
+        caja = self._pending_box()
+        self._grant_closed_box_fix(self.admin)
+        update_box_metadata(
+            caja=caja,
+            usuario=caja.usuario,
+            sucursal=caja.sucursal,
+            turno=caja.turno,
+            fecha_operativa=caja.fecha_operativa,
+            monto_inicial=caja.monto_inicial,
+            motivo="Ajuste auditado de prueba",
+            actor=self.admin,
+        )
+        self.assertTrue(CajaCorreccion.objects.exists())
+        self.client.force_login(self.admin)
+
+        response = self.client.post(reverse("cashops:reset_operational_data"), {"step": "2"})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Caja.objects.exists())
+        self.assertFalse(CajaCorreccion.objects.exists())
 
 
 class EP13CashValidationViewTests(CashopsTestCase):
@@ -3039,6 +3223,36 @@ class EP13CashValidationViewTests(CashopsTestCase):
         response = self.client.get(reverse("cashops:box_tracking"))
 
         self.assertContains(response, "Pendiente de validación")
+
+    def test_tracking_shows_validated_badge_after_validation(self):
+        validate_box_cash(caja=self.pending_box, actor=self.admin)
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("cashops:box_tracking"))
+
+        self.assertContains(response, "Efectivo validado")
+
+    def test_non_admin_validator_can_open_detail_of_foreign_pending_box(self):
+        validator = User.objects.create_user(
+            username="validadora",
+            password="test",
+            role=self.operator_role,
+        )
+        validator.empresas_permitidas.set([self.empresa_a])
+        UserPermission.objects.create(
+            user=validator,
+            module=PermissionModule.CASHOPS_VALIDATE,
+            can_read=True,
+            can_write=True,
+        )
+        self.client.force_login(validator)
+
+        queue_response = self.client.get(reverse("cashops:box_validation_queue"))
+        detail_response = self.client.get(reverse("cashops:box_detail", args=[self.pending_box.pk]))
+
+        self.assertEqual(queue_response.status_code, 200)
+        self.assertContains(queue_response, f"Caja #{self.pending_box.pk}")
+        self.assertEqual(detail_response.status_code, 200)
 
 
 class EP13BoxExpenseDebtTests(CashopsTestCase):
@@ -3237,3 +3451,62 @@ class EP13BoxExpenseDebtTests(CashopsTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Gasto registrado como deuda")
+
+    def test_annul_box_annuls_pending_originated_debts(self):
+        from treasury.models import CuentaPorPagar
+        from treasury.services import build_economic_period_snapshot
+
+        deuda = self._register_debt()
+        self._grant_closed_box_fix(self.admin)
+
+        annul_box(caja=self.caja, motivo="Caja duplicada", actor=self.admin)
+
+        deuda.refresh_from_db()
+        self.assertEqual(deuda.estado, CuentaPorPagar.Estado.ANULADA)
+        self.assertEqual(deuda.saldo_pendiente, Decimal("0.00"))
+        self.assertIn(f"Anulacion de caja origen #{self.caja.pk}", deuda.motivo_anulacion)
+        economic = build_economic_period_snapshot(
+            date_from=self.fecha_op,
+            date_to=self.fecha_op,
+            sucursal=self.branch_a,
+        )
+        self.assertEqual(economic["debt_period_total"], Decimal("0.00"))
+
+    def test_annul_box_blocked_when_originated_debt_has_payments(self):
+        from treasury.models import MovimientoCajaCentral
+        from treasury.services import register_cash_payment, register_central_cash_movement
+
+        deuda = self._register_debt()
+        register_central_cash_movement(
+            tipo=MovimientoCajaCentral.Tipo.APORTE,
+            monto=Decimal("500.00"),
+            concepto="Fondo central",
+            fecha=self.fecha_op,
+            actor=self.admin,
+        )
+        register_cash_payment(
+            payable=deuda,
+            fecha_pago=self.fecha_op,
+            monto=Decimal("80.00"),
+            actor=self.admin,
+        )
+        self._grant_closed_box_fix(self.admin)
+
+        with self.assertRaises(ValidationError):
+            annul_box(caja=self.caja, motivo="Caja duplicada", actor=self.admin)
+
+        self.caja.refresh_from_db()
+        self.assertEqual(self.caja.estado, Caja.Estado.ABIERTA)
+
+    def test_annulled_debt_is_marked_in_box_timeline(self):
+        from treasury.services import annul_payable
+
+        deuda = self._register_debt()
+        annul_payable(payable=deuda, motivo="Carga duplicada", actor=self.admin)
+        self.client.force_login(self.cajero)
+
+        response = self.client.get(reverse("cashops:box_detail", args=[self.caja.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Deuda anulada")
+        self.assertContains(response, "Carga duplicada")

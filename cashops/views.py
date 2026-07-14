@@ -37,9 +37,10 @@ from .forms import (
     TransferenciaEntreSucursalesForm,
     VentaGeneralForm,
 )
-from .models import CajaValidacion, CanalIngreso, Caja, CierreCaja, Empresa, LimiteRubroOperativo, MovimientoCaja, MovimientoCajaCorreccion, RubroOperativo, Sucursal, Turno
+from .models import CajaCorreccion, CajaValidacion, CanalIngreso, Caja, CierreCaja, Empresa, LimiteRubroOperativo, MovimientoCaja, MovimientoCajaCorreccion, RubroOperativo, Sucursal, Turno
 from .permissions import (
     can_correct_closed_box,
+    can_validate_cash,
     ensure_cash_validation,
     ensure_cashops_read,
     ensure_cashops_write,
@@ -123,6 +124,24 @@ def _get_box_for_request(request, box_id: int):
     if box.sucursal.empresa_id not in _get_empresa_ids(request):
         raise PermissionDenied("Esta caja no pertenece a tus empresas seleccionadas.")
     return box
+
+
+def _get_box_for_read(request, box_id: int):
+    """Lectura de caja: dueño/admin como siempre, y ademas quien valida efectivo.
+
+    EP-13: el validador necesita abrir el detalle de cajas ajenas pendientes
+    para cotejar antes de validar; el acceso es de solo lectura y respeta el
+    scope de empresas de la sesion.
+    """
+    try:
+        return _get_box_for_request(request, box_id)
+    except PermissionDenied:
+        if not can_validate_cash(request.user):
+            raise
+        box = get_object_or_404(Caja.objects.select_related("sucursal", "turno", "usuario"), pk=box_id)
+        if box.sucursal.empresa_id not in _get_empresa_ids(request):
+            raise
+        return box
 
 
 def _require_cashops_admin(request) -> None:
@@ -580,7 +599,7 @@ def box_delete_view(request, box_id: int):
 @login_required
 def box_detail_view(request, box_id: int):
     _require_cashops_read(request)
-    box = _get_box_for_request(request, box_id)
+    box = _get_box_for_read(request, box_id)
     box = (
         Caja.objects.select_related("sucursal", "turno", "usuario", "cerrada_por")
         .prefetch_related(_box_movements_prefetch(), "cierre__justificacion")
@@ -1808,6 +1827,10 @@ def reset_operational_data(request):
             with transaction.atomic():
                 # Cashops: orden respeta PROTECT FKs hacia Caja
                 AlertaOperativa.objects.all().delete()
+                # Correcciones auditadas protegen (PROTECT) a movimientos y
+                # cajas: se borran primero o el reset explota.
+                MovimientoCajaCorreccion.objects.all().delete()
+                CajaCorreccion.objects.all().delete()
                 MovimientoCaja.objects.all().delete()
                 CierreCaja.objects.all().delete()    # cascadea Justificacion
                 Transferencia.objects.all().delete()

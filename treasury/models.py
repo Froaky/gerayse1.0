@@ -1345,12 +1345,21 @@ class MovimientoCajaCentral(models.Model):
         related_name="movimientos_caja_central"
     )
     movimiento_bancario = models.ForeignKey(
-        MovimientoBancario, 
-        on_delete=models.SET_NULL, 
-        null=True, blank=True, 
+        MovimientoBancario,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
         related_name="movimientos_caja_central"
     )
-    
+    # EP-13: vinculo estructural con la caja cuyo cierre origino el
+    # movimiento; la idempotencia del push no depende del texto del concepto.
+    caja_cierre = models.ForeignKey(
+        "cashops.Caja",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="movimientos_centrales_de_cierre",
+    )
+
     observaciones = models.CharField(max_length=255, blank=True)
     rubro_operativo = models.ForeignKey(
         "cashops.RubroOperativo",

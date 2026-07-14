@@ -799,6 +799,16 @@ class EP13ValidateActionPermissionTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Validación de efectivo")
 
+    def test_cajero_role_requires_usuario_fijo(self):
+        cajero_role = Role.objects.get(code="CAJERO")
+        user = User(username="cajero-suelto", role=cajero_role)
+        user.set_password("secret12345")
+
+        with self.assertRaises(ValidationError) as ctx:
+            user.full_clean()
+
+        self.assertIn("usuario_fijo", ctx.exception.message_dict)
+
     def test_cajero_seed_role_only_writes_cashops(self):
         cajero = Role.objects.get(code="CAJERO")
         by_module = {permission.module: permission for permission in cajero.permissions.all()}

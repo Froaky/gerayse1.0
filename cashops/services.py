@@ -163,6 +163,16 @@ def describe_box_follow_up(caja: Caja, movements) -> dict:
             "last_activity_at": last_activity_at,
             "post_opening_count": len(post_opening_movements),
         }
+    if caja.estado == Caja.Estado.CERRADA and caja.validacion_estado == Caja.ValidacionEstado.VALIDADA:
+        validador = f" por {caja.validada_por}" if caja.validada_por else ""
+        fecha_validacion = f" el {caja.validada_en:%d/%m/%Y %H:%M}" if caja.validada_en else ""
+        return {
+            "label": "Efectivo validado",
+            "badge_class": "badge-success",
+            "detail": f"Caja cerrada con efectivo validado{validador}{fecha_validacion}. Contabiliza normal y queda disponible para consulta.",
+            "last_activity_at": last_activity_at,
+            "post_opening_count": len(post_opening_movements),
+        }
     if caja.estado == Caja.Estado.CERRADA:
         return {
             "label": "Cerrada",
@@ -278,14 +288,19 @@ def build_box_activity_timeline(caja: Caja, movements) -> list[dict]:
             )
 
     for deuda in caja.deudas_originadas.select_related("proveedor").all():
+        is_annulled_debt = deuda.estado == deuda.Estado.ANULADA
+        if is_annulled_debt:
+            debt_detail = f"{deuda.proveedor} - {deuda.concepto}. Anulada: {deuda.motivo_anulacion or 'sin motivo registrado'}."
+        else:
+            debt_detail = f"{deuda.proveedor} - {deuda.concepto}. No salio efectivo de la caja; tesoreria paga despues."
         events.append(
             {
                 "timestamp": deuda.creado_en,
                 "kind": "GASTO_DEUDA",
-                "badge_class": "badge-warning",
-                "badge_label": "Deuda",
+                "badge_class": "badge-muted" if is_annulled_debt else "badge-warning",
+                "badge_label": "Deuda anulada" if is_annulled_debt else "Deuda",
                 "title": "Gasto registrado como deuda",
-                "detail": f"{deuda.proveedor} - {deuda.concepto}. No salio efectivo de la caja; tesoreria paga despues.",
+                "detail": debt_detail,
                 "user_label": str(deuda.creado_por) if deuda.creado_por else "Sin usuario",
                 "amount": deuda.importe_total,
             }
@@ -638,7 +653,11 @@ def get_alerts_for_scope(
         "turno",
         "usuario",
         "cierre",
-    ).filter(_alerts_filter_for_scope(scope))
+    ).filter(_alerts_filter_for_scope(scope)).exclude(
+        # EP-13: las alertas de una caja pendiente de validacion no cuentan
+        # hasta que la caja vuelva a contabilizar.
+        caja__validacion_estado__in=Caja.VALIDACION_BLOQUEA_TOTALES
+    )
     if resuelta is not None:
         queryset = queryset.filter(resuelta=resuelta)
     queryset = queryset.order_by("-creada_en", "-id")
@@ -677,7 +696,11 @@ def build_alert_panel_queryset(
         "turno",
         "usuario",
         "cierre",
-    ).annotate(severity_order=severity_order, scope_order=scope_order)
+    ).annotate(severity_order=severity_order, scope_order=scope_order).exclude(
+        # EP-13: alertas de cajas pendientes de validacion quedan fuera del
+        # panel hasta que la caja se valide y vuelva a contabilizar.
+        caja__validacion_estado__in=Caja.VALIDACION_BLOQUEA_TOTALES
+    )
     if estado == "activas":
         queryset = queryset.filter(resuelta=False)
     elif estado == "resueltas":
@@ -1834,14 +1857,16 @@ def _reverse_central_cash_closure_for_box(caja: Caja, *, actor) -> None:
     from django.apps import apps
 
     MovimientoCajaCentral = apps.get_model("treasury", "MovimientoCajaCentral")
+    CierreMensualTesoreria = apps.get_model("treasury", "CierreMensualTesoreria")
     reversal_concept = f"Anulacion cierre caja #{caja.id}"
     if MovimientoCajaCentral.objects.filter(concepto=reversal_concept).exists():
         return
 
     closure_concepts = [f"Cierre caja #{caja.id}", f"Cierre caja #{caja.id} - saldo negativo"]
     closure_movements = MovimientoCajaCentral.objects.filter(
-        concepto__in=closure_concepts,
         tipo__in=["INGRESO_CAJA", "AJUSTE_NEGATIVO"],
+    ).filter(
+        Q(caja_cierre=caja) | Q(concepto__in=closure_concepts)
     )
     for movement in closure_movements:
         if movement.tipo == "INGRESO_CAJA":
@@ -1850,13 +1875,20 @@ def _reverse_central_cash_closure_for_box(caja: Caja, *, actor) -> None:
         else:
             reversal_type = "AJUSTE_POSITIVO"
             observations = "Reversa auditada de saldo negativo por anulacion de caja cerrada."
+        # Igual que el push: si el mes original ya esta cerrado, la reversa se
+        # fecha al dia de la anulacion para no alterar un snapshot congelado.
+        reversal_date = movement.fecha
+        if CierreMensualTesoreria.objects.filter(mes=movement.fecha.replace(day=1), cerrado=True).exists():
+            reversal_date = timezone.localdate()
+            observations = f"{observations} Mes de tesoreria original cerrado; reversa fechada al dia de la anulacion."
         MovimientoCajaCentral.objects.create(
             caja_central=movement.caja_central,
-            fecha=movement.fecha,
+            fecha=reversal_date,
             tipo=reversal_type,
             monto=movement.monto,
             concepto=reversal_concept,
             observaciones=observations,
+            caja_cierre=caja,
             creado_por=actor,
         )
 
@@ -1926,9 +1958,45 @@ def annul_box(
     if not motivo:
         raise ValidationError({"motivo": "El motivo de la eliminación es obligatorio."})
 
+    # EP-13: la anulacion de la caja debe revertir TODO su impacto, incluidas
+    # las deudas que origino. Con pagos registrados no se puede anular:
+    # primero hay que resolver la deuda en tesoreria.
+    deudas_activas = [
+        deuda for deuda in caja.deudas_originadas.all()
+        if deuda.estado != deuda.Estado.ANULADA
+    ]
+    for deuda in deudas_activas:
+        if deuda.pagos.filter(estado="REGISTRADO").exists():
+            raise ValidationError(
+                {
+                    "motivo": (
+                        f"La deuda #{deuda.id} originada en esta caja tiene pagos registrados. "
+                        "Anula o resolve esa deuda en tesoreria antes de eliminar la caja."
+                    )
+                }
+            )
+
     previous = _snapshot_box_values(caja)
     now = timezone.now()
     _reverse_central_cash_closure_for_box(caja, actor=actor)
+    for deuda in deudas_activas:
+        deuda.estado = deuda.Estado.ANULADA
+        deuda.saldo_pendiente = Decimal("0.00")
+        deuda.motivo_anulacion = f"Anulacion de caja origen #{caja.id}: {motivo}"[:255]
+        deuda.anulada_por = actor
+        deuda.anulada_en = now
+        deuda.actualizado_por = actor
+        deuda.save(
+            update_fields=[
+                "estado",
+                "saldo_pendiente",
+                "motivo_anulacion",
+                "anulada_por",
+                "anulada_en",
+                "actualizado_por",
+                "actualizado_en",
+            ]
+        )
     MovimientoCaja.objects.filter(caja=caja, estado=MovimientoCaja.Estado.REGISTRADO).update(
         estado=MovimientoCaja.Estado.ANULADO,
         motivo_anulacion=motivo,
@@ -2131,13 +2199,19 @@ def close_box(
     if not requires_validation:
         _push_box_closure_to_central_cash(caja, saldo_fisico=saldo_fisico, actor=actor)
 
+    # Al quedar pendiente, la caja sale de los totales de sucursal/global:
+    # resincronizar los snapshots y alertas para que no queden calculados con
+    # una caja que ya no contabiliza.
+    resync_operational_control_for_caja(caja)
+
     return cierre
 
 
 def _push_box_closure_to_central_cash(caja: Caja, *, saldo_fisico: Decimal, actor) -> None:
     """Registra el saldo fisico del cierre en la caja central de la sucursal.
 
-    Idempotente: si el cierre de esta caja ya fue empujado, no duplica.
+    Idempotente por vinculo estructural (caja_cierre): un movimiento manual
+    de tesoreria con el mismo texto de concepto no puede suprimir el push.
     """
     if saldo_fisico == 0 or not caja.sucursal_id:
         return
@@ -2145,8 +2219,11 @@ def _push_box_closure_to_central_cash(caja: Caja, *, saldo_fisico: Decimal, acto
 
     CajaCentral = apps.get_model("treasury", "CajaCentral")
     MovimientoCajaCentral = apps.get_model("treasury", "MovimientoCajaCentral")
-    closure_concepts = [f"Cierre caja #{caja.id}", f"Cierre caja #{caja.id} - saldo negativo"]
-    if MovimientoCajaCentral.objects.filter(concepto__in=closure_concepts).exists():
+    CierreMensualTesoreria = apps.get_model("treasury", "CierreMensualTesoreria")
+    if MovimientoCajaCentral.objects.filter(
+        caja_cierre=caja,
+        tipo__in=["INGRESO_CAJA", "AJUSTE_NEGATIVO"],
+    ).exists():
         return
     caja_central = CajaCentral.objects.filter(sucursal=caja.sucursal, activo=True).first()
     if caja_central is None:
@@ -2165,13 +2242,27 @@ def _push_box_closure_to_central_cash(caja: Caja, *, saldo_fisico: Decimal, acto
         central_amount = abs(saldo_fisico)
         central_concept = f"Cierre caja #{caja.id} - saldo negativo"
         central_observations = "Saldo fisico negativo informado al cierre de caja."
+    # Si el mes de la fecha operativa ya esta cerrado en tesoreria, el
+    # movimiento se fecha al dia de la validacion: el snapshot mensual
+    # congelado es inmutable y un movimiento retro-fechado desapareceria de
+    # la cadena de disponibilidades.
+    movement_date = caja.fecha_operativa
+    month_start = caja.fecha_operativa.replace(day=1)
+    if CierreMensualTesoreria.objects.filter(mes=month_start, cerrado=True).exists():
+        movement_date = timezone.localdate()
+        nota = (
+            f"Efectivo del cierre de caja del {caja.fecha_operativa:%d/%m/%Y} "
+            "validado con el mes de tesoreria ya cerrado."
+        )
+        central_observations = f"{central_observations} {nota}".strip()
     MovimientoCajaCentral.objects.create(
         caja_central=caja_central,
-        fecha=caja.fecha_operativa,
+        fecha=movement_date,
         tipo=central_type,
         monto=central_amount,
         concepto=central_concept,
         observaciones=central_observations,
+        caja_cierre=caja,
         creado_por=actor,
     )
 

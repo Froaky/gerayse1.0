@@ -17,6 +17,8 @@ Permitir que empleados cajero carguen su caja por sucursal con permisos acotados
 - el gasto cargado desde caja crea una deuda pendiente y el efectivo no sale de la caja; el pago real lo hace tesoreria despues
 - la deuda impacta la situacion economica al cargarse y la financiera solo al pagarse (regla ya vigente, se blinda con tests)
 - (2026-07-14) mientras la caja esta abierta contabiliza normal en los tableros del dia; el estado pendiente de validacion nace al CIERRE de la caja y desde ahi no contabiliza nada hasta validarse
+- (2026-07-14) no se puede cerrar el mes de tesoreria con cajas del periodo pendientes de validacion; si una caja se valida cuando su mes ya esta cerrado, el efectivo entra fechado al dia de la validacion con nota de auditoria
+- PENDIENTE DE DEFINIR: si el egreso de efectivo tradicional se restringe con un permiso propio para que el cajero solo pueda usar gasto-como-deuda (hoy sigue disponible con el permiso de operar caja)
 
 ## Incluye
 
@@ -132,7 +134,7 @@ Criterios:
 - la deuda creada impacta la situacion economica del periodo al cargarse
 - la financiera solo se afecta cuando tesoreria registra el pago real de esa deuda
 - el gasto no se cuenta dos veces en ningun reporte
-- el egreso de efectivo tradicional sigue disponible solo para quien tenga el permiso correspondiente
+- el egreso de efectivo tradicional sigue disponible con el permiso de operar caja vigente; restringirlo con un permiso propio queda como decision pendiente (ver Decisiones)
 
 ## Dependencias
 

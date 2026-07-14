@@ -2454,7 +2454,23 @@ def close_treasury_month(year: int, month: int, actor=None) -> CierreMensualTeso
     first_day = snapshot["first_day"]
     if CierreMensualTesoreria.objects.filter(mes=first_day, cerrado=True).exists():
         raise ValidationError("Este mes ya se encuentra cerrado.")
-        
+
+    # EP-13: el efectivo de una caja pendiente de validacion todavia no llego
+    # a la caja central; cerrar el mes asi congelaria un saldo incompleto que
+    # despues no se puede reconciliar.
+    from cashops.models import Caja
+
+    pending_boxes = Caja.objects.filter(
+        fecha_operativa__gte=first_day,
+        fecha_operativa__lt=_first_day_of_next_month(first_day),
+        validacion_estado__in=Caja.VALIDACION_BLOQUEA_TOTALES,
+    )
+    if pending_boxes.exists():
+        raise ValidationError(
+            "No se puede cerrar el mes: hay cajas del periodo pendientes de validacion de efectivo. "
+            "Valida o rechaza esas cajas antes de cerrar."
+        )
+
     closing, created = CierreMensualTesoreria.objects.get_or_create(mes=first_day)
     closing.saldo_inicial_efectivo = snapshot["saldo_inicial_efectivo"]
     closing.saldo_final_efectivo = snapshot["saldo_final_efectivo"]

@@ -39,6 +39,7 @@ class Role(models.Model):
 
 class User(AbstractUser):
     ADMIN_ROLE_CODES = {"ADMIN", "ADMINISTRADOR"}
+    CAJERO_ROLE_CODE = "CAJERO"
 
     role = models.ForeignKey(
         Role,
@@ -84,6 +85,12 @@ class User(AbstractUser):
         super().clean()
         if self.usuario_fijo and not self.sucursal_base_id:
             raise ValidationError({"sucursal_base": "La sucursal base es obligatoria para un usuario fijo."})
+        # EP-13: el alcance por sucursal del cajero depende de ser usuario
+        # fijo; sin esto podria abrir cajas en cualquier sucursal.
+        if self.normalized_role_code == self.CAJERO_ROLE_CODE and not self.usuario_fijo:
+            raise ValidationError(
+                {"usuario_fijo": "Un usuario con rol Cajero debe ser usuario fijo con sucursal base."}
+            )
 
     def get_empresas_permitidas_ids(self) -> set[int]:
         return set(self.empresas_permitidas.values_list("pk", flat=True))

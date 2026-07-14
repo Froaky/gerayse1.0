@@ -118,5 +118,11 @@ Se rechaza con motivo, se corrige la carga con la correccion auditada (queda reg
 cambio, quien y por que) y se vuelve a validar. Nada se borra.
 
 **¿El cajero puede pagar un gasto con la plata de la caja?**
-No. El gasto se carga como deuda y lo paga administracion. Si hace falta sacar efectivo fisico
-de una caja, eso es un egreso tradicional y requiere otro permiso.
+El flujo pensado para el cajero es cargar el gasto como deuda (no sale efectivo). El egreso
+tradicional de efectivo sigue existiendo y hoy esta habilitado para quien opera la caja;
+restringirlo con un permiso propio esta pendiente de definicion.
+
+**¿Que pasa con el cierre de mes de tesoreria?**
+No se puede cerrar un mes si quedan cajas de ese periodo pendientes de validacion: primero se
+validan (o rechazan y corrigen), despues se cierra el mes. Si una caja se valida cuando su mes
+ya estaba cerrado, el efectivo entra fechado al dia de la validacion, con nota de auditoria.
