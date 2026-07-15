@@ -112,13 +112,13 @@ class Command(BaseCommand):
         branch_ids = set(
             MovimientoCaja.objects.filter(
                 tipo=MovimientoCaja.Tipo.GASTO,
-                caja__turno__fecha_operativa=self.fecha_operativa,
+                caja__fecha_operativa=self.fecha_operativa,
             ).values_list("caja__sucursal_id", flat=True)
         )
         box_ids = set(
             MovimientoCaja.objects.filter(
                 tipo=MovimientoCaja.Tipo.GASTO,
-                caja__turno__fecha_operativa=self.fecha_operativa,
+                caja__fecha_operativa=self.fecha_operativa,
             ).values_list("caja_id", flat=True)
         )
         branches = Sucursal.objects.in_bulk(branch_ids)
