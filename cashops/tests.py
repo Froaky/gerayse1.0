@@ -3589,6 +3589,76 @@ class EP13BoxExpenseDebtTests(CashopsTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertFalse(CuentaPorPagar.objects.filter(caja_origen=self.caja).exists())
 
+    def _extra_branch_same_empresa(self):
+        return Sucursal.objects.create(
+            codigo="SUC-ON", nombre="Oveja Negra", razon_social="ARMADI SRL", empresa=self.empresa_a
+        )
+
+    def test_sucursales_para_deuda_includes_base_and_extras(self):
+        self.assertEqual(set(self.cajero.sucursales_para_deuda()), {self.branch_a})
+        extra = self._extra_branch_same_empresa()
+        self.cajero.sucursales_deuda.add(extra)
+        self.assertEqual(set(self.cajero.sucursales_para_deuda()), {self.branch_a, extra})
+
+    def test_debt_imputes_to_selected_extra_branch(self):
+        extra = self._extra_branch_same_empresa()
+        self.cajero.sucursales_deuda.add(extra)
+        deuda = register_box_expense_debt(
+            caja=self.caja,
+            proveedor=self.supplier,
+            categoria=self.payable_category,
+            monto=Decimal("70.00"),
+            concepto="Huevos Oveja Negra",
+            sucursal=extra,
+            actor=self.cajero,
+        )
+        self.assertEqual(deuda.sucursal, extra)          # imputa a la sucursal elegida
+        self.assertEqual(deuda.caja_origen, self.caja)   # provenance: la caja de Belgrano
+
+    def test_debt_rejects_branch_not_allowed(self):
+        extra = self._extra_branch_same_empresa()  # NO se agrega a sucursales_deuda
+        with self.assertRaises(ValidationError):
+            register_box_expense_debt(
+                caja=self.caja, proveedor=self.supplier, categoria=self.payable_category,
+                monto=Decimal("70.00"), concepto="No permitida", sucursal=extra, actor=self.cajero,
+            )
+
+    def test_debt_rejects_cross_empresa_branch(self):
+        self.cajero.sucursales_deuda.add(self.branch_b)  # empresa_b, distinta a la caja (empresa_a)
+        with self.assertRaises(ValidationError):
+            register_box_expense_debt(
+                caja=self.caja, proveedor=self.supplier, categoria=self.payable_category,
+                monto=Decimal("70.00"), concepto="Otra empresa", sucursal=self.branch_b, actor=self.cajero,
+            )
+
+    def test_view_shows_branch_selector_and_imputes_to_extra(self):
+        from treasury.models import CuentaPorPagar
+
+        extra = self._extra_branch_same_empresa()
+        self.cajero.sucursales_deuda.add(extra)
+        self.client.force_login(self.cajero)
+        url = reverse("cashops:box_expense_debt", args=[self.caja.pk])
+
+        get_response = self.client.get(url)
+        self.assertContains(get_response, "Sucursal de la deuda")
+
+        response = self.client.post(url, {
+            "proveedor": self.supplier.pk,
+            "categoria": self.payable_category.pk,
+            "sucursal": extra.pk,
+            "fecha_factura": self.fecha_op.isoformat(),
+            "monto": "70.00",
+            "concepto": "Huevos Oveja Negra",
+        })
+        self.assertEqual(response.status_code, 302)
+        deuda = CuentaPorPagar.objects.get(caja_origen=self.caja)
+        self.assertEqual(deuda.sucursal, extra)
+
+    def test_view_hides_branch_selector_without_extras(self):
+        self.client.force_login(self.cajero)
+        get_response = self.client.get(reverse("cashops:box_expense_debt", args=[self.caja.pk]))
+        self.assertNotContains(get_response, "Sucursal de la deuda")
+
     def test_box_detail_timeline_shows_debt_event(self):
         self._register_debt()
         self.client.force_login(self.cajero)

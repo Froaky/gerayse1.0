@@ -1286,3 +1286,18 @@ Last updated: 2026-07-08
 - Archivos: `users/models.py`, `users/views.py`, `cashops/permissions.py`, `cashops/services.py`, `cashops/forms.py`, `cashops/views.py`, `templates/cashops/dashboard.html`, `users/migrations/0013_*`, `cashops/tests.py`, `users/tests.py`, `context.md`.
 - Tests: 7 casos nuevos en `EP13BoxExpenseDebtTests` (bloqueo sin permiso, alta con permiso sin tocar la caja, ANULADA rechazada, efectivo aun bloqueado, fecha_factura->emision/periodo, vistas con/sin permiso) -> 17/17; ajuste `users` conteo modulos 6->7; suite completa 342 verde; `makemigrations --check` sin cambios; `compileall` OK.
 - Pendiente operativo: la admin asigna el permiso a los cajeros para el backfill de julio y lo quita despues (Config -> Usuarios). Para clasificar (ej "cerveza") el cliente crea Rubro (permiso Config) + CategoriaCuentaPagar (permiso Tesoreria). OJO: el cajero solo carga sobre SUS propias cajas cerradas (`usuario_id`); si una caja de julio la abrio otro responsable, ese cajero no la vera.
+
+### EP-13 Deuda: elegir sucursal (multi-sucursal por usuario) 2026-07-22
+
+- Pedido (audio admin ARMADI SRL): la cajera Belen Marsengo (base Belgrano) tambien recibe proveedores de "Oveja Negra" (panaderia cargada como sucursal aparte, misma empresa). En "gasto como deuda" el form la ataba a su sucursal y no la dejaba elegir Oveja Negra. Pedido: que ESE usuario pueda elegir entre Estacion Belgrano y Oveja Negra. (Contradice la regla original "no puede elegir otra": ahora es opt-in por usuario.)
+- Opcion: OPTIMA. Lista explicita por usuario (respeta "no todas"), regla en servicio, sin tocar el modelo de sucursales.
+- Cambio:
+  - `users.User.sucursales_deuda` (M2M a `cashops.Sucursal`, blank) = sucursales EXTRA (ademas de la base) donde el usuario puede imputar deuda. Metodo `User.sucursales_para_deuda()` = base + extras, activas.
+  - `GastoComoDeudaForm`: campo opcional `sucursal`; el selector SOLO aparece si el usuario tiene >1 sucursal habilitada (si tiene 1, la deuda va a la de la caja, como antes).
+  - `register_box_expense_debt(sucursal=None)`: si se elige otra, valida que este en `sucursales_para_deuda()` del actor Y misma empresa que la caja; si no, usa `caja.sucursal`. La deuda queda con `caja_origen` = la caja (Belgrano) pero `sucursal` = la elegida (imputacion economica correcta).
+  - `PersonalForm` y `UserAccessForm` (users): nuevo campo `sucursales_deuda` (checkbox multiple) para que la admin lo asigne. Se renderiza solo (form.visible_fields).
+- Datos: `users/migrations/0014_user_sucursales_deuda.py` agrega tabla M2M (aditiva, no toca datos). Deudas y usuarios existentes intactos.
+- Archivos: `users/models.py`, `users/forms.py`, `cashops/forms.py`, `cashops/services.py`, `cashops/views.py`, `users/migrations/0014_*`, `cashops/tests.py`, `context.md`.
+- Tests: 6 casos nuevos en `EP13BoxExpenseDebtTests` (metodo del conjunto, imputa a extra, rechaza no-permitida, rechaza cross-empresa, vista con/sin selector) -> 23/23; suite completa verde.
+- Workaround inmediato para el gasto puntual: la admin lo carga desde Tesoreria -> Cuentas por Pagar -> Nueva (ahi se elige cualquier sucursal, sin caja).
+- Operativo: para habilitar a Belen, la admin va a Config -> Usuarios (o ficha de acceso), y en "Sucursales adicionales para cargar deuda" tilda Oveja Negra.

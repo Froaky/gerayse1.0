@@ -79,6 +79,15 @@ class User(AbstractUser):
         related_name="usuarios_con_acceso",
         verbose_name="Empresas con acceso",
     )
+    # Sucursales EXTRA (ademas de la base) donde el usuario puede imputar un
+    # gasto como deuda. Vacio = solo su sucursal base. Lo asigna la admin por
+    # usuario; no habilita operar caja en esas sucursales, solo cargar deuda.
+    sucursales_deuda = models.ManyToManyField(
+        "cashops.Sucursal",
+        blank=True,
+        related_name="usuarios_carga_deuda",
+        verbose_name="Sucursales adicionales para cargar deuda",
+    )
 
     class Meta:
         verbose_name = "user"
@@ -152,6 +161,17 @@ class User(AbstractUser):
 
     def can_load_debt_on_closed_box(self) -> bool:
         return self.has_module_permission(PermissionModule.CASHOPS_DEBT_CLOSED, "write")
+
+    def sucursales_para_deuda(self):
+        """Sucursales activas donde el usuario puede imputar una deuda: su
+        sucursal base mas las adicionales asignadas. Se usa para las opciones
+        del form y para validar en el servicio."""
+        from cashops.models import Sucursal
+
+        ids = set(self.sucursales_deuda.values_list("pk", flat=True))
+        if self.sucursal_base_id:
+            ids.add(self.sucursal_base_id)
+        return Sucursal.objects.filter(pk__in=ids, activa=True).order_by("nombre")
 
     def can_read_config(self) -> bool:
         return self.has_module_permission(PermissionModule.CONFIG, "read")

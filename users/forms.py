@@ -49,6 +49,13 @@ class PersonalForm(forms.ModelForm):
         label="Empresas con acceso",
         help_text="Si queda vacío, el usuario no accede a ninguna empresa.",
     )
+    sucursales_deuda = forms.ModelMultipleChoiceField(
+        queryset=Sucursal.objects.filter(activa=True).order_by("nombre"),
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        label="Sucursales adicionales para cargar deuda",
+        help_text="Además de su sucursal base, en qué sucursales puede imputar un gasto como deuda. Vacío = solo la base.",
+    )
 
     class Meta:
         model = User
@@ -64,6 +71,7 @@ class PersonalForm(forms.ModelForm):
             "sucursal_base",
             "empresa_principal",
             "empresas_permitidas",
+            "sucursales_deuda",
             "is_active",
         ]
         labels = {
@@ -96,6 +104,7 @@ class PersonalForm(forms.ModelForm):
         self.fields["empresa_principal"].queryset = Empresa.objects.filter(activa=True).order_by("nombre")
         if self.instance.pk:
             self.fields["empresas_permitidas"].initial = self.instance.empresas_permitidas.all()
+            self.fields["sucursales_deuda"].initial = self.instance.sucursales_deuda.all()
         _apply_operational_classes(self)
         _configure_fixed_user_target(self)
 
@@ -169,6 +178,13 @@ class UserAccessForm(forms.ModelForm):
         label="Empresas con acceso",
         help_text="Si queda vacío, el usuario no accede a ninguna empresa.",
     )
+    sucursales_deuda = forms.ModelMultipleChoiceField(
+        queryset=Sucursal.objects.filter(activa=True).order_by("nombre"),
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        label="Sucursales adicionales para cargar deuda",
+        help_text="Además de su sucursal base, en qué sucursales puede imputar un gasto como deuda. Vacío = solo la base.",
+    )
 
     class Meta:
         model = User
@@ -178,6 +194,7 @@ class UserAccessForm(forms.ModelForm):
             "sucursal_base",
             "empresa_principal",
             "empresas_permitidas",
+            "sucursales_deuda",
             "is_active",
         ]
         labels = {
@@ -200,6 +217,7 @@ class UserAccessForm(forms.ModelForm):
         self.fields["empresa_principal"].queryset = Empresa.objects.filter(activa=True).order_by("nombre")
         if self.instance.pk:
             self.fields["empresas_permitidas"].initial = self.instance.empresas_permitidas.all()
+            self.fields["sucursales_deuda"].initial = self.instance.sucursales_deuda.all()
         _apply_operational_classes(self)
         _configure_fixed_user_target(self)
 

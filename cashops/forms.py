@@ -395,6 +395,12 @@ class BoxAnnulForm(forms.Form):
 class GastoComoDeudaForm(forms.Form):
     proveedor = forms.ModelChoiceField(queryset=Proveedor.objects.none(), label="Proveedor")
     categoria = forms.ModelChoiceField(queryset=CategoriaCuentaPagar.objects.none(), label="Categoría del gasto")
+    sucursal = forms.ModelChoiceField(
+        queryset=Sucursal.objects.none(),
+        required=False,
+        label="Sucursal de la deuda",
+        help_text="Para qué sucursal es este gasto.",
+    )
     fecha_factura = forms.DateField(
         label="Fecha de factura",
         widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
@@ -425,7 +431,7 @@ class GastoComoDeudaForm(forms.Form):
         widget=forms.TextInput(attrs={"placeholder": "Detalle opcional"}),
     )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, sucursales=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["proveedor"].queryset = Proveedor.objects.filter(activo=True).order_by("razon_social")
         self.fields["categoria"].queryset = (
@@ -438,6 +444,13 @@ class GastoComoDeudaForm(forms.Form):
             .select_related("rubro_operativo")
             .order_by("nombre")
         )
+        # El selector de sucursal solo aparece si el usuario tiene mas de una
+        # sucursal habilitada para deuda; si no, la deuda va a la de la caja.
+        if sucursales is not None and len(sucursales) > 1:
+            self.fields["sucursal"].queryset = sucursales
+            self.fields["sucursal"].required = True
+        else:
+            self.fields.pop("sucursal", None)
 
 
 class CajaValidacionRechazoForm(forms.Form):

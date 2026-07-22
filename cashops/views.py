@@ -1291,9 +1291,11 @@ def register_box_expense_debt_view(request, box_id: int):
     _require_cashops_write(request)
     box = _get_box_for_request(request, box_id)
     puede_caja_cerrada = can_load_debt_on_closed_box(request.user)
+    sucursales_deuda = request.user.sucursales_para_deuda().filter(empresa_id=box.sucursal.empresa_id)
     form = GastoComoDeudaForm(
         request.POST or None,
         initial={"fecha_factura": box.fecha_operativa},
+        sucursales=sucursales_deuda,
     )
     if request.method == "POST" and form.is_valid():
         try:
@@ -1304,6 +1306,7 @@ def register_box_expense_debt_view(request, box_id: int):
                 monto=form.cleaned_data["monto"],
                 concepto=form.cleaned_data["concepto"],
                 fecha_factura=form.cleaned_data["fecha_factura"],
+                sucursal=form.cleaned_data.get("sucursal"),
                 referencia_comprobante=form.cleaned_data["referencia_comprobante"],
                 observacion=form.cleaned_data["observacion"],
                 permitir_caja_cerrada=puede_caja_cerrada,

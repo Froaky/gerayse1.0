@@ -1504,6 +1504,7 @@ def register_box_expense_debt(
     observacion: str = "",
     fecha_factura=None,
     fecha_vencimiento=None,
+    sucursal=None,
     permitir_caja_cerrada: bool = False,
     actor=None,
 ):
@@ -1535,8 +1536,18 @@ def register_box_expense_debt(
         raise ValidationError({"categoria": "La categoría está inactiva."})
     _ensure_payable_category_is_economic(categoria)
     fecha_factura = fecha_factura or caja.fecha_operativa
+    # La deuda se imputa a la sucursal de la caja, salvo que el usuario elija
+    # otra que tenga habilitada (sucursales_para_deuda) y sea de la misma empresa.
+    if sucursal is None or sucursal.pk == caja.sucursal_id:
+        sucursal_deuda = caja.sucursal
+    else:
+        if actor is None or not actor.sucursales_para_deuda().filter(pk=sucursal.pk).exists():
+            raise ValidationError({"sucursal": "No podés cargar deuda para esa sucursal."})
+        if sucursal.empresa_id != caja.sucursal.empresa_id:
+            raise ValidationError({"sucursal": "La sucursal debe pertenecer a la empresa de la caja."})
+        sucursal_deuda = sucursal
     payable = CuentaPorPagar(
-        sucursal=caja.sucursal,
+        sucursal=sucursal_deuda,
         caja_origen=caja,
         proveedor=proveedor,
         categoria=categoria,
