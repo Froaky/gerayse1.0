@@ -1402,6 +1402,26 @@ def _validate_open_box(caja: Caja, *, actor=None, lock: bool = True) -> Caja:
     return caja
 
 
+def _lock_box_for_debt(caja: Caja, *, actor=None, permitir_caja_cerrada: bool = False) -> Caja:
+    """Bloquea y valida una caja para cargar deuda (gasto como deuda).
+
+    A diferencia de _validate_open_box, admite cajas CERRADAS cuando el actor
+    tiene el permiso (permitir_caja_cerrada=True), porque la deuda no mueve
+    efectivo ni reabre la caja. Nunca admite ANULADA. Mantiene el control de
+    propiedad/alcance (ensure_can_operate_box) y el lock por fila.
+    """
+    caja = Caja.objects.select_for_update().select_related("turno", "sucursal", "usuario").get(pk=caja.pk)
+    if actor is not None:
+        ensure_can_operate_box(actor, caja)
+    if caja.estado == Caja.Estado.ABIERTA:
+        return caja
+    if caja.estado == Caja.Estado.CERRADA and permitir_caja_cerrada:
+        return caja
+    if caja.estado == Caja.Estado.CERRADA:
+        raise ValidationError({"caja": "La caja esta cerrada."})
+    raise ValidationError({"caja": "La caja no admite cargar deuda en este estado."})
+
+
 @transaction.atomic
 def register_cash_income(
     *,
@@ -1482,21 +1502,28 @@ def register_box_expense_debt(
     concepto: str,
     referencia_comprobante: str = "",
     observacion: str = "",
+    fecha_factura=None,
     fecha_vencimiento=None,
+    permitir_caja_cerrada: bool = False,
     actor=None,
 ):
     """EP-13 US-13.6: gasto desde caja registrado como deuda pendiente.
 
     No crea ningun movimiento de caja: el efectivo no sale de la caja y el
     gasto entra a la lectura economica una sola vez, como deuda del periodo
-    de la fecha operativa. Tesoreria registra el pago real despues y recien
+    de la fecha de factura. Tesoreria registra el pago real despues y recien
     ahi impacta la lectura financiera.
+
+    permitir_caja_cerrada habilita cargar la deuda sobre una caja ya cerrada
+    (para quien tenga el permiso CASHOPS_DEBT_CLOSED); no reabre la caja ni
+    toca su efectivo. fecha_factura define la fecha de emision y el periodo
+    economico; si no se indica, se usa la fecha operativa de la caja.
     """
     from treasury.models import CuentaPorPagar
     from treasury.services import _ensure_payable_category_is_economic
 
     _require_actor(actor)
-    caja = _validate_open_box(caja, actor=actor)
+    caja = _lock_box_for_debt(caja, actor=actor, permitir_caja_cerrada=permitir_caja_cerrada)
     if monto <= 0:
         raise ValidationError({"monto": "El monto debe ser mayor que cero."})
     concepto = (concepto or "").strip()
@@ -1507,15 +1534,16 @@ def register_box_expense_debt(
     if not categoria.activo:
         raise ValidationError({"categoria": "La categoría está inactiva."})
     _ensure_payable_category_is_economic(categoria)
+    fecha_factura = fecha_factura or caja.fecha_operativa
     payable = CuentaPorPagar(
         sucursal=caja.sucursal,
         caja_origen=caja,
         proveedor=proveedor,
         categoria=categoria,
         concepto=concepto,
-        fecha_emision=caja.fecha_operativa,
-        fecha_vencimiento=fecha_vencimiento or caja.fecha_operativa,
-        periodo_referencia=caja.fecha_operativa.replace(day=1),
+        fecha_emision=fecha_factura,
+        fecha_vencimiento=fecha_vencimiento or fecha_factura,
+        periodo_referencia=fecha_factura.replace(day=1),
         importe_total=monto,
         saldo_pendiente=monto,
         estado=CuentaPorPagar.Estado.PENDIENTE,

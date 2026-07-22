@@ -40,6 +40,7 @@ from .forms import (
 from .models import CajaCorreccion, CajaValidacion, CanalIngreso, Caja, CierreCaja, Empresa, LimiteRubroOperativo, MovimientoCaja, MovimientoCajaCorreccion, RubroOperativo, Sucursal, Turno
 from .permissions import (
     can_correct_closed_box,
+    can_load_debt_on_closed_box,
     can_validate_cash,
     ensure_cash_validation,
     ensure_cashops_read,
@@ -1289,7 +1290,11 @@ def register_expense_view(request, box_id: int):
 def register_box_expense_debt_view(request, box_id: int):
     _require_cashops_write(request)
     box = _get_box_for_request(request, box_id)
-    form = GastoComoDeudaForm(request.POST or None)
+    puede_caja_cerrada = can_load_debt_on_closed_box(request.user)
+    form = GastoComoDeudaForm(
+        request.POST or None,
+        initial={"fecha_factura": box.fecha_operativa},
+    )
     if request.method == "POST" and form.is_valid():
         try:
             register_box_expense_debt(
@@ -1298,8 +1303,10 @@ def register_box_expense_debt_view(request, box_id: int):
                 categoria=form.cleaned_data["categoria"],
                 monto=form.cleaned_data["monto"],
                 concepto=form.cleaned_data["concepto"],
+                fecha_factura=form.cleaned_data["fecha_factura"],
                 referencia_comprobante=form.cleaned_data["referencia_comprobante"],
                 observacion=form.cleaned_data["observacion"],
+                permitir_caja_cerrada=puede_caja_cerrada,
                 actor=request.user,
             )
         except (ValidationError, IntegrityError) as error:
@@ -1312,13 +1319,21 @@ def register_box_expense_debt_view(request, box_id: int):
             url = f"{reverse('cashops:dashboard')}?scope=box&box={box.pk}"
             return _hx_redirect(url) if _is_htmx(request) else redirect(url)
 
+    if box.estado != Caja.Estado.ABIERTA:
+        subtitle = (
+            f"Caja #{box.id} cerrada. La deuda se carga con su fecha de factura; "
+            "no reabre la caja ni toca su efectivo."
+        )
+    else:
+        subtitle = f"Caja activa: {box.id}. El gasto queda como deuda pendiente y no descuenta efectivo de la caja."
+
     return _render_form(
         request,
         "cashops/form_page.html",
         "cashops/partials/form_card.html",
         {
             "title": "Gasto como deuda",
-            "subtitle": f"Caja activa: {box.id}. El gasto queda como deuda pendiente y no descuenta efectivo de la caja.",
+            "subtitle": subtitle,
             "form": form,
             "submit_label": "Registrar gasto como deuda",
             "back_url": f"{reverse('cashops:dashboard')}?scope=box&box={box.pk}",

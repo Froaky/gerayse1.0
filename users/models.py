@@ -9,6 +9,9 @@ class PermissionModule(models.TextChoices):
     # EP-13: permiso por accion. Habilita validar o rechazar el efectivo de
     # cajas pendientes; no otorga ningun otro acceso de caja.
     CASHOPS_VALIDATE = "cashops_validate", "Validación de efectivo"
+    # Permiso por accion (asignable/removible): habilita cargar un gasto como
+    # deuda sobre una caja YA CERRADA. No reabre la caja ni mueve efectivo.
+    CASHOPS_DEBT_CLOSED = "cashops_debt_closed", "Cargar deuda en caja cerrada"
     CONFIG = "config", "Configuración"
     TREASURY = "treasury", "Tesorería"
     USERS = "users", "Usuarios"
@@ -146,6 +149,9 @@ class User(AbstractUser):
 
     def can_validate_efectivo(self) -> bool:
         return self.has_module_permission(PermissionModule.CASHOPS_VALIDATE, "write")
+
+    def can_load_debt_on_closed_box(self) -> bool:
+        return self.has_module_permission(PermissionModule.CASHOPS_DEBT_CLOSED, "write")
 
     def can_read_config(self) -> bool:
         return self.has_module_permission(PermissionModule.CONFIG, "read")

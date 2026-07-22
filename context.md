@@ -1271,3 +1271,18 @@ Last updated: 2026-07-08
 - Compatibility: complete legacy bank expenses created before `EGRESO_TESORERIA` remain included in `Gasto tesoreria`; incomplete manual bank movements remain bank ledger movements but no longer pollute the economic pending-imputation alert.
 - Files touched: `treasury/models.py`, `treasury/services.py`, `treasury/tests.py`, `treasury/migrations/0021_bank_treasury_expense_origin.py`, `context.md`.
 - Evidence: focused economic/service/view tests OK; `TreasuryServiceTests` 48 OK; `TreasuryViewTests` 35 OK; `treasury.tests_ep05` 8 OK; `makemigrations --check --dry-run` no changes detected; `compileall treasury` OK. Commands emitted an environment warning from `sitecustomize` about missing PIL `_imaging`, but Django checks/tests completed successfully.
+
+### EP-13 Deuda sobre caja cerrada 2026-07-22
+
+- Pedido (video administradora): los cajeros deben poder cargar el "gasto como deuda" aunque la caja este CERRADA (backfill de julio y dia a dia), con fecha de factura, solo de su sucursal. Ella (admin) ya ve todas las sucursales y filtra por proveedor en Cuentas por Pagar (sin cambios).
+- Opcion: OPTIMA. Regla en servicio, permiso reutilizable, no toca efectivo, tests proporcionales.
+- Cambio:
+  - Nuevo permiso por accion `CASHOPS_DEBT_CLOSED` ("Cargar deuda en caja cerrada"), asignable/removible por rol o por usuario (igual patron que `CASHOPS_VALIDATE`). Agregado a `PermissionModule` y a `PERMISSION_MODULE_META` (UI de usuarios).
+  - `register_box_expense_debt` admite caja CERRADA solo si `permitir_caja_cerrada=True` (la vista lo deriva de `can_load_debt_on_closed_box`); nunca ANULADA. Nuevo helper `_lock_box_for_debt` mantiene `select_for_update` + `ensure_can_operate_box` (caja propia).
+  - Nuevo campo de form `fecha_factura` (DateInput ISO); define `fecha_emision` y `periodo_referencia`; si no viene, usa `caja.fecha_operativa` (compat con llamadas viejas).
+  - Boton "Cargar deuda" en el dashboard, rama caja cerrada, gateado por `request.user.can_load_debt_on_closed_box`.
+- Salvaguardas: sin el permiso, la caja cerrada sigue bloqueada ("La caja esta cerrada."); NUNCA se agregan movimientos de efectivo a caja cerrada (solo la deuda, que no crea `MovimientoCaja`); no reabre la caja, no toca su efectivo ni su `validacion_estado`; scope a la caja propia del cajero; auditado (`creado_por`).
+- Datos: `users/migrations/0013_alter_rolepermission_module_and_more.py` es solo `AlterField` de `choices` (no toca datos). Deudas ya cargadas quedan intactas. `migrate` local aplicado sin cambios de schema.
+- Archivos: `users/models.py`, `users/views.py`, `cashops/permissions.py`, `cashops/services.py`, `cashops/forms.py`, `cashops/views.py`, `templates/cashops/dashboard.html`, `users/migrations/0013_*`, `cashops/tests.py`, `users/tests.py`, `context.md`.
+- Tests: 7 casos nuevos en `EP13BoxExpenseDebtTests` (bloqueo sin permiso, alta con permiso sin tocar la caja, ANULADA rechazada, efectivo aun bloqueado, fecha_factura->emision/periodo, vistas con/sin permiso) -> 17/17; ajuste `users` conteo modulos 6->7; suite completa 342 verde; `makemigrations --check` sin cambios; `compileall` OK.
+- Pendiente operativo: la admin asigna el permiso a los cajeros para el backfill de julio y lo quita despues (Config -> Usuarios). Para clasificar (ej "cerveza") el cliente crea Rubro (permiso Config) + CategoriaCuentaPagar (permiso Tesoreria). OJO: el cajero solo carga sobre SUS propias cajas cerradas (`usuario_id`); si una caja de julio la abrio otro responsable, ese cajero no la vera.

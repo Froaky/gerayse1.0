@@ -236,6 +236,12 @@
                 <span>Ver detalle completo</span>
                 <small>consulta y auditoria de la caja cerrada</small>
               </a>
+              {% if request.user.can_load_debt_on_closed_box %}
+                <a class="action-card" href="{% url 'cashops:box_expense_debt' selected_box.id %}">
+                  <span>Cargar deuda</span>
+                  <small>gasto como deuda sobre la caja cerrada: no toca efectivo</small>
+                </a>
+              {% endif %}
             </div>
           {% endif %}
         </div>

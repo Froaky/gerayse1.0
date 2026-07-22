@@ -3408,6 +3408,7 @@ class EP13BoxExpenseDebtTests(CashopsTestCase):
             {
                 "proveedor": self.supplier.pk,
                 "categoria": self.payable_category.pk,
+                "fecha_factura": self.fecha_op.isoformat(),
                 "monto": "45.50",
                 "concepto": "Velas y descartables",
                 "referencia_comprobante": "",
@@ -3442,6 +3443,151 @@ class EP13BoxExpenseDebtTests(CashopsTestCase):
         )
 
         self.assertEqual(response.status_code, 403)
+
+    def _grant_closed_debt_permission(self, user=None):
+        return UserPermission.objects.create(
+            user=user or self.cajero,
+            module=PermissionModule.CASHOPS_DEBT_CLOSED,
+            can_read=True,
+            can_write=True,
+        )
+
+    def test_debt_uses_fecha_factura_for_emision_and_period(self):
+        deuda = self._register_debt()  # sin fecha_factura -> usa la fecha operativa de la caja
+        self.assertEqual(deuda.fecha_emision, self.fecha_op)
+        self.assertEqual(deuda.periodo_referencia, self.fecha_op.replace(day=1))
+
+        otra = date(2026, 5, 9)
+        deuda2 = register_box_expense_debt(
+            caja=self.caja,
+            proveedor=self.supplier,
+            categoria=self.payable_category,
+            monto=Decimal("30.00"),
+            concepto="Con fecha de factura propia",
+            fecha_factura=otra,
+            actor=self.cajero,
+        )
+        self.assertEqual(deuda2.fecha_emision, otra)
+        self.assertEqual(deuda2.periodo_referencia, date(2026, 5, 1))
+
+    def test_debt_on_closed_box_blocked_without_permission(self):
+        close_box(caja=self.caja, saldo_fisico=Decimal("100.00"), cerrado_por=self.cajero, actor=self.cajero)
+        with self.assertRaises(ValidationError):
+            register_box_expense_debt(
+                caja=self.caja,
+                proveedor=self.supplier,
+                categoria=self.payable_category,
+                monto=Decimal("40.00"),
+                concepto="Intento sin permiso",
+                permitir_caja_cerrada=False,
+                actor=self.cajero,
+            )
+
+    def test_debt_on_closed_box_allowed_with_permission_without_touching_box(self):
+        from treasury.models import CuentaPorPagar
+
+        close_box(caja=self.caja, saldo_fisico=Decimal("100.00"), cerrado_por=self.cajero, actor=self.cajero)
+        self.caja.refresh_from_db()
+        estado_antes = self.caja.estado
+        validacion_antes = self.caja.validacion_estado
+        saldo_antes = self.caja.saldo_esperado
+
+        deuda = register_box_expense_debt(
+            caja=self.caja,
+            proveedor=self.supplier,
+            categoria=self.payable_category,
+            monto=Decimal("55.00"),
+            concepto="Backfill julio",
+            fecha_factura=date(2026, 3, 20),
+            permitir_caja_cerrada=True,
+            actor=self.cajero,
+        )
+
+        self.assertEqual(deuda.estado, CuentaPorPagar.Estado.PENDIENTE)
+        self.assertEqual(deuda.caja_origen, self.caja)
+        self.assertEqual(deuda.fecha_emision, date(2026, 3, 20))
+        self.caja.refresh_from_db()
+        self.assertEqual(self.caja.estado, estado_antes)  # sigue cerrada, no se reabre
+        self.assertEqual(self.caja.validacion_estado, validacion_antes)  # no toca la validacion
+        self.assertEqual(self.caja.saldo_esperado, saldo_antes)  # no toca el efectivo
+        self.assertEqual(self.caja.movimientos.filter(tipo=MovimientoCaja.Tipo.GASTO).count(), 0)
+
+    def test_debt_never_allowed_on_annulled_box(self):
+        from cashops.services import annul_box
+
+        annul_box(caja=self.caja, motivo="prueba", actor=self.admin)
+        with self.assertRaises(ValidationError):
+            register_box_expense_debt(
+                caja=self.caja,
+                proveedor=self.supplier,
+                categoria=self.payable_category,
+                monto=Decimal("10.00"),
+                concepto="Sobre anulada",
+                permitir_caja_cerrada=True,
+                actor=self.cajero,
+            )
+
+    def test_cash_movements_still_blocked_on_closed_box(self):
+        from cashops.services import register_cash_income, register_expense
+
+        close_box(caja=self.caja, saldo_fisico=Decimal("100.00"), cerrado_por=self.cajero, actor=self.cajero)
+        with self.assertRaises(ValidationError):
+            register_cash_income(caja=self.caja, monto=Decimal("10.00"), categoria="INGRESO", actor=self.cajero)
+        with self.assertRaises(ValidationError):
+            register_expense(
+                caja=self.caja,
+                monto=Decimal("10.00"),
+                rubro_operativo=self.rubro_insumos,
+                categoria="GASTO",
+                actor=self.cajero,
+            )
+
+    def test_view_loads_debt_on_closed_box_when_permitted(self):
+        from treasury.models import CuentaPorPagar
+
+        close_box(caja=self.caja, saldo_fisico=Decimal("100.00"), cerrado_por=self.cajero, actor=self.cajero)
+        self._grant_closed_debt_permission()
+        self.client.force_login(self.cajero)
+        url = reverse("cashops:box_expense_debt", args=[self.caja.pk])
+
+        response = self.client.post(
+            url,
+            {
+                "proveedor": self.supplier.pk,
+                "categoria": self.payable_category.pk,
+                "fecha_factura": "2026-03-18",
+                "monto": "33.00",
+                "concepto": "Pollo cuenta corriente",
+                "referencia_comprobante": "",
+                "observacion": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        deuda = CuentaPorPagar.objects.get(caja_origen=self.caja)
+        self.assertEqual(deuda.importe_total, Decimal("33.00"))
+        self.assertEqual(deuda.fecha_emision, date(2026, 3, 18))
+
+    def test_view_blocks_debt_on_closed_box_without_permission(self):
+        from treasury.models import CuentaPorPagar
+
+        close_box(caja=self.caja, saldo_fisico=Decimal("100.00"), cerrado_por=self.cajero, actor=self.cajero)
+        self.client.force_login(self.cajero)
+        url = reverse("cashops:box_expense_debt", args=[self.caja.pk])
+
+        response = self.client.post(
+            url,
+            {
+                "proveedor": self.supplier.pk,
+                "categoria": self.payable_category.pk,
+                "fecha_factura": "2026-03-18",
+                "monto": "33.00",
+                "concepto": "Intento sin permiso",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(CuentaPorPagar.objects.filter(caja_origen=self.caja).exists())
 
     def test_box_detail_timeline_shows_debt_event(self):
         self._register_debt()

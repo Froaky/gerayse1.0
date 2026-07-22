@@ -395,6 +395,12 @@ class BoxAnnulForm(forms.Form):
 class GastoComoDeudaForm(forms.Form):
     proveedor = forms.ModelChoiceField(queryset=Proveedor.objects.none(), label="Proveedor")
     categoria = forms.ModelChoiceField(queryset=CategoriaCuentaPagar.objects.none(), label="Categoría del gasto")
+    fecha_factura = forms.DateField(
+        label="Fecha de factura",
+        widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+        input_formats=["%Y-%m-%d"],
+        help_text="Fecha del comprobante; imputa la deuda a ese período.",
+    )
     monto = forms.DecimalField(
         max_digits=14,
         decimal_places=2,

@@ -44,6 +44,10 @@ def can_validate_cash(user) -> bool:
     return _has_module_permission(user, PermissionModule.CASHOPS_VALIDATE, "write")
 
 
+def can_load_debt_on_closed_box(user) -> bool:
+    return _has_module_permission(user, PermissionModule.CASHOPS_DEBT_CLOSED, "write")
+
+
 def ensure_cash_validation(user) -> None:
     if not can_validate_cash(user):
         raise PermissionDenied("No tenes permiso para validar efectivo.")

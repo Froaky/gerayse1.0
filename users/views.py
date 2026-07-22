@@ -32,6 +32,10 @@ PERMISSION_MODULE_META = {
         "label": "Validación de efectivo",
         "scope": "Ver cajas pendientes de validación y validar o rechazar el efectivo entregado.",
     },
+    PermissionModule.CASHOPS_DEBT_CLOSED: {
+        "label": "Cargar deuda en caja cerrada",
+        "scope": "Cargar un gasto como deuda sobre una caja ya cerrada (no reabre la caja ni mueve efectivo).",
+    },
     PermissionModule.CONFIG: {
         "label": "Configuración",
         "scope": "Rubros, limites, empresas, sucursales, turnos y reinicio de datos.",
