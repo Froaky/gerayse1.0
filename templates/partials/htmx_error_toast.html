@@ -1,0 +1,161 @@
+{% comment %}
+Cartelito temporal de error para acciones HTMX.
+
+Problema que resuelve: htmx 1.9 NO intercambia (swap) las respuestas con
+status 4xx/5xx por defecto. Como las vistas devuelven 400 cuando un formulario
+no valida o una regla de negocio lo rechaza, el usuario tocaba el boton y "no
+pasaba nada": ni redirect ni mensaje.
+
+Este partial:
+  - deja que las respuestas 400/422 se muestren igual (para ver el error inline
+    de cada campo y poder resolver solo);
+  - ademas levanta un cartelito arriba, temporal, con el motivo en lenguaje
+    simple (los textos ya vienen humanos desde forms.py / services.py);
+  - ante 403/500/red muestra un mensaje generico que invita a reintentar y, si
+    persiste, avisar al encargado.
+
+No cambia reglas de negocio: solo presenta errores que ya existen.
+{% endcomment %}
+<div id="toasts-top" aria-live="assertive" aria-atomic="false"></div>
+<style>
+  #toasts-top {
+    position: fixed;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2000;
+    display: grid;
+    gap: 8px;
+    width: min(560px, calc(100vw - 24px));
+    pointer-events: none;
+  }
+  .toast-top {
+    pointer-events: auto;
+    position: relative;
+    padding: 12px 38px 12px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--dn-line, #5c2f2c);
+    border-left: 4px solid var(--danger, #e2635c);
+    background: var(--dn-bg, #2a1615);
+    color: var(--text, #e9efec);
+    font-size: 0.95rem;
+    line-height: 1.35;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+    cursor: pointer;
+    animation: toast-top-in 0.18s ease-out;
+  }
+  .toast-top::after {
+    content: "\00d7";
+    position: absolute;
+    top: 6px;
+    right: 11px;
+    font-size: 1.05rem;
+    line-height: 1;
+    opacity: 0.55;
+  }
+  .toast-top--out {
+    opacity: 0;
+    transform: translateY(-6px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  @keyframes toast-top-in {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+</style>
+<script>
+  (function () {
+    var AUTO_DISMISS_MS = 8000;
+
+    function host() {
+      var el = document.getElementById("toasts-top");
+      if (!el) {
+        el = document.createElement("div");
+        el.id = "toasts-top";
+        el.setAttribute("aria-live", "assertive");
+        document.body.appendChild(el);
+      }
+      return el;
+    }
+
+    function dismiss(el) {
+      if (!el || el.dataset.dismissed) return;
+      el.dataset.dismissed = "1";
+      clearTimeout(el._timer);
+      el.classList.add("toast-top--out");
+      setTimeout(function () { el.remove(); }, 220);
+    }
+
+    function showToast(text) {
+      var el = document.createElement("div");
+      el.className = "toast-top";
+      el.setAttribute("role", "alert");
+      el.textContent = text;
+      el.addEventListener("click", function () { dismiss(el); });
+      host().appendChild(el);
+      el._timer = setTimeout(function () { dismiss(el); }, AUTO_DISMISS_MS);
+    }
+
+    // Junta los errores del HTML de respuesta en textos simples.
+    function collectErrors(root) {
+      var parts = [];
+      // Errores de regla / no-campo (los mas explicativos).
+      root.querySelectorAll(".errors li").forEach(function (li) {
+        var t = (li.textContent || "").trim();
+        if (t) parts.push(t);
+      });
+      // Errores por campo, con el nombre del campo adelante.
+      root.querySelectorAll(".field").forEach(function (f) {
+        var err = f.querySelector(".error");
+        if (!err) return;
+        var msg = (err.textContent || "").trim();
+        if (!msg) return;
+        var label = f.querySelector("label");
+        var name = label ? (label.textContent || "").trim().replace(/[:*]\s*$/, "") : "";
+        parts.push(name ? name + ": " + msg : msg);
+      });
+      return parts;
+    }
+
+    function summarize(parts) {
+      if (parts.length === 1) return parts[0];
+      var shown = parts.slice(0, 3);
+      var extra = parts.length - shown.length;
+      var text = shown.join(" · ");
+      if (extra > 0) text += " · (+" + extra + " más)";
+      return text;
+    }
+
+    document.body.addEventListener("htmx:beforeSwap", function (evt) {
+      var status = evt.detail.xhr.status;
+      if (status !== 400 && status !== 422) return;
+      // Permitir que el formulario con errores se muestre (errores inline por campo).
+      evt.detail.shouldSwap = true;
+      evt.detail.isError = false;
+      var parts = [];
+      try {
+        var doc = new DOMParser().parseFromString(evt.detail.xhr.responseText || "", "text/html");
+        parts = collectErrors(doc);
+      } catch (e) { /* si algo falla, cae al mensaje generico */ }
+      showToast(
+        parts.length
+          ? summarize(parts)
+          : "No se pudo completar la acción. Revisá los datos y probá de nuevo."
+      );
+    });
+
+    document.body.addEventListener("htmx:responseError", function (evt) {
+      var status = evt.detail.xhr.status;
+      if (status === 400 || status === 422) return; // ya manejado arriba
+      showToast(
+        "No pudimos completar la acción en este momento. Probá de nuevo y, si sigue igual, avisá a tu encargado."
+      );
+    });
+
+    document.body.addEventListener("htmx:sendError", function () {
+      showToast(
+        "Parece que no hay conexión o el servidor no responde. Revisá internet y probá de nuevo."
+      );
+    });
+  })();
+</script>

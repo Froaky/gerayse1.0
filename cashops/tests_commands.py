@@ -232,6 +232,77 @@ class ResyncOperationalEngineCommandTests(TestCase):
         self.assertIn(needle, haystack)
 
 
+class CajasAbiertasCommandTests(TestCase):
+    def setUp(self):
+        admin_role = Role.objects.create(code="ADMIN", name="Administrador")
+        operator_role = Role.objects.create(code="ENCARGADO", name="Encargado")
+        self.admin = User.objects.create_user(username="admin_ca", password="test", role=admin_role)
+        self.victor = User.objects.create_user(
+            username="victor",
+            password="test",
+            first_name="Victor",
+            last_name="Cruz",
+            role=operator_role,
+        )
+        self.empresa = Empresa.objects.create(nombre="ARMADI SRL")
+        self.branch = Sucursal.objects.create(
+            codigo="EB2-04",
+            nombre="Estacion Belgrano 2",
+            razon_social="ARMADI SRL",
+            empresa=self.empresa,
+        )
+        self.turno = Turno.objects.create(
+            empresa=self.empresa,
+            tipo=Turno.Tipo.MANANA,
+            creado_por=self.admin,
+        )
+
+    def test_lists_open_box_and_conflict_note_for_user(self):
+        open_box(
+            user=self.victor,
+            turno=self.turno,
+            sucursal=self.branch,
+            fecha_operativa=date(2026, 7, 1),
+            monto_inicial=Decimal("5000.00"),
+            actor=self.admin,
+        )
+        out = StringIO()
+
+        call_command("cajas_abiertas", usuario="victor", stdout=out)
+
+        salida = out.getvalue()
+        self.assertIn("Victor Cruz (victor)", salida)
+        self.assertIn("Estacion Belgrano 2", salida)
+        self.assertIn("Bloquea abrir OTRA caja", salida)
+        self.assertIn("Total de cajas abiertas listadas: 1", salida)
+        self.assertIn("Ningun dato fue modificado", salida)
+
+    def test_reports_empty_when_user_has_no_open_box(self):
+        out = StringIO()
+
+        call_command("cajas_abiertas", usuario="victor", stdout=out)
+
+        salida = out.getvalue()
+        self.assertIn("No hay cajas ABIERTAS con ese filtro", salida)
+        self.assertIn("sucursal base", salida)
+
+    def test_does_not_persist_any_change(self):
+        open_box(
+            user=self.victor,
+            turno=self.turno,
+            sucursal=self.branch,
+            fecha_operativa=date(2026, 7, 1),
+            monto_inicial=Decimal("5000.00"),
+            actor=self.admin,
+        )
+        before = Caja.objects.count()
+        out = StringIO()
+
+        call_command("cajas_abiertas", stdout=out)
+
+        self.assertEqual(Caja.objects.count(), before)
+
+
 class SanitizeLegacyAlertsCommandTests(TestCase):
     def setUp(self):
         admin_role = Role.objects.create(code="ADMIN", name="Administrador")

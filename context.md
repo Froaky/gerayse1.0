@@ -1301,3 +1301,26 @@ Last updated: 2026-07-08
 - Tests: 6 casos nuevos en `EP13BoxExpenseDebtTests` (metodo del conjunto, imputa a extra, rechaza no-permitida, rechaza cross-empresa, vista con/sin selector) -> 23/23; suite completa verde.
 - Workaround inmediato para el gasto puntual: la admin lo carga desde Tesoreria -> Cuentas por Pagar -> Nueva (ahi se elige cualquier sucursal, sin caja).
 - Operativo: para habilitar a Belen, la admin va a Config -> Usuarios (o ficha de acceso), y en "Sucursales adicionales para cargar deuda" tilda Oveja Negra.
+
+### Cartelito temporal de error en acciones HTMX 2026-07-22
+
+- Pedido: un cajero tocaba "Abrir caja" y "no pasaba nada, ni un mensaje de error". Objetivo: cuando una accion no se puede completar, mostrar arriba un cartelito temporal con el motivo en lenguaje simple, para que la persona resuelva sola (ej: falta un campo) y solo si no puede, avise al encargado. Sin mensajes tecnicos.
+- Causa raiz: los formularios se envian por HTMX (`hx-post` + `hx-target="#form-card"` + `hx-swap="outerHTML"`) y las vistas devuelven HTTP 400 cuando el form no valida o una regla de negocio lo rechaza (`open_box_view` y demas usan `status=400`). HTMX 1.9.12 NO intercambia respuestas 4xx por defecto y no habia handler `htmx:beforeSwap`, asi que el form re-renderizado (con el error adentro) se descartaba en silencio. Nota: por ser un 400 controlado, tampoco aparecia en logs de Railway.
+- Opcion: OPTIMA. Slice 100% de presentacion. Los textos de error ya viven humanos en `forms.py`/`services.py` (ej "Ya existe una caja abierta para ese usuario en este turno y sucursal."); este cambio solo los muestra. No toca vistas, forms, servicios, modelos ni permisos.
+- Cambio:
+  - Nuevo partial compartido `templates/partials/htmx_error_toast.html` (contenedor + CSS + JS) incluido antes de `</body>` en `cashops/layout.html` y `treasury/layout.html`.
+  - `htmx:beforeSwap`: en 400/422 fuerza `shouldSwap=true` e `isError=false` (asi el form muestra ademas los errores inline por campo) y levanta un cartelito arriba, temporal (auto-cierre ~8s, tap para cerrar). Arma el texto leyendo `.errors li` (regla/no-campo, prioritarios) y `.field .error` con su `<label>` ("Campo: mensaje"); si hay varios, resume 3 + "(+N mas)".
+  - `htmx:responseError` (403/500): mensaje generico "No pudimos completar la accion... si sigue igual, avisa a tu encargado." `htmx:sendError` (sin conexion): aviso de red. El 400/422 no duplica cartelito.
+- Alcance: solo errores. El toast de exito (bottom-right, Django messages en redirect) sigue igual.
+- Archivos: `templates/partials/htmx_error_toast.html` (nuevo), `templates/cashops/layout.html`, `templates/treasury/layout.html`, `context.md`.
+- Tests: sin cambios de servidor (el contrato ya estaba cubierto por `cashops.tests` `test_duplicate_open_box_returns_validation_feedback_without_500`: 400 + mensaje humano en el body). Regresion de render: `cashops` 167 OK, `treasury` 132 OK (1 skip), `manage.py check` limpio. Logica del JS verificada en navegador real con harness sintetico de eventos htmx: 10/10 asserts OK (texto de regla, campo+label, resumen 3+extra, fallback 400, 403 generico, no-duplicado, 200 no toca nada).
+- Pendiente (aparte, no incluido): la causa concreta por la que a ese cajero no lo dejaba abrir queda por confirmar con el dato real (lo mas probable: ya tenia una caja abierta en ese turno+sucursal). Con el cartelito ya se ve el motivo.
+
+### Comando diagnostico `cajas_abiertas` 2026-07-22
+
+- Pedido: confirmar por que un cajero (Victor Cruz) no podia abrir caja, sin esperar a que vuelva a pasar. Ligado a la entrada anterior (cartelito de error).
+- Recordatorio de la regla: `Caja` tiene `UniqueConstraint unique_open_box_by_user_turn_branch` (una sola caja ABIERTA por usuario+turno+sucursal) y `open_box()` valida lo mismo antes de crear; si ya existe, la apertura falla con "Ya existe una caja abierta para ese usuario en este turno y sucursal.".
+- Opcion: OPTIMA. Management command de SOLO LECTURA (patron ya usado: `resync_operational_engine`, `reporte_sin_sucursal`), seguro para correr en Railway (`railway run python manage.py cajas_abiertas --usuario victor`).
+- Que hace: lista cajas ABIERTAS, filtrable por `--usuario` (username/nombre/apellido, icontains) y `--empresa`. Por cada caja muestra responsable (marca si es usuario fijo + su sucursal base), sucursal, turno+empresa, fecha operativa, apertura, monto inicial y estado de validacion, y la nota de que bloquea abrir otra en ese turno+sucursal. Si el usuario no tiene ninguna caja abierta, aclara que el bloqueo NO es por duplicado y sugiere revisar turno/empresa y sucursal base (usuario fijo). No escribe nada.
+- Archivos: `cashops/management/commands/cajas_abiertas.py` (nuevo), `cashops/tests_commands.py` (nueva clase `CajasAbiertasCommandTests`), `context.md`.
+- Tests: `CajasAbiertasCommandTests` 3/3 OK (lista + nota de conflicto por usuario; caso vacio con guia; no persiste cambios); `compileall` OK.
