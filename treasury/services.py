@@ -229,6 +229,38 @@ def create_payable_category(*, nombre, actor=None, activo=True, rubro_operativo=
     return _save_instance(category)
 
 
+def get_or_create_payable_category_for_rubro(rubro, *, actor=None) -> CategoriaCuentaPagar:
+    """Devuelve una CategoriaCuentaPagar economica para el rubro elegido.
+
+    El alta de deuda del cajero elige un RUBRO; el modelo de deuda igual
+    necesita una categoria. Reutiliza una categoria activa ya asociada a ese
+    rubro; si no hay ninguna, crea una canonica con el nombre del rubro. Asi el
+    cajero clasifica por rubro y el economico sigue imputando por rubro.
+    """
+    if rubro is None:
+        raise ValidationError({"rubro": "El rubro es obligatorio."})
+    if not rubro.activo or rubro.es_sistema:
+        raise ValidationError({"rubro": "Tenes que elegir un rubro operativo activo y valido."})
+    category = (
+        CategoriaCuentaPagar.objects.filter(rubro_operativo=rubro, activo=True)
+        .order_by("id")
+        .first()
+    )
+    if category is None:
+        # Artefacto interno para el alta de deuda del cajero (elige rubro, no
+        # gestiona tesoreria): se crea con _save_instance, sin el gate de
+        # permiso de tesoreria de create_payable_category.
+        category = _save_instance(
+            CategoriaCuentaPagar(
+                nombre=rubro.nombre,
+                rubro_operativo=rubro,
+                activo=True,
+                creado_por=actor,
+            )
+        )
+    return category
+
+
 def update_payable_category(
     *,
     category: CategoriaCuentaPagar,

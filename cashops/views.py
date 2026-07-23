@@ -1302,7 +1302,7 @@ def register_box_expense_debt_view(request, box_id: int):
             register_box_expense_debt(
                 caja=box,
                 proveedor=form.cleaned_data["proveedor"],
-                categoria=form.cleaned_data["categoria"],
+                rubro=form.cleaned_data["rubro"],
                 monto=form.cleaned_data["monto"],
                 concepto=form.cleaned_data["concepto"],
                 fecha_factura=form.cleaned_data["fecha_factura"],

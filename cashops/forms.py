@@ -394,7 +394,7 @@ class BoxAnnulForm(forms.Form):
 
 class GastoComoDeudaForm(forms.Form):
     proveedor = forms.ModelChoiceField(queryset=Proveedor.objects.none(), label="Proveedor")
-    categoria = forms.ModelChoiceField(queryset=CategoriaCuentaPagar.objects.none(), label="Categoría del gasto")
+    rubro = forms.ModelChoiceField(queryset=RubroOperativo.objects.none(), label="Rubro")
     sucursal = forms.ModelChoiceField(
         queryset=Sucursal.objects.none(),
         required=False,
@@ -434,16 +434,9 @@ class GastoComoDeudaForm(forms.Form):
     def __init__(self, *args, sucursales=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["proveedor"].queryset = Proveedor.objects.filter(activo=True).order_by("razon_social")
-        self.fields["categoria"].queryset = (
-            CategoriaCuentaPagar.objects.filter(
-                activo=True,
-                rubro_operativo__isnull=False,
-                rubro_operativo__activo=True,
-                rubro_operativo__es_sistema=False,
-            )
-            .select_related("rubro_operativo")
-            .order_by("nombre")
-        )
+        self.fields["rubro"].queryset = RubroOperativo.objects.filter(
+            activo=True, es_sistema=False
+        ).order_by("nombre")
         # El selector de sucursal solo aparece si el usuario tiene mas de una
         # sucursal habilitada para deuda; si no, la deuda va a la de la caja.
         if sucursales is not None and len(sucursales) > 1:

@@ -3407,7 +3407,7 @@ class EP13BoxExpenseDebtTests(CashopsTestCase):
             url,
             {
                 "proveedor": self.supplier.pk,
-                "categoria": self.payable_category.pk,
+                "rubro": self.rubro_insumos.pk,
                 "fecha_factura": self.fecha_op.isoformat(),
                 "monto": "45.50",
                 "concepto": "Velas y descartables",
@@ -3436,7 +3436,7 @@ class EP13BoxExpenseDebtTests(CashopsTestCase):
             reverse("cashops:box_expense_debt", args=[foreign.pk]),
             {
                 "proveedor": self.supplier.pk,
-                "categoria": self.payable_category.pk,
+                "rubro": self.rubro_insumos.pk,
                 "monto": "10.00",
                 "concepto": "Intento ajeno",
             },
@@ -3554,7 +3554,7 @@ class EP13BoxExpenseDebtTests(CashopsTestCase):
             url,
             {
                 "proveedor": self.supplier.pk,
-                "categoria": self.payable_category.pk,
+                "rubro": self.rubro_insumos.pk,
                 "fecha_factura": "2026-03-18",
                 "monto": "33.00",
                 "concepto": "Pollo cuenta corriente",
@@ -3579,7 +3579,7 @@ class EP13BoxExpenseDebtTests(CashopsTestCase):
             url,
             {
                 "proveedor": self.supplier.pk,
-                "categoria": self.payable_category.pk,
+                "rubro": self.rubro_insumos.pk,
                 "fecha_factura": "2026-03-18",
                 "monto": "33.00",
                 "concepto": "Intento sin permiso",
@@ -3644,7 +3644,7 @@ class EP13BoxExpenseDebtTests(CashopsTestCase):
 
         response = self.client.post(url, {
             "proveedor": self.supplier.pk,
-            "categoria": self.payable_category.pk,
+            "rubro": self.rubro_insumos.pk,
             "sucursal": extra.pk,
             "fecha_factura": self.fecha_op.isoformat(),
             "monto": "70.00",
@@ -3658,6 +3658,56 @@ class EP13BoxExpenseDebtTests(CashopsTestCase):
         self.client.force_login(self.cajero)
         get_response = self.client.get(reverse("cashops:box_expense_debt", args=[self.caja.pk]))
         self.assertNotContains(get_response, "Sucursal de la deuda")
+
+    def test_debt_service_accepts_rubro_and_maps_to_category(self):
+        deuda = register_box_expense_debt(
+            caja=self.caja,
+            proveedor=self.supplier,
+            rubro=self.rubro_insumos,
+            monto=Decimal("25.00"),
+            concepto="Con rubro directo",
+            actor=self.cajero,
+        )
+        self.assertEqual(deuda.categoria.rubro_operativo, self.rubro_insumos)
+        # reusa la categoria activa que ya existe para ese rubro (no crea otra)
+        self.assertEqual(deuda.categoria, self.payable_category)
+
+    def test_debt_view_pide_rubro_no_categoria(self):
+        from treasury.models import CuentaPorPagar
+
+        self.client.force_login(self.cajero)
+        url = reverse("cashops:box_expense_debt", args=[self.caja.pk])
+        get_response = self.client.get(url)
+        self.assertContains(get_response, "Rubro")
+        self.assertNotContains(get_response, "Categoría del gasto")
+
+        response = self.client.post(url, {
+            "proveedor": self.supplier.pk,
+            "rubro": self.rubro_insumos.pk,
+            "fecha_factura": self.fecha_op.isoformat(),
+            "monto": "12.00",
+            "concepto": "Compra por rubro",
+        })
+        self.assertEqual(response.status_code, 302)
+        deuda = CuentaPorPagar.objects.get(caja_origen=self.caja)
+        self.assertEqual(deuda.categoria.rubro_operativo, self.rubro_insumos)
+
+    def test_debt_rubro_sin_categoria_crea_una(self):
+        from cashops.models import RubroOperativo
+        from treasury.models import CategoriaCuentaPagar
+
+        nuevo = RubroOperativo.objects.create(nombre="Cerveza")
+        self.assertFalse(CategoriaCuentaPagar.objects.filter(rubro_operativo=nuevo).exists())
+        deuda = register_box_expense_debt(
+            caja=self.caja,
+            proveedor=self.supplier,
+            rubro=nuevo,
+            monto=Decimal("30.00"),
+            concepto="Cerveza cuenta corriente",
+            actor=self.cajero,
+        )
+        self.assertEqual(deuda.categoria.rubro_operativo, nuevo)
+        self.assertTrue(CategoriaCuentaPagar.objects.filter(rubro_operativo=nuevo, activo=True).exists())
 
     def test_box_detail_timeline_shows_debt_event(self):
         self._register_debt()

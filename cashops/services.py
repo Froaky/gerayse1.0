@@ -1497,7 +1497,8 @@ def register_box_expense_debt(
     *,
     caja: Caja,
     proveedor,
-    categoria,
+    categoria=None,
+    rubro=None,
     monto: Decimal,
     concepto: str,
     referencia_comprobante: str = "",
@@ -1521,9 +1522,13 @@ def register_box_expense_debt(
     economico; si no se indica, se usa la fecha operativa de la caja.
     """
     from treasury.models import CuentaPorPagar
-    from treasury.services import _ensure_payable_category_is_economic
+    from treasury.services import _ensure_payable_category_is_economic, get_or_create_payable_category_for_rubro
 
     _require_actor(actor)
+    # El cajero elige un RUBRO; la deuda igual necesita una categoria economica.
+    # Si no vino categoria explicita, la resolvemos (reusa/crea) desde el rubro.
+    if categoria is None:
+        categoria = get_or_create_payable_category_for_rubro(rubro, actor=actor)
     caja = _lock_box_for_debt(caja, actor=actor, permitir_caja_cerrada=permitir_caja_cerrada)
     if monto <= 0:
         raise ValidationError({"monto": "El monto debe ser mayor que cero."})

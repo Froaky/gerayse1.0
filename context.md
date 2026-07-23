@@ -1302,6 +1302,19 @@ Last updated: 2026-07-08
 - Workaround inmediato para el gasto puntual: la admin lo carga desde Tesoreria -> Cuentas por Pagar -> Nueva (ahi se elige cualquier sucursal, sin caja).
 - Operativo: para habilitar a Belen, la admin va a Config -> Usuarios (o ficha de acceso), y en "Sucursales adicionales para cargar deuda" tilda Oveja Negra.
 
+### EP-13 Deuda: elegir RUBRO en vez de "categoria del gasto" 2026-07-23
+
+- Pedido (audio admin): en "gasto como deuda" el form pedia proveedor + "Categoria del gasto" (concepto de treasury) que confunde; quieren que pida proveedor + RUBRO (los rubros que ellos manejan).
+- Opcion: OPTIMA. El cajero elige un RubroOperativo; por debajo se mapea a una CategoriaCuentaPagar (reusa la activa del rubro, o crea una canonica). El modelo de deuda sigue guardando `categoria` y el economico imputa por rubro igual que antes.
+- Cambio:
+  - `GastoComoDeudaForm`: campo `categoria` (CategoriaCuentaPagar) -> `rubro` (RubroOperativo activo, no-sistema).
+  - `treasury.services.get_or_create_payable_category_for_rubro(rubro, actor)`: reusa la categoria activa del rubro o la crea con `_save_instance` (SIN el gate `_require_actor`/ensure_treasury_admin de create_payable_category: el cajero no gestiona tesoreria, es artefacto interno del alta de deuda).
+  - `register_box_expense_debt`: acepta `rubro=` ademas de `categoria=` (compat); si no viene categoria, la resuelve del rubro dentro del atomic.
+  - Vista pasa `rubro=form.cleaned_data["rubro"]`.
+- Datos: SIN migracion (no cambia modelos). Deudas existentes intactas. Puede crear una CategoriaCuentaPagar "sombra" por rubro (reusa si ya existe una activa).
+- Archivos: `cashops/forms.py`, `cashops/services.py`, `cashops/views.py`, `treasury/services.py`, `cashops/tests.py`, `context.md`.
+- Tests: 3 nuevos en EP13BoxExpenseDebtTests (servicio acepta rubro y mapea; vista pide rubro y ya no "Categoria del gasto"; rubro sin categoria crea una) -> 26/26; suite completa 354 verde.
+
 ### Cartelito temporal de error en acciones HTMX 2026-07-22
 
 - Pedido: un cajero tocaba "Abrir caja" y "no pasaba nada, ni un mensaje de error". Objetivo: cuando una accion no se puede completar, mostrar arriba un cartelito temporal con el motivo en lenguaje simple, para que la persona resuelva sola (ej: falta un campo) y solo si no puede, avise al encargado. Sin mensajes tecnicos.
