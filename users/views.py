@@ -36,6 +36,10 @@ PERMISSION_MODULE_META = {
         "label": "Cargar deuda en caja cerrada",
         "scope": "Cargar un gasto como deuda sobre una caja ya cerrada (no reabre la caja ni mueve efectivo).",
     },
+    PermissionModule.CASHOPS_MOV_DELETE: {
+        "label": "Eliminar movimientos de caja",
+        "scope": "Eliminar (anular con motivo y auditoría) movimientos o gastos cargados de más, en cajas abiertas o cerradas. Nada se borra físico: queda anulado.",
+    },
     PermissionModule.CONFIG: {
         "label": "Configuración",
         "scope": "Rubros, limites, empresas, sucursales, turnos y reinicio de datos.",

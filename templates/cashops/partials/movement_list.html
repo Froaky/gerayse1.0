@@ -28,10 +28,14 @@
         <div class="muted" style="margin-top:6px;">Motivo de anulación: {{ movement.motivo_anulacion }}</div>
       {% endif %}
       <div class="muted" style="margin-top:6px;">{{ movement.creado_en|date:"d/m/Y H:i" }}</div>
-      {% if movement.can_fix_closed_box %}
+      {% if movement.can_fix_closed_box or movement.can_delete %}
         <div class="row mt-8">
-          <a class="button-secondary" href="{{ movement.edit_url }}">Editar</a>
-          <a class="button-secondary" href="{{ movement.delete_url }}">Eliminar</a>
+          {% if movement.can_fix_closed_box %}
+            <a class="button-secondary" href="{{ movement.edit_url }}">Editar</a>
+          {% endif %}
+          {% if movement.can_delete %}
+            <a class="button-secondary" href="{{ movement.delete_url }}">Eliminar</a>
+          {% endif %}
         </div>
       {% endif %}
     </article>

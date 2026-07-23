@@ -29,6 +29,7 @@ from .permissions import (
     ensure_can_operate_box,
     ensure_cash_validation,
     ensure_closed_box_correction,
+    ensure_delete_movement_in_box,
     is_cashops_admin,
 )
 
@@ -303,6 +304,8 @@ def build_box_activity_timeline(caja: Caja, movements) -> list[dict]:
                 "detail": debt_detail,
                 "user_label": str(deuda.creado_por) if deuda.creado_por else "Sin usuario",
                 "amount": deuda.importe_total,
+                "debt_id": deuda.id,
+                "debt_active": not is_annulled_debt,
             }
         )
 
@@ -1807,6 +1810,34 @@ def _validate_closed_box_movement_for_correction(movement: MovimientoCaja, *, ac
     return movement
 
 
+def is_box_movement_deletable(movement: MovimientoCaja) -> bool:
+    """Un movimiento se puede eliminar (anular) si su caja no esta anulada, el
+    movimiento sigue REGISTRADO y su tipo no forma parte de un par cross-caja
+    (transferencias/apertura/ajuste de cierre). Aplica a cajas abiertas Y cerradas."""
+    return (
+        movement.caja.estado != Caja.Estado.ANULADA
+        and movement.estado == MovimientoCaja.Estado.REGISTRADO
+        and movement.tipo not in CLOSED_BOX_CORRECTION_BLOCKED_TYPES
+    )
+
+
+def _validate_box_movement_for_deletion(movement: MovimientoCaja, *, actor) -> MovimientoCaja:
+    _require_actor(actor)
+    movement = (
+        MovimientoCaja.objects.select_for_update()
+        .select_related("caja", "caja__turno", "caja__sucursal", "caja__usuario", "rubro_operativo")
+        .get(pk=movement.pk)
+    )
+    ensure_delete_movement_in_box(actor, movement.caja)
+    if movement.caja.estado == Caja.Estado.ANULADA:
+        raise ValidationError({"caja": "La caja esta anulada; no se pueden eliminar sus movimientos."})
+    if movement.estado != MovimientoCaja.Estado.REGISTRADO:
+        raise ValidationError({"movimiento": "El movimiento ya fue anulado."})
+    if movement.tipo in CLOSED_BOX_CORRECTION_BLOCKED_TYPES:
+        raise ValidationError({"movimiento": "Este tipo de movimiento requiere un circuito de corrección específico."})
+    return movement
+
+
 def _recalculate_closed_box_after_correction(caja: Caja, *, actor=None, motivo: str = "") -> CierreCaja:
     caja = Caja.objects.select_related("turno", "sucursal", "usuario").get(pk=caja.pk)
     cierre = CierreCaja.objects.select_for_update().select_related("caja").get(caja=caja)
@@ -1992,6 +2023,29 @@ def update_box_metadata(
     return caja
 
 
+def _apply_debt_annulment(deuda, *, motivo: str, actor, now) -> None:
+    """Anula (soft-delete) una CuentaPorPagar originada en una caja: estado
+    ANULADA, saldo 0 y auditoria (motivo/quien/cuando). Compartido por la
+    anulacion de caja completa y la eliminacion puntual de una deuda."""
+    deuda.estado = deuda.Estado.ANULADA
+    deuda.saldo_pendiente = Decimal("0.00")
+    deuda.motivo_anulacion = (motivo or "")[:255]
+    deuda.anulada_por = actor
+    deuda.anulada_en = now
+    deuda.actualizado_por = actor
+    deuda.save(
+        update_fields=[
+            "estado",
+            "saldo_pendiente",
+            "motivo_anulacion",
+            "anulada_por",
+            "anulada_en",
+            "actualizado_por",
+            "actualizado_en",
+        ]
+    )
+
+
 @transaction.atomic
 def annul_box(
     *,
@@ -2026,22 +2080,11 @@ def annul_box(
     now = timezone.now()
     _reverse_central_cash_closure_for_box(caja, actor=actor)
     for deuda in deudas_activas:
-        deuda.estado = deuda.Estado.ANULADA
-        deuda.saldo_pendiente = Decimal("0.00")
-        deuda.motivo_anulacion = f"Anulacion de caja origen #{caja.id}: {motivo}"[:255]
-        deuda.anulada_por = actor
-        deuda.anulada_en = now
-        deuda.actualizado_por = actor
-        deuda.save(
-            update_fields=[
-                "estado",
-                "saldo_pendiente",
-                "motivo_anulacion",
-                "anulada_por",
-                "anulada_en",
-                "actualizado_por",
-                "actualizado_en",
-            ]
+        _apply_debt_annulment(
+            deuda,
+            motivo=f"Anulacion de caja origen #{caja.id}: {motivo}",
+            actor=actor,
+            now=now,
         )
     MovimientoCaja.objects.filter(caja=caja, estado=MovimientoCaja.Estado.REGISTRADO).update(
         estado=MovimientoCaja.Estado.ANULADO,
@@ -2122,13 +2165,18 @@ def update_closed_box_movement(
 
 
 @transaction.atomic
-def annul_closed_box_movement(
+def annul_box_movement(
     *,
     movement: MovimientoCaja,
     motivo: str,
     actor=None,
 ) -> MovimientoCaja:
-    movement = _validate_closed_box_movement_for_correction(movement, actor=actor)
+    """Elimina (anula con auditoria) un movimiento de caja, en cajas ABIERTAS o
+    CERRADAS. Nada se borra fisico: queda estado=ANULADO con motivo + quien/cuando
+    + fila en MovimientoCajaCorreccion. El saldo se revierte solo (saldo_esperado
+    ignora lo ANULADO). En cajas cerradas ademas se recalcula el cierre; en abiertas
+    solo se resincroniza el motor operativo. Gateado por el permiso de borrado."""
+    movement = _validate_box_movement_for_deletion(movement, actor=actor)
     motivo = (motivo or "").strip()
     if not motivo:
         raise ValidationError({"motivo": "El motivo de la anulación es obligatorio."})
@@ -2154,8 +2202,50 @@ def annul_closed_box_movement(
     movement.actualizado_por = actor
     movement.full_clean()
     movement.save(update_fields=["estado", "motivo_anulacion", "anulado_por", "anulado_en", "actualizado_por", "actualizado_en"])
-    _recalculate_closed_box_after_correction(movement.caja, actor=actor, motivo=motivo)
+
+    caja = movement.caja
+    if caja.estado == Caja.Estado.CERRADA and hasattr(caja, "cierre"):
+        _recalculate_closed_box_after_correction(caja, actor=actor, motivo=motivo)
+    else:
+        resync_operational_control_for_caja(caja)
     return movement
+
+
+@transaction.atomic
+def annul_box_originated_debt(
+    *,
+    deuda,
+    motivo: str,
+    actor=None,
+):
+    """Elimina (anula con auditoria) un 'gasto como deuda' cargado de mas desde la
+    caja. Soft-delete de la CuentaPorPagar (estado ANULADA, saldo 0, motivo +
+    quien/cuando). Se bloquea si la deuda ya tiene pagos registrados: primero hay
+    que resolver esos pagos en tesoreria. Gateado por el permiso de borrado y por
+    el aislamiento de caja/empresa que aplica la vista."""
+    from treasury.models import CuentaPorPagar, PagoTesoreria
+
+    _require_actor(actor)
+    deuda = (
+        CuentaPorPagar.objects.select_for_update()
+        .select_related("caja_origen", "caja_origen__sucursal", "caja_origen__turno", "caja_origen__usuario")
+        .get(pk=deuda.pk)
+    )
+    caja = deuda.caja_origen
+    if caja is None:
+        raise ValidationError({"deuda": "La deuda no esta asociada a una caja."})
+    ensure_delete_movement_in_box(actor, caja)
+    motivo = (motivo or "").strip()
+    if not motivo:
+        raise ValidationError({"motivo": "El motivo de la eliminación es obligatorio."})
+    if deuda.estado == CuentaPorPagar.Estado.ANULADA:
+        raise ValidationError({"deuda": "La deuda ya fue anulada."})
+    if deuda.pagos.filter(estado=PagoTesoreria.Estado.REGISTRADO).exists():
+        raise ValidationError(
+            {"motivo": "La deuda tiene pagos registrados. Anulá o resolvé esos pagos en tesorería antes de eliminarla."}
+        )
+    _apply_debt_annulment(deuda, motivo=motivo, actor=actor, now=timezone.now())
+    return deuda
 
 
 @transaction.atomic

@@ -560,7 +560,7 @@ class PersonalViewTests(TestCase):
 
         self.assertEqual(create_response.status_code, 302)
         role = Role.objects.get(code="LECTURA")
-        self.assertEqual(role.permissions.count(), 7)
+        self.assertEqual(role.permissions.count(), 8)
 
         toggle_response = self.client.post(
             reverse(
@@ -823,3 +823,67 @@ class EP13ValidateActionPermissionTests(TestCase):
         ):
             self.assertFalse(by_module[module].can_read)
             self.assertFalse(by_module[module].can_write)
+
+
+class MovementDeletePermissionTests(TestCase):
+    def setUp(self):
+        self.admin_role = Role.objects.create(code="ADMIN", name="Administrador")
+        self.operator_role = Role.objects.create(code="ENCARGADO", name="Encargado")
+        self.users_admin = User.objects.create_user(
+            username="admin-del-perms",
+            password="secret12345",
+            role=self.admin_role,
+        )
+        self.operator = User.objects.create_user(
+            username="operador-del-perms",
+            password="secret12345",
+            role=self.operator_role,
+        )
+
+    def test_admin_role_can_delete_by_default_and_operator_cannot(self):
+        self.assertTrue(self.users_admin.can_delete_box_movement())
+        self.assertFalse(self.operator.can_delete_box_movement())
+
+    def test_role_default_grants_movement_delete(self):
+        RolePermission.objects.create(
+            role=self.operator_role,
+            module=PermissionModule.CASHOPS_MOV_DELETE,
+            can_write=True,
+        )
+
+        self.assertTrue(self.operator.can_delete_box_movement())
+
+    def test_user_override_toggle_enables_and_disables_movement_delete(self):
+        self.client.force_login(self.users_admin)
+
+        enable_response = self.client.post(
+            reverse(
+                "users:user_permission_toggle",
+                args=[self.operator.pk, PermissionModule.CASHOPS_MOV_DELETE, "write"],
+            )
+        )
+
+        self.assertEqual(enable_response.status_code, 302)
+        override = UserPermission.objects.get(user=self.operator, module=PermissionModule.CASHOPS_MOV_DELETE)
+        self.assertTrue(override.can_write)
+        self.assertTrue(self.operator.can_delete_box_movement())
+
+        disable_response = self.client.post(
+            reverse(
+                "users:user_permission_toggle",
+                args=[self.operator.pk, PermissionModule.CASHOPS_MOV_DELETE, "write"],
+            )
+        )
+
+        self.assertEqual(disable_response.status_code, 302)
+        override.refresh_from_db()
+        self.assertFalse(override.can_write)
+        self.assertFalse(self.operator.can_delete_box_movement())
+
+    def test_user_detail_matrix_shows_movement_delete_row(self):
+        self.client.force_login(self.users_admin)
+
+        response = self.client.get(reverse("users:user_detail", args=[self.operator.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Eliminar movimientos de caja")

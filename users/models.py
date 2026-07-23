@@ -12,6 +12,10 @@ class PermissionModule(models.TextChoices):
     # Permiso por accion (asignable/removible): habilita cargar un gasto como
     # deuda sobre una caja YA CERRADA. No reabre la caja ni mueve efectivo.
     CASHOPS_DEBT_CLOSED = "cashops_debt_closed", "Cargar deuda en caja cerrada"
+    # Permiso por accion (asignable/removible): habilita ELIMINAR (anular con
+    # motivo y auditoria) movimientos de caja y gastos cargados como deuda,
+    # tanto en cajas abiertas como cerradas. Nada se borra fisico: queda anulado.
+    CASHOPS_MOV_DELETE = "cashops_mov_del", "Eliminar movimientos de caja"
     CONFIG = "config", "Configuración"
     TREASURY = "treasury", "Tesorería"
     USERS = "users", "Usuarios"
@@ -161,6 +165,9 @@ class User(AbstractUser):
 
     def can_load_debt_on_closed_box(self) -> bool:
         return self.has_module_permission(PermissionModule.CASHOPS_DEBT_CLOSED, "write")
+
+    def can_delete_box_movement(self) -> bool:
+        return self.has_module_permission(PermissionModule.CASHOPS_MOV_DELETE, "write")
 
     def sucursales_para_deuda(self):
         """Sucursales activas donde el usuario puede imputar una deuda: su

@@ -38,7 +38,8 @@ from .permissions import (
 from .services import (
     BRANCH_TRANSFER_DISABLED_REASON,
     annul_box,
-    annul_closed_box_movement,
+    annul_box_movement,
+    annul_box_originated_debt,
     build_alert_panel_queryset,
     build_box_control_scope,
     build_branch_control_scope,
@@ -110,6 +111,14 @@ class CashopsTestCase(TestCase):
         return UserPermission.objects.create(
             user=user,
             module=PermissionModule.CASHOPS_CLOSED_FIX,
+            can_read=True,
+            can_write=True,
+        )
+
+    def _grant_movement_delete(self, user):
+        return UserPermission.objects.create(
+            user=user,
+            module=PermissionModule.CASHOPS_MOV_DELETE,
             can_read=True,
             can_write=True,
         )
@@ -277,7 +286,7 @@ class CashopsServiceTests(CashopsTestCase):
         )
         close_box(caja=caja, saldo_fisico=Decimal("150.00"), cerrado_por=self.operator, actor=self.operator)
 
-        annul_closed_box_movement(
+        annul_box_movement(
             movement=movimiento,
             motivo="Movimiento duplicado",
             actor=self.operator,
@@ -293,6 +302,72 @@ class CashopsServiceTests(CashopsTestCase):
         self.assertEqual(cierre.diferencia, Decimal("50.00"))
         self.assertEqual(snapshot["total_ingresos"], Decimal("0.00"))
         self.assertEqual(MovimientoCajaCorreccion.objects.get(movimiento=movimiento).accion, MovimientoCajaCorreccion.Accion.ANULACION)
+
+    def test_annul_open_box_movement_reverts_saldo_without_closure(self):
+        self._grant_movement_delete(self.operator)
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("100.00"),
+            actor=self.operator,
+        )
+        movimiento = register_cash_income(
+            caja=caja,
+            monto=Decimal("50.00"),
+            categoria="Ingreso",
+            creado_por=self.operator,
+            actor=self.operator,
+        )
+        self.assertEqual(caja.saldo_esperado, Decimal("150.00"))
+
+        annul_box_movement(movement=movimiento, motivo="Cargado de mas", actor=self.operator)
+
+        movimiento.refresh_from_db()
+        caja.refresh_from_db()
+        self.assertEqual(caja.estado, Caja.Estado.ABIERTA)
+        self.assertEqual(movimiento.estado, MovimientoCaja.Estado.ANULADO)
+        self.assertEqual(caja.saldo_esperado, Decimal("100.00"))
+        self.assertEqual(
+            MovimientoCajaCorreccion.objects.get(movimiento=movimiento).accion,
+            MovimientoCajaCorreccion.Accion.ANULACION,
+        )
+
+    def test_annul_box_movement_requires_delete_permission(self):
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("100.00"),
+            actor=self.operator,
+        )
+        movimiento = register_cash_income(
+            caja=caja,
+            monto=Decimal("50.00"),
+            categoria="Ingreso",
+            creado_por=self.operator,
+            actor=self.operator,
+        )
+
+        with self.assertRaises(PermissionDenied):
+            annul_box_movement(movement=movimiento, motivo="Cargado de mas", actor=self.operator)
+
+    def test_annul_box_movement_blocks_apertura_type(self):
+        self._grant_movement_delete(self.operator)
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("100.00"),
+            actor=self.operator,
+        )
+        apertura = MovimientoCaja.objects.get(caja=caja, tipo=MovimientoCaja.Tipo.APERTURA)
+
+        with self.assertRaises(ValidationError):
+            annul_box_movement(movement=apertura, motivo="No deberia poder", actor=self.operator)
 
     def test_admin_can_assign_box_to_another_user(self):
         caja = open_box(
@@ -1436,7 +1511,7 @@ class CashopsViewTests(CashopsTestCase):
         self._grant_closed_box_fix(self.operator)
         response_with_permission = self.client.get(detail_url)
         self.assertContains(response_with_permission, reverse("cashops:closed_box_movement_edit", args=[movimiento.pk]))
-        self.assertContains(response_with_permission, reverse("cashops:closed_box_movement_delete", args=[movimiento.pk]))
+        self.assertContains(response_with_permission, reverse("cashops:box_movement_delete", args=[movimiento.pk]))
 
     def test_closed_box_movement_edit_view_updates_movement(self):
         self._grant_closed_box_fix(self.operator)
@@ -1477,7 +1552,7 @@ class CashopsViewTests(CashopsTestCase):
         self.client.force_login(self.operator)
 
         response = self.client.post(
-            reverse("cashops:closed_box_movement_delete", args=[movimiento.pk]),
+            reverse("cashops:box_movement_delete", args=[movimiento.pk]),
             {"motivo": "Duplicado"},
         )
 
@@ -1495,7 +1570,7 @@ class CashopsViewTests(CashopsTestCase):
         close_box(caja=self.owned_box, saldo_fisico=Decimal("1040.00"), cerrado_por=self.operator, actor=self.operator)
         self.client.force_login(self.operator)
         next_url = f"{reverse('cashops:box_tracking')}?estado=cerradas"
-        delete_url = f"{reverse('cashops:closed_box_movement_delete', args=[movimiento.pk])}?{urlencode({'next': next_url})}"
+        delete_url = f"{reverse('cashops:box_movement_delete', args=[movimiento.pk])}?{urlencode({'next': next_url})}"
 
         response = self.client.get(delete_url)
 
@@ -1516,7 +1591,7 @@ class CashopsViewTests(CashopsTestCase):
         self.client.force_login(self.operator)
 
         response = self.client.post(
-            reverse("cashops:closed_box_movement_delete", args=[movimiento.pk]),
+            reverse("cashops:box_movement_delete", args=[movimiento.pk]),
             {"motivo": "Duplicado"},
         )
 
@@ -1537,7 +1612,7 @@ class CashopsViewTests(CashopsTestCase):
         close_box(caja=self.owned_box, saldo_fisico=Decimal("1040.00"), cerrado_por=self.operator, actor=self.operator)
         self.client.force_login(self.operator)
         next_url = f"{reverse('cashops:box_tracking')}?estado=cerradas"
-        delete_url = f"{reverse('cashops:closed_box_movement_delete', args=[movimiento.pk])}?{urlencode({'next': next_url})}"
+        delete_url = f"{reverse('cashops:box_movement_delete', args=[movimiento.pk])}?{urlencode({'next': next_url})}"
 
         response = self.client.post(
             delete_url,
@@ -1555,6 +1630,84 @@ class CashopsViewTests(CashopsTestCase):
             f"Caja #{self.owned_box.pk}: carga #{movimiento.pk} eliminada correctamente.",
             html=False,
         )
+
+    def test_open_box_movement_delete_view_annuls_with_new_permission(self):
+        self._grant_movement_delete(self.operator)
+        movimiento = register_cash_income(
+            caja=self.owned_box,
+            monto=Decimal("40.00"),
+            categoria="Ingreso",
+            creado_por=self.operator,
+            actor=self.operator,
+        )
+        self.client.force_login(self.operator)
+
+        response = self.client.post(
+            reverse("cashops:box_movement_delete", args=[movimiento.pk]),
+            {"motivo": "Cargado de mas"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        movimiento.refresh_from_db()
+        self.owned_box.refresh_from_db()
+        self.assertEqual(self.owned_box.estado, Caja.Estado.ABIERTA)
+        self.assertEqual(movimiento.estado, MovimientoCaja.Estado.ANULADO)
+        self.assertEqual(self.owned_box.saldo_esperado, Decimal("1000.00"))
+
+    def test_open_box_movement_delete_view_requires_permission(self):
+        movimiento = register_cash_income(
+            caja=self.owned_box,
+            monto=Decimal("40.00"),
+            categoria="Ingreso",
+            creado_por=self.operator,
+            actor=self.operator,
+        )
+        self.client.force_login(self.operator)
+
+        response = self.client.post(
+            reverse("cashops:box_movement_delete", args=[movimiento.pk]),
+            {"motivo": "Cargado de mas"},
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_box_detail_shows_delete_action_on_open_box_only_with_permission(self):
+        movimiento = register_cash_income(
+            caja=self.owned_box,
+            monto=Decimal("40.00"),
+            categoria="Ingreso",
+            creado_por=self.operator,
+            actor=self.operator,
+        )
+        detail_url = reverse("cashops:box_detail", args=[self.owned_box.pk])
+        self.client.force_login(self.operator)
+
+        response_without = self.client.get(detail_url)
+        self.assertNotContains(response_without, reverse("cashops:box_movement_delete", args=[movimiento.pk]))
+
+        self._grant_movement_delete(self.operator)
+        response_with = self.client.get(detail_url)
+        self.assertContains(response_with, reverse("cashops:box_movement_delete", args=[movimiento.pk]))
+
+    def test_movement_delete_rejects_foreign_box_even_with_permission(self):
+        self._grant_movement_delete(self.operator)
+        movimiento = register_cash_income(
+            caja=self.foreign_box,
+            monto=Decimal("30.00"),
+            categoria="Ingreso",
+            creado_por=self.other,
+            actor=self.admin,
+        )
+        self.client.force_login(self.operator)
+
+        response = self.client.post(
+            reverse("cashops:box_movement_delete", args=[movimiento.pk]),
+            {"motivo": "Cargado de mas"},
+        )
+
+        self.assertEqual(response.status_code, 403)
+        movimiento.refresh_from_db()
+        self.assertEqual(movimiento.estado, MovimientoCaja.Estado.REGISTRADO)
 
     @override_settings(ENABLE_DANGER_RESET=True)
     def test_reset_confirmation_lists_operational_and_financial_data_to_delete(self):
@@ -3810,3 +3963,100 @@ class EP13BoxExpenseDebtTests(CashopsTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Deuda anulada")
         self.assertContains(response, "Carga duplicada")
+
+    def test_annul_box_originated_debt_soft_deletes_with_permission(self):
+        from treasury.models import CuentaPorPagar
+
+        self._grant_movement_delete(self.cajero)
+        deuda = self._register_debt()
+
+        annul_box_originated_debt(deuda=deuda, motivo="Cargada de mas", actor=self.cajero)
+
+        deuda.refresh_from_db()
+        self.assertEqual(deuda.estado, CuentaPorPagar.Estado.ANULADA)
+        self.assertEqual(deuda.saldo_pendiente, Decimal("0.00"))
+        self.assertEqual(deuda.anulada_por, self.cajero)
+        self.assertEqual(deuda.motivo_anulacion, "Cargada de mas")
+
+    def test_annul_box_originated_debt_requires_permission(self):
+        deuda = self._register_debt()
+
+        with self.assertRaises(PermissionDenied):
+            annul_box_originated_debt(deuda=deuda, motivo="Cargada de mas", actor=self.cajero)
+
+    def test_annul_box_originated_debt_blocked_with_payments(self):
+        from treasury.models import CuentaPorPagar, MovimientoCajaCentral
+        from treasury.services import register_cash_payment, register_central_cash_movement
+
+        self._grant_movement_delete(self.cajero)
+        deuda = self._register_debt()
+        register_central_cash_movement(
+            tipo=MovimientoCajaCentral.Tipo.APORTE,
+            monto=Decimal("500.00"),
+            concepto="Fondo central",
+            fecha=self.fecha_op,
+            actor=self.admin,
+        )
+        register_cash_payment(
+            payable=deuda,
+            fecha_pago=self.fecha_op,
+            monto=Decimal("80.00"),
+            actor=self.admin,
+        )
+
+        with self.assertRaises(ValidationError):
+            annul_box_originated_debt(deuda=deuda, motivo="Cargada de mas", actor=self.cajero)
+
+        deuda.refresh_from_db()
+        self.assertNotEqual(deuda.estado, CuentaPorPagar.Estado.ANULADA)
+
+    def test_box_debt_delete_view_annuls_with_permission(self):
+        from treasury.models import CuentaPorPagar
+
+        self._grant_movement_delete(self.cajero)
+        deuda = self._register_debt()
+        self.client.force_login(self.cajero)
+
+        response = self.client.post(
+            reverse("cashops:box_debt_delete", args=[deuda.pk]),
+            {"motivo": "Cargada de mas"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        deuda.refresh_from_db()
+        self.assertEqual(deuda.estado, CuentaPorPagar.Estado.ANULADA)
+
+    def test_box_debt_delete_view_requires_permission(self):
+        deuda = self._register_debt()
+        self.client.force_login(self.cajero)
+
+        response = self.client.post(
+            reverse("cashops:box_debt_delete", args=[deuda.pk]),
+            {"motivo": "Cargada de mas"},
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_box_detail_shows_debt_delete_action_only_with_permission(self):
+        deuda = self._register_debt()
+        detail_url = reverse("cashops:box_detail", args=[self.caja.pk])
+        self.client.force_login(self.cajero)
+
+        response_without = self.client.get(detail_url)
+        self.assertNotContains(response_without, reverse("cashops:box_debt_delete", args=[deuda.pk]))
+
+        self._grant_movement_delete(self.cajero)
+        response_with = self.client.get(detail_url)
+        self.assertContains(response_with, reverse("cashops:box_debt_delete", args=[deuda.pk]))
+
+    def test_box_debt_delete_view_rejects_foreign_box(self):
+        self._grant_movement_delete(self.other)
+        deuda = self._register_debt()
+        self.client.force_login(self.other)
+
+        response = self.client.post(
+            reverse("cashops:box_debt_delete", args=[deuda.pk]),
+            {"motivo": "Cargada de mas"},
+        )
+
+        self.assertEqual(response.status_code, 403)

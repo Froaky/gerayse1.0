@@ -48,6 +48,25 @@ def can_load_debt_on_closed_box(user) -> bool:
     return _has_module_permission(user, PermissionModule.CASHOPS_DEBT_CLOSED, "write")
 
 
+def can_delete_box_movement(user) -> bool:
+    return _has_module_permission(user, PermissionModule.CASHOPS_MOV_DELETE, "write")
+
+
+def can_delete_movement_in_box(user, box) -> bool:
+    # Permiso dedicado: elimina movimientos/deudas en cualquier caja (abierta o cerrada).
+    if can_delete_box_movement(user):
+        return True
+    # Compatibilidad: quien ya puede corregir cajas cerradas conserva el borrado ahi.
+    if box is not None and box.estado == box.Estado.CERRADA and can_correct_closed_box(user):
+        return True
+    return False
+
+
+def ensure_delete_movement_in_box(user, box) -> None:
+    if not can_delete_movement_in_box(user, box):
+        raise PermissionDenied("No tenés permiso para eliminar movimientos de esta caja.")
+
+
 def ensure_cash_validation(user) -> None:
     if not can_validate_cash(user):
         raise PermissionDenied("No tenes permiso para validar efectivo.")

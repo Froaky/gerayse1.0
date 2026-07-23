@@ -136,6 +136,11 @@
           {% if event.amount is not None %}
             <div class="muted mt-8">Importe relacionado: ${{ event.amount }}</div>
           {% endif %}
+          {% if event.delete_url %}
+            <div class="row mt-8">
+              <a class="button-secondary" href="{{ event.delete_url }}">Eliminar</a>
+            </div>
+          {% endif %}
         </article>
       {% empty %}
         <p class="muted">No hay actividad registrada para esta caja.</p>

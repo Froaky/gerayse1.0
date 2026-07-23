@@ -40,6 +40,7 @@ from .forms import (
 from .models import CajaCorreccion, CajaValidacion, CanalIngreso, Caja, CierreCaja, Empresa, LimiteRubroOperativo, MovimientoCaja, MovimientoCajaCorreccion, RubroOperativo, Sucursal, Turno
 from .permissions import (
     can_correct_closed_box,
+    can_delete_movement_in_box,
     can_load_debt_on_closed_box,
     can_validate_cash,
     ensure_cash_validation,
@@ -48,10 +49,12 @@ from .permissions import (
     ensure_closed_box_correction,
     ensure_config_read,
     ensure_config_write,
+    ensure_delete_movement_in_box,
 )
 from .services import (
     annul_box,
-    annul_closed_box_movement,
+    annul_box_movement,
+    annul_box_originated_debt,
     BRANCH_TRANSFER_DISABLED_REASON,
     CLOSING_DIFF_THRESHOLD,
     OPERATIONAL_ALERT_SCOPE_POLICY,
@@ -69,6 +72,7 @@ from .services import (
     describe_box_follow_up,
     get_cash_movement_type_label,
     get_income_channel_map,
+    is_box_movement_deletable,
     is_closed_box_movement_correctable,
     open_box,
     register_box_expense_debt,
@@ -613,14 +617,23 @@ def box_detail_view(request, box_id: int):
     latest_event = timeline[0] if timeline else None
     channel_map = get_income_channel_map()
     can_fix_closed_box = can_correct_closed_box(request.user)
+    can_delete_here = can_delete_movement_in_box(request.user, box)
     return_to = request.get_full_path()
     correction_query = urlencode({"next": return_to})
     for movement in movements:
         movement.tipo_label = get_cash_movement_type_label(movement.tipo, channel_map)
         movement.can_fix_closed_box = can_fix_closed_box and is_closed_box_movement_correctable(movement)
+        movement.can_delete = can_delete_here and is_box_movement_deletable(movement)
         if movement.can_fix_closed_box:
             movement.edit_url = f"{reverse('cashops:closed_box_movement_edit', args=[movement.pk])}?{correction_query}"
-            movement.delete_url = f"{reverse('cashops:closed_box_movement_delete', args=[movement.pk])}?{correction_query}"
+        if movement.can_delete:
+            movement.delete_url = f"{reverse('cashops:box_movement_delete', args=[movement.pk])}?{correction_query}"
+
+    # Gasto cargado como deuda (CuentaPorPagar): se elimina con el mismo permiso.
+    if can_delete_here:
+        for event in timeline:
+            if event.get("kind") == "GASTO_DEUDA" and event.get("debt_active") and event.get("debt_id"):
+                event["delete_url"] = f"{reverse('cashops:box_debt_delete', args=[event['debt_id']])}?{correction_query}"
 
     return render(
         request,
@@ -694,18 +707,84 @@ def closed_box_movement_edit_view(request, movement_id: int):
     )
 
 
+def _get_deletable_movement_for_request(request, movement_id: int) -> MovimientoCaja:
+    movement = get_object_or_404(
+        MovimientoCaja.objects.select_related("caja", "caja__sucursal", "caja__turno", "caja__usuario", "rubro_operativo"),
+        pk=movement_id,
+    )
+    # Aislamiento empresa/sucursal/propiedad primero, luego el permiso de borrado.
+    _get_box_for_request(request, movement.caja_id)
+    ensure_delete_movement_in_box(request.user, movement.caja)
+    return movement
+
+
+def _get_deletable_debt_for_request(request, debt_id: int):
+    from treasury.models import CuentaPorPagar
+
+    debt = get_object_or_404(
+        CuentaPorPagar.objects.select_related("caja_origen"),
+        pk=debt_id,
+        caja_origen__isnull=False,
+    )
+    # Aislamiento empresa/sucursal/propiedad primero, luego el permiso de borrado.
+    _get_box_for_request(request, debt.caja_origen_id)
+    ensure_delete_movement_in_box(request.user, debt.caja_origen)
+    return debt
+
+
 @login_required
 @require_http_methods(["GET", "POST"])
-def closed_box_movement_delete_view(request, movement_id: int):
+def box_debt_delete_view(request, debt_id: int):
     _require_cashops_read(request)
-    movement = _get_correctable_movement_for_request(request, movement_id)
+    debt = _get_deletable_debt_for_request(request, debt_id)
+    form = ClosedBoxMovementAnnulForm(request.POST or None)
+    default_back_url = reverse("cashops:box_detail", args=[debt.caja_origen_id])
+    back_url = _safe_next_url(request, default_back_url)
+    form_action = f"{reverse('cashops:box_debt_delete', args=[debt.id])}?{urlencode({'next': back_url})}"
+    if request.method == "POST" and form.is_valid():
+        try:
+            annul_box_originated_debt(
+                deuda=debt,
+                motivo=form.cleaned_data["motivo"],
+                actor=request.user,
+            )
+        except ValidationError as exc:
+            form.add_error(None, exc)
+        else:
+            messages.success(request, f"Caja #{debt.caja_origen_id}: gasto como deuda #{debt.id} eliminado correctamente.")
+            if _is_htmx(request):
+                return _hx_redirect(back_url)
+            return redirect(back_url)
+    return _render_form(
+        request,
+        "cashops/form_page.html",
+        "cashops/partials/form_card.html",
+        {
+            "title": f"Eliminar gasto como deuda #{debt.id}",
+            "subtitle": "Seguro que queres eliminar esta deuda cargada de mas? No se borra el registro: queda anulada con auditoria. Si ya tiene pagos, primero resolvelos en tesoreria.",
+            "form": form,
+            "submit_label": "Confirmar eliminacion",
+            "form_action": form_action,
+            "back_url": back_url,
+            "next_url": back_url,
+            "disable_htmx": True,
+        },
+        status=400 if request.method == "POST" else 200,
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def box_movement_delete_view(request, movement_id: int):
+    _require_cashops_read(request)
+    movement = _get_deletable_movement_for_request(request, movement_id)
     form = ClosedBoxMovementAnnulForm(request.POST or None)
     default_back_url = reverse("cashops:box_detail", args=[movement.caja_id])
     back_url = _safe_next_url(request, default_back_url)
-    form_action = f"{reverse('cashops:closed_box_movement_delete', args=[movement.id])}?{urlencode({'next': back_url})}"
+    form_action = f"{reverse('cashops:box_movement_delete', args=[movement.id])}?{urlencode({'next': back_url})}"
     if request.method == "POST" and form.is_valid():
         try:
-            annul_closed_box_movement(
+            annul_box_movement(
                 movement=movement,
                 motivo=form.cleaned_data["motivo"],
                 actor=request.user,
@@ -723,7 +802,7 @@ def closed_box_movement_delete_view(request, movement_id: int):
         "cashops/partials/form_card.html",
         {
             "title": f"Eliminar movimiento #{movement.id}",
-            "subtitle": "Seguro que queres eliminar este movimiento de una caja cerrada? No se borra el registro: queda anulado con auditoria.",
+            "subtitle": "Seguro que queres eliminar este movimiento? No se borra el registro: queda anulado con auditoria y el saldo se ajusta solo.",
             "form": form,
             "submit_label": "Confirmar eliminacion",
             "form_action": form_action,
