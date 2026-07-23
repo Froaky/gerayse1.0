@@ -1315,6 +1315,21 @@ Last updated: 2026-07-08
 - Archivos: `cashops/forms.py`, `cashops/services.py`, `cashops/views.py`, `treasury/services.py`, `cashops/tests.py`, `context.md`.
 - Tests: 3 nuevos en EP13BoxExpenseDebtTests (servicio acepta rubro y mapea; vista pide rubro y ya no "Categoria del gasto"; rubro sin categoria crea una) -> 26/26; suite completa 354 verde.
 
+### EP-13 Multi-caja: regla de caja abierta por FECHA 2026-07-23
+
+- Pedido: durante el backfill de julio los cajeros se trababan porque solo podian tener UNA caja abierta por (usuario, turno, sucursal); necesitaban abrir varios dias a la vez. Pidieron poder tener varias abiertas de forma reversible.
+- Opcion elegida: **B (regla por fecha)**, sobre el toggle con flag. OPTIMA: resuelve el backfill (varias fechas abiertas a la vez), sigue impidiendo duplicar el MISMO dia, no necesita flag ni acordarse de revertir, y en el uso normal (una fecha por vez) se comporta como "una sola caja". Mantiene los tests existentes.
+- Verificado antes de tocar (workflow de impacto, wf_30446823): NADA revienta con varias cajas abiertas — no hay MultipleObjectsReturned, todo es box-pk-driven (`_get_box_for_request`), los listados iteran, y el auto-redirect del dashboard esta guardado con `count()==1`. La regla vivia en 3 lugares acoplados.
+- Cambio:
+  - `Caja.Meta` constraint: `unique_open_box_by_user_turn_branch` (usuario,turno,sucursal) -> `unique_open_box_by_user_turn_branch_date` (+ fecha_operativa), condicion estado=ABIERTA. Migracion `cashops/0022` (RemoveConstraint + AddConstraint, reversible).
+  - guard de `open_box` (services.py): agrega fecha_operativa al `.exists()`; mensaje "...en este turno, sucursal y fecha."
+  - guard de `update_box_metadata` (services.py): idem + fecha_operativa; mensaje "...responsable, sucursal, turno y fecha."
+  - `dashboard.html`: las etiquetas de cajas abiertas ahora muestran turno + fecha (antes dos cajas que diferian solo por fecha se veian identicas).
+  - comando `cajas_abiertas`: copy actualizado (regla por fecha).
+- Datos: migracion `0022` segura — la constraint vieja ya garantizaba 0 duplicados por (usuario,turno,sucursal), asi que la nueva (con fecha) tampoco tiene duplicados y AddConstraint no falla. Reversibilidad: re-imponer la constraint vieja fallaria si en ese momento hubiera 2+ cajas ABIERTA del mismo (usuario,turno,sucursal); habria que cerrar/deduplicar antes (como hizo 0011).
+- Archivos: `cashops/models.py`, `cashops/services.py` (2 guards), `cashops/migrations/0022_*`, `templates/cashops/dashboard.html`, `cashops/management/commands/cajas_abiertas.py`, `cashops/tests.py`, `context.md`.
+- Tests: nuevo `test_open_box_allows_different_date_same_user_turn_branch` (otra fecha permitida, misma fecha rechazada); los tests de duplicado (misma fecha) siguen verdes; `cashops.tests_commands` 13/13.
+
 ### Cartelito temporal de error en acciones HTMX 2026-07-22
 
 - Pedido: un cajero tocaba "Abrir caja" y "no pasaba nada, ni un mensaje de error". Objetivo: cuando una accion no se puede completar, mostrar arriba un cartelito temporal con el motivo en lenguaje simple, para que la persona resuelva sola (ej: falta un campo) y solo si no puede, avise al encargado. Sin mensajes tecnicos.

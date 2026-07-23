@@ -154,9 +154,9 @@ class Caja(models.Model):
         ordering = ["-abierta_en", "-id"]
         constraints = [
             models.UniqueConstraint(
-                fields=["usuario", "turno", "sucursal"],
+                fields=["usuario", "turno", "sucursal", "fecha_operativa"],
                 condition=Q(estado="ABIERTA"),
-                name="unique_open_box_by_user_turn_branch",
+                name="unique_open_box_by_user_turn_branch_date",
             ),
             models.CheckConstraint(
                 check=Q(monto_inicial__gte=0),

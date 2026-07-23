@@ -18,7 +18,8 @@ class Command(BaseCommand):
         "Informe de solo lectura: lista las cajas ABIERTAS (opcionalmente de un usuario) "
         "para diagnosticar por que alguien no puede abrir una caja nueva. La regla del "
         "sistema es que solo puede existir UNA caja abierta por (responsable, turno, "
-        "sucursal); si ya hay una, hay que cerrarla antes de abrir otra igual. "
+        "sucursal, fecha operativa); se pueden tener varias abiertas de fechas distintas, "
+        "pero para abrir otra del MISMO dia+turno+sucursal hay que cerrar la que ya esta. "
         "NO modifica ningun dato."
     )
 
@@ -93,8 +94,9 @@ class Command(BaseCommand):
         self._linea()
         self.stdout.write(f"Total de cajas abiertas listadas: {total}")
         self.stdout.write(
-            "Regla: solo UNA caja abierta por (responsable, turno, sucursal). Para abrir una\n"
-            "nueva en el mismo turno + sucursal, primero hay que CERRAR la que figura arriba."
+            "Regla: solo UNA caja abierta por (responsable, turno, sucursal, FECHA). Se pueden\n"
+            "tener varias abiertas de fechas distintas; para abrir otra del MISMO dia + turno +\n"
+            "sucursal, primero hay que CERRAR la que figura arriba."
         )
         self.stdout.write("Fin del informe. Ningun dato fue modificado.")
 
@@ -122,8 +124,9 @@ class Command(BaseCommand):
             f"inicial {caja.monto_inicial} | validacion: {caja.get_validacion_estado_display()}"
         )
         self.stdout.write(
-            f"      >> Bloquea abrir OTRA caja en Turno {turno_txt} + Sucursal {suc_txt}. "
-            f"Hay que cerrar la #{caja.id} primero."
+            f"      >> Bloquea abrir OTRA caja del mismo Turno {turno_txt} + Sucursal {suc_txt} "
+            f"en la fecha {caja.fecha_operativa:%d/%m/%Y}. Hay que cerrar la #{caja.id} primero "
+            f"(otras fechas se pueden abrir igual)."
         )
 
     def _titulo(self, texto):

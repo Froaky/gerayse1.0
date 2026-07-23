@@ -1363,10 +1363,11 @@ def open_box(*, user, turno: Turno, sucursal: Sucursal, fecha_operativa, monto_i
         usuario=user,
         turno=turno,
         sucursal=sucursal,
+        fecha_operativa=fecha_operativa,
         estado=Caja.Estado.ABIERTA,
     ).exists():
         raise ValidationError(
-            {"usuario": "Ya existe una caja abierta para ese usuario en este turno y sucursal."}
+            {"usuario": "Ya existe una caja abierta para ese usuario en este turno, sucursal y fecha."}
         )
 
     caja = Caja.objects.create(
@@ -1964,8 +1965,9 @@ def update_box_metadata(
         usuario=usuario,
         turno=turno,
         sucursal=sucursal,
+        fecha_operativa=fecha_operativa,
     ).exclude(pk=caja.pk).exists():
-        raise ValidationError({"caja": "Ya existe una caja abierta para ese responsable, sucursal y turno."})
+        raise ValidationError({"caja": "Ya existe una caja abierta para ese responsable, sucursal, turno y fecha."})
 
     previous = _snapshot_box_values(caja)
     caja.usuario = usuario

@@ -396,6 +396,40 @@ class CashopsServiceTests(CashopsTestCase):
                 actor=self.operator,
             )
 
+    def test_open_box_allows_different_date_same_user_turn_branch(self):
+        # Regla por fecha: se puede tener mas de una caja abierta del mismo
+        # usuario/turno/sucursal siempre que sean de fechas operativas distintas
+        # (necesario para cargar dias pasados). Misma fecha sigue rechazando.
+        primera = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("100.00"),
+            actor=self.operator,
+        )
+        segunda = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op + timedelta(days=1),
+            monto_inicial=Decimal("100.00"),
+            actor=self.operator,
+        )
+        self.assertEqual(primera.estado, Caja.Estado.ABIERTA)
+        self.assertEqual(segunda.estado, Caja.Estado.ABIERTA)
+        self.assertNotEqual(primera.pk, segunda.pk)
+
+        with self.assertRaises(ValidationError):
+            open_box(
+                user=self.operator,
+                turno=self.turno_a,
+                sucursal=self.branch_a,
+                fecha_operativa=self.fecha_op,
+                monto_inicial=Decimal("50.00"),
+                actor=self.operator,
+            )
+
     def test_cash_income_registers_movement_and_updates_balance(self):
         caja = open_box(
             user=self.operator,

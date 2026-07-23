@@ -51,7 +51,7 @@
         {% endfor %}
       {% endif %}
       {% for box in open_boxes %}
-        <a class="button-secondary" href="{% url 'cashops:dashboard' %}?scope=box&box={{ box.id }}">{{ box.usuario }} · {{ box.sucursal.codigo }}</a>
+        <a class="button-secondary" href="{% url 'cashops:dashboard' %}?scope=box&box={{ box.id }}">{{ box.usuario }} · {{ box.sucursal.codigo }} · {{ box.turno.get_tipo_display }} · {{ box.fecha_operativa|date:"d/m/Y" }}</a>
       {% endfor %}
     </div>
     <form method="get" class="stack" style="margin-top:16px;">
@@ -255,7 +255,7 @@
                   <span class="badge">{{ box.sucursal.codigo }}</span>
                 </div>
                 <div class="row" style="margin-top:8px;">
-                  <span class="muted">{{ box.turno.get_tipo_display }} · ${{ box.saldo_esperado }}</span>
+                  <span class="muted">{{ box.turno.get_tipo_display }} · {{ box.fecha_operativa|date:"d/m/Y" }} · ${{ box.saldo_esperado }}</span>
                   <span class="badge-muted">{{ box.estado }}</span>
                 </div>
               </a>
@@ -288,7 +288,7 @@
                   <span class="badge">{{ box.sucursal.codigo }}</span>
                 </div>
                 <div class="row" style="margin-top:8px;">
-                  <span class="muted">{{ box.turno.get_tipo_display }} · ${{ box.saldo_esperado }}</span>
+                  <span class="muted">{{ box.turno.get_tipo_display }} · {{ box.fecha_operativa|date:"d/m/Y" }} · ${{ box.saldo_esperado }}</span>
                   <span class="badge-muted">{{ box.estado }}</span>
                 </div>
               </a>
