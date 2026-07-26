@@ -1385,3 +1385,12 @@ Last updated: 2026-07-08
   - El filtro NO se pierde al operar: `validate_url`/`reject_url` de cada fila llevan `?sucursal=`, y `box_validate_view`/`box_reject_view` redirigen con `_validation_queue_url(request)` (helper nuevo: solo acepta int, arma la URL con `reverse`, sin open redirect). `box_reject.html` usa `back_url` para "Volver a pendientes"/"Cancelar".
 - Archivos: `cashops/views.py`, `templates/cashops/box_validation_queue.html`, `templates/cashops/box_reject.html`, `cashops/tests.py`, `context.md`.
 - Tests: 6 casos nuevos en `EP13CashValidationViewTests` (filtra por sucursal, ignora invalido, ignora cross-empresa, acciones llevan el filtro, redirect de validar lo conserva, redirect+back de rechazo lo conservan) -> clase 15/15; suite completa `cashops` 176 OK; `makemigrations --check` sin cambios; `compileall` OK.
+
+### Barrida: mensajes humanos en TODAS las constraints 2026-07-25
+
+- Pedido: tras el fix puntual de `unique_payable_reference_by_supplier`, "fixeate los otros". Objetivo: que ninguna constraint pueda mostrar el default tecnico de Django ("No se cumple la restricción «nombre»") en pantalla.
+- Opcion: OPTIMA. Mismo mecanismo que el fix puntual (`violation_error_message` en la fuente), mecanico y sin tocar reglas: ninguna condicion de constraint cambia.
+- Cambio: las 37 constraints restantes de `users` (2), `cashops` (11) y `treasury` (24) ahora tienen `violation_error_message` en espanol y lenguaje de negocio. Donde ya existia una frase en services/forms se reuso identica (ej. "Ya existe una caja abierta para ese usuario en este turno, sucursal y fecha." — alineada a la regla por fecha de `unique_open_box_by_user_turn_branch_date` —, "Ya existe un rubro con ese nombre.", "El rubro es obligatorio para gastos operativos."). Verificado por script: 38/38 constraints con mensaje humano.
+- Datos: migraciones `users/0016_*`, `cashops/0023_*`, `treasury/0027_*` — solo operaciones `AlterConstraint` (en Django 5.2 es no-op a nivel base de datos: solo metadata de validacion). Cero `AddConstraint`/`RemoveConstraint`/`RunSQL`. Rebaseado sobre la regla nueva de caja por fecha (commit `0115147`); `treasury/0027` depende de `cashops/0022_remove_...` (la del remoto).
+- Archivos: `users/models.py`, `cashops/models.py`, `treasury/models.py`, 3 migraciones nuevas, `context.md`.
+- Tests: suite completa `users`+`cashops`+`treasury`+`core` verde (ver commit); ningun test asertaba los defaults tecnicos (grep "is violated"/"no se cumple" en tests: 0). `makemigrations --check` limpio; `compileall` OK.

@@ -40,11 +40,16 @@ class Proveedor(models.Model):
     class Meta:
         ordering = ["razon_social"]
         constraints = [
-            models.UniqueConstraint(Lower("razon_social"), name="unique_supplier_name_ci"),
+            models.UniqueConstraint(
+                Lower("razon_social"),
+                name="unique_supplier_name_ci",
+                violation_error_message="Ya existe un proveedor con esa razón social.",
+            ),
             models.UniqueConstraint(
                 Lower("identificador_fiscal"),
                 condition=~Q(identificador_fiscal=""),
                 name="unique_supplier_tax_id_ci",
+                violation_error_message="Ya existe un proveedor con ese identificador fiscal (CUIT).",
             ),
         ]
         indexes = [
@@ -97,7 +102,11 @@ class CategoriaCuentaPagar(models.Model):
     class Meta:
         ordering = ["nombre"]
         constraints = [
-            models.UniqueConstraint(Lower("nombre"), name="unique_payable_category_name_ci"),
+            models.UniqueConstraint(
+                Lower("nombre"),
+                name="unique_payable_category_name_ci",
+                violation_error_message="Ya existe una categoría de gasto con ese nombre.",
+            ),
         ]
         indexes = [
             models.Index(fields=["activo", "nombre"]),
@@ -165,14 +174,17 @@ class ObjetivoRubroEconomico(models.Model):
             models.CheckConstraint(
                 check=Q(porcentaje_objetivo__gt=0),
                 name="economic_target_percentage_positive",
+                violation_error_message="El porcentaje objetivo debe ser mayor que cero.",
             ),
             models.CheckConstraint(
                 check=Q(vigencia_hasta__isnull=True) | Q(vigencia_hasta__gte=F("vigencia_desde")),
                 name="economic_target_end_after_start",
+                violation_error_message="La vigencia hasta no puede ser anterior a la vigencia desde.",
             ),
             models.UniqueConstraint(
                 fields=["rubro_operativo", "sucursal", "vigencia_desde"],
                 name="unique_economic_target_start_per_scope",
+                violation_error_message="Ya existe un objetivo para ese rubro y alcance con la misma fecha de inicio.",
             ),
         ]
         indexes = [
@@ -259,11 +271,13 @@ class CuentaBancaria(models.Model):
                 Lower("cbu"),
                 condition=~Q(cbu=""),
                 name="unique_bank_account_cbu_ci",
+                violation_error_message="Ya existe una cuenta bancaria con ese CBU.",
             ),
             models.UniqueConstraint(
                 Lower("banco"),
                 "numero_cuenta",
                 name="unique_bank_account_number_per_bank",
+                violation_error_message="Ya existe una cuenta con ese número en ese banco.",
             ),
         ]
         indexes = [
@@ -335,6 +349,7 @@ class SaldoInicialCuentaBancaria(models.Model):
             models.UniqueConstraint(
                 fields=["cuenta_bancaria", "fecha_referencia"],
                 name="unique_initial_bank_balance_per_account_date",
+                violation_error_message="Ya existe un saldo inicial para esa cuenta y fecha.",
             ),
         ]
         indexes = [
@@ -424,15 +439,25 @@ class CuentaPorPagar(models.Model):
     class Meta:
         ordering = ["fecha_vencimiento", "proveedor__razon_social", "id"]
         constraints = [
-            models.CheckConstraint(check=Q(importe_total__gt=0), name="payable_total_positive"),
-            models.CheckConstraint(check=Q(saldo_pendiente__gte=0), name="payable_balance_non_negative"),
+            models.CheckConstraint(
+                check=Q(importe_total__gt=0),
+                name="payable_total_positive",
+                violation_error_message="El importe total de la deuda debe ser mayor que cero.",
+            ),
+            models.CheckConstraint(
+                check=Q(saldo_pendiente__gte=0),
+                name="payable_balance_non_negative",
+                violation_error_message="El saldo pendiente de la deuda no puede ser negativo.",
+            ),
             models.CheckConstraint(
                 check=Q(saldo_pendiente__lte=F("importe_total")),
                 name="payable_balance_lte_total",
+                violation_error_message="El saldo pendiente no puede superar el importe total de la deuda.",
             ),
             models.CheckConstraint(
                 check=Q(fecha_vencimiento__gte=F("fecha_emision")),
                 name="payable_due_after_issue",
+                violation_error_message="La fecha de vencimiento no puede ser anterior a la fecha de factura.",
             ),
             models.UniqueConstraint(
                 fields=["proveedor", "referencia_comprobante"],
@@ -623,15 +648,25 @@ class CompromisoEspecial(models.Model):
     class Meta:
         ordering = ["vencimiento", "fecha_compromiso", "id"]
         constraints = [
-            models.CheckConstraint(check=Q(monto_estimado__gt=0), name="special_commitment_amount_positive"),
-            models.CheckConstraint(check=Q(capital__gte=0), name="special_commitment_capital_non_negative"),
+            models.CheckConstraint(
+                check=Q(monto_estimado__gt=0),
+                name="special_commitment_amount_positive",
+                violation_error_message="El monto estimado del compromiso debe ser mayor que cero.",
+            ),
+            models.CheckConstraint(
+                check=Q(capital__gte=0),
+                name="special_commitment_capital_non_negative",
+                violation_error_message="El capital no puede ser negativo.",
+            ),
             models.CheckConstraint(
                 check=Q(interes_financiero__gte=0),
                 name="special_commitment_financial_interest_non_negative",
+                violation_error_message="El interés financiero no puede ser negativo.",
             ),
             models.CheckConstraint(
                 check=Q(interes_resarcitorio__gte=0),
                 name="special_commitment_resarcitory_interest_non_negative",
+                violation_error_message="El interés resarcitorio no puede ser negativo.",
             ),
         ]
         indexes = [
@@ -775,11 +810,16 @@ class PagoTesoreria(models.Model):
     class Meta:
         ordering = ["-fecha_pago", "-id"]
         constraints = [
-            models.CheckConstraint(check=Q(monto__gt=0), name="treasury_payment_amount_positive"),
+            models.CheckConstraint(
+                check=Q(monto__gt=0),
+                name="treasury_payment_amount_positive",
+                violation_error_message="El monto del pago debe ser mayor que cero.",
+            ),
             models.UniqueConstraint(
                 fields=["cuenta_bancaria", "medio_pago", "referencia"],
                 condition=~Q(referencia=""),
                 name="unique_payment_reference_per_bank_method",
+                violation_error_message="Ya existe un pago con esa referencia para esa cuenta bancaria y medio de pago.",
             ),
         ]
         indexes = [
@@ -887,7 +927,11 @@ class LotePOS(models.Model):
     class Meta:
         ordering = ["-fecha_lote", "-id"]
         constraints = [
-            models.CheckConstraint(check=Q(total_lote__gt=0), name="pos_batch_total_positive"),
+            models.CheckConstraint(
+                check=Q(total_lote__gt=0),
+                name="pos_batch_total_positive",
+                violation_error_message="El total del lote POS debe ser mayor que cero.",
+            ),
         ]
         indexes = [
             models.Index(fields=["fecha_lote", "operador"]),
@@ -1017,7 +1061,11 @@ class MovimientoBancario(models.Model):
     class Meta:
         ordering = ["-fecha", "-id"]
         constraints = [
-            models.CheckConstraint(check=Q(monto__gt=0), name="bank_movement_amount_positive"),
+            models.CheckConstraint(
+                check=Q(monto__gt=0),
+                name="bank_movement_amount_positive",
+                violation_error_message="El monto del movimiento bancario debe ser mayor que cero.",
+            ),
         ]
         indexes = [
             models.Index(fields=["cuenta_bancaria", "fecha"]),
@@ -1260,7 +1308,11 @@ class DescuentoAcreditacion(models.Model):
     class Meta:
         ordering = ["acreditacion_id", "id"]
         constraints = [
-            models.CheckConstraint(check=Q(monto__gt=0), name="accreditation_discount_amount_positive"),
+            models.CheckConstraint(
+                check=Q(monto__gt=0),
+                name="accreditation_discount_amount_positive",
+                violation_error_message="El monto del descuento debe ser mayor que cero.",
+            ),
         ]
         indexes = [
             models.Index(fields=["tipo", "creado_en"]),
@@ -1391,7 +1443,11 @@ class MovimientoCajaCentral(models.Model):
     class Meta:
         ordering = ["-fecha", "-id"]
         constraints = [
-            models.CheckConstraint(check=Q(monto__gt=0), name="central_cash_movement_positive"),
+            models.CheckConstraint(
+                check=Q(monto__gt=0),
+                name="central_cash_movement_positive",
+                violation_error_message="El monto del movimiento de caja central debe ser mayor que cero.",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -1432,7 +1488,11 @@ class CierreMensualTesoreria(models.Model):
     class Meta:
         ordering = ["-mes"]
         constraints = [
-            models.UniqueConstraint(fields=["mes"], name="unique_monthly_closing_per_month"),
+            models.UniqueConstraint(
+                fields=["mes"],
+                name="unique_monthly_closing_per_month",
+                violation_error_message="Ese mes ya tiene un cierre mensual de tesorería.",
+            ),
         ]
 
     def __str__(self) -> str:

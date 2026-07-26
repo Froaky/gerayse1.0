@@ -87,6 +87,7 @@ class Turno(models.Model):
             models.UniqueConstraint(
                 fields=["empresa", "tipo"],
                 name="unique_turno_per_empresa",
+                violation_error_message="Ya existe ese turno para esta empresa.",
             ),
         ]
         indexes = [
@@ -157,10 +158,12 @@ class Caja(models.Model):
                 fields=["usuario", "turno", "sucursal", "fecha_operativa"],
                 condition=Q(estado="ABIERTA"),
                 name="unique_open_box_by_user_turn_branch_date",
+                violation_error_message="Ya existe una caja abierta para ese usuario en este turno, sucursal y fecha.",
             ),
             models.CheckConstraint(
                 check=Q(monto_inicial__gte=0),
                 name="box_initial_amount_non_negative",
+                violation_error_message="El monto inicial de la caja no puede ser negativo.",
             ),
         ]
         indexes = [
@@ -277,6 +280,7 @@ class RubroOperativo(models.Model):
             models.UniqueConstraint(
                 Lower("nombre"),
                 name="unique_operational_category_name_ci",
+                violation_error_message="Ya existe un rubro con ese nombre.",
             ),
         ]
         indexes = [
@@ -335,6 +339,7 @@ class Producto(models.Model):
             models.UniqueConstraint(
                 Lower("nombre"),
                 name="unique_product_name_ci",
+                violation_error_message="Ya existe un producto con ese nombre.",
             ),
         ]
 
@@ -362,19 +367,23 @@ class LimiteRubroOperativo(models.Model):
                 fields=["rubro", "sucursal"],
                 condition=Q(sucursal__isnull=False),
                 name="unique_operational_limit_by_branch",
+                violation_error_message="Ya existe un límite para ese rubro en esa sucursal.",
             ),
             models.UniqueConstraint(
                 fields=["rubro"],
                 condition=Q(sucursal__isnull=True),
                 name="unique_operational_limit_global",
+                violation_error_message="Ya existe un límite global para ese rubro.",
             ),
             models.CheckConstraint(
                 check=Q(porcentaje_maximo__gt=0),
                 name="operational_limit_positive",
+                violation_error_message="El porcentaje máximo debe ser mayor que cero.",
             ),
             models.CheckConstraint(
                 check=Q(porcentaje_maximo__lte=100),
                 name="operational_limit_max_100",
+                violation_error_message="El porcentaje máximo no puede superar 100%.",
             ),
         ]
         indexes = [
@@ -480,10 +489,15 @@ class MovimientoCaja(models.Model):
             models.Index(fields=["tipo", "rubro_operativo"]),
         ]
         constraints = [
-            models.CheckConstraint(check=Q(monto__gt=0), name="movement_amount_positive"),
+            models.CheckConstraint(
+                check=Q(monto__gt=0),
+                name="movement_amount_positive",
+                violation_error_message="El monto del movimiento debe ser mayor que cero.",
+            ),
             models.CheckConstraint(
                 check=~Q(tipo="GASTO") | Q(rubro_operativo__isnull=False),
                 name="expense_requires_operational_category",
+                violation_error_message="El rubro es obligatorio para gastos operativos.",
             ),
         ]
 

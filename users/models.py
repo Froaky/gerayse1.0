@@ -213,7 +213,11 @@ class RolePermission(models.Model):
     class Meta:
         ordering = ["role__name", "module"]
         constraints = [
-            models.UniqueConstraint(fields=["role", "module"], name="unique_role_permission_per_module"),
+            models.UniqueConstraint(
+                fields=["role", "module"],
+                name="unique_role_permission_per_module",
+                violation_error_message="Este rol ya tiene configurado un permiso para ese módulo.",
+            ),
         ]
 
     def clean(self) -> None:
@@ -239,7 +243,11 @@ class UserPermission(models.Model):
     class Meta:
         ordering = ["user__username", "module"]
         constraints = [
-            models.UniqueConstraint(fields=["user", "module"], name="unique_user_permission_per_module"),
+            models.UniqueConstraint(
+                fields=["user", "module"],
+                name="unique_user_permission_per_module",
+                violation_error_message="Este usuario ya tiene configurado un permiso para ese módulo.",
+            ),
         ]
 
     def clean(self) -> None:
