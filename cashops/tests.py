@@ -3441,6 +3441,90 @@ class EP13CashValidationViewTests(CashopsTestCase):
         self.assertContains(queue_response, f"Caja #{self.pending_box.pk}")
         self.assertEqual(detail_response.status_code, 200)
 
+    def _pending_box_in_branch_b(self):
+        box = open_box(
+            user=self.operator_2,
+            turno=self.turno_b,
+            sucursal=self.branch_b,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("50.00"),
+            actor=self.operator_2,
+        )
+        close_box(caja=box, saldo_fisico=Decimal("50.00"), cerrado_por=self.operator_2, actor=self.operator_2)
+        return box
+
+    def test_queue_filters_by_sucursal(self):
+        other_box = self._pending_box_in_branch_b()
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("cashops:box_validation_queue"), {"sucursal": self.branch_a.pk})
+
+        self.assertContains(response, f"Caja #{self.pending_box.pk}")
+        self.assertNotContains(response, f"Caja #{other_box.pk}")
+
+    def test_queue_filter_ignores_invalid_sucursal(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("cashops:box_validation_queue"), {"sucursal": "abc"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f"Caja #{self.pending_box.pk}")
+
+    def test_queue_filter_ignores_sucursal_of_other_empresa(self):
+        validator = User.objects.create_user(
+            username="validadora-filtro",
+            password="test",
+            role=self.operator_role,
+        )
+        validator.empresas_permitidas.set([self.empresa_a])
+        UserPermission.objects.create(
+            user=validator,
+            module=PermissionModule.CASHOPS_VALIDATE,
+            can_read=True,
+            can_write=True,
+        )
+        self.client.force_login(validator)
+
+        response = self.client.get(reverse("cashops:box_validation_queue"), {"sucursal": self.branch_b.pk})
+
+        # El filtro se ignora: sigue viendo las cajas de su empresa.
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f"Caja #{self.pending_box.pk}")
+
+    def test_queue_actions_carry_sucursal_filter(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("cashops:box_validation_queue"), {"sucursal": self.branch_a.pk})
+
+        validate_url = reverse("cashops:box_validate", args=[self.pending_box.pk])
+        reject_url = reverse("cashops:box_reject", args=[self.pending_box.pk])
+        self.assertContains(response, f"{validate_url}?sucursal={self.branch_a.pk}")
+        self.assertContains(response, f"{reject_url}?sucursal={self.branch_a.pk}")
+
+    def test_validate_redirect_preserves_sucursal_filter(self):
+        self.client.force_login(self.admin)
+        url = reverse("cashops:box_validate", args=[self.pending_box.pk])
+
+        response = self.client.post(f"{url}?sucursal={self.branch_a.pk}")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            response.url,
+            f"{reverse('cashops:box_validation_queue')}?sucursal={self.branch_a.pk}",
+        )
+
+    def test_reject_redirect_and_back_link_preserve_sucursal_filter(self):
+        self.client.force_login(self.admin)
+        url = f"{reverse('cashops:box_reject', args=[self.pending_box.pk])}?sucursal={self.branch_a.pk}"
+        expected = f"{reverse('cashops:box_validation_queue')}?sucursal={self.branch_a.pk}"
+
+        get_response = self.client.get(url)
+        self.assertContains(get_response, expected)
+
+        response = self.client.post(url, {"motivo": "No coincide el efectivo entregado"})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, expected)
+
 
 class EP13BoxExpenseDebtTests(CashopsTestCase):
     def setUp(self):

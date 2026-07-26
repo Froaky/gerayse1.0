@@ -9,6 +9,23 @@
       </div>
       <a class="button-secondary" href="{% url 'cashops:dashboard' %}">Volver a caja</a>
     </div>
+    <form method="get" class="stack" style="margin-top:16px;">
+      <div class="summary-grid">
+        <div class="field">
+          <label for="id_sucursal">Sucursal</label>
+          <select id="id_sucursal" class="input select" name="sucursal">
+            <option value="">Todas</option>
+            {% for sucursal in sucursales %}
+              <option value="{{ sucursal.pk }}" {% if selected_sucursal.pk == sucursal.pk %}selected{% endif %}>{{ sucursal.nombre }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <span class="muted">{% if selected_sucursal %}Mostrando solo {{ selected_sucursal.nombre }}.{% else %}Mostrando todas las sucursales.{% endif %}</span>
+        <button class="button" type="submit">Aplicar</button>
+      </div>
+    </form>
   </section>
 
   <section class="card mt-16">
@@ -61,7 +78,11 @@
           </div>
         </article>
       {% empty %}
-        <p class="muted">No hay cajas pendientes de validación. Todo el efectivo entregado ya está confirmado.</p>
+        {% if selected_sucursal %}
+          <p class="muted">No hay cajas pendientes de validación en {{ selected_sucursal.nombre }}.</p>
+        {% else %}
+          <p class="muted">No hay cajas pendientes de validación. Todo el efectivo entregado ya está confirmado.</p>
+        {% endif %}
       {% endfor %}
     </div>
   </section>

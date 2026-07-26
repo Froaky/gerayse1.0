@@ -1954,10 +1954,28 @@ def reset_operational_data(request):
     return render(request, "cashops/reset_confirm.html", {"step": 1})
 
 
+def _validation_queue_url(request):
+    """URL de vuelta a la cola de validación conservando el filtro de sucursal, si vino."""
+    url = reverse("cashops:box_validation_queue")
+    try:
+        sucursal_id = int(request.GET.get("sucursal") or "")
+    except (TypeError, ValueError):
+        return url
+    return f"{url}?sucursal={sucursal_id}"
+
+
 @login_required
 def box_validation_queue(request):
     ensure_cash_validation(request.user)
     empresa_ids = _get_empresa_ids(request)
+    sucursales_qs = Sucursal.objects.filter(activa=True, empresa_id__in=empresa_ids).order_by("nombre")
+    selected_sucursal = None
+    sucursal_id = request.GET.get("sucursal")
+    if sucursal_id:
+        try:
+            selected_sucursal = sucursales_qs.get(pk=int(sucursal_id))
+        except (Sucursal.DoesNotExist, TypeError, ValueError):
+            selected_sucursal = None
     boxes = (
         Caja.objects.select_related("sucursal", "turno", "usuario", "cierre")
         .filter(
@@ -1967,6 +1985,10 @@ def box_validation_queue(request):
         )
         .order_by("fecha_operativa", "id")
     )
+    if selected_sucursal:
+        boxes = boxes.filter(sucursal=selected_sucursal)
+    # Las acciones llevan el filtro para volver a la misma sucursal tras validar/rechazar.
+    filtro_qs = f"?sucursal={selected_sucursal.pk}" if selected_sucursal else ""
     rows = []
     for box in boxes:
         cierre = getattr(box, "cierre", None)
@@ -1980,11 +2002,19 @@ def box_validation_queue(request):
                 "is_rejected": box.validacion_estado == Caja.ValidacionEstado.RECHAZADA,
                 "last_rejection": last_rejection,
                 "detail_url": reverse("cashops:box_detail", args=[box.pk]),
-                "validate_url": reverse("cashops:box_validate", args=[box.pk]),
-                "reject_url": reverse("cashops:box_reject", args=[box.pk]),
+                "validate_url": reverse("cashops:box_validate", args=[box.pk]) + filtro_qs,
+                "reject_url": reverse("cashops:box_reject", args=[box.pk]) + filtro_qs,
             }
         )
-    return render(request, "cashops/box_validation_queue.html", {"rows": rows})
+    return render(
+        request,
+        "cashops/box_validation_queue.html",
+        {
+            "rows": rows,
+            "sucursales": sucursales_qs,
+            "selected_sucursal": selected_sucursal,
+        },
+    )
 
 
 @login_required
@@ -2000,7 +2030,7 @@ def box_validate_view(request, box_id: int):
         messages.error(request, " ".join(exc.messages))
     else:
         messages.success(request, f"Caja #{box.pk} validada. El efectivo ya contabiliza en el sistema.")
-    url = reverse("cashops:box_validation_queue")
+    url = _validation_queue_url(request)
     return _hx_redirect(url) if _is_htmx(request) else redirect(url)
 
 
@@ -2021,7 +2051,7 @@ def box_reject_view(request, box_id: int):
                 request,
                 f"Caja #{box.pk} rechazada. Sigue sin contabilizar hasta corregirse y validarse.",
             )
-            url = reverse("cashops:box_validation_queue")
+            url = _validation_queue_url(request)
             return _hx_redirect(url) if _is_htmx(request) else redirect(url)
     return render(
         request,
@@ -2030,5 +2060,6 @@ def box_reject_view(request, box_id: int):
             "box": box,
             "cierre": getattr(box, "cierre", None),
             "form": form,
+            "back_url": _validation_queue_url(request),
         },
     )

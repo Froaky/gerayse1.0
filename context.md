@@ -1364,3 +1364,24 @@ Last updated: 2026-07-08
 - Que hace: lista cajas ABIERTAS, filtrable por `--usuario` (username/nombre/apellido, icontains) y `--empresa`. Por cada caja muestra responsable (marca si es usuario fijo + su sucursal base), sucursal, turno+empresa, fecha operativa, apertura, monto inicial y estado de validacion, y la nota de que bloquea abrir otra en ese turno+sucursal. Si el usuario no tiene ninguna caja abierta, aclara que el bloqueo NO es por duplicado y sugiere revisar turno/empresa y sucursal base (usuario fijo). No escribe nada.
 - Archivos: `cashops/management/commands/cajas_abiertas.py` (nuevo), `cashops/tests_commands.py` (nueva clase `CajasAbiertasCommandTests`), `context.md`.
 - Tests: `CajasAbiertasCommandTests` 3/3 OK (lista + nota de conflicto por usuario; caso vacio con guia; no persiste cambios); `compileall` OK.
+
+### Mensaje humano para referencia duplicada en CuentaPorPagar 2026-07-25
+
+- Pedido (foto del form "Gasto como deuda"): al cargar una deuda con una referencia ya usada por ese proveedor, el cartelito mostraba el texto tecnico crudo "No se cumple la restricción «unique_payable_reference_by_supplier»". Regla del usuario, repetida: NUNCA mostrar mensajes tecnicos al usuario final.
+- Causa raiz: `CuentaPorPagar` tiene `UniqueConstraint unique_payable_reference_by_supplier` (proveedor + referencia_comprobante, cuando referencia != ""). `register_box_expense_debt` hace `payable.full_clean()`, que valida constraints, y como la constraint no definia `violation_error_message`, Django uso su default tecnico. El cartelito HTMX solo repite el texto del backend: el problema era el texto de origen, no el cartelito.
+- Opcion: OPTIMA. Mensaje humano en la fuente (modelo); la regla anti-duplicado queda intacta (el rechazo estaba bien: ya existia una deuda con esa referencia para ese proveedor).
+- Cambio: `violation_error_message="Ya existe una deuda cargada con esa referencia/comprobante para este proveedor."` en la constraint. Migracion `treasury/0026_alter_cuentaporpagar_unique_payable_reference_by_supplier.py` (`AlterConstraint`: solo metadata de validacion, no toca schema ni datos).
+- Archivos: `treasury/models.py`, `treasury/migrations/0026_*`, `context.md`.
+- Tests: suite completa `treasury` + `cashops` 302 OK (1 skip); `makemigrations --check` sin cambios pendientes.
+- Pendiente: el resto de las constraints del proyecto (~37, en `users`/`cashops`/`treasury`) siguen con el default tecnico de Django; barrer en slice aparte las alcanzables desde formularios (rubro/producto duplicado, proveedor/CUIT, cuentas bancarias, referencia de pago, `payable_due_after_issue`, etc.).
+
+### Filtro de sucursal en Pendientes de validacion 2026-07-25
+
+- Pedido (foto del modulo con 133 cajas pendientes): "en este modulo por fa podes ponerme el filtro de las sucursales tambien. Asi controlo sucursal por sucursal".
+- Opcion: OPTIMA. Filtro real en backend (queryset), mismo patron que `management_matrix`/`alert_panel`; no toca reglas de validacion ni permisos.
+- Cambio:
+  - `box_validation_queue`: lee `?sucursal=` (GET) y lo valida contra sucursales ACTIVAS de las empresas seleccionadas (invalido o cross-empresa => se ignora y muestra todas); filtra el queryset. Contexto nuevo: `sucursales`, `selected_sucursal`.
+  - Template cola: select "Sucursal" (Todas + activas) + boton Aplicar, linea "Mostrando solo X." y empty-state especifico por sucursal. El contador "N cajas" refleja el filtro.
+  - El filtro NO se pierde al operar: `validate_url`/`reject_url` de cada fila llevan `?sucursal=`, y `box_validate_view`/`box_reject_view` redirigen con `_validation_queue_url(request)` (helper nuevo: solo acepta int, arma la URL con `reverse`, sin open redirect). `box_reject.html` usa `back_url` para "Volver a pendientes"/"Cancelar".
+- Archivos: `cashops/views.py`, `templates/cashops/box_validation_queue.html`, `templates/cashops/box_reject.html`, `cashops/tests.py`, `context.md`.
+- Tests: 6 casos nuevos en `EP13CashValidationViewTests` (filtra por sucursal, ignora invalido, ignora cross-empresa, acciones llevan el filtro, redirect de validar lo conserva, redirect+back de rechazo lo conservan) -> clase 15/15; suite completa `cashops` 176 OK; `makemigrations --check` sin cambios; `compileall` OK.
