@@ -2,7 +2,9 @@
 
 **Fecha:** 2026-07-22
 **Autor:** Mateo (con Claude Code)
-**Estado:** subido a `staging` para revisar. **NADA mergeado a `main`.**
+**Estado:** revisado y **mergeado a `main` el 2026-07-25**, junto con: mensaje humano
+para referencia duplicada de deuda, filtro de sucursal en Pendientes de validación,
+y barrida de `violation_error_message` en todas las constraints (ver `context.md`).
 
 ## Qué problema resuelve
 
@@ -60,6 +62,6 @@ qué revisar (turno/empresa y sucursal base).
 
 - Confirmar la causa concreta de Victor corriendo el comando de arriba en Railway
   (lo más probable: ya tiene una caja abierta del 01/07 sin cerrar).
-- Si todo OK en la revisión → mergear `staging` a `main`.
+- ~~Si todo OK en la revisión → mergear `staging` a `main`.~~ Hecho el 2026-07-25.
 
 _Detalle técnico completo de ambas decisiones: ver `context.md` (dos últimas entradas)._
