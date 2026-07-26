@@ -438,6 +438,9 @@ class CuentaPorPagar(models.Model):
                 fields=["proveedor", "referencia_comprobante"],
                 condition=~Q(referencia_comprobante=""),
                 name="unique_payable_reference_by_supplier",
+                violation_error_message=(
+                    "Ya existe una deuda cargada con esa referencia/comprobante para este proveedor."
+                ),
             ),
         ]
         indexes = [
