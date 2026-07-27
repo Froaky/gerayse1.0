@@ -435,6 +435,17 @@ class CuentaPorPagar(models.Model):
     )
     anulada_en = models.DateTimeField(null=True, blank=True)
     motivo_anulacion = models.CharField(max_length=255, blank=True)
+    # Token del envio que creo la deuda, unico por render de formulario. Si
+    # vuelve el mismo token (doble click, reintento despues de un timeout,
+    # volver atras y reenviar), el servicio devuelve la deuda ya creada en lugar
+    # de grabar otra. Nulo en las deudas historicas y en las altas que no nacen
+    # de un formulario de caja.
+    token_alta = models.UUIDField(
+        null=True,
+        blank=True,
+        editable=False,
+        verbose_name="Token de alta",
+    )
 
     class Meta:
         ordering = ["fecha_vencimiento", "proveedor__razon_social", "id"]
@@ -466,6 +477,16 @@ class CuentaPorPagar(models.Model):
                 violation_error_message=(
                     "Ya existe una deuda cargada con esa referencia/comprobante para este proveedor."
                 ),
+            ),
+            # Ultima linea de defensa contra el alta duplicada: si dos envios
+            # simultaneos del mismo formulario pasan el chequeo del servicio, la
+            # base rechaza al segundo. Parcial para no tocar las filas historicas
+            # ni las altas sin token.
+            models.UniqueConstraint(
+                fields=["token_alta"],
+                condition=Q(token_alta__isnull=False),
+                name="unique_payable_creation_token",
+                violation_error_message="Esta deuda ya fue registrada.",
             ),
         ]
         indexes = [

@@ -1,6 +1,7 @@
 from decimal import Decimal
 from datetime import date, datetime, timedelta
 from urllib.parse import urlencode
+from uuid import uuid4
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -4144,3 +4145,296 @@ class EP13BoxExpenseDebtTests(CashopsTestCase):
         )
 
         self.assertEqual(response.status_code, 403)
+
+
+class AltaIdempotenteTests(CashopsTestCase):
+    """Reenviar el mismo formulario no debe crear un segundo registro de plata.
+
+    Regresion del duplicado reportado el 2026-07-26 (dos egresos iguales en la
+    misma caja, mismo minuto): antes del token de alta cada POST creaba su propio
+    movimiento, asi que un doble click, un reintento despues de un timeout o un
+    volver-atras-y-reenviar descontaban el efectivo dos veces.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from treasury.services import create_payable_category, create_supplier
+
+        self.caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("1000.00"),
+            actor=self.operator,
+        )
+        self.token = uuid4()
+        self.supplier = create_supplier(razon_social="Proveedor Reenvio SA", actor=self.admin)
+        self.payable_category = create_payable_category(
+            nombre="Insumos reenvio",
+            rubro_operativo=self.rubro_insumos,
+            actor=self.admin,
+        )
+
+    def _expense(self, token, monto="150.00"):
+        return register_expense(
+            caja=self.caja,
+            monto=Decimal(monto),
+            rubro_operativo=self.rubro_insumos,
+            categoria=self.rubro_insumos.nombre,
+            observacion="Bebidas sin alcohol",
+            actor=self.operator,
+            token_alta=token,
+        )
+
+    def _expenses(self):
+        return MovimientoCaja.objects.filter(caja=self.caja, tipo=MovimientoCaja.Tipo.GASTO)
+
+    def _debt(self, token, monto="80.00"):
+        return register_box_expense_debt(
+            caja=self.caja,
+            proveedor=self.supplier,
+            categoria=self.payable_category,
+            monto=Decimal(monto),
+            concepto="Harina del turno",
+            actor=self.operator,
+            token_alta=token,
+        )
+
+    # --- Egreso: el caso reportado ---
+
+    def test_expense_resent_with_same_token_is_registered_once(self):
+        saldo_inicial = self.caja.saldo_esperado
+
+        primero = self._expense(self.token)
+        segundo = self._expense(self.token)
+
+        self.assertEqual(primero.pk, segundo.pk)
+        self.assertEqual(self._expenses().count(), 1)
+        # Lo que importa: el efectivo se descuenta una sola vez.
+        self.assertEqual(self.caja.saldo_esperado, saldo_inicial - Decimal("150.00"))
+
+    def test_expense_with_new_token_registers_a_second_identical_one(self):
+        """Dos gastos iguales de verdad tienen que entrar los dos: el token
+        distingue el reenvio del mismo envio de una operacion nueva."""
+        self._expense(self.token)
+        self._expense(uuid4())
+
+        self.assertEqual(self._expenses().count(), 2)
+
+    def test_expense_without_token_keeps_historic_behaviour(self):
+        """Las altas que no vienen de un formulario (o de un cliente viejo sin el
+        hidden) siguen funcionando como antes."""
+        self._expense(None)
+        self._expense(None)
+
+        self.assertEqual(self._expenses().count(), 2)
+        self.assertEqual(self._expenses().filter(token_alta__isnull=True).count(), 2)
+
+    def test_expense_resent_after_box_was_closed_returns_the_existing_one(self):
+        """El peor caso: el POST se grabo pero la respuesta no volvio, y para
+        cuando el cajero reintenta la caja ya se cerro. Tiene que ver su egreso,
+        no un error de caja cerrada."""
+        primero = self._expense(self.token)
+        close_box(
+            caja=self.caja,
+            saldo_fisico=self.caja.saldo_esperado,
+            actor=self.operator,
+        )
+
+        segundo = self._expense(self.token)
+
+        self.assertEqual(primero.pk, segundo.pk)
+        self.assertEqual(self._expenses().count(), 1)
+
+    # --- El resto de las altas de caja ---
+
+    def test_cash_income_resent_with_same_token_is_registered_once(self):
+        saldo_inicial = self.caja.saldo_esperado
+
+        primero = register_cash_income(
+            caja=self.caja,
+            monto=Decimal("500.00"),
+            categoria="Reintegro",
+            actor=self.operator,
+            token_alta=self.token,
+        )
+        segundo = register_cash_income(
+            caja=self.caja,
+            monto=Decimal("500.00"),
+            categoria="Reintegro",
+            actor=self.operator,
+            token_alta=self.token,
+        )
+
+        self.assertEqual(primero.pk, segundo.pk)
+        self.assertEqual(self.caja.saldo_esperado, saldo_inicial + Decimal("500.00"))
+
+    def test_general_sale_resent_with_same_token_is_registered_once(self):
+        primero = register_general_sale(
+            caja=self.caja,
+            monto=Decimal("236300.00"),
+            tipo_venta=MovimientoCaja.Tipo.VENTA_QR,
+            rubro=self.rubro_insumos,
+            actor=self.operator,
+            token_alta=self.token,
+        )
+        segundo = register_general_sale(
+            caja=self.caja,
+            monto=Decimal("236300.00"),
+            tipo_venta=MovimientoCaja.Tipo.VENTA_QR,
+            rubro=self.rubro_insumos,
+            actor=self.operator,
+            token_alta=self.token,
+        )
+
+        self.assertEqual(primero.pk, segundo.pk)
+        self.assertEqual(
+            MovimientoCaja.objects.filter(caja=self.caja, tipo=MovimientoCaja.Tipo.VENTA_QR).count(),
+            1,
+        )
+
+    def test_card_sale_resent_with_same_token_is_registered_once(self):
+        primero = register_card_sale(
+            caja=self.caja,
+            monto=Decimal("89350.00"),
+            actor=self.operator,
+            token_alta=self.token,
+        )
+        segundo = register_card_sale(
+            caja=self.caja,
+            monto=Decimal("89350.00"),
+            actor=self.operator,
+            token_alta=self.token,
+        )
+
+        self.assertEqual(primero.pk, segundo.pk)
+        self.assertEqual(
+            MovimientoCaja.objects.filter(caja=self.caja, tipo=MovimientoCaja.Tipo.VENTA_TARJETA).count(),
+            1,
+        )
+
+    def test_transfer_resent_with_same_token_leaves_one_transfer_and_two_movements(self):
+        """El traspaso graba tres registros; un reenvio no debe dejar ni un
+        duplicado ni una mitad."""
+        caja_destino = open_box(
+            user=self.operator_2,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("0.00"),
+            actor=self.admin,
+        )
+
+        primero = transfer_between_boxes(
+            caja_origen=self.caja,
+            caja_destino=caja_destino,
+            monto=Decimal("200.00"),
+            observacion="Arrastre de turno",
+            actor=self.admin,
+            token_alta=self.token,
+        )
+        segundo = transfer_between_boxes(
+            caja_origen=self.caja,
+            caja_destino=caja_destino,
+            monto=Decimal("200.00"),
+            observacion="Arrastre de turno",
+            actor=self.admin,
+            token_alta=self.token,
+        )
+
+        self.assertEqual(primero.pk, segundo.pk)
+        self.assertEqual(Transferencia.objects.filter(tipo=Transferencia.Tipo.ENTRE_CAJAS).count(), 1)
+        self.assertEqual(
+            MovimientoCaja.objects.filter(tipo=MovimientoCaja.Tipo.TRANSFERENCIA_SALIDA).count(), 1
+        )
+        self.assertEqual(
+            MovimientoCaja.objects.filter(tipo=MovimientoCaja.Tipo.TRANSFERENCIA_ENTRADA).count(), 1
+        )
+        self.assertEqual(caja_destino.saldo_esperado, Decimal("200.00"))
+
+    def test_debt_resent_with_same_token_is_registered_once(self):
+        from treasury.models import CuentaPorPagar
+
+        primero = self._debt(self.token)
+        segundo = self._debt(self.token)
+
+        self.assertEqual(primero.pk, segundo.pk)
+        self.assertEqual(CuentaPorPagar.objects.filter(caja_origen=self.caja).count(), 1)
+
+    def test_debt_with_new_token_registers_a_second_identical_one(self):
+        from treasury.models import CuentaPorPagar
+
+        self._debt(self.token)
+        self._debt(uuid4())
+
+        self.assertEqual(CuentaPorPagar.objects.filter(caja_origen=self.caja).count(), 2)
+
+    # --- Vista: el circuito completo del formulario ---
+
+    def test_expense_form_renders_a_creation_token(self):
+        self.client.force_login(self.operator)
+
+        response = self.client.get(reverse("cashops:box_expense", args=[self.caja.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'name="token_alta"')
+
+    def test_expense_form_has_double_submit_guard(self):
+        self.client.force_login(self.operator)
+
+        response = self.client.get(reverse("cashops:box_expense", args=[self.caja.pk]))
+
+        self.assertContains(response, 'hx-sync="this:drop"')
+
+    def test_reposting_expense_form_with_same_token_creates_one_movement(self):
+        """Regresion de vista: dos POST identicos (doble click) dejan un solo
+        egreso y las dos veces el cajero termina en el dashboard."""
+        self.client.force_login(self.operator)
+        url = reverse("cashops:box_expense", args=[self.caja.pk])
+        payload = {
+            "rubro_operativo": self.rubro_insumos.pk,
+            "monto": "89350.00",
+            "observacion": "Bebidas sin alcohol",
+            "token_alta": str(self.token),
+        }
+
+        primera = self.client.post(url, payload)
+        segunda = self.client.post(url, payload)
+
+        self.assertEqual(primera.status_code, 302)
+        self.assertEqual(segunda.status_code, 302)
+        self.assertEqual(self._expenses().count(), 1)
+
+    def test_reposting_expense_form_without_token_still_duplicates(self):
+        """Deja explicito el alcance: sin el hidden no hay proteccion de
+        servidor, y por eso el guard de htmx en el formulario tambien importa."""
+        self.client.force_login(self.operator)
+        url = reverse("cashops:box_expense", args=[self.caja.pk])
+        payload = {
+            "rubro_operativo": self.rubro_insumos.pk,
+            "monto": "89350.00",
+            "observacion": "Bebidas sin alcohol",
+        }
+
+        self.client.post(url, payload)
+        self.client.post(url, payload)
+
+        self.assertEqual(self._expenses().count(), 2)
+
+    # --- La base como ultima linea ---
+
+    def test_database_rejects_two_movements_with_the_same_token(self):
+        primero = self._expense(self.token)
+
+        with self.assertRaises(IntegrityError):
+            MovimientoCaja.objects.create(
+                caja=self.caja,
+                tipo=MovimientoCaja.Tipo.GASTO,
+                sentido=MovimientoCaja.Sentido.EGRESO,
+                monto=Decimal("150.00"),
+                categoria=self.rubro_insumos.nombre,
+                rubro_operativo=self.rubro_insumos,
+                creado_por=self.operator,
+                token_alta=primero.token_alta,
+            )

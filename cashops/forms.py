@@ -1,4 +1,5 @@
 import datetime
+import uuid
 from decimal import Decimal
 
 from django import forms
@@ -13,6 +14,30 @@ from .services import CLOSING_DIFF_THRESHOLD, MAX_OPERATIONAL_LIMIT_PERCENTAGE
 
 
 User = get_user_model()
+
+
+class AltaIdempotenteForm(forms.Form):
+    """Formulario de alta que no duplica cuando se reenvia el mismo envio.
+
+    Lleva un token oculto, nuevo en cada render. El servicio lo recibe y, si ya
+    grabo un registro con ese token, devuelve ese en lugar de crear otro: cubre
+    el doble click, el reintento despues de un timeout y el volver atras y
+    reenviar. Entrar de nuevo al formulario genera un token nuevo, asi que dos
+    operaciones iguales de verdad siguen entrando las dos.
+    """
+
+    token_alta = forms.UUIDField(required=False, widget=forms.HiddenInput)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # En un form ligado el valor sale de los datos enviados, asi que el token
+        # sobrevive a un render con errores de validacion.
+        if not self.is_bound:
+            self.fields["token_alta"].initial = uuid.uuid4()
+
+    def creation_token(self):
+        """Token del envio actual, para pasarle al servicio."""
+        return self.cleaned_data.get("token_alta")
 
 
 class EmpresaForm(forms.ModelForm):
@@ -140,7 +165,7 @@ class CajaAperturaForm(forms.Form):
         return cleaned_data
 
 
-class IngresoEfectivoForm(forms.Form):
+class IngresoEfectivoForm(AltaIdempotenteForm):
     monto = forms.DecimalField(
         max_digits=14,
         decimal_places=2,
@@ -166,7 +191,7 @@ class IngresoEfectivoForm(forms.Form):
                 field.widget.attrs.setdefault("class", "input")
 
 
-class GastoRapidoForm(forms.Form):
+class GastoRapidoForm(AltaIdempotenteForm):
     rubro_operativo = forms.ModelChoiceField(queryset=RubroOperativo.objects.none(), label="Rubro")
     monto = forms.DecimalField(
         max_digits=14,
@@ -392,7 +417,7 @@ class BoxAnnulForm(forms.Form):
             field.widget.attrs.setdefault("class", "input textarea")
 
 
-class GastoComoDeudaForm(forms.Form):
+class GastoComoDeudaForm(AltaIdempotenteForm):
     proveedor = forms.ModelChoiceField(queryset=Proveedor.objects.none(), label="Proveedor")
     rubro = forms.ModelChoiceField(queryset=RubroOperativo.objects.none(), label="Rubro")
     sucursal = forms.ModelChoiceField(
@@ -458,7 +483,7 @@ class CajaValidacionRechazoForm(forms.Form):
             field.widget.attrs.setdefault("class", "input textarea")
 
 
-class VentaGeneralForm(forms.Form):
+class VentaGeneralForm(AltaIdempotenteForm):
     tipo_venta = forms.ChoiceField(choices=[], label="Medio de ingreso")
     rubro = forms.ModelChoiceField(
         queryset=RubroOperativo.objects.filter(activo=True, es_sistema=False),
@@ -488,7 +513,7 @@ class VentaGeneralForm(forms.Form):
                 field.widget.attrs.setdefault("class", "input")
 
 
-class TransferenciaEntreCajasForm(forms.Form):
+class TransferenciaEntreCajasForm(AltaIdempotenteForm):
     caja_origen = forms.ModelChoiceField(queryset=Caja.objects.none(), label="Caja origen")
     caja_destino = forms.ModelChoiceField(queryset=Caja.objects.none(), label="Caja destino")
     monto = forms.DecimalField(

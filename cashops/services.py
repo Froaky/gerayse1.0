@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Case, IntegerField, Q, Sum, Value, When
 from django.utils import timezone
 
@@ -423,6 +423,7 @@ def _create_movement(
     rubro_operativo: RubroOperativo | None = None,
     transferencia: Transferencia | None = None,
     creado_por=None,
+    token_alta=None,
 ) -> MovimientoCaja:
     return MovimientoCaja.objects.create(
         caja=caja,
@@ -435,7 +436,52 @@ def _create_movement(
         rubro_operativo=rubro_operativo,
         transferencia=transferencia,
         creado_por=creado_por,
+        token_alta=token_alta,
     )
+
+
+def _existing_by_creation_token(manager, token_alta):
+    """Devuelve el registro que ya se creo con ese token de alta, si existe.
+
+    El token viaja oculto en el formulario y es unico por render: si ya hay un
+    registro con el mismo token, este POST es un reenvio del mismo envio (doble
+    click, reintento despues de un timeout, volver atras) y no debe crear nada.
+    Sin token el comportamiento es el historico: cada POST crea.
+    """
+    if not token_alta:
+        return None
+    return manager.filter(token_alta=token_alta).first()
+
+
+def _create_movement_once(*, token_alta=None, **kwargs) -> MovimientoCaja:
+    """Crea el movimiento tolerando el envio simultaneo del mismo formulario.
+
+    El chequeo de token que hace cada servicio cubre el reenvio normal, donde el
+    segundo POST llega despues de que el primero commiteo. Este savepoint cubre
+    la carrera real: si los dos POST pasan ese chequeo, el unique de la base
+    rechaza al segundo y devolvemos el movimiento que quedo grabado en lugar de
+    romper la operacion del cajero.
+    """
+    try:
+        with transaction.atomic():
+            return _create_movement(token_alta=token_alta, **kwargs)
+    except IntegrityError:
+        existing = _existing_by_creation_token(MovimientoCaja.objects, token_alta)
+        if existing is None:
+            raise
+        return existing
+
+
+def _existing_transfer_by_creation_token(token_alta) -> Transferencia | None:
+    """Devuelve el traspaso que ya se grabo con ese token de alta, si existe.
+
+    El token vive en el movimiento de salida, que es el que representa el envio
+    del formulario; desde ahi se llega al traspaso completo.
+    """
+    salida = _existing_by_creation_token(MovimientoCaja.objects, token_alta)
+    if salida is None:
+        return None
+    return salida.transferencia
 
 
 def _validate_available_funds(caja: Caja, monto: Decimal) -> None:
@@ -1435,13 +1481,19 @@ def register_cash_income(
     observacion: str = "",
     creado_por=None,
     actor=None,
+    token_alta=None,
 ) -> MovimientoCaja:
     actor = actor or creado_por
     _require_actor(actor)
+    # Antes del lock: si el envio ya se grabo, devolvemos ese movimiento incluso
+    # si la caja se cerro en el medio.
+    already = _existing_by_creation_token(MovimientoCaja.objects, token_alta)
+    if already is not None:
+        return already
     caja = _validate_open_box(caja, actor=actor)
     if monto <= 0:
         raise ValidationError({"monto": "El monto debe ser mayor que cero."})
-    return _create_movement(
+    return _create_movement_once(
         caja=caja,
         tipo=MovimientoCaja.Tipo.INGRESO_EFECTIVO,
         sentido=MovimientoCaja.Sentido.INGRESO,
@@ -1449,6 +1501,7 @@ def register_cash_income(
         categoria=categoria,
         observacion=observacion,
         creado_por=actor,
+        token_alta=token_alta,
     )
 
 
@@ -1463,9 +1516,16 @@ def register_expense(
     sucursal_destino=None,
     creado_por=None,
     actor=None,
+    token_alta=None,
 ) -> MovimientoCaja:
     actor = actor or creado_por
     _require_actor(actor)
+    # Antes del lock: si el envio ya se grabo, devolvemos ese movimiento incluso
+    # si la caja se cerro en el medio. Tampoco se repite la transferencia de
+    # mercaderia ni el resync de alertas, que ya corrieron con el primer POST.
+    already = _existing_by_creation_token(MovimientoCaja.objects, token_alta)
+    if already is not None:
+        return already
     caja = _validate_open_box(caja, actor=actor)
     if monto <= 0:
         raise ValidationError({"monto": "El monto debe ser mayor que cero."})
@@ -1473,7 +1533,7 @@ def register_expense(
         raise ValidationError({"rubro_operativo": "El rubro es obligatorio para gastos operativos."})
     if not rubro_operativo.activo or rubro_operativo.es_sistema:
         raise ValidationError({"rubro_operativo": "Tenes que elegir un rubro operativo activo y valido."})
-    movement = _create_movement(
+    movement = _create_movement_once(
         caja=caja,
         tipo=MovimientoCaja.Tipo.GASTO,
         sentido=MovimientoCaja.Sentido.EGRESO,
@@ -1482,6 +1542,7 @@ def register_expense(
         observacion=observacion,
         rubro_operativo=rubro_operativo,
         creado_por=actor,
+        token_alta=token_alta,
     )
     if sucursal_destino is not None:
         Transferencia.objects.create(
@@ -1512,6 +1573,7 @@ def register_box_expense_debt(
     sucursal=None,
     permitir_caja_cerrada: bool = False,
     actor=None,
+    token_alta=None,
 ):
     """EP-13 US-13.6: gasto desde caja registrado como deuda pendiente.
 
@@ -1529,6 +1591,11 @@ def register_box_expense_debt(
     from treasury.services import _ensure_payable_category_is_economic, get_or_create_payable_category_for_rubro
 
     _require_actor(actor)
+    # Antes de resolver categoria y tomar el lock: si el envio ya se grabo,
+    # devolvemos esa deuda en vez de crear una segunda.
+    already = _existing_by_creation_token(CuentaPorPagar.objects, token_alta)
+    if already is not None:
+        return already
     # El cajero elige un RUBRO; la deuda igual necesita una categoria economica.
     # Si no vino categoria explicita, la resolvemos (reusa/crea) desde el rubro.
     if categoria is None:
@@ -1570,9 +1637,20 @@ def register_box_expense_debt(
         referencia_comprobante=referencia_comprobante,
         observaciones=observacion,
         creado_por=actor,
+        token_alta=token_alta,
     )
-    payable.full_clean()
-    payable.save()
+    try:
+        with transaction.atomic():
+            payable.full_clean()
+            payable.save()
+    except (IntegrityError, ValidationError):
+        # Puede ser el envio simultaneo del mismo formulario. Solo si la deuda ya
+        # quedo grabada con este token la devolvemos: cualquier otro rechazo
+        # (referencia repetida, fechas, montos) sigue viaje al cajero.
+        existing = _existing_by_creation_token(CuentaPorPagar.objects, token_alta)
+        if existing is None:
+            raise
+        return existing
     return payable
 
 
@@ -1584,13 +1662,17 @@ def register_card_sale(
     observacion: str = "",
     creado_por=None,
     actor=None,
+    token_alta=None,
 ) -> MovimientoCaja:
     actor = actor or creado_por
     _require_actor(actor)
+    already = _existing_by_creation_token(MovimientoCaja.objects, token_alta)
+    if already is not None:
+        return already
     caja = _validate_open_box(caja, actor=actor)
     if monto <= 0:
         raise ValidationError({"monto": "El monto debe ser mayor que cero."})
-    return _create_movement(
+    return _create_movement_once(
         caja=caja,
         tipo=MovimientoCaja.Tipo.VENTA_TARJETA,
         sentido=MovimientoCaja.Sentido.INGRESO,
@@ -1599,6 +1681,7 @@ def register_card_sale(
         categoria="POS",
         observacion=observacion,
         creado_por=actor,
+        token_alta=token_alta,
     )
 
 
@@ -1612,9 +1695,13 @@ def register_general_sale(
     observacion: str = "",
     creado_por=None,
     actor=None,
+    token_alta=None,
 ) -> MovimientoCaja:
     actor = actor or creado_por
     _require_actor(actor)
+    already = _existing_by_creation_token(MovimientoCaja.objects, token_alta)
+    if already is not None:
+        return already
     caja = _validate_open_box(caja, actor=actor)
 
     if monto <= 0:
@@ -1626,7 +1713,7 @@ def register_general_sale(
     if not canal:
         raise ValidationError({"tipo_venta": "Canal de ingreso no válido."})
 
-    movement = _create_movement(
+    movement = _create_movement_once(
         caja=caja,
         tipo=tipo_venta,
         sentido=MovimientoCaja.Sentido.INGRESO,
@@ -1636,6 +1723,7 @@ def register_general_sale(
         observacion=observacion,
         rubro_operativo=rubro,
         creado_por=actor,
+        token_alta=token_alta,
     )
     return movement
 
@@ -1649,9 +1737,17 @@ def transfer_between_boxes(
     observacion: str = "",
     creado_por=None,
     actor=None,
+    token_alta=None,
 ) -> Transferencia:
     actor = actor or creado_por
     _require_actor(actor)
+    # El traspaso graba tres registros (transferencia + salida + entrada), asi
+    # que el token no puede resolverse con un savepoint por movimiento: se
+    # chequea antes de empezar y otra vez con las cajas ya bloqueadas, para que
+    # un reenvio nunca deje la mitad de la operacion.
+    already = _existing_transfer_by_creation_token(token_alta)
+    if already is not None:
+        return already
     if monto <= 0:
         raise ValidationError({"monto": "El monto debe ser mayor que cero."})
     if caja_origen.pk == caja_destino.pk:
@@ -1663,6 +1759,11 @@ def transfer_between_boxes(
     locked = {box.pk: box for box in cajas}
     caja_origen = _validate_open_box(locked[caja_origen.pk], actor=actor, lock=False)
     caja_destino = _validate_open_box(locked[caja_destino.pk], actor=actor, lock=False)
+    # Con el lock tomado: si el envio simultaneo gano la carrera, ya commiteo y
+    # aca lo vemos. Todavia no grabamos nada, asi que salir es seguro.
+    already = _existing_transfer_by_creation_token(token_alta)
+    if already is not None:
+        return already
     if caja_origen.sucursal_id != caja_destino.sucursal_id:
         raise ValidationError(
             {"caja_destino": "El arrastre o traspaso entre cajas solo se permite dentro de la misma sucursal."}
@@ -1680,6 +1781,7 @@ def transfer_between_boxes(
         observacion=observacion,
         creado_por=actor,
     )
+    # El token queda en la salida, que es el movimiento que representa el envio.
     _create_movement(
         caja=caja_origen,
         tipo=MovimientoCaja.Tipo.TRANSFERENCIA_SALIDA,
@@ -1689,6 +1791,7 @@ def transfer_between_boxes(
         observacion=observacion,
         transferencia=transferencia,
         creado_por=actor,
+        token_alta=token_alta,
     )
     _create_movement(
         caja=caja_destino,

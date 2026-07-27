@@ -1340,6 +1340,7 @@ def register_expense_view(request, box_id: int):
                 sucursal_destino=form.cleaned_data.get("sucursal_destino"),
                 creado_por=request.user,
                 actor=request.user,
+                token_alta=form.creation_token(),
             )
         except (ValidationError, IntegrityError) as error:
             _handle_operation_error(form, error, "No se pudo registrar el egreso por rubro.")
@@ -1390,6 +1391,7 @@ def register_box_expense_debt_view(request, box_id: int):
                 observacion=form.cleaned_data["observacion"],
                 permitir_caja_cerrada=puede_caja_cerrada,
                 actor=request.user,
+                token_alta=form.creation_token(),
             )
         except (ValidationError, IntegrityError) as error:
             _handle_operation_error(form, error, "No se pudo registrar el gasto como deuda.")
@@ -1440,6 +1442,7 @@ def register_sale_view(request, box_id: int):
                 rubro=form.cleaned_data["rubro"],
                 observacion=form.cleaned_data["observacion"],
                 actor=request.user,
+                token_alta=form.creation_token(),
             )
         except (ValidationError, IntegrityError) as error:
             _handle_operation_error(form, error, "No se pudo registrar la venta.")
@@ -1479,6 +1482,7 @@ def register_cash_income_view(request, box_id: int):
                 observacion=form.cleaned_data["observacion"],
                 creado_por=request.user,
                 actor=request.user,
+                token_alta=form.creation_token(),
             )
         except (ValidationError, IntegrityError) as error:
             _handle_operation_error(form, error, "No se pudo registrar el ingreso en efectivo.")
@@ -1520,6 +1524,7 @@ def transfer_between_boxes_view(request):
                 observacion=form.cleaned_data["observacion"],
                 creado_por=request.user,
                 actor=request.user,
+                token_alta=form.creation_token(),
             )
         except (ValidationError, IntegrityError) as error:
             _handle_operation_error(form, error, "No se pudo registrar el traspaso entre cajas.")

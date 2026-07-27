@@ -15,7 +15,10 @@
     </ul>
   {% endif %}
 
-  <form method="post" action="{{ form_action }}"{% if not disable_htmx %} hx-post="{{ form_action }}" hx-target="#form-card" hx-swap="outerHTML"{% endif %} class="stack mt-16">
+  {# hx-sync descarta el segundo envio mientras el primero viaja (doble click) y
+     hx-disabled-elt apaga el boton para que se vea que esta procesando. La
+     garantia real contra el duplicado es el token oculto + el servicio. #}
+  <form method="post" action="{{ form_action }}"{% if not disable_htmx %} hx-post="{{ form_action }}" hx-target="#form-card" hx-swap="outerHTML" hx-sync="this:drop" hx-disabled-elt="find button"{% endif %} class="stack mt-16">
     {% csrf_token %}
     {% if next_url %}
       <input type="hidden" name="next" value="{{ next_url }}">

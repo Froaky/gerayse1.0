@@ -478,6 +478,17 @@ class MovimientoCaja(models.Model):
     )
     anulado_en = models.DateTimeField(null=True, blank=True)
     motivo_anulacion = models.TextField(blank=True)
+    # Token del envio que creo el movimiento, unico por render de formulario.
+    # Si vuelve el mismo token (doble click, reintento despues de un timeout,
+    # volver atras y reenviar), el servicio devuelve el movimiento ya creado en
+    # lugar de grabar otro. Nulo en los movimientos historicos y en las altas
+    # que no nacen de un formulario (apertura, cierre, contrapartidas).
+    token_alta = models.UUIDField(
+        null=True,
+        blank=True,
+        editable=False,
+        verbose_name="Token de alta",
+    )
 
     class Meta:
         ordering = ["-creado_en", "-id"]
@@ -498,6 +509,16 @@ class MovimientoCaja(models.Model):
                 check=~Q(tipo="GASTO") | Q(rubro_operativo__isnull=False),
                 name="expense_requires_operational_category",
                 violation_error_message="El rubro es obligatorio para gastos operativos.",
+            ),
+            # Ultima linea de defensa contra el alta duplicada: si dos envios
+            # simultaneos del mismo formulario pasan el chequeo del servicio, la
+            # base rechaza al segundo. Parcial para no tocar las filas historicas
+            # ni las altas sin token.
+            models.UniqueConstraint(
+                fields=["token_alta"],
+                condition=Q(token_alta__isnull=False),
+                name="unique_movement_creation_token",
+                violation_error_message="Este movimiento ya fue registrado.",
             ),
         ]
 

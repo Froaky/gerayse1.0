@@ -6,6 +6,11 @@
 para referencia duplicada de deuda, filtro de sucursal en Pendientes de validación,
 y barrida de `violation_error_message` en todas las constraints (ver `context.md`).
 
+> **2026-07-27:** este cartelito tenía un efecto secundario que costó plata. Cuando
+> el POST llegaba al servidor pero la respuesta se perdía, el toast de `htmx:sendError`
+> decía *"probá de nuevo"* y el cajero reintentaba una operación **ya grabada**, lo que
+> duplicaba egresos. Resuelto con token de alta por envío (ver `context.md`).
+
 ## Qué problema resuelve
 
 Un cajero (Victor Cruz) tocaba **"Abrir caja"** y no pasaba nada: ni redirect ni
