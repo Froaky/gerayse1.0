@@ -2,10 +2,11 @@ from decimal import Decimal
 from datetime import date, datetime, timedelta
 from urllib.parse import urlencode
 from uuid import uuid4
+from unittest import skipUnless
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import IntegrityError
+from django.db import IntegrityError, connection
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -4438,3 +4439,95 @@ class AltaIdempotenteTests(CashopsTestCase):
                 creado_por=self.operator,
                 token_alta=primero.token_alta,
             )
+
+
+@skipUnless(
+    connection.vendor == "postgresql",
+    "El FOR UPDATE de estos servicios solo se emite en PostgreSQL.",
+)
+class PostgresRowLockingTests(CashopsTestCase):
+    """Regresion 2026-07-27: los servicios de eliminar/corregir bloquean filas con
+    `select_for_update()` sobre querysets que traen FK NULLABLES por
+    `select_related` (`rubro_operativo` en MovimientoCaja, `caja_origen` en
+    CuentaPorPagar). Esos select_related entran como LEFT OUTER JOIN y Postgres
+    rechaza el lock: "FOR UPDATE cannot be applied to the nullable side of an
+    outer join". El fix es limitar el lock con `of=`.
+
+    IMPORTANTE: SQLite ignora FOR UPDATE por completo, asi que esta clase se
+    SALTEA en las corridas locales y este bug llego a produccion sin que ningun
+    test se pusiera en rojo. Solo protege si los tests corren contra Postgres.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from treasury.services import create_payable_category, create_supplier
+
+        self._grant_movement_delete(self.admin)
+        self._grant_closed_box_fix(self.admin)
+        self.caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("5000.00"),
+            actor=self.operator,
+        )
+        self.supplier = create_supplier(razon_social="Proveedor Lock SA", actor=self.admin)
+        self.payable_category = create_payable_category(
+            nombre="Insumos lock",
+            rubro_operativo=self.rubro_insumos,
+            actor=self.admin,
+        )
+
+    def _expense(self):
+        return register_expense(
+            caja=self.caja,
+            monto=Decimal("300.00"),
+            rubro_operativo=self.rubro_insumos,
+            categoria=self.rubro_insumos.nombre,
+            actor=self.operator,
+        )
+
+    def test_annul_box_originated_debt_does_not_break_on_nullable_join(self):
+        from treasury.models import CuentaPorPagar
+
+        deuda = register_box_expense_debt(
+            caja=self.caja,
+            proveedor=self.supplier,
+            categoria=self.payable_category,
+            monto=Decimal("900.00"),
+            concepto="Carga duplicada",
+            actor=self.operator,
+        )
+
+        annul_box_originated_debt(deuda=deuda, motivo="Duplicado por doble envio", actor=self.admin)
+
+        deuda.refresh_from_db()
+        self.assertEqual(deuda.estado, CuentaPorPagar.Estado.ANULADA)
+        self.assertEqual(deuda.saldo_pendiente, Decimal("0.00"))
+        self.assertEqual(deuda.anulada_por, self.admin)
+
+    def test_annul_box_movement_does_not_break_on_nullable_join(self):
+        movement = self._expense()
+
+        annul_box_movement(movement=movement, motivo="Duplicado por doble envio", actor=self.admin)
+
+        movement.refresh_from_db()
+        self.assertEqual(movement.estado, MovimientoCaja.Estado.ANULADO)
+        self.assertEqual(movement.anulado_por, self.admin)
+
+    def test_update_closed_box_movement_does_not_break_on_nullable_join(self):
+        movement = self._expense()
+        close_box(caja=self.caja, saldo_fisico=self.caja.saldo_esperado, actor=self.operator)
+
+        update_closed_box_movement(
+            movement=movement,
+            monto=Decimal("250.00"),
+            categoria=self.rubro_insumos.nombre,
+            rubro_operativo=self.rubro_insumos,
+            motivo="Monto corregido",
+            actor=self.admin,
+        )
+
+        movement.refresh_from_db()
+        self.assertEqual(movement.monto, Decimal("250.00"))

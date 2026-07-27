@@ -1900,7 +1900,12 @@ def _validate_closed_box_movement_for_correction(movement: MovimientoCaja, *, ac
     _require_actor(actor)
     ensure_closed_box_correction(actor)
     movement = (
-        MovimientoCaja.objects.select_for_update()
+        # of=("self","caja"): `rubro_operativo` es nullable, asi que su
+        # select_related entra como LEFT OUTER JOIN y Postgres rechaza un FOR
+        # UPDATE que abarque el lado nullable de un outer join. Bloqueamos solo
+        # el movimiento y su caja, que es lo que se valida y se toca. SQLite
+        # ignora FOR UPDATE, por eso esto no se ve en los tests locales.
+        MovimientoCaja.objects.select_for_update(of=("self", "caja"))
         .select_related("caja", "caja__turno", "caja__sucursal", "caja__usuario", "rubro_operativo")
         .get(pk=movement.pk)
     )
@@ -1927,7 +1932,10 @@ def is_box_movement_deletable(movement: MovimientoCaja) -> bool:
 def _validate_box_movement_for_deletion(movement: MovimientoCaja, *, actor) -> MovimientoCaja:
     _require_actor(actor)
     movement = (
-        MovimientoCaja.objects.select_for_update()
+        # of=("self","caja"): ver el comentario en
+        # _validate_closed_box_movement_for_correction. `rubro_operativo` es
+        # nullable y su LEFT JOIN rompe el FOR UPDATE en Postgres.
+        MovimientoCaja.objects.select_for_update(of=("self", "caja"))
         .select_related("caja", "caja__turno", "caja__sucursal", "caja__usuario", "rubro_operativo")
         .get(pk=movement.pk)
     )
@@ -2330,7 +2338,12 @@ def annul_box_originated_debt(
 
     _require_actor(actor)
     deuda = (
-        CuentaPorPagar.objects.select_for_update()
+        # of=("self",): `caja_origen` es nullable, asi que su select_related
+        # entra como LEFT OUTER JOIN y Postgres rechaza un FOR UPDATE que
+        # abarque el lado nullable. La caja aca solo se lee (permiso y estado);
+        # lo unico que se modifica es la deuda, asi que alcanza con bloquearla.
+        # SQLite ignora FOR UPDATE, por eso esto no se ve en los tests locales.
+        CuentaPorPagar.objects.select_for_update(of=("self",))
         .select_related("caja_origen", "caja_origen__sucursal", "caja_origen__turno", "caja_origen__usuario")
         .get(pk=deuda.pk)
     )
