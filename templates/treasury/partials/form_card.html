@@ -19,8 +19,15 @@
      hx-disabled-elt apaga el boton para que se vea que esta procesando. Ojo: los
      forms de tesoreria todavia NO llevan token de alta, asi que esto es la unica
      defensa que tienen contra el alta duplicada. #}
+  {# form_method="get" se usa para pasos de seleccion que no escriben nada (ej.
+     elegir proveedor antes de ver sus facturas): sin csrf ni hx-post, para que el
+     resultado quede en la URL y sea compartible/recargable. #}
+  {% if form_method == "get" %}
+  <form method="get" action="{{ form_action }}" class="stack mt-16">
+  {% else %}
   <form method="post" action="{{ form_action }}" hx-post="{{ form_action }}" hx-target="#form-card" hx-swap="outerHTML" hx-sync="this:drop" hx-disabled-elt="find button" class="stack mt-16">
     {% csrf_token %}
+  {% endif %}
     {% for hidden in form.hidden_fields %}
       {{ hidden }}
     {% endfor %}

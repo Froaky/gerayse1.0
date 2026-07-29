@@ -430,6 +430,17 @@ class SpecialCommitmentDecisionForm(TreasuryStyledFormMixin, forms.Form):
         return cleaned_data
 
 
+class PayableChoiceField(forms.ModelChoiceField):
+    """Muestra el saldo pendiente en cada opcion: con cientos de deudas abiertas,
+    'Proveedor - concepto' sin importe no alcanza para elegir bien."""
+
+    def label_from_instance(self, obj):
+        etiqueta = f"{obj.proveedor} - {obj.concepto}"
+        if obj.referencia_comprobante:
+            etiqueta = f"{etiqueta} ({obj.referencia_comprobante})"
+        return f"{etiqueta} - saldo ${obj.saldo_pendiente}"
+
+
 def open_payables_queryset(empresa_ids=None):
     """Deudas que todavia se deben (PENDIENTE/PARCIAL), acotadas a las empresas
     seleccionadas. Se incluyen las deudas legacy sin sucursal, igual que el
@@ -452,7 +463,7 @@ def open_payables_queryset(empresa_ids=None):
 
 
 class PaymentBaseForm(TreasuryStyledFormMixin, forms.Form):
-    cuenta_por_pagar = forms.ModelChoiceField(queryset=CuentaPorPagar.objects.none(), label="Cuenta por pagar")
+    cuenta_por_pagar = PayableChoiceField(queryset=CuentaPorPagar.objects.none(), label="Cuenta por pagar")
     cuenta_bancaria = forms.ModelChoiceField(queryset=CuentaBancaria.objects.none(), label="Cuenta bancaria")
     fecha_pago = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
     fecha_diferida = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
@@ -980,7 +991,7 @@ class DisponibilidadesFilterForm(TreasuryStyledFormMixin, forms.Form):
 
 
 class CashPaymentForm(TreasuryStyledFormMixin, forms.Form):
-    cuenta_por_pagar = forms.ModelChoiceField(queryset=CuentaPorPagar.objects.none(), label="Cuenta por pagar")
+    cuenta_por_pagar = PayableChoiceField(queryset=CuentaPorPagar.objects.none(), label="Cuenta por pagar")
     fecha_pago = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
     monto = forms.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0.01"), widget=forms.NumberInput(attrs={"step": "0.01", "placeholder": "0.00"}))
     observaciones = forms.CharField(required=False, max_length=255, widget=forms.Textarea(attrs={"placeholder": "Observaciones del pago"}))
@@ -989,3 +1000,152 @@ class CashPaymentForm(TreasuryStyledFormMixin, forms.Form):
         super().__init__(*args, **kwargs)
         self.fields["cuenta_por_pagar"].queryset = open_payables_queryset(empresa_ids)
         self._apply_input_classes()
+
+
+class SupplierPickerForm(TreasuryStyledFormMixin, forms.Form):
+    """Paso 1 del pago por proveedor: solo se ofrecen proveedores que tienen
+    facturas impagas dentro de las empresas seleccionadas."""
+
+    proveedor = forms.ModelChoiceField(
+        queryset=Proveedor.objects.none(),
+        label="Proveedor",
+        help_text="Se listan solo los proveedores con facturas impagas.",
+    )
+
+    def __init__(self, *args, empresa_ids=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        proveedor_ids = open_payables_queryset(empresa_ids).values_list("proveedor_id", flat=True)
+        self.fields["proveedor"].queryset = Proveedor.objects.filter(
+            pk__in=proveedor_ids
+        ).order_by("razon_social")
+        self._apply_input_classes()
+
+
+class SupplierPaymentBatchForm(TreasuryStyledFormMixin, forms.Form):
+    """Paso 2 del pago por proveedor: una linea por factura impaga (tildar +
+    importe editable, precargado con el saldo) mas los datos comunes del pago.
+
+    Los campos por factura se crean dinamicamente en __init__ como pagar_<pk> /
+    monto_<pk>, y `lineas_seleccionadas()` devuelve [(deuda, monto)] listo para
+    register_supplier_payment_batch.
+
+    Solo TRANSFERENCIA y EFECTIVO: cheque y ECHEQ son instrumentos individuales
+    (cada uno con su numero de referencia), asi que se siguen cargando de a uno
+    en las pantallas existentes.
+    """
+
+    MEDIOS_HABILITADOS = (
+        (PagoTesoreria.MedioPago.TRANSFERENCIA, "Transferencia"),
+        (PagoTesoreria.MedioPago.EFECTIVO, "Efectivo"),
+    )
+
+    medio_pago = forms.ChoiceField(choices=MEDIOS_HABILITADOS, label="Medio de pago")
+    cuenta_bancaria = forms.ModelChoiceField(
+        queryset=CuentaBancaria.objects.none(),
+        label="Cuenta bancaria",
+        required=False,
+        help_text="Obligatoria para transferencia. En efectivo sale de la caja central.",
+    )
+    fecha_pago = forms.DateField(label="Fecha de pago", widget=forms.DateInput(attrs={"type": "date"}))
+    referencia = forms.CharField(
+        required=False,
+        max_length=60,
+        label="Referencia",
+        help_text="Opcional. Si pagás varias facturas se numera por factura.",
+        widget=forms.TextInput(attrs={"placeholder": "Nro de transferencia o comprobante"}),
+    )
+    observaciones = forms.CharField(
+        required=False,
+        max_length=255,
+        widget=forms.Textarea(attrs={"placeholder": "Observaciones del pago"}),
+    )
+
+    def __init__(self, *args, proveedor=None, empresa_ids=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.proveedor = proveedor
+        self.payables = list(
+            open_payables_queryset(empresa_ids).filter(proveedor=proveedor)
+        ) if proveedor else []
+
+        cuentas = CuentaBancaria.objects.filter(activa=True).order_by("banco", "nombre")
+        if empresa_ids is not None:
+            from .services import bank_account_empresa_scope_query
+
+            cuentas = cuentas.filter(bank_account_empresa_scope_query(empresa_ids))
+        self.fields["cuenta_bancaria"].queryset = cuentas
+
+        for payable in self.payables:
+            self.fields[f"pagar_{payable.pk}"] = forms.BooleanField(
+                required=False,
+                label="Pagar",
+                widget=forms.CheckboxInput(attrs={"class": "checkbox"}),
+            )
+            self.fields[f"monto_{payable.pk}"] = forms.DecimalField(
+                required=False,
+                max_digits=14,
+                decimal_places=2,
+                min_value=Decimal("0.01"),
+                max_value=payable.saldo_pendiente,
+                initial=payable.saldo_pendiente,
+                label="Importe a pagar",
+                widget=forms.NumberInput(attrs={"step": "0.01", "class": "input"}),
+            )
+        self._apply_input_classes()
+
+    CAMPOS_COMUNES = ("medio_pago", "cuenta_bancaria", "fecha_pago", "referencia", "observaciones")
+
+    def campos_comunes(self):
+        """Los campos del pago (no las lineas por factura), para el template."""
+        return [self[nombre] for nombre in self.CAMPOS_COMUNES]
+
+    def filas(self):
+        """Filas para el template: la factura con sus dos campos ya ligados."""
+        for payable in self.payables:
+            yield {
+                "payable": payable,
+                "check": self[f"pagar_{payable.pk}"],
+                "monto": self[f"monto_{payable.pk}"],
+            }
+
+    def lineas_seleccionadas(self):
+        lineas = []
+        for payable in self.payables:
+            if not self.cleaned_data.get(f"pagar_{payable.pk}"):
+                continue
+            monto = self.cleaned_data.get(f"monto_{payable.pk}")
+            lineas.append((payable, monto if monto else payable.saldo_pendiente))
+        return lineas
+
+    @property
+    def total_seleccionado(self):
+        if not self.is_bound or not self.is_valid():
+            return Decimal("0.00")
+        return sum((monto for _, monto in self.lineas_seleccionadas()), Decimal("0.00"))
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if not self.payables:
+            raise forms.ValidationError("El proveedor no tiene facturas impagas.")
+
+        seleccionadas = [p for p in self.payables if cleaned_data.get(f"pagar_{p.pk}")]
+        if not seleccionadas:
+            raise forms.ValidationError("Tildá al menos una factura para pagar.")
+
+        for payable in seleccionadas:
+            campo = f"monto_{payable.pk}"
+            monto = cleaned_data.get(campo)
+            if monto is None:
+                cleaned_data[campo] = payable.saldo_pendiente
+            elif monto > payable.saldo_pendiente:
+                self.add_error(
+                    campo,
+                    f"No podés pagar más que el saldo pendiente (${payable.saldo_pendiente}).",
+                )
+
+        if cleaned_data.get("medio_pago") == PagoTesoreria.MedioPago.TRANSFERENCIA and not cleaned_data.get(
+            "cuenta_bancaria"
+        ):
+            self.add_error("cuenta_bancaria", "Elegí la cuenta bancaria de la transferencia.")
+        if cleaned_data.get("medio_pago") == PagoTesoreria.MedioPago.EFECTIVO:
+            cleaned_data["cuenta_bancaria"] = None
+        return cleaned_data

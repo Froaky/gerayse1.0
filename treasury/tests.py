@@ -64,6 +64,7 @@ from .services import (
     register_egreso_tesoreria,
     register_payable,
     register_special_commitment,
+    register_supplier_payment_batch,
     register_transfer_payment,
     set_initial_bank_balance,
     toggle_bank_account,
@@ -2700,6 +2701,209 @@ class TreasuryViewTests(TreasuryTestCase):
         commitment.refresh_from_db()
         self.assertEqual(commitment.estado, CompromisoEspecial.Estado.APROBADO)
         self.assertEqual(commitment.autorizado_por, self.admin)
+
+    def _tres_facturas(self):
+        return [
+            register_payable(
+                proveedor=self.supplier,
+                categoria=self.category,
+                concepto=f"Factura {i}",
+                referencia_comprobante=f"F-000{i}",
+                fecha_emision=timezone.localdate(),
+                fecha_vencimiento=timezone.localdate(),
+                importe_total=Decimal("100.00"),
+                sucursal=self.sucursal,
+                actor=self.admin,
+            )
+            for i in (1, 2, 3)
+        ]
+
+    def test_supplier_picker_lists_only_suppliers_with_open_invoices(self):
+        """Paso 1: se ofrecen solo proveedores con facturas impagas."""
+        self._tres_facturas()
+        create_supplier(razon_social="Proveedor Sin Deuda SA", actor=self.admin)
+
+        response = self.client.get(reverse("treasury:pagos_proveedor_create"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.supplier.razon_social)
+        self.assertNotContains(response, "Proveedor Sin Deuda SA")
+
+    def test_single_payment_dropdown_shows_pending_balance(self):
+        """B1: con cientos de deudas abiertas, la opcion tiene que mostrar el saldo."""
+        register_payable(
+            proveedor=self.supplier,
+            categoria=self.category,
+            concepto="Factura con saldo visible",
+            fecha_emision=timezone.localdate(),
+            fecha_vencimiento=timezone.localdate(),
+            importe_total=Decimal("321.00"),
+            sucursal=self.sucursal,
+            actor=self.admin,
+        )
+
+        response = self.client.get(reverse("treasury:pagos_transferencia_create"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "saldo $321.00")
+
+    def test_supplier_batch_pays_several_invoices_in_one_go(self):
+        """B2: se tildan varias facturas y se registra UN pago por factura."""
+        facturas = self._tres_facturas()
+
+        data = {
+            "medio_pago": PagoTesoreria.MedioPago.TRANSFERENCIA,
+            "cuenta_bancaria": self.bank_account.pk,
+            "fecha_pago": timezone.localdate(),
+            "referencia": "TRF-LOTE",
+        }
+        # Se pagan la 1 y la 3 (la 2 queda intacta).
+        data[f"pagar_{facturas[0].pk}"] = "on"
+        data[f"monto_{facturas[0].pk}"] = "100.00"
+        data[f"pagar_{facturas[2].pk}"] = "on"
+        data[f"monto_{facturas[2].pk}"] = "100.00"
+
+        url = f"{reverse('treasury:pagos_proveedor_create')}?proveedor={self.supplier.pk}"
+        response = self.client.post(url, data)
+
+        self.assertEqual(response.status_code, 302)
+        for factura, esperado in ((facturas[0], "PAGADA"), (facturas[2], "PAGADA")):
+            factura.refresh_from_db()
+            self.assertEqual(factura.estado, esperado)
+            self.assertEqual(factura.saldo_pendiente, Decimal("0.00"))
+        facturas[1].refresh_from_db()
+        self.assertEqual(facturas[1].estado, CuentaPorPagar.Estado.PENDIENTE)
+        self.assertEqual(facturas[1].saldo_pendiente, Decimal("100.00"))
+        # Un pago por factura, con referencia numerada para no chocar la unicidad.
+        self.assertEqual(PagoTesoreria.objects.count(), 2)
+        referencias = sorted(PagoTesoreria.objects.values_list("referencia", flat=True))
+        self.assertEqual(referencias, ["TRF-LOTE (1/2)", "TRF-LOTE (2/2)"])
+
+    def test_supplier_batch_allows_partial_amount(self):
+        """El importe por factura es editable: se puede pagar una parte."""
+        factura = self._tres_facturas()[0]
+
+        url = f"{reverse('treasury:pagos_proveedor_create')}?proveedor={self.supplier.pk}"
+        response = self.client.post(
+            url,
+            {
+                "medio_pago": PagoTesoreria.MedioPago.TRANSFERENCIA,
+                "cuenta_bancaria": self.bank_account.pk,
+                "fecha_pago": timezone.localdate(),
+                f"pagar_{factura.pk}": "on",
+                f"monto_{factura.pk}": "40.00",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        factura.refresh_from_db()
+        self.assertEqual(factura.estado, CuentaPorPagar.Estado.PARCIAL)
+        self.assertEqual(factura.saldo_pendiente, Decimal("60.00"))
+
+    def test_supplier_batch_rejects_amount_over_balance(self):
+        factura = self._tres_facturas()[0]
+
+        url = f"{reverse('treasury:pagos_proveedor_create')}?proveedor={self.supplier.pk}"
+        response = self.client.post(
+            url,
+            {
+                "medio_pago": PagoTesoreria.MedioPago.TRANSFERENCIA,
+                "cuenta_bancaria": self.bank_account.pk,
+                "fecha_pago": timezone.localdate(),
+                f"pagar_{factura.pk}": "on",
+                f"monto_{factura.pk}": "500.00",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        factura.refresh_from_db()
+        self.assertEqual(factura.saldo_pendiente, Decimal("100.00"))
+        self.assertEqual(PagoTesoreria.objects.count(), 0)
+
+    def test_supplier_batch_requires_at_least_one_invoice(self):
+        self._tres_facturas()
+
+        url = f"{reverse('treasury:pagos_proveedor_create')}?proveedor={self.supplier.pk}"
+        response = self.client.post(
+            url,
+            {
+                "medio_pago": PagoTesoreria.MedioPago.TRANSFERENCIA,
+                "cuenta_bancaria": self.bank_account.pk,
+                "fecha_pago": timezone.localdate(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(PagoTesoreria.objects.count(), 0)
+
+    def test_supplier_batch_screen_lists_only_that_supplier_invoices(self):
+        facturas = self._tres_facturas()
+        otro = create_supplier(razon_social="Proveedor Dos SA", actor=self.admin)
+        register_payable(
+            proveedor=otro,
+            categoria=self.category,
+            concepto="Factura de otro proveedor",
+            fecha_emision=timezone.localdate(),
+            fecha_vencimiento=timezone.localdate(),
+            importe_total=Decimal("70.00"),
+            sucursal=self.sucursal,
+            actor=self.admin,
+        )
+
+        url = f"{reverse('treasury:pagos_proveedor_create')}?proveedor={self.supplier.pk}"
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, facturas[0].concepto)
+        self.assertNotContains(response, "Factura de otro proveedor")
+
+    def test_supplier_batch_is_atomic_when_one_line_fails(self):
+        """Si una linea falla no queda ningun pago registrado."""
+        facturas = self._tres_facturas()
+        # La segunda se anula despues de armar el lote: el servicio la rechaza.
+        annul_payable(payable=facturas[1], motivo="Cargada por error", actor=self.admin)
+
+        with self.assertRaises(ValidationError):
+            register_supplier_payment_batch(
+                proveedor=self.supplier,
+                lineas=[
+                    (facturas[0], Decimal("100.00")),
+                    (facturas[1], Decimal("100.00")),
+                ],
+                bank_account=self.bank_account,
+                medio_pago=PagoTesoreria.MedioPago.TRANSFERENCIA,
+                fecha_pago=timezone.localdate(),
+                actor=self.admin,
+            )
+
+        self.assertEqual(PagoTesoreria.objects.count(), 0)
+        facturas[0].refresh_from_db()
+        self.assertEqual(facturas[0].saldo_pendiente, Decimal("100.00"))
+
+    def test_supplier_batch_rejects_mixed_suppliers(self):
+        factura = self._tres_facturas()[0]
+        otro = create_supplier(razon_social="Proveedor Tres SA", actor=self.admin)
+        ajena = register_payable(
+            proveedor=otro,
+            categoria=self.category,
+            concepto="De otro",
+            fecha_emision=timezone.localdate(),
+            fecha_vencimiento=timezone.localdate(),
+            importe_total=Decimal("50.00"),
+            sucursal=self.sucursal,
+            actor=self.admin,
+        )
+
+        with self.assertRaises(ValidationError):
+            register_supplier_payment_batch(
+                proveedor=self.supplier,
+                lineas=[(factura, Decimal("100.00")), (ajena, Decimal("50.00"))],
+                bank_account=self.bank_account,
+                medio_pago=PagoTesoreria.MedioPago.TRANSFERENCIA,
+                fecha_pago=timezone.localdate(),
+                actor=self.admin,
+            )
+        self.assertEqual(PagoTesoreria.objects.count(), 0)
 
     def test_payment_form_hides_payables_from_other_empresa(self):
         """A4: el desplegable de deudas del pago mezclaba TODAS las empresas (el

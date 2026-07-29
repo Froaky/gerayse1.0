@@ -1,0 +1,104 @@
+{% extends "treasury/layout.html" %}
+{% block title %}{{ title }} | Tesorería | Gerayse{% endblock %}
+{% block content %}
+  <section id="form-card" class="card">
+    <div class="row">
+      <div>
+        <h1>{{ title }}</h1>
+        <p class="muted">{{ subtitle }}</p>
+      </div>
+      <a class="button-secondary" href="{{ back_url }}">Cambiar proveedor</a>
+    </div>
+
+    {% if form.non_field_errors %}
+      <ul class="errors">
+        {% for error in form.non_field_errors %}
+          <li>{{ error }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    <form method="post" action="{{ form_action }}" hx-post="{{ form_action }}" hx-target="#form-card" hx-swap="outerHTML" hx-sync="this:drop" hx-disabled-elt="find button" class="stack mt-16">
+      {% csrf_token %}
+
+      <h2 style="font-size:1.05rem;margin:0;">Datos del pago</h2>
+      {% for field in form.campos_comunes %}
+        <div class="field">
+          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+          {% if field.help_text %}
+            <small class="muted">{{ field.help_text }}</small>
+          {% endif %}
+          {% for error in field.errors %}
+            <div class="error">{{ error }}</div>
+          {% endfor %}
+        </div>
+      {% endfor %}
+
+      <div class="row mt-16">
+        <h2 style="font-size:1.05rem;margin:0;">Facturas impagas</h2>
+        <span class="badge-muted">{{ form.payables|length }} factura(s)</span>
+      </div>
+      <p class="muted" style="margin-top:4px;">
+        Tildá las que vas a pagar. El importe viene con el saldo completo; si pagás
+        una parte, editalo.
+      </p>
+
+      <div class="list mt-8">
+        {% for fila in form.filas %}
+          <article class="list-item">
+            <div class="row">
+              <label for="{{ fila.check.id_for_label }}" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                {{ fila.check }}
+                <strong>
+                  {% if fila.payable.referencia_comprobante %}
+                    Factura {{ fila.payable.referencia_comprobante }}
+                  {% else %}
+                    Deuda #{{ fila.payable.pk }}
+                  {% endif %}
+                </strong>
+              </label>
+              <span class="badge {% if fila.payable.esta_vencida %}badge-danger{% else %}badge-muted{% endif %}">
+                {% if fila.payable.esta_vencida %}Vencida{% else %}{{ fila.payable.get_estado_display }}{% endif %}
+              </span>
+            </div>
+
+            <div class="summary-grid mt-12">
+              <div class="summary">
+                <span class="muted">Concepto</span>
+                <strong>{{ fila.payable.concepto }}</strong>
+              </div>
+              <div class="summary">
+                <span class="muted">Importe factura</span>
+                <strong>${{ fila.payable.importe_total }}</strong>
+              </div>
+              <div class="summary">
+                <span class="muted">Saldo pendiente</span>
+                <strong>${{ fila.payable.saldo_pendiente }}</strong>
+              </div>
+              <div class="summary">
+                <span class="muted">Emisión / Vencimiento</span>
+                <strong>{{ fila.payable.fecha_emision|date:"d/m/Y" }} · {{ fila.payable.fecha_vencimiento|date:"d/m/Y" }}</strong>
+              </div>
+            </div>
+
+            <div class="field mt-8">
+              <label for="{{ fila.monto.id_for_label }}">{{ fila.monto.label }}</label>
+              {{ fila.monto }}
+              {% for error in fila.monto.errors %}
+                <div class="error">{{ error }}</div>
+              {% endfor %}
+            </div>
+          </article>
+        {% empty %}
+          <p class="muted">Este proveedor no tiene facturas impagas.</p>
+        {% endfor %}
+      </div>
+
+      <div class="row mt-16">
+        <span class="muted">Se registra un pago por factura, así el seguimiento queda individual.</span>
+        <button class="button" type="submit">Registrar pagos</button>
+      </div>
+    </form>
+  </section>
+{% endblock %}

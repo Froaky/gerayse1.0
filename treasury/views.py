@@ -10,6 +10,7 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.http import urlencode
 from django.views.decorators.http import require_http_methods
 
 from .forms import (
@@ -46,6 +47,8 @@ from .forms import (
     SupplierFilterForm,
     SupplierForm,
     SupplierHistoryFilterForm,
+    SupplierPaymentBatchForm,
+    SupplierPickerForm,
     TreasuryDashboardFilterForm,
     TransferPaymentForm,
 )
@@ -102,6 +105,7 @@ from .services import (
     register_egreso_tesoreria,
     register_payable,
     register_special_commitment,
+    register_supplier_payment_batch,
     register_transfer_payment,
     scope_central_cash_movements,
     set_initial_bank_balance,
@@ -137,6 +141,7 @@ TREASURY_WRITE_VIEW_NAMES = {
     "pagos_cheque_create",
     "pagos_echeq_create",
     "pagos_efectivo_create",
+    "pagos_proveedor_create",
     "pagos_annul",
     "bank_movements_create",
     "bank_movements_edit_confirm",
@@ -1360,7 +1365,10 @@ def pagos_list(request):
         if sucursal:
             queryset = queryset.filter(cuenta_por_pagar__sucursal=sucursal)
     actions = [
-        _action(reverse("treasury:pagos_transferencia_create"), "Transferencia", "primary"),
+        # Camino recomendado: elegir proveedor y pagar 1 o varias de sus facturas
+        # de una sola vez. Los cuatro de abajo siguen para el pago de a uno.
+        _action(reverse("treasury:pagos_proveedor_create"), "Pagar por proveedor", "primary"),
+        _action(reverse("treasury:pagos_transferencia_create"), "Transferencia"),
         _action(reverse("treasury:pagos_cheque_create"), "Cheque"),
         _action(reverse("treasury:pagos_echeq_create"), "ECHEQ"),
         _action(reverse("treasury:pagos_efectivo_create"), "Efectivo"),
@@ -1477,6 +1485,81 @@ def pagos_efectivo_create(request):
         register_cash_payment,
         "Pago en efectivo",
         "Registra un egreso interno en caja central y recompone la deuda.",
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def pagos_proveedor_create(request):
+    """Pago por proveedor: se elige el proveedor y se pagan 1 o VARIAS de sus
+    facturas impagas en una sola operacion. Se registra un pago por factura, asi
+    el seguimiento por factura queda igual que cargandolas de a una."""
+    _require_treasury_admin(request)
+    empresa_ids = _get_empresa_ids(request)
+    back_url = reverse("treasury:pagos_list")
+
+    proveedor_id = request.POST.get("proveedor") or request.GET.get("proveedor")
+    proveedor = None
+    if proveedor_id and str(proveedor_id).isdigit():
+        proveedor = Proveedor.objects.filter(pk=proveedor_id).first()
+
+    # Paso 1: elegir proveedor (solo los que tienen facturas impagas).
+    if proveedor is None:
+        picker = SupplierPickerForm(request.GET or None, empresa_ids=empresa_ids)
+        return _render_form(
+            request,
+            {
+                "title": "Pago por proveedor",
+                "subtitle": "Elegí el proveedor y después tildá las facturas que vas a pagar.",
+                "form": picker,
+                "submit_label": "Ver facturas impagas",
+                "back_url": back_url,
+                "form_action": request.path,
+                "form_method": "get",
+            },
+        )
+
+    form = SupplierPaymentBatchForm(
+        request.POST or None,
+        proveedor=proveedor,
+        empresa_ids=empresa_ids,
+        initial={"fecha_pago": timezone.localdate()},
+    )
+    if request.method == "POST" and form.is_valid():
+        try:
+            pagos = register_supplier_payment_batch(
+                proveedor=proveedor,
+                lineas=form.lineas_seleccionadas(),
+                bank_account=form.cleaned_data.get("cuenta_bancaria"),
+                medio_pago=form.cleaned_data["medio_pago"],
+                fecha_pago=form.cleaned_data["fecha_pago"],
+                referencia=form.cleaned_data.get("referencia", ""),
+                observaciones=form.cleaned_data.get("observaciones", ""),
+                actor=request.user,
+            )
+        except (ValidationError, IntegrityError) as error:
+            _handle_operation_error(form, error, "No se pudo registrar el pago.")
+        else:
+            total = sum((pago.monto for pago in pagos), Decimal("0.00"))
+            messages.success(
+                request,
+                f"{len(pagos)} factura(s) de {proveedor} pagadas por ${total}.",
+            )
+            url = reverse("treasury:pagos_list")
+            return _hx_redirect(url) if _is_htmx(request) else redirect(url)
+
+    return render(
+        request,
+        "treasury/supplier_payment_batch.html",
+        {
+            "title": f"Pagar facturas de {proveedor}",
+            "subtitle": "Tildá una o varias facturas. El importe viene con el saldo completo y lo podés editar.",
+            "form": form,
+            "proveedor": proveedor,
+            "back_url": reverse("treasury:pagos_proveedor_create"),
+            "form_action": f"{request.path}?{urlencode({'proveedor': proveedor.pk})}",
+        },
+        status=400 if request.method == "POST" and not form.is_valid() else 200,
     )
 
 

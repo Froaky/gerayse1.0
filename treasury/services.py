@@ -692,6 +692,65 @@ def register_payment(
     return payment
 
 
+@transaction.atomic
+def register_supplier_payment_batch(
+    *,
+    proveedor: Proveedor,
+    lineas,
+    bank_account: CuentaBancaria = None,
+    medio_pago: str,
+    fecha_pago,
+    referencia: str = "",
+    observaciones: str = "",
+    actor=None,
+) -> list[PagoTesoreria]:
+    """Paga VARIAS facturas de UN mismo proveedor en una sola operacion.
+
+    `lineas` es un iterable de (CuentaPorPagar, monto). Se crea UN PagoTesoreria
+    por deuda -> el seguimiento por factura queda intacto y toda la validacion de
+    register_payment (sobrepago, deuda anulada/pagada, compromiso especial,
+    recalculo de saldo) se sigue aplicando por deuda. Es atomico: si falla una
+    linea no se registra ninguna.
+
+    La referencia se sufija por linea ("REF (1/3)") porque PagoTesoreria tiene
+    unicidad por (cuenta_bancaria, medio_pago, referencia): repetirla tal cual
+    haria explotar el segundo pago.
+    """
+    _require_actor(actor)
+    lineas = [(payable, monto) for payable, monto in lineas if monto and monto > 0]
+    if not lineas:
+        raise ValidationError({"__all__": "Elegí al menos una factura con importe a pagar."})
+
+    for payable, _ in lineas:
+        if payable.proveedor_id != proveedor.pk:
+            raise ValidationError(
+                {"__all__": "Todas las facturas del pago deben ser del mismo proveedor."}
+            )
+
+    total = len(lineas)
+    referencia = (referencia or "").strip()
+    pagos = []
+    # Orden estable por pk: evita deadlocks entre lotes concurrentes que compartan
+    # deudas, porque register_payment toma select_for_update por deuda.
+    for indice, (payable, monto) in enumerate(sorted(lineas, key=lambda item: item[0].pk), start=1):
+        linea_referencia = referencia
+        if referencia and total > 1:
+            linea_referencia = f"{referencia} ({indice}/{total})"[:80]
+        pagos.append(
+            register_payment(
+                payable=payable,
+                bank_account=bank_account,
+                medio_pago=medio_pago,
+                fecha_pago=fecha_pago,
+                monto=monto,
+                referencia=linea_referencia,
+                observaciones=observaciones,
+                actor=actor,
+            )
+        )
+    return pagos
+
+
 def register_transfer_payment(
     *,
     payable: CuentaPorPagar,
