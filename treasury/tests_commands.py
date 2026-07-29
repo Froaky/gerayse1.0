@@ -10,7 +10,12 @@ from users.models import Role
 
 from cashops.models import RubroOperativo
 from treasury.models import CuentaBancaria, CuentaPorPagar, MovimientoBancario
-from treasury.services import create_payable_category, create_supplier, register_payable
+from treasury.services import (
+    create_payable_category,
+    create_supplier,
+    register_payable,
+    register_transfer_payment,
+)
 
 
 User = get_user_model()
@@ -110,5 +115,98 @@ class ReporteSinSucursalCommandTests(TestCase):
 
         after = list(
             CuentaPorPagar.objects.values_list("pk", "sucursal_id", "saldo_pendiente")
+        )
+        self.assertEqual(before, after)
+
+
+class DesgloseDeudaCommandTests(TestCase):
+    def setUp(self):
+        self.admin_role = Role.objects.create(code="ADMIN", name="Administrador")
+        self.admin = User.objects.create_user(
+            username="admin-desglose", password="test", role=self.admin_role
+        )
+        self.rubro = RubroOperativo.objects.create(nombre="Insumos")
+        self.category = create_payable_category(
+            nombre="Insumos", rubro_operativo=self.rubro, actor=self.admin
+        )
+        self.supplier = create_supplier(razon_social="Proveedor Desglose", actor=self.admin)
+        self.cuenta = CuentaBancaria.objects.create(
+            nombre="Cuenta Test", banco="Banco Test", tipo_cuenta="CC", numero_cuenta="999"
+        )
+
+    def _run(self, **options):
+        out = StringIO()
+        call_command("desglose_deuda", stdout=out, **options)
+        return out.getvalue()
+
+    def _crear_deuda(self, importe="100.00"):
+        return register_payable(
+            proveedor=self.supplier,
+            categoria=self.category,
+            concepto="Factura",
+            fecha_emision=timezone.localdate(),
+            fecha_vencimiento=timezone.localdate(),
+            importe_total=Decimal(importe),
+            actor=self.admin,
+        )
+
+    def test_base_vacia_muestra_titulares_y_no_modifica(self):
+        output = self._run()
+        self.assertIn("DEUDA VIVA", output)
+        self.assertIn("DEVENGADO", output)
+        self.assertIn("Ningun dato fue modificado", output)
+
+    def test_deuda_pendiente_completa_suma_viva_y_devengado(self):
+        self._crear_deuda("100.00")
+
+        output = self._run()
+
+        # deuda viva == importe == devengado == 100 (nada pagado)
+        self.assertIn("$100,00", output)
+        self.assertIn("Proveedor Desglose", output)
+        self.assertIn("Insumos", output)
+
+    def test_deuda_parcial_separa_viva_de_devengado(self):
+        deuda = self._crear_deuda("100.00")
+        register_transfer_payment(
+            payable=deuda,
+            bank_account=self.cuenta,
+            fecha_pago=timezone.localdate(),
+            monto=Decimal("30.00"),
+            actor=self.admin,
+        )
+        deuda.refresh_from_db()
+        self.assertEqual(deuda.estado, CuentaPorPagar.Estado.PARCIAL)
+        self.assertEqual(deuda.saldo_pendiente, Decimal("70.00"))
+
+        output = self._run()
+
+        # deuda viva = 70 (lo que falta), devengado / importe factura = 100
+        self.assertIn("$70,00", output)
+        self.assertIn("$100,00", output)
+        # la diferencia ya pagada (30) se explicita
+        self.assertIn("$30,00", output)
+
+    def test_deuda_anulada_no_cuenta_en_viva(self):
+        from treasury.services import annul_payable
+
+        deuda = self._crear_deuda("500.00")
+        annul_payable(payable=deuda, motivo="Cargada por error", actor=self.admin)
+
+        output = self._run()
+
+        # No debe figurar como deuda viva; el diagnostico la lista como anulada.
+        self.assertIn("Deudas ANULADAS", output)
+
+    def test_no_modifica_datos(self):
+        self._crear_deuda("100.00")
+        before = list(
+            CuentaPorPagar.objects.values_list("pk", "estado", "saldo_pendiente")
+        )
+
+        self._run()
+
+        after = list(
+            CuentaPorPagar.objects.values_list("pk", "estado", "saldo_pendiente")
         )
         self.assertEqual(before, after)
