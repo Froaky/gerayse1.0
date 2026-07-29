@@ -1388,7 +1388,14 @@ def _payment_form_initial(request):
 
 def _register_payment_view(request, form_class, service_func, title: str, subtitle: str):
     _require_treasury_admin(request)
-    form = form_class(request.POST or None, initial=_payment_form_initial(request))
+    # empresa_ids acota las deudas y las cuentas bancarias ofrecidas a las
+    # empresas seleccionadas: sin esto el desplegable mezclaba deudas de todas
+    # las empresas (el listado de cuentas por pagar si filtraba).
+    form = form_class(
+        request.POST or None,
+        initial=_payment_form_initial(request),
+        empresa_ids=_get_empresa_ids(request),
+    )
     if request.method == "POST" and form.is_valid():
         kwargs = {
             "payable": form.cleaned_data["cuenta_por_pagar"],
@@ -2537,6 +2544,8 @@ def close_month_action(request):
             close_treasury_month(year, month, actor=request.user)
             messages.success(request, f"Periodo {month}/{year} cerrado correctamente.")
         except ValidationError as e:
-            messages.error(request, str(e))
+            # str(ValidationError) devuelve repr(list(...)): el usuario veria el
+            # mensaje entre corchetes y comillas. Mostramos el texto limpio.
+            messages.error(request, " ".join(e.messages))
             
     return redirect(request.META.get('HTTP_REFERER', reverse('treasury:disponibilidades')))

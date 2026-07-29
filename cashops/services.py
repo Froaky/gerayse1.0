@@ -1390,6 +1390,26 @@ def resync_all_operational_controls() -> int:
     return recalculated
 
 
+def treasury_month_is_closed(fecha) -> bool:
+    """True si el mes de tesoreria de esa fecha ya esta cerrado. El cierre es
+    GLOBAL (CierreMensualTesoreria solo tiene unique por mes y nunca se escribe
+    la sucursal), asi que NO hay que filtrar por sucursal: filtrarla daria
+    siempre False. Import perezoso via apps.get_model para no acoplar cashops
+    a treasury (mismo patron que _push_box_closure_to_central_cash)."""
+    from django.apps import apps
+
+    if fecha is None:
+        return False
+    CierreMensualTesoreria = apps.get_model("treasury", "CierreMensualTesoreria")
+    return CierreMensualTesoreria.objects.filter(mes=fecha.replace(day=1), cerrado=True).exists()
+
+
+MONTH_CLOSED_MESSAGE = (
+    "El mes de tesoreria de esa fecha ya esta cerrado: es una foto congelada y no se "
+    "pueden agregar cajas a un periodo cerrado. Elegi una fecha de un mes abierto."
+)
+
+
 @transaction.atomic
 def open_box(*, user, turno: Turno, sucursal: Sucursal, fecha_operativa, monto_inicial: Decimal, actor=None) -> Caja:
     actor = actor or user
@@ -1400,6 +1420,8 @@ def open_box(*, user, turno: Turno, sucursal: Sucursal, fecha_operativa, monto_i
         raise PermissionDenied("No tenes permiso para asignar una caja a otro usuario.")
     if monto_inicial < 0:
         raise ValidationError({"monto_inicial": "El monto inicial no puede ser negativo."})
+    if treasury_month_is_closed(fecha_operativa):
+        raise ValidationError({"fecha_operativa": MONTH_CLOSED_MESSAGE})
     if not is_cashops_admin(actor) and getattr(user, "usuario_fijo", False):
         base_sucursal_id = getattr(user, "sucursal_base_id", None)
         if base_sucursal_id is None:
@@ -2102,6 +2124,16 @@ def update_box_metadata(
         raise ValidationError({"turno": "El turno debe pertenecer a la misma empresa de la sucursal."})
     if not can_assign_box_to_user(actor, usuario):
         raise PermissionDenied("No tenés permiso para asignar esta caja a ese usuario.")
+    # Puerta trasera del guard de open_box: editando la caja se la podria MOVER a
+    # un mes ya cerrado. Solo se bloquea si cambia de mes, para no trabar la
+    # correccion de una caja que ya vivia en ese periodo.
+    if (
+        fecha_operativa
+        and caja.fecha_operativa
+        and fecha_operativa.replace(day=1) != caja.fecha_operativa.replace(day=1)
+        and treasury_month_is_closed(fecha_operativa)
+    ):
+        raise ValidationError({"fecha_operativa": MONTH_CLOSED_MESSAGE})
     if caja.estado == Caja.Estado.ABIERTA and Caja.objects.filter(
         estado=Caja.Estado.ABIERTA,
         usuario=usuario,

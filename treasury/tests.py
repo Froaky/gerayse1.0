@@ -2701,6 +2701,48 @@ class TreasuryViewTests(TreasuryTestCase):
         self.assertEqual(commitment.estado, CompromisoEspecial.Estado.APROBADO)
         self.assertEqual(commitment.autorizado_por, self.admin)
 
+    def test_payment_form_hides_payables_from_other_empresa(self):
+        """A4: el desplegable de deudas del pago mezclaba TODAS las empresas (el
+        listado de cuentas por pagar si filtraba). Una deuda de otra empresa no
+        se ofrece ni se puede pagar, aunque se mande el id a mano."""
+        otra_empresa = Empresa.objects.create(nombre="Otra Empresa SRL")
+        otra_sucursal = Sucursal.objects.create(
+            nombre="Sucursal Ajena",
+            codigo="SA01",
+            razon_social="Otra Empresa SRL",
+            empresa=otra_empresa,
+        )
+        deuda_ajena = register_payable(
+            proveedor=self.supplier,
+            categoria=self.category,
+            concepto="Factura de otra empresa",
+            fecha_emision=timezone.localdate(),
+            fecha_vencimiento=timezone.localdate(),
+            importe_total=Decimal("500.00"),
+            sucursal=otra_sucursal,
+            actor=self.admin,
+        )
+
+        # El admin solo tiene self.empresa habilitada: no debe verla en el form.
+        get_response = self.client.get(reverse("treasury:pagos_transferencia_create"))
+        self.assertEqual(get_response.status_code, 200)
+        self.assertNotContains(get_response, "Factura de otra empresa")
+
+        # Y forzando el id por POST, el form la rechaza.
+        post_response = self.client.post(
+            reverse("treasury:pagos_transferencia_create"),
+            {
+                "cuenta_por_pagar": deuda_ajena.pk,
+                "cuenta_bancaria": self.bank_account.pk,
+                "fecha_pago": timezone.localdate(),
+                "monto": "100.00",
+                "referencia": "TRF-AJENA",
+            },
+        )
+        self.assertEqual(post_response.status_code, 400)
+        deuda_ajena.refresh_from_db()
+        self.assertEqual(deuda_ajena.saldo_pendiente, Decimal("500.00"))
+
     def test_transfer_payment_create_reduces_balance(self):
         payable = register_payable(
             proveedor=self.supplier,

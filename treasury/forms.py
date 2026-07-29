@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django import forms
+from django.db.models import Q
 from django.utils import timezone
 
 from .models import (
@@ -429,6 +430,27 @@ class SpecialCommitmentDecisionForm(TreasuryStyledFormMixin, forms.Form):
         return cleaned_data
 
 
+def open_payables_queryset(empresa_ids=None):
+    """Deudas que todavia se deben (PENDIENTE/PARCIAL), acotadas a las empresas
+    seleccionadas. Se incluyen las deudas legacy sin sucursal, igual que el
+    listado de cuentas por pagar. empresa_ids=None significa 'sin filtro';
+    una lista vacia significa 'ninguna empresa seleccionada' -> nada."""
+    queryset = (
+        CuentaPorPagar.objects.filter(
+            estado__in=[CuentaPorPagar.Estado.PENDIENTE, CuentaPorPagar.Estado.PARCIAL]
+        )
+        .select_related("proveedor", "categoria")
+        .order_by("fecha_vencimiento", "proveedor__razon_social")
+    )
+    if empresa_ids is not None:
+        if not empresa_ids:
+            return queryset.none()
+        queryset = queryset.filter(
+            Q(sucursal__empresa_id__in=empresa_ids) | Q(sucursal__isnull=True)
+        )
+    return queryset
+
+
 class PaymentBaseForm(TreasuryStyledFormMixin, forms.Form):
     cuenta_por_pagar = forms.ModelChoiceField(queryset=CuentaPorPagar.objects.none(), label="Cuenta por pagar")
     cuenta_bancaria = forms.ModelChoiceField(queryset=CuentaBancaria.objects.none(), label="Cuenta bancaria")
@@ -439,14 +461,16 @@ class PaymentBaseForm(TreasuryStyledFormMixin, forms.Form):
     observaciones = forms.CharField(required=False, max_length=255, widget=forms.Textarea(attrs={"placeholder": "Observaciones del pago"}))
     medio_pago = ""
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, empresa_ids=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["cuenta_por_pagar"].queryset = (
-            CuentaPorPagar.objects.filter(estado__in=[CuentaPorPagar.Estado.PENDIENTE, CuentaPorPagar.Estado.PARCIAL])
-            .select_related("proveedor", "categoria")
-            .order_by("fecha_vencimiento", "proveedor__razon_social")
-        )
-        self.fields["cuenta_bancaria"].queryset = CuentaBancaria.objects.filter(activa=True).order_by("banco", "nombre")
+        self.fields["cuenta_por_pagar"].queryset = open_payables_queryset(empresa_ids)
+        cuentas = CuentaBancaria.objects.filter(activa=True).order_by("banco", "nombre")
+        if empresa_ids is not None:
+            # El helper ya devuelve un Q vacio (nada) cuando la lista esta vacia.
+            from .services import bank_account_empresa_scope_query
+
+            cuentas = cuentas.filter(bank_account_empresa_scope_query(empresa_ids))
+        self.fields["cuenta_bancaria"].queryset = cuentas
         self._apply_input_classes()
 
     def clean(self):
@@ -961,11 +985,7 @@ class CashPaymentForm(TreasuryStyledFormMixin, forms.Form):
     monto = forms.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0.01"), widget=forms.NumberInput(attrs={"step": "0.01", "placeholder": "0.00"}))
     observaciones = forms.CharField(required=False, max_length=255, widget=forms.Textarea(attrs={"placeholder": "Observaciones del pago"}))
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, empresa_ids=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["cuenta_por_pagar"].queryset = (
-            CuentaPorPagar.objects.filter(estado__in=[CuentaPorPagar.Estado.PENDIENTE, CuentaPorPagar.Estado.PARCIAL])
-            .select_related("proveedor", "categoria")
-            .order_by("fecha_vencimiento", "proveedor__razon_social")
-        )
+        self.fields["cuenta_por_pagar"].queryset = open_payables_queryset(empresa_ids)
         self._apply_input_classes()

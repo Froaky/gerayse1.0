@@ -5,6 +5,7 @@ from .models import (
     AcreditacionTarjeta,
     CajaCentral,
     CategoriaCuentaPagar,
+    CierreMensualTesoreria,
     CompromisoEspecial,
     CuentaBancaria,
     CuentaPorPagar,
@@ -218,3 +219,30 @@ class DescuentoAcreditacionAdmin(TreasuryReadOnlyAdminMixin, admin.ModelAdmin):
     list_filter = ("tipo",)
     search_fields = ("descripcion", "acreditacion__referencia_externa", "acreditacion__canal")
     autocomplete_fields = ("acreditacion", "creado_por")
+
+
+@admin.register(CierreMensualTesoreria)
+class CierreMensualTesoreriaAdmin(TreasuryNoDeleteAdminMixin, admin.ModelAdmin):
+    """VALVULA DE ESCAPE. Un mes cerrado bloquea abrir cajas con fecha de ese
+    periodo, y no hay pantalla de reapertura. Si se cerro un mes por error, un
+    superusuario puede destildar 'cerrado' aca para desbloquear la operacion.
+    Es una herramienta de emergencia, no de uso diario: el resto de los campos
+    (saldos congelados) queda de solo lectura para no falsear la foto."""
+
+    list_display = ("mes", "cerrado", "saldo_final_efectivo", "cerrado_por", "cerrado_en")
+    list_filter = ("cerrado",)
+    ordering = ("-mes",)
+    readonly_fields = (
+        "mes",
+        "saldo_inicial_efectivo",
+        "saldo_final_efectivo",
+        "saldos_bancarios_json",
+        "sucursal",
+        "cerrado_por",
+        "cerrado_en",
+    )
+    fields = readonly_fields + ("cerrado", "observaciones")
+
+    def has_add_permission(self, request):
+        # El cierre se crea unicamente desde el servicio close_treasury_month.
+        return False

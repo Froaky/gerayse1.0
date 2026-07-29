@@ -3228,11 +3228,16 @@ class EP13ReviewFixTests(CashopsTestCase):
         self.assertTrue(closing.cerrado)
 
     def test_validation_after_month_close_redates_central_push(self):
-        from treasury.models import MovimientoCajaCentral
-        from treasury.services import close_treasury_month
+        """Red de seguridad para datos LEGACY: una caja que quedo pendiente con el
+        mes ya cerrado empuja el efectivo re-fechado al dia de la validacion. Hoy
+        los guards de cierre y de apertura impiden llegar a este estado, pero puede
+        existir de antes, asi que el re-fechado tiene que seguir funcionando."""
+        from treasury.models import CierreMensualTesoreria, MovimientoCajaCentral
 
-        close_treasury_month(2026, 3, actor=self.admin)
         caja = self._pending_box()
+        # Se marca el mes como cerrado SALTEANDO close_treasury_month: el servicio
+        # hoy lo rechazaria por la caja pendiente. Representa un cierre previo.
+        CierreMensualTesoreria.objects.create(mes=date(2026, 3, 1), cerrado=True)
 
         validate_box_cash(caja=caja, actor=self.admin)
 
@@ -3240,6 +3245,105 @@ class EP13ReviewFixTests(CashopsTestCase):
         self.assertEqual(push.monto, Decimal("150.00"))
         self.assertEqual(push.fecha, timezone.localdate())
         self.assertIn("mes de tesoreria ya cerrado", push.observaciones)
+
+    def test_month_close_blocked_while_boxes_still_open(self):
+        """A1: una caja ABIERTA nace con validacion_estado NO_REQUERIDA, asi que
+        no la agarra el chequeo de pendientes de validacion. El mes no se puede
+        cerrar hasta que se cierre la caja."""
+        from treasury.services import close_treasury_month
+
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("100.00"),
+            actor=self.operator,
+        )
+
+        with self.assertRaises(ValidationError) as ctx:
+            close_treasury_month(2026, 3, actor=self.admin)
+        self.assertIn("todavia abiertas", " ".join(ctx.exception.messages))
+
+        close_box(caja=caja, saldo_fisico=Decimal("100.00"), cerrado_por=self.operator, actor=self.operator)
+        caja.refresh_from_db()
+        validate_box_cash(caja=caja, actor=self.admin)
+
+        closing = close_treasury_month(2026, 3, actor=self.admin)
+        self.assertTrue(closing.cerrado)
+
+    def test_open_box_blocked_when_treasury_month_is_closed(self):
+        """A2: con el mes cerrado no se pueden abrir cajas de ese periodo (si no,
+        su efectivo entraria al mes equivocado). Otro mes abierto si se puede."""
+        from treasury.models import CierreMensualTesoreria
+
+        CierreMensualTesoreria.objects.create(mes=date(2026, 3, 1), cerrado=True)
+
+        with self.assertRaises(ValidationError) as ctx:
+            open_box(
+                user=self.operator,
+                turno=self.turno_a,
+                sucursal=self.branch_a,
+                fecha_operativa=self.fecha_op,
+                monto_inicial=Decimal("100.00"),
+                actor=self.operator,
+            )
+        self.assertIn("fecha_operativa", ctx.exception.message_dict)
+
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=date(2026, 4, 1),
+            monto_inicial=Decimal("100.00"),
+            actor=self.operator,
+        )
+        self.assertEqual(caja.estado, Caja.Estado.ABIERTA)
+
+    def test_box_edit_cannot_move_box_into_closed_month(self):
+        """A2 (puerta trasera): editando la caja no se la puede mover a un mes ya
+        cerrado, pero si se puede corregir una caja que ya vivia en ese periodo."""
+        from treasury.models import CierreMensualTesoreria
+
+        from .services import update_box_metadata
+
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=date(2026, 4, 15),
+            monto_inicial=Decimal("100.00"),
+            actor=self.operator,
+        )
+        CierreMensualTesoreria.objects.create(mes=date(2026, 3, 1), cerrado=True)
+        self._grant_closed_box_fix(self.admin)
+
+        with self.assertRaises(ValidationError) as ctx:
+            update_box_metadata(
+                caja=caja,
+                usuario=self.operator,
+                sucursal=self.branch_a,
+                turno=self.turno_a,
+                fecha_operativa=date(2026, 3, 20),
+                monto_inicial=Decimal("100.00"),
+                motivo="Mover a marzo cerrado",
+                actor=self.admin,
+            )
+        self.assertIn("fecha_operativa", ctx.exception.message_dict)
+
+        # Dentro del mismo mes abierto la edicion sigue funcionando.
+        update_box_metadata(
+            caja=caja,
+            usuario=self.operator,
+            sucursal=self.branch_a,
+            turno=self.turno_a,
+            fecha_operativa=date(2026, 4, 16),
+            monto_inicial=Decimal("120.00"),
+            motivo="Corregir fecha dentro de abril",
+            actor=self.admin,
+        )
+        caja.refresh_from_db()
+        self.assertEqual(caja.fecha_operativa, date(2026, 4, 16))
 
     def test_forged_concept_cannot_suppress_validation_push(self):
         from treasury.models import MovimientoCajaCentral

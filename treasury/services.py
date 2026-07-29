@@ -2492,9 +2492,24 @@ def close_treasury_month(year: int, month: int, actor=None) -> CierreMensualTeso
     # despues no se puede reconciliar.
     from cashops.models import Caja
 
-    pending_boxes = Caja.objects.filter(
+    boxes_in_month = Caja.objects.filter(
         fecha_operativa__gte=first_day,
         fecha_operativa__lt=_first_day_of_next_month(first_day),
+    )
+
+    # Un mes cerrado es una FOTO congelada: su saldo final pasa a ser el saldo
+    # inicial del mes siguiente y no se recalcula. Una caja todavia ABIERTA va
+    # a empujar efectivo cuando cierre, asi que dejar cerrar el mes con cajas
+    # abiertas congela un saldo que despues cambia. Ojo: una caja ABIERTA nace
+    # con validacion_estado=NO_REQUERIDA (el estado de validacion se define al
+    # cerrar), por eso NO la detecta el chequeo de pendientes de validacion.
+    if boxes_in_month.filter(estado=Caja.Estado.ABIERTA).exists():
+        raise ValidationError(
+            "No se puede cerrar el mes: hay cajas del periodo todavia abiertas. "
+            "Cerra esas cajas antes de cerrar el mes."
+        )
+
+    pending_boxes = boxes_in_month.filter(
         validacion_estado__in=Caja.VALIDACION_BLOQUEA_TOTALES,
     )
     if pending_boxes.exists():
