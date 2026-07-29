@@ -1,4 +1,5 @@
 {% extends "cashops/layout.html" %}
+{% load l10n %}
 {% block title %}Alertas Operativas | Gerayse{% endblock %}
 {% block content %}
   <section class="card">
@@ -53,7 +54,7 @@
           <select id="id_rubro" name="rubro" class="input select">
             <option value="">Todos</option>
             {% for rubro in rubros %}
-              <option value="{{ rubro.id }}" {% if rubro_actual == rubro.id %}selected{% endif %}>{{ rubro.nombre }}</option>
+              <option value="{{ rubro.id|unlocalize }}" {% if rubro_actual == rubro.id %}selected{% endif %}>{{ rubro.nombre }}</option>
             {% endfor %}
           </select>
         </div>
@@ -62,7 +63,7 @@
           <select id="id_sucursal" name="sucursal" class="input select">
             <option value="">Todas</option>
             {% for sucursal in sucursales %}
-              <option value="{{ sucursal.id }}" {% if sucursal_actual == sucursal.id %}selected{% endif %}>{{ sucursal.nombre }}</option>
+              <option value="{{ sucursal.id|unlocalize }}" {% if sucursal_actual == sucursal.id %}selected{% endif %}>{{ sucursal.nombre }}</option>
             {% endfor %}
           </select>
         </div>
@@ -113,7 +114,7 @@
             </div>
             <div class="summary">
               <span class="muted">Caja</span>
-              <strong>{% if alerta.caja_id %}#{{ alerta.caja_id }}{% else %}-{% endif %}</strong>
+              <strong>{% if alerta.caja_id %}#{{ alerta.caja_id|unlocalize }}{% else %}-{% endif %}</strong>
             </div>
             <div class="summary">
               <span class="muted">Turno</span>

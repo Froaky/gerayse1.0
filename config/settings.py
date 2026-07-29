@@ -113,6 +113,11 @@ TIME_ZONE = 'America/Argentina/Buenos_Aires'
 
 USE_I18N = True
 USE_TZ = True
+# Separador de miles en TODO numero renderizado por templates ($ 1.234.567,89).
+# OJO: tambien localiza ids/anios interpolados a mano en href/value; esos casos
+# llevan |unlocalize en el template (hay test de regresion que los cubre).
+# No afecta widgets de formulario, {% url %}, ni el CSV (csv.writer de Python).
+USE_THOUSAND_SEPARATOR = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'

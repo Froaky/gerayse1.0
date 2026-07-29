@@ -1,4 +1,5 @@
 {% extends "cashops/layout.html" %}
+{% load l10n %}
 {% block title %}Seguimiento de cajas | Gerayse{% endblock %}
 {% block content %}
   <section class="card">
@@ -31,9 +32,9 @@
       {% if sucursales %}
         <div class="field">
           <label for="id_sucursal">Sucursales</label>
-          <select id="id_sucursal" class="select" name="sucursal" multiple size="{{ sucursales|length|add:'0' }}">
+          <select id="id_sucursal" class="select" name="sucursal" multiple size="{{ sucursales|length|add:'0'|unlocalize }}">
             {% for sucursal in sucursales %}
-              <option value="{{ sucursal.id }}" {% if sucursal.id in selected_branch_ids %}selected{% endif %}>{{ sucursal.nombre }}</option>
+              <option value="{{ sucursal.id|unlocalize }}" {% if sucursal.id in selected_branch_ids %}selected{% endif %}>{{ sucursal.nombre }}</option>
             {% endfor %}
           </select>
           <small class="muted">Puedes elegir una o varias sucursales para ver el seguimiento conjunto.</small>
@@ -56,7 +57,7 @@
         <article class="list-item">
           <div class="row">
             <div>
-              <strong>Caja #{{ row.box.id }}</strong>
+              <strong>Caja #{{ row.box.id|unlocalize }}</strong>
               <div class="muted mt-8">{{ row.box.sucursal.nombre }} · {{ row.box.turno.get_tipo_display }} · {{ row.box.fecha_operativa|date:"d/m/Y" }}</div>
             </div>
             <span class="badge {{ row.follow_up.badge_class }}">{{ row.follow_up.label }}</span>

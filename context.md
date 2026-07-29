@@ -1342,6 +1342,32 @@ Last updated: 2026-07-08
 - Archivos: `users/models.py`, `users/views.py`, `users/migrations/0015_*`, `users/tests.py`, `cashops/permissions.py`, `cashops/services.py`, `cashops/views.py`, `cashops/urls.py`, `templates/cashops/partials/movement_list.html`, `templates/cashops/box_detail.html`, `cashops/tests.py`, `context.md`.
 - Tests: users +1 clase `MovementDeletePermissionTests` (4) + conteo modulos 7->8; cashops +3 servicio movimiento, +4 vista movimiento (abierta/permiso/aislamiento), +3 servicio deuda, +4 vista deuda. Renombrados los tests de delete de caja cerrada (siguen verdes por la logica OR).
 
+### Separador de miles en toda la UI (USE_THOUSAND_SEPARATOR) 2026-07-29
+
+Los importes se mostraban crudos ($275858100) en toda pantalla que no usara el filtro
+`|money` (solo 3 plantillas lo usaban; 53 importes vivos quedaban sin formato). Fix:
+
+- `config/settings.py`: `USE_THOUSAND_SEPARATOR = True`. Con `LANGUAGE_CODE=es-ar`
+  todo int/float/Decimal renderizado por template sale "1.234.567,89". Los widgets de
+  formulario, los args de `{% url %}` y el CSV (csv.writer de Python) NO se ven afectados.
+- CONTRAPARTIDA: el setting tambien localiza ids/anios interpolados A MANO en
+  href/value/querystring ("?box=1.234" rompe el link; `value="2.026"` rompia el form de
+  CERRAR MES hoy mismo, no a futuro). Se blindaron con `{% load l10n %}` + `|unlocalize`
+  los 26 casos funcionales + los "Caja #" visibles, en 13 templates: cashops
+  dashboard/layout/alert_panel/box_tracking/box_validation_queue/box_detail/box_reject/
+  management_matrix y treasury dashboard/layout/disponibilidades_report/selection_page/
+  supplier_payment_batch. Mapeo exhaustivo por workflow (399 interpolaciones clasificadas,
+  0 JS que parsee numeros del DOM, verificacion adversarial de cada funcional).
+- `payment_list.html` y `bank_movement_list.html` tienen ids crudos pero son plantillas
+  MUERTAS (ninguna vista las renderiza): no se tocaron a proposito.
+- Red de regresion: `core/tests_localization.py` (9 tests) renderiza las pantallas clave
+  con pks >= 1000 forzados y caza con regex cualquier numero con separador dentro de
+  href/action/value; ademas asserts positivos de montos con separador y del
+  `value="2026"` del form de cierre. Si un template nuevo interpola un id sin blindar,
+  esto lo detecta antes del deploy.
+- Regla para templates nuevos: todo id/pk/anio interpolado en un atributo o querystring
+  lleva `|unlocalize`; los counts y porcentajes visibles se dejan localizar.
+
 ### Tesoreria: pedido de la administracion (pagos, mes cerrado y arreglos) 2026-07-29
 
 Pedido de 5 puntos por WhatsApp. Clasificado con el usuario en MANTENIMIENTO (arreglos

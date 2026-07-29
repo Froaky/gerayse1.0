@@ -1,4 +1,5 @@
 {% extends "cashops/layout.html" %}
+{% load l10n %}
 {% block title %}Matriz de control | Gerayse{% endblock %}
 {% block content %}
   <section class="card">
@@ -9,7 +10,7 @@
       </div>
       <div class="list-actions">
         <a class="button-secondary" href="{% url 'cashops:dashboard' %}?scope=global">Dashboard</a>
-        <a class="button" href="{% url 'cashops:management_matrix_export' %}?fecha_desde={{ fecha_desde }}&fecha_hasta={{ fecha_hasta }}{% if selected_sucursal %}&sucursal={{ selected_sucursal.pk }}{% endif %}">Exportar CSV</a>
+        <a class="button" href="{% url 'cashops:management_matrix_export' %}?fecha_desde={{ fecha_desde }}&fecha_hasta={{ fecha_hasta }}{% if selected_sucursal %}&sucursal={{ selected_sucursal.pk|unlocalize }}{% endif %}">Exportar CSV</a>
       </div>
     </div>
     <form method="get" class="stack" style="margin-top:16px;">
@@ -27,7 +28,7 @@
           <select id="id_sucursal" class="input select" name="sucursal">
             <option value="">Global</option>
             {% for sucursal in sucursales %}
-              <option value="{{ sucursal.pk }}" {% if selected_sucursal.pk == sucursal.pk %}selected{% endif %}>{{ sucursal.nombre }}</option>
+              <option value="{{ sucursal.pk|unlocalize }}" {% if selected_sucursal.pk == sucursal.pk %}selected{% endif %}>{{ sucursal.nombre }}</option>
             {% endfor %}
           </select>
         </div>

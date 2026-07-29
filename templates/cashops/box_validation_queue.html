@@ -1,4 +1,5 @@
 {% extends "cashops/layout.html" %}
+{% load l10n %}
 {% block title %}Pendientes de validación | Gerayse{% endblock %}
 {% block content %}
   <section class="card">
@@ -16,7 +17,7 @@
           <select id="id_sucursal" class="input select" name="sucursal">
             <option value="">Todas</option>
             {% for sucursal in sucursales %}
-              <option value="{{ sucursal.pk }}" {% if selected_sucursal.pk == sucursal.pk %}selected{% endif %}>{{ sucursal.nombre }}</option>
+              <option value="{{ sucursal.pk|unlocalize }}" {% if selected_sucursal.pk == sucursal.pk %}selected{% endif %}>{{ sucursal.nombre }}</option>
             {% endfor %}
           </select>
         </div>
@@ -38,7 +39,7 @@
         <article class="list-item">
           <div class="row">
             <div>
-              <strong>Caja #{{ row.box.id }}</strong>
+              <strong>Caja #{{ row.box.id|unlocalize }}</strong>
               <div class="muted mt-8">{{ row.box.sucursal.nombre }} · {{ row.box.turno.get_tipo_display }} · {{ row.box.fecha_operativa|date:"d/m/Y" }}</div>
             </div>
             {% if row.is_rejected %}

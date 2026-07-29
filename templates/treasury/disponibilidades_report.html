@@ -1,6 +1,7 @@
 {% extends "treasury/layout.html" %}
 {% load humanize %}
 {% load treasury_tags %}
+{% load l10n %}
 
 {% block content %}
 <style>
@@ -135,7 +136,7 @@
             </div>
         </div>
         <div class="list-actions" style="justify-content: flex-end; margin-top: 20px;">
-            <a href="{% url 'treasury:central_cash_list' %}?year={{ snapshot.year }}&month={{ snapshot.month }}{% if snapshot.sucursal %}&sucursal={{ snapshot.sucursal.pk }}{% endif %}" class="button-secondary">Detalle de movimientos</a>
+            <a href="{% url 'treasury:central_cash_list' %}?year={{ snapshot.year|unlocalize }}&month={{ snapshot.month|unlocalize }}{% if snapshot.sucursal %}&sucursal={{ snapshot.sucursal.pk|unlocalize }}{% endif %}" class="button-secondary">Detalle de movimientos</a>
         </div>
     </div>
 
@@ -198,11 +199,11 @@
             {% if not snapshot.is_closed %}
                 <form action="{% url 'treasury:close_month' %}" method="post">
                     {% csrf_token %}
-                    <input type="hidden" name="year" value="{{ snapshot.year }}">
-                    <input type="hidden" name="month" value="{{ snapshot.month }}">
+                    <input type="hidden" name="year" value="{{ snapshot.year|unlocalize }}">
+                    <input type="hidden" name="month" value="{{ snapshot.month|unlocalize }}">
                     <button type="submit" class="button" style="background: var(--danger);"
                             onclick="return confirm('¿Estas seguro de cerrar este mes? Esta acción congelará los saldos para el siguiente período.')">
-                        Cerrar Mes {{ snapshot.month }}/{{ snapshot.year }}
+                        Cerrar Mes {{ snapshot.month|unlocalize }}/{{ snapshot.year|unlocalize }}
                     </button>
                 </form>
             {% else %}
