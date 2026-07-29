@@ -672,6 +672,97 @@ class TreasuryServiceTests(TreasuryTestCase):
         self.assertEqual(movement.proveedor, self.supplier)
         self.assertEqual(movement.categoria, self.category)
 
+    def test_supplier_history_excludes_annulled_from_both_totals(self):
+        """A5: el historial por proveedor sumaba las anuladas en el total pero no en
+        el pendiente, asi que se contradecia consigo mismo."""
+        from treasury.services import build_supplier_history_snapshot
+
+        viva = register_payable(
+            proveedor=self.supplier,
+            categoria=self.category,
+            concepto="Factura viva",
+            fecha_emision=timezone.localdate(),
+            fecha_vencimiento=timezone.localdate(),
+            importe_total=Decimal("100.00"),
+            sucursal=self.sucursal,
+            actor=self.admin,
+        )
+        anulada = register_payable(
+            proveedor=self.supplier,
+            categoria=self.category,
+            concepto="Factura anulada",
+            fecha_emision=timezone.localdate(),
+            fecha_vencimiento=timezone.localdate(),
+            importe_total=Decimal("900.00"),
+            sucursal=self.sucursal,
+            actor=self.admin,
+        )
+        annul_payable(payable=anulada, motivo="Cargada por error", actor=self.admin)
+
+        snapshot = build_supplier_history_snapshot(supplier=self.supplier)
+
+        # Los $900 anulados no deben aparecer en ninguno de los dos totales.
+        self.assertEqual(snapshot["historical_total"], Decimal("100.00"))
+        self.assertEqual(snapshot["historical_pending"], Decimal("100.00"))
+        self.assertEqual(viva.saldo_pendiente, Decimal("100.00"))
+
+    def test_annulling_payment_releases_its_bank_movement(self):
+        """A3: al anular el pago, su movimiento bancario quedaba colgado (apuntando
+        a un pago anulado con origen PAGO_TESORERIA), combinacion que el propio
+        clean() rechaza: no se podia editar, ni eliminar, ni re-vincular. Ahora
+        vuelve a MANUAL conservando la imputacion y queda operable otra vez."""
+        payable = register_payable(
+            proveedor=self.supplier,
+            categoria=self.category,
+            concepto="Factura a anular",
+            fecha_emision=timezone.localdate(),
+            fecha_vencimiento=timezone.localdate(),
+            importe_total=Decimal("500.00"),
+            sucursal=self.sucursal,
+            actor=self.admin,
+        )
+        payment = register_transfer_payment(
+            payable=payable,
+            bank_account=self.bank_account,
+            fecha_pago=timezone.localdate(),
+            monto=Decimal("120.00"),
+            referencia="TRF-ANULAR",
+            actor=self.admin,
+        )
+        movement = create_bank_movement(
+            cuenta_bancaria=self.bank_account,
+            tipo=MovimientoBancario.Tipo.DEBITO,
+            clase=MovimientoBancario.Clase.OTRO_EGRESO,
+            categoria=self.category,
+            rubro_operativo=self.rubro_servicios,
+            sucursal_gasto=self.sucursal,
+            periodo_pago=timezone.localdate(),
+            fecha=timezone.localdate(),
+            monto=Decimal("120.00"),
+            concepto="Debito banco a liberar",
+            referencia="TRF-ANULAR",
+            actor=self.admin,
+        )
+        link_payment_to_bank_movement(payment=payment, bank_movement=movement, actor=self.admin)
+
+        annul_payment(payment=payment, motivo="Imputado a la factura equivocada", actor=self.admin)
+
+        movement.refresh_from_db()
+        # Queda libre y operable: sin pago, origen MANUAL, imputacion conservada.
+        self.assertIsNone(movement.pago_tesoreria_id)
+        self.assertEqual(movement.origen, MovimientoBancario.Origen.MANUAL)
+        self.assertEqual(movement.estado, MovimientoBancario.Estado.REGISTRADO)
+        self.assertEqual(movement.rubro_operativo, self.rubro_servicios)
+        self.assertEqual(movement.sucursal_gasto, self.sucursal)
+        self.assertIn("anulado", movement.observaciones)
+        # La deuda recupera su saldo.
+        payable.refresh_from_db()
+        self.assertEqual(payable.saldo_pendiente, Decimal("500.00"))
+        # Y el movimiento ya se puede volver a operar (antes reventaba).
+        annul_bank_movement(movement=movement, motivo="Ya no corresponde", actor=self.admin)
+        movement.refresh_from_db()
+        self.assertEqual(movement.estado, MovimientoBancario.Estado.ANULADO)
+
     def test_linked_bank_movement_cannot_be_edited_or_annulled_directly(self):
         payable = register_payable(
             proveedor=self.supplier,

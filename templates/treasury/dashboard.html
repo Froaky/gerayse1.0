@@ -58,9 +58,12 @@
         <small class="muted">Créditos de acreditación bancaria menos ventas tarjeta del período</small>
       </div>
       <div class="summary">
-        <span class="muted">Deuda pendiente</span>
+        <span class="muted">Deuda pendiente (acumulada)</span>
         <strong>{{ snapshot.pending_total|money }}</strong>
-        <small class="muted">{{ snapshot.pending_count }} compromiso{{ snapshot.pending_count|pluralize }}</small>
+        <small class="muted">
+          {{ snapshot.pending_count }} compromiso{{ snapshot.pending_count|pluralize }} sin pagar.
+          Es lo que falta pagar de TODA la historia, no solo del período.
+        </small>
       </div>
       {% if not snapshot.sucursal %}
       <div class="summary">
@@ -178,14 +181,17 @@
         </div>
       {% endif %}
       <div class="summary">
-        <span class="muted">Deuda del periodo</span>
+        <span class="muted">Gasto en deuda del periodo</span>
         <strong>{{ economic_snapshot.debt_period_total|money }}</strong>
-        <small class="muted">Obligaciones imputadas al periodo</small>
+        <small class="muted">
+          Facturas imputadas al periodo por su importe TOTAL, incluidas las ya pagadas.
+          Es lo que costo, no lo que falta pagar.
+        </small>
       </div>
       <div class="summary">
-        <span class="muted">Pendiente del periodo</span>
+        <span class="muted">De eso, falta pagar</span>
         <strong>{{ economic_snapshot.debt_pending_total|money }}</strong>
-        <small class="muted">Parte aun no cancelada</small>
+        <small class="muted">Saldo sin cancelar de esas mismas facturas del periodo</small>
       </div>
       <div class="summary">
         <span class="muted">Resultado economico</span>

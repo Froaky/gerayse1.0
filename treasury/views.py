@@ -81,7 +81,6 @@ from .services import (
     build_financial_period_snapshot,
     build_special_commitments_snapshot,
     build_supplier_history_snapshot,
-    build_treasury_dashboard_snapshot,
     CENTRAL_CASH_IN_TYPES,
     CENTRAL_CASH_OUT_TYPES,
     annul_bank_movement,

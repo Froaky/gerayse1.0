@@ -1342,6 +1342,75 @@ Last updated: 2026-07-08
 - Archivos: `users/models.py`, `users/views.py`, `users/migrations/0015_*`, `users/tests.py`, `cashops/permissions.py`, `cashops/services.py`, `cashops/views.py`, `cashops/urls.py`, `templates/cashops/partials/movement_list.html`, `templates/cashops/box_detail.html`, `cashops/tests.py`, `context.md`.
 - Tests: users +1 clase `MovementDeletePermissionTests` (4) + conteo modulos 7->8; cashops +3 servicio movimiento, +4 vista movimiento (abierta/permiso/aislamiento), +3 servicio deuda, +4 vista deuda. Renombrados los tests de delete de caja cerrada (siguen verdes por la logica OR).
 
+### Tesoreria: pedido de la administracion (pagos, mes cerrado y arreglos) 2026-07-29
+
+Pedido de 5 puntos por WhatsApp. Clasificado con el usuario en MANTENIMIENTO (arreglos
+de funciones ya existentes, sin cargo) vs FUNCIONALIDAD NUEVA. El punto de vincular
+transferencias queda FUERA de main (ver `NOTA-FEATURE-OCULTA.md`).
+
+- **Desglose de deuda (+400M)**: NO era bug de conteo. Comando `desglose_deuda` corrido
+  en produccion: deuda viva = importe = devengado = $497.740.001 (694 deudas), 149
+  anuladas bien excluidas, 0 sin sucursal, 0 arrastre viejo. El 100% son gastos cargados
+  como deuda desde las cajas, sin ningun pago registrado, concentrados en SAVHA (46%) y
+  sucursal VIVRE (92%). O sea: deuda real mal cargada, no error del sistema. Se entrego
+  reporte PDF a tesoreria.
+- **A1 mes cerrado**: `close_treasury_month` solo miraba `validacion_estado`
+  PENDIENTE/RECHAZADA; una caja ABIERTA nace con NO_REQUERIDA (el estado se define al
+  cerrar), asi que pasaba de largo y el mes congelaba un saldo que despues cambiaba.
+  Ahora rechaza con mensaje propio. El cierre es GLOBAL (unique solo por mes, la
+  sucursal nunca se escribe): NO filtrar por sucursal, daria siempre False.
+- **A2 apertura en mes cerrado**: nuevo `treasury_month_is_closed()` en cashops/services
+  (import perezoso `apps.get_model`, mismo patron que `_push_box_closure_to_central_cash`)
+  + guard en `open_box` y en `update_box_metadata` (esta ultima permitia MOVER una caja a
+  un mes cerrado; se bloquea solo si cambia de mes). Decision: reemplaza la tolerancia
+  anterior; el re-fechado al dia de validacion queda como red de seguridad para datos
+  LEGACY (se adapto `test_validation_after_month_close_redates_central_push` para
+  construir ese estado salteando el servicio).
+- **VALVULA**: no existia NINGUNA forma de reabrir un mes (ni vista, ni admin, ni
+  comando), asi que A2 podia dejar la operacion trabada. Se registro
+  `CierreMensualTesoreria` en el admin (saldos read-only, sin alta) para destildar
+  "cerrado" en emergencia.
+- **A4 fuga de empresa**: los 4 forms de pago ofrecian deudas y cuentas bancarias de
+  TODAS las empresas (el listado de cuentas por pagar si filtraba). Nuevo helper
+  `open_payables_queryset(empresa_ids)` + scope de cuenta bancaria, inyectado desde
+  `_register_payment_view` (unico punto de instanciacion de los 4 forms).
+- **B1+B2 pago por proveedor (NUEVO)**: pantalla nueva en dos pasos por GET (sin JS):
+  elegir proveedor (solo los que tienen facturas impagas) -> tildar 1 o varias facturas
+  con importe editable precargado en el saldo. Registra UN PagoTesoreria POR FACTURA (no
+  se toca el esquema: sigue 1 pago -> 1 deuda, asi el recalculo de saldo, la guarda de
+  sobrepago y el compromiso especial siguen valiendo). Atomico: si falla una linea no se
+  registra ninguna. La referencia se sufija "(1/3)" por la unicidad
+  (cuenta_bancaria, medio_pago, referencia). Solo TRANSFERENCIA y EFECTIVO: cheque/ECHEQ
+  son instrumentos individuales. `form_card.html` acepta `form_method="get"` para el paso
+  de seleccion. `PayableChoiceField` muestra el saldo en las pantallas viejas.
+- **A3 pago anulado dejaba el movimiento bancario COLGADO**: apuntaba a un pago anulado
+  con origen PAGO_TESORERIA, combinacion que su propio `clean()` rechaza (exige pago
+  REGISTRADO) -> no se podia editar, ni eliminar, ni re-vincular, ni imputar; solo se
+  arreglaba por shell. Nuevo `_release_bank_movement_from_annulled_payment`: lo devuelve
+  a MANUAL conservando la imputacion y el proveedor, ANTES de flipear el pago (si no, el
+  full_clean del movimiento falla). NO se anula el movimiento: el debito es real, la
+  plata salio del banco; lo que se deshizo es su imputacion a esa deuda.
+- **A5**: `build_supplier_history_snapshot.historical_total` no excluia ANULADA pero
+  `historical_pending` si -> historial inflado e incoherente consigo mismo. Ahora ambos
+  excluyen.
+- **A6 etiquetas del dashboard (causa del susto del 400M)**: sin tocar ningun calculo.
+  "Deuda pendiente" -> "Deuda pendiente (acumulada)" aclarando que es de toda la
+  historia (las tarjetas vecinas si son del periodo); "Deuda del periodo" -> "Gasto en
+  deuda del periodo" aclarando que suma el importe TOTAL incluidas las ya pagadas.
+- **A7**: `build_treasury_dashboard_snapshot` era codigo muerto (importado en views, sin
+  ningun call site en .py ni .html) y sin filtro de empresa: si alguien lo cableaba
+  filtraba TODAS las empresas. Eliminado junto con su import.
+- Ademas: el error del cierre mensual se mostraba como `['mensaje']`
+  (`str(ValidationError)` es `repr(list)`); ahora sale limpio.
+
+Archivos: `treasury/services.py`, `treasury/views.py`, `treasury/forms.py`,
+`treasury/urls.py`, `treasury/admin.py`, `treasury/tests.py`,
+`treasury/management/commands/desglose_deuda.py`, `treasury/tests_commands.py`,
+`cashops/services.py`, `cashops/tests.py`,
+`templates/treasury/supplier_payment_batch.html`,
+`templates/treasury/partials/form_card.html`, `templates/treasury/dashboard.html`,
+`NOTA-FEATURE-OCULTA.md`, `context.md`.
+
 ### Cartelito temporal de error en acciones HTMX 2026-07-22
 
 - Pedido: un cajero tocaba "Abrir caja" y "no pasaba nada, ni un mensaje de error". Objetivo: cuando una accion no se puede completar, mostrar arriba un cartelito temporal con el motivo en lenguaje simple, para que la persona resuelva sola (ej: falta un campo) y solo si no puede, avise al encargado. Sin mensajes tecnicos.

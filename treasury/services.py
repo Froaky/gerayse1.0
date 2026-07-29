@@ -840,6 +840,38 @@ def register_cash_payment(
     )
 
 
+def _release_bank_movement_from_annulled_payment(payment: PagoTesoreria, *, motivo: str, actor=None):
+    """Al anular un pago, su movimiento bancario quedaba COLGADO: apuntando a un
+    pago anulado y con origen PAGO_TESORERIA, combinacion que el clean() del
+    modelo rechaza (exige pago REGISTRADO). Resultado: el movimiento no se podia
+    editar, ni eliminar, ni re-vincular, ni imputar — callejon sin salida que solo
+    se arreglaba por shell.
+
+    Se lo devuelve a MANUAL conservando la imputacion (rubro/sucursal/periodo) y
+    el proveedor. No se anula: el debito es REAL, la plata salio del banco; lo que
+    se deshizo es su imputacion a esa deuda. Asi queda libre para re-vincularlo a
+    la factura correcta o eliminarlo desde la pantalla de bancos.
+    """
+    movement = getattr(payment, "movimiento_bancario", None)
+    if movement is None:
+        return None
+    movement.pago_tesoreria = None
+    movement.origen = MovimientoBancario.Origen.MANUAL
+    # Estas clases exigen proveedor; si el movimiento no lo tiene, se baja a
+    # "otro egreso" para que siga siendo un movimiento manual valido.
+    if movement.clase in {
+        MovimientoBancario.Clase.CHEQUE,
+        MovimientoBancario.Clase.ECHEQ,
+        MovimientoBancario.Clase.TRANSFERENCIA_TERCEROS,
+    } and not movement.proveedor_id:
+        movement.clase = MovimientoBancario.Clase.OTRO_EGRESO
+    nota = f"Pago #{payment.pk} anulado: {motivo}"
+    movement.observaciones = f"{movement.observaciones} {nota}".strip()[:255]
+    movement.actualizado_por = actor
+    _save_instance(movement)
+    return movement
+
+
 @transaction.atomic
 def annul_payment(*, payment: PagoTesoreria, motivo: str, actor=None) -> PagoTesoreria:
     _require_actor(actor)
@@ -850,6 +882,9 @@ def annul_payment(*, payment: PagoTesoreria, motivo: str, actor=None) -> PagoTes
     motivo = (motivo or "").strip()
     if not motivo:
         raise ValidationError({"motivo": "El motivo es obligatorio para anular."})
+    # Antes de marcar el pago como anulado: el movimiento vinculado no puede
+    # quedar apuntando a un pago no REGISTRADO (lo rechaza su propio clean).
+    _release_bank_movement_from_annulled_payment(locked_payment, motivo=motivo, actor=actor)
     locked_payment.estado = PagoTesoreria.Estado.ANULADO
     locked_payment.estado_bancario = PagoTesoreria.EstadoBancario.ANULADO
     locked_payment.motivo_anulacion = motivo
@@ -2207,73 +2242,6 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     }
 
 
-def build_treasury_dashboard_snapshot(*, reference_date=None, sucursal_id=None) -> dict:
-    reference_date = reference_date or timezone.localdate()
-    
-    pending_payables = CuentaPorPagar.objects.filter(
-        estado__in=[CuentaPorPagar.Estado.PENDIENTE, CuentaPorPagar.Estado.PARCIAL]
-    )
-    paid_payments = PagoTesoreria.objects.filter(
-        estado=PagoTesoreria.Estado.REGISTRADO,
-        fecha_pago__year=reference_date.year,
-        fecha_pago__month=reference_date.month,
-    )
-    bank_accounts = CuentaBancaria.objects.filter(activa=True)
-    cajas_centrales = CajaCentral.objects.filter(activo=True)
-    
-    if sucursal_id:
-        pending_payables = pending_payables.filter(sucursal_id=sucursal_id)
-        paid_payments = paid_payments.filter(cuenta_por_pagar__sucursal_id=sucursal_id)
-        bank_accounts = bank_accounts.filter(sucursal_id=sucursal_id)
-        cajas_centrales = cajas_centrales.filter(sucursal_id=sucursal_id)
-
-    overdue_payables = pending_payables.filter(fecha_vencimiento__lt=reference_date)
-    upcoming_window = reference_date + timedelta(days=7)
-    upcoming_payables = pending_payables.filter(fecha_vencimiento__gte=reference_date, fecha_vencimiento__lte=upcoming_window)
-    
-    paid_period_total = paid_payments.aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
-    
-    # Bank balances
-    bank_balances = []
-    for account in bank_accounts:
-        bank_balances.append({
-            "account": account,
-            **_bank_balance_until(account, reference_date),
-        })
-    
-    recent_batches = LotePOS.objects.all().select_related("cuenta_bancaria").order_by("-fecha_lote", "-id")
-    recent_movements = MovimientoBancario.objects.filter(
-        estado=MovimientoBancario.Estado.REGISTRADO,
-    ).select_related("cuenta_bancaria").order_by("-fecha", "-id")
-    recent_payments = PagoTesoreria.objects.filter(estado=PagoTesoreria.Estado.REGISTRADO).select_related("cuenta_por_pagar__proveedor", "cuenta_bancaria")
-
-    if sucursal_id:
-        recent_batches = recent_batches.filter(cuenta_bancaria__sucursal_id=sucursal_id)
-        recent_movements = recent_movements.filter(cuenta_bancaria__sucursal_id=sucursal_id)
-        recent_payments = recent_payments.filter(cuenta_por_pagar__sucursal_id=sucursal_id)
-
-    # Central Cash balance (consolidated for the scope)
-    central_cash_balance = Decimal("0.00")
-    for caja in cajas_centrales:
-        central_cash_balance += caja.saldo_actual
-
-    return {
-        "reference_date": reference_date,
-        "pending_total": pending_payables.aggregate(total=Sum("saldo_pendiente"))["total"] or Decimal("0.00"),
-        "pending_count": pending_payables.count(),
-        "overdue_total": overdue_payables.aggregate(total=Sum("saldo_pendiente"))["total"] or Decimal("0.00"),
-        "overdue_count": overdue_payables.count(),
-        "paid_period_total": paid_period_total,
-        "upcoming_payables": upcoming_payables.select_related("proveedor", "categoria", "categoria__rubro_operativo")[:10],
-        "overdue_payables": overdue_payables.select_related("proveedor", "categoria", "categoria__rubro_operativo")[:10],
-        "recent_payments": recent_payments.order_by("-fecha_pago", "-id")[:10],
-        "bank_balances": bank_balances,
-        "recent_batches": recent_batches[:5],
-        "recent_movements": recent_movements[:5],
-        "central_cash_balance": central_cash_balance,
-    }
-
-
 def build_supplier_history_snapshot(*, supplier: Proveedor, date_from=None, date_to=None) -> dict:
     payables = (
         CuentaPorPagar.objects.filter(proveedor=supplier)
@@ -2298,7 +2266,9 @@ def build_supplier_history_snapshot(*, supplier: Proveedor, date_from=None, date
         "date_to": date_to,
         "payables": payables,
         "payments": payments,
-        "historical_total": payables.aggregate(total=Sum("importe_total"))["total"] or Decimal("0.00"),
+        # Las anuladas se excluyen de los DOS totales: contarlas en el total y no
+        # en el pendiente daba un historial inflado e incoherente consigo mismo.
+        "historical_total": payables.exclude(estado=CuentaPorPagar.Estado.ANULADA).aggregate(total=Sum("importe_total"))["total"] or Decimal("0.00"),
         "historical_pending": payables.exclude(estado=CuentaPorPagar.Estado.ANULADA).aggregate(total=Sum("saldo_pendiente"))["total"] or Decimal("0.00"),
         "historical_paid": payments.filter(estado=PagoTesoreria.Estado.REGISTRADO).aggregate(total=Sum("monto"))["total"] or Decimal("0.00"),
     }
