@@ -108,6 +108,20 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+# Hasher barato SOLO cuando corre la suite. Django 5.2 usa PBKDF2 con 1.000.000 de
+# iteraciones: 384 ms por hash medidos en esta maquina. Como cada setUp crea varios
+# usuarios y corre una vez por test, hashear passwords se comia casi todo el tiempo
+# de la suite (medido: 570 s -> 26 s, los mismos 430 tests en verde).
+# PRODUCCION NO SE TOCA: RUNNING_TESTS es "test" in sys.argv (mismo flag que ya
+# exime la guarda de SECRET_KEY), y gunicorn nunca corre con ese argumento.
+# Se deja PBKDF2 de segundo para poder VERIFICAR hashes fuertes si algun test
+# levanta datos con password ya hasheado; el primero es el que se usa al crear.
+if RUNNING_TESTS:
+    PASSWORD_HASHERS = [
+        'django.contrib.auth.hashers.MD5PasswordHasher',
+        'django.contrib.auth.hashers.PBKDF2PasswordHasher',
+    ]
+
 LANGUAGE_CODE = 'es-ar'
 TIME_ZONE = 'America/Argentina/Buenos_Aires'
 
