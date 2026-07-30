@@ -42,7 +42,9 @@ from .permissions import (
     can_correct_closed_box,
     can_delete_movement_in_box,
     can_load_debt_on_closed_box,
+    can_register_cash_income,
     can_validate_cash,
+    ensure_cash_income,
     ensure_cash_validation,
     ensure_cashops_read,
     ensure_cashops_write,
@@ -167,6 +169,10 @@ def _require_cashops_read(request) -> None:
 
 def _require_cashops_write(request) -> None:
     ensure_cashops_write(request.user)
+
+
+def _require_cash_income(request) -> None:
+    ensure_cash_income(request.user)
 
 
 def _is_htmx(request) -> bool:
@@ -436,6 +442,7 @@ def dashboard(request):
         "dashboard_snapshot": dashboard_snapshot,
         "alertas": dashboard_snapshot["active_alerts"][:4] if dashboard_snapshot else [],
         "is_cashops_admin": is_admin,
+        "can_register_cash_income": can_register_cash_income(request.user),
     }
     return render(request, "cashops/dashboard.html", context)
 
@@ -1471,6 +1478,9 @@ def register_sale_view(request, box_id: int):
 @require_http_methods(["GET", "POST"])
 def register_cash_income_view(request, box_id: int):
     _require_cashops_write(request)
+    # Solo administracion: este ingreso entra sin rubro. El cajero carga el
+    # efectivo por "Registrar venta" (medio Efectivo), que exige rubro.
+    _require_cash_income(request)
     box = _get_box_for_request(request, box_id)
     form = IngresoEfectivoForm(request.POST or None)
     if request.method == "POST" and form.is_valid():

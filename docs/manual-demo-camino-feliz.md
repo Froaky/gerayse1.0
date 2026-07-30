@@ -113,9 +113,19 @@ Ruta sugerida: ` /cajas/nueva/ `
 - La caja se abre con fondo inicial.
 - Desde este momento, cada movimiento impacta en el saldo esperado.
 
-### Paso 2.4: Registrar Ingreso En Efectivo
+### Paso 2.4: Registrar Ingreso En Efectivo (solo administracion)
 
 Ruta sugerida: ` /cajas/{id}/ingreso/ `
+
+IMPORTANTE (2026-07-29): esta accion quedo reservada a administracion (permiso
+Configuracion con escritura). El cajero no ve la tarjeta y la vista le devuelve
+403 si entra por URL. Motivo: es el unico ingreso que entra SIN rubro, asi que
+esa plata no cae en ningun rubro del analisis economico. El cajero carga el
+efectivo en el Paso 2.5 eligiendo el medio `Efectivo`, que exige rubro y mueve
+igual el saldo de la caja.
+
+En una demo, iniciar sesion como administracion para mostrar este paso, o
+saltearlo directamente.
 
 ### Datos sugeridos
 
@@ -125,8 +135,9 @@ Ruta sugerida: ` /cajas/{id}/ingreso/ `
 
 ### Que Decir
 
-- No todo ingreso en caja es una venta.
-- El sistema diferencia ingresos operativos de ventas y gastos.
+- No todo ingreso en caja es una venta: para eso existe esta puerta, y la usa
+  administracion (un aporte de socios, una devolucion, un ajuste).
+- Todo lo que si es venta va por el paso siguiente, con rubro obligatorio.
 
 ### Paso 2.5: Registrar Venta
 

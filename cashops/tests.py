@@ -2030,7 +2030,9 @@ class CashopsViewTests(CashopsTestCase):
         self.assertContains(response, self.other.username)
 
     def test_cash_income_view_registers_income_and_redirects(self):
-        self.client.force_login(self.operator)
+        """El cobro en efectivo quedo solo para administracion (pedido 2026-07-29):
+        antes este test corria como self.operator."""
+        self.client.force_login(self.admin)
 
         response = self.client.post(
             reverse("cashops:box_income", args=[self.owned_box.pk]),
@@ -2045,6 +2047,63 @@ class CashopsViewTests(CashopsTestCase):
         self.assertRedirects(response, f"{reverse('cashops:dashboard')}?scope=box&box={self.owned_box.pk}")
         self.owned_box.refresh_from_db()
         self.assertEqual(self.owned_box.saldo_esperado, Decimal("1250.00"))
+
+    def test_cash_income_view_blocked_for_non_admin(self):
+        """El cajero/encargado no puede cargar efectivo sin rubro, ni por URL directa:
+        el boton no alcanza, la vista tambien tiene que cerrarse."""
+        self.client.force_login(self.operator)
+
+        response = self.client.post(
+            reverse("cashops:box_income", args=[self.owned_box.pk]),
+            {"monto": "250.00", "categoria": "Ingreso manual", "observacion": ""},
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.owned_box.refresh_from_db()
+        self.assertEqual(self.owned_box.saldo_esperado, Decimal("1000.00"))
+
+    def test_dashboard_hides_cash_income_card_for_non_admin(self):
+        self.client.force_login(self.operator)
+
+        response = self.client.get(f"{reverse('cashops:dashboard')}?scope=box&box={self.owned_box.pk}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "Cobro en efectivo")
+        # El camino de reemplazo sigue visible y ahora nombra el efectivo.
+        self.assertContains(response, "Registrar venta")
+        self.assertContains(response, reverse("cashops:register_sale", args=[self.owned_box.pk]))
+
+    def test_dashboard_shows_cash_income_card_for_admin(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.get(f"{reverse('cashops:dashboard')}?scope=box&box={self.owned_box.pk}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Cobro en efectivo")
+
+    def test_cash_income_via_sale_channel_still_available_for_operator(self):
+        """La red de seguridad del cambio: el cajero sigue pudiendo cargar efectivo,
+        pero por el canal Efectivo de la venta, que exige rubro y mueve el saldo."""
+        canal_efectivo = CanalIngreso.objects.get(codigo="INGRESO_EFECTIVO")
+        self.assertTrue(canal_efectivo.activo)
+        self.assertTrue(canal_efectivo.impacta_saldo_caja)
+        self.client.force_login(self.operator)
+
+        response = self.client.post(
+            reverse("cashops:register_sale", args=[self.owned_box.pk]),
+            {
+                "monto": "250.00",
+                "tipo_venta": canal_efectivo.codigo,
+                "rubro": self.rubro_insumos.pk,
+                "observacion": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.owned_box.refresh_from_db()
+        self.assertEqual(self.owned_box.saldo_esperado, Decimal("1250.00"))
+        movimiento = self.owned_box.movimientos.order_by("-id").first()
+        self.assertEqual(movimiento.rubro_operativo, self.rubro_insumos)
 
     def test_sale_view_hides_product_field(self):
         self.client.force_login(self.operator)

@@ -208,12 +208,14 @@
               </a>
               <a class="action-card" href="{% url 'cashops:register_sale' selected_box.id %}">
                 <span>Registrar venta</span>
-                <small>tarjeta, QR, PedidosYa o transferencia</small>
+                <small>efectivo, tarjeta, QR, PedidosYa o transferencia</small>
               </a>
-              <a class="action-card" href="{% url 'cashops:box_income' selected_box.id %}">
-                <span>Cobro en efectivo</span>
-                <small>dinero fisico que entra a la caja</small>
-              </a>
+              {% if can_register_cash_income %}
+                <a class="action-card" href="{% url 'cashops:box_income' selected_box.id %}">
+                  <span>Cobro en efectivo</span>
+                  <small>solo administracion: ingreso sin rubro</small>
+                </a>
+              {% endif %}
               <a class="action-card" href="{% url 'cashops:box_expense_debt' selected_box.id %}">
                 <span>Gasto como deuda</span>
                 <small>no sale efectivo: tesoreria lo paga despues</small>

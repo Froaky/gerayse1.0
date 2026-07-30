@@ -52,6 +52,33 @@ def can_delete_box_movement(user) -> bool:
     return _has_module_permission(user, PermissionModule.CASHOPS_MOV_DELETE, "write")
 
 
+def can_register_cash_income(user) -> bool:
+    """"Cobro en efectivo" queda solo para administracion.
+
+    Es el unico ingreso que entra SIN rubro (categoria de texto libre), asi que
+    la plata cargada por ahi no cae en ningun rubro del analisis economico. El
+    mismo efectivo se carga por "Registrar venta" eligiendo el medio Efectivo,
+    que exige rubro y mueve igual el saldo de la caja (CanalIngreso
+    INGRESO_EFECTIVO tiene impacta_saldo_caja=True).
+
+    Pedido de la administracion 2026-07-29: los cajeros tienen que cargar todo
+    como venta. Se le deja a administracion como valvula para el ingreso que
+    de verdad no es una venta (aporte de socios, devolucion, ajuste).
+
+    Politica en un solo lugar: si mas adelante se quiere asignar por usuario,
+    se cambia esta funcion por un PermissionModule propio y nada mas.
+    """
+    return is_cashops_admin(user)
+
+
+def ensure_cash_income(user) -> None:
+    if not can_register_cash_income(user):
+        raise PermissionDenied(
+            "El cobro en efectivo lo carga administracion. "
+            "Registralo desde Registrar venta eligiendo el medio Efectivo."
+        )
+
+
 def can_delete_movement_in_box(user, box) -> bool:
     # Permiso dedicado: elimina movimientos/deudas en cualquier caja (abierta o cerrada).
     if can_delete_box_movement(user):

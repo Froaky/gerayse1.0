@@ -1342,6 +1342,38 @@ Last updated: 2026-07-08
 - Archivos: `users/models.py`, `users/views.py`, `users/migrations/0015_*`, `users/tests.py`, `cashops/permissions.py`, `cashops/services.py`, `cashops/views.py`, `cashops/urls.py`, `templates/cashops/partials/movement_list.html`, `templates/cashops/box_detail.html`, `cashops/tests.py`, `context.md`.
 - Tests: users +1 clase `MovementDeletePermissionTests` (4) + conteo modulos 7->8; cashops +3 servicio movimiento, +4 vista movimiento (abierta/permiso/aislamiento), +3 servicio deuda, +4 vista deuda. Renombrados los tests de delete de caja cerrada (siguen verdes por la logica OR).
 
+### "Cobro en efectivo" reservado a administracion 2026-07-29
+
+Pedido de la administracion por WhatsApp ("Podes borrarle esta opcion a los
+chicos... deberian cargar todo en una venta nomas"). El motivo real: `box_income`
+(`register_cash_income`) es el UNICO ingreso que entra sin rubro (categoria de
+texto libre), asi que esa plata no cae en ningun rubro del analisis economico.
+
+- `cashops/permissions.py`: `can_register_cash_income(user)` = `is_cashops_admin`
+  (CONFIG write) + `ensure_cash_income`. La politica vive SOLO ahi: si despues se
+  quiere asignar por usuario, se reemplaza por un PermissionModule propio y no hay
+  que tocar vistas ni templates.
+- `cashops/views.py`: `register_cash_income_view` suma `_require_cash_income`
+  DESPUES de `_require_cashops_write` (403 por URL directa, no alcanza con ocultar
+  el boton); el dashboard expone `can_register_cash_income` al contexto.
+- `templates/cashops/dashboard.html`: la tarjeta va dentro de
+  `{% if can_register_cash_income %}`, y "Registrar venta" ahora dice
+  "efectivo, tarjeta, QR, PedidosYa o transferencia" para que el cajero sepa por
+  donde cargar el efectivo.
+- CAMINO DE REEMPLAZO VERIFICADO: `VentaGeneralForm` ofrece todos los CanalIngreso
+  activos, incluido `INGRESO_EFECTIVO` (`impacta_saldo_caja=True`), y
+  `register_general_sale` exige rubro. O sea: el cajero sigue pudiendo cargar
+  efectivo, mejor clasificado. Sin esto el cambio lo dejaria sin poder cobrar.
+- ALCANCE: tambien lo pierde el ENCARGADO (no tiene CONFIG write). Es deliberado:
+  el argumento del rubro obligatorio aplica igual. Si la admin lo quiere solo para
+  cajeros, se cambia la condicion de `can_register_cash_income`.
+- Tests (cashops/tests.py, CashopsViewTests): el test existente
+  `test_cash_income_view_registers_income_and_redirects` pasa a correr como admin
+  (antes operator); +4 nuevos: 403 para no-admin sin mover el saldo, tarjeta oculta
+  para no-admin, visible para admin, y que el canal Efectivo de la venta sigue
+  disponible para el operador con rubro imputado.
+- `docs/manual-demo-camino-feliz.md`: paso 2.4 marcado como solo administracion.
+
 ### Separador de miles en toda la UI (USE_THOUSAND_SEPARATOR) 2026-07-29
 
 Los importes se mostraban crudos ($275858100) en toda pantalla que no usara el filtro
