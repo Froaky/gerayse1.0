@@ -1,22 +1,14 @@
-from pathlib import Path
-
 from django.contrib.auth import get_user_model
-from django.test import RequestFactory, SimpleTestCase, TestCase
+from django.test import RequestFactory, TestCase
 
 from cashops.models import Empresa
 from core.context_processors import app_context
 
-
-class CoreShellFilesTests(SimpleTestCase):
-    def test_dashboard_shell_exists(self):
-        path = Path(__file__).resolve().parent / "templates" / "core" / "dashboard.html"
-        self.assertTrue(path.exists())
-        self.assertIn("Gerayse", path.read_text(encoding="utf-8"))
-
-    def test_login_shell_exists(self):
-        path = Path(__file__).resolve().parent / "templates" / "registration" / "login.html"
-        self.assertTrue(path.exists())
-        self.assertIn("Ingresar a Gerayse", path.read_text(encoding="utf-8"))
+# Se elimino CoreShellFilesTests: verificaba que dos archivos .html existieran y
+# contuvieran un texto, sin ejercitar comportamiento. Ademas fijaba codigo muerto
+# (core/templates/core/dashboard.html era un mock con datos inventados y las otras
+# dos plantillas de core/templates/ estaban tapadas por las de templates/), asi que
+# impedia borrarlo. La cobertura real de esas pantallas vive en los tests de vista.
 
 
 class AppContextCompanyScopeTests(TestCase):

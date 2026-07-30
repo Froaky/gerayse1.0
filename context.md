@@ -1342,6 +1342,41 @@ Last updated: 2026-07-08
 - Archivos: `users/models.py`, `users/views.py`, `users/migrations/0015_*`, `users/tests.py`, `cashops/permissions.py`, `cashops/services.py`, `cashops/views.py`, `cashops/urls.py`, `templates/cashops/partials/movement_list.html`, `templates/cashops/box_detail.html`, `cashops/tests.py`, `context.md`.
 - Tests: users +1 clase `MovementDeletePermissionTests` (4) + conteo modulos 7->8; cashops +3 servicio movimiento, +4 vista movimiento (abierta/permiso/aislamiento), +3 servicio deuda, +4 vista deuda. Renombrados los tests de delete de caja cerrada (siguen verdes por la logica OR).
 
+### Suite 24x mas rapida + baja de codigo muerto en core 2026-07-29
+
+Pregunta del usuario: "es necesario 430 tests o podriamos sacar algunos?". Se
+midio antes de opinar y la respuesta fue NO sacar tests: el cuello de botella no
+era la cantidad.
+
+- DIAGNOSTICO: Django 5.2 hashea con PBKDF2 a 1.000.000 de iteraciones = 384 ms
+  por hash (medido). Cada setUp crea 3-5 usuarios y corre una vez por test, asi
+  que 430 tests x ~4 usuarios x 384 ms ~= 660 s, contra los 570 s que tardaba la
+  suite: practicamente TODO el tiempo era hasheo, no tests.
+- FIX (`config/settings.py`): `if RUNNING_TESTS: PASSWORD_HASHERS = [MD5, PBKDF2]`.
+  Se reusa el flag `RUNNING_TESTS` que ya existia (mismo que exime la guarda de
+  SECRET_KEY), asi corre rapido en local y en CI sin `--settings` ni tocar el
+  workflow. PBKDF2 queda segundo para poder VERIFICAR hashes fuertes.
+  Verificado: sin "test" en argv el hasher sigue siendo PBKDF2 (produccion intacta).
+  MEDIDO: suite 570 s -> 23,5 s (24x). CashopsViewTests 97,8 s -> 3,6 s.
+- Comparacion que justifica la decision: borrar 100 tests (un cuarto de la
+  cobertura) habria ahorrado ~130 s y dejado la suite arriba de 7 minutos.
+- BAJA DE CODIGO MUERTO (el unico test que si sobraba, por otra razon):
+  `CoreShellFilesTests` (2 tests) solo verificaba que dos .html existieran y
+  contuvieran un texto, sin ejercitar comportamiento, y encima FIJABA codigo
+  muerto impidiendo borrarlo. Se elimino junto con lo que protegia:
+  `core/views.py::dashboard` (60 lineas de datos inventados a mano, "Caja 04",
+  "AR$ 248.500"), la linea `home = dashboard` que quedaba sobrescrita dos lineas
+  despues por `home = public_home`, `core/urls.py` (definia core:dashboard pero
+  config/urls.py nunca incluyo core.urls: nadie lo referenciaba, verificado por
+  grep), y 3 plantillas: `core/templates/core/dashboard.html` (solo la renderizaba
+  la vista muerta) mas `core/templates/base.html` y
+  `core/templates/registration/login.html`, que estaban TAPADAS por las de
+  `templates/` (verificado con el loader real de Django antes de borrar).
+  Queda vivo `core/templates/core/home.html`, que es la landing publica.
+  Post-borrado verificado: las 3 plantillas vivas resuelven al mismo archivo que
+  antes, y landing (/), login (/login/) y el ingreso de un cajero dan 200.
+- Suite: 430 -> 428 tests, todos en verde.
+
 ### "Cobro en efectivo" reservado a administracion 2026-07-29
 
 Pedido de la administracion por WhatsApp ("Podes borrarle esta opcion a los
