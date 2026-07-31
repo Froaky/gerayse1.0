@@ -212,6 +212,118 @@ class AnulacionBovedaTests(TestCase):
         self.assertEqual(despues["treasury_unmapped_expenses_total"], Decimal("0.00"))
 
 
+class AnulacionBovedaVistaTests(TestCase):
+    """La pantalla: el boton, el permiso y que el anulado se siga viendo."""
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser(
+            username="admin-vista", password="test", email="v@test.com"
+        )
+        self.empresa = Empresa.objects.create(nombre="Empresa Vista Anulacion")
+        self.sucursal = Sucursal.objects.create(
+            codigo="VAN", nombre="Sucursal Vista", razon_social="Vista", empresa=self.empresa
+        )
+        self.rubro = RubroOperativo.objects.create(nombre="Rubro Vista")
+        self.admin.empresas_permitidas.set([self.empresa])
+        self.hoy = timezone.localdate()
+        register_central_cash_movement(
+            empresa=self.empresa,
+            tipo=MovimientoCajaCentral.Tipo.APORTE,
+            monto=Decimal("1000.00"),
+            concepto="Fondeo vista",
+            fecha=self.hoy,
+            actor=self.admin,
+        )
+        self.egreso = register_egreso_tesoreria(
+            empresa=self.empresa,
+            fuente="CAJA_CENTRAL",
+            fecha=self.hoy,
+            monto=Decimal("120.00"),
+            concepto="Gasto a anular desde la pantalla",
+            rubro=self.rubro,
+            sucursal=self.sucursal,
+            periodo=self.hoy.replace(day=1),
+            actor=self.admin,
+        )
+        self.client.force_login(self.admin)
+        sesion = self.client.session
+        sesion["empresa_ids"] = [self.empresa.pk]
+        sesion.save()
+
+    def _libro(self):
+        from django.urls import reverse
+
+        return self.client.get(
+            reverse("treasury:central_cash_list"),
+            {"year": self.hoy.year, "month": self.hoy.month},
+        )
+
+    def test_el_libro_ofrece_anular_a_quien_tiene_el_permiso(self):
+        response = self._libro()
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Anular")
+        self.assertContains(response, f"/efectivo-central/{self.egreso.pk}/anular/")
+
+    def test_el_libro_no_ofrece_anular_sin_permiso(self):
+        operador = User.objects.create_user(username="solo-carga", password="test")
+        operador.empresas_permitidas.set([self.empresa])
+        UserPermission.objects.create(
+            user=operador, module=PermissionModule.TREASURY, can_read=True, can_write=True
+        )
+        self.client.force_login(operador)
+        sesion = self.client.session
+        sesion["empresa_ids"] = [self.empresa.pk]
+        sesion.save()
+
+        response = self._libro()
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, f"/efectivo-central/{self.egreso.pk}/anular/")
+
+    def test_anular_desde_la_pantalla_exige_motivo_y_descuenta(self):
+        from django.urls import reverse
+
+        url = reverse("treasury:central_cash_annul_confirm", args=[self.egreso.pk])
+        sin_motivo = self.client.post(url, {"motivo": ""})
+        self.assertEqual(sin_motivo.status_code, 400)
+        self.egreso.refresh_from_db()
+        self.assertEqual(self.egreso.estado, MovimientoCajaCentral.Estado.REGISTRADO)
+
+        con_motivo = self.client.post(url, {"motivo": "Se cargo dos veces"})
+        self.assertEqual(con_motivo.status_code, 302)
+        self.egreso.refresh_from_db()
+        self.assertEqual(self.egreso.estado, MovimientoCajaCentral.Estado.ANULADO)
+        self.assertEqual(get_boveda(self.empresa).saldo_actual, Decimal("1000.00"))
+
+    def test_el_anulado_se_sigue_viendo_pero_no_suma(self):
+        annul_central_cash_movement(
+            movement=self.egreso, motivo="Duplicado del proveedor", actor=self.admin
+        )
+        response = self._libro()
+        self.assertEqual(response.status_code, 200)
+        # Se ve, con el motivo: si se ocultara, no habria forma de saber que se anulo.
+        self.assertContains(response, "Gasto a anular desde la pantalla")
+        self.assertContains(response, "Duplicado del proveedor")
+        self.assertContains(response, "(anulado)")
+        # Pero no suma en los egresos del filtro.
+        self.assertContains(response, "Egresos: $ 0,00")
+
+    def test_sin_permiso_la_url_de_anular_no_se_puede_forzar(self):
+        from django.urls import reverse
+
+        operador = User.objects.create_user(username="forzador", password="test")
+        UserPermission.objects.create(
+            user=operador, module=PermissionModule.TREASURY, can_read=True, can_write=True
+        )
+        self.client.force_login(operador)
+        response = self.client.post(
+            reverse("treasury:central_cash_annul_confirm", args=[self.egreso.pk]),
+            {"motivo": "Igual lo anulo"},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.egreso.refresh_from_db()
+        self.assertEqual(self.egreso.estado, MovimientoCajaCentral.Estado.REGISTRADO)
+
+
 class AnularPagoDevuelveElEfectivoTests(TestCase):
     """El agujero que existia antes de este slice.
 

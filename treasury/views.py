@@ -25,6 +25,7 @@ from .forms import (
     CardAccreditationFilterForm,
     CardAccreditationForm,
     CashPaymentForm,
+    CentralCashMovementAnnulForm,
     CentralCashMovementForm,
     ChequePaymentForm,
     DisponibilidadesFilterForm,
@@ -69,9 +70,14 @@ from .models import (
     Proveedor,
     SaldoInicialCuentaBancaria,
 )
-from .permissions import ensure_treasury_permission
+from .permissions import (
+    can_delete_central_cash_movement,
+    ensure_delete_central_cash_movement,
+    ensure_treasury_permission,
+)
 from .services import (
     _central_cash_balance_until,
+    annul_central_cash_movement,
     annul_payable,
     annul_payment,
     bank_account_empresa_scope_query,
@@ -94,6 +100,7 @@ from .services import (
     create_supplier,
     decide_special_commitment,
     get_boveda,
+    is_central_cash_movement_annullable,
     link_payment_to_bank_movement,
     register_arqueo,
     register_card_accreditation,
@@ -2390,22 +2397,25 @@ def central_cash_movements(request):
     imputed_admin_total = imputed_admin_expenses.aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
     imputed_admin_count = imputed_admin_expenses.count()
 
-    movements = period_movements
-    if imputacion == "pendientes":
-        movements = movements.filter(
-            tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
-        ).filter(
-            Q(rubro_operativo__isnull=True)
-            | Q(sucursal_gasto__isnull=True)
-            | Q(periodo_pago__isnull=True)
-        )
-    elif imputacion == "imputados":
-        movements = movements.filter(
-            tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
-            rubro_operativo__isnull=False,
-            sucursal_gasto__isnull=False,
-            periodo_pago__isnull=False,
-        )
+    def _filtrar_imputacion(queryset):
+        if imputacion == "pendientes":
+            return queryset.filter(
+                tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
+            ).filter(
+                Q(rubro_operativo__isnull=True)
+                | Q(sucursal_gasto__isnull=True)
+                | Q(periodo_pago__isnull=True)
+            )
+        if imputacion == "imputados":
+            return queryset.filter(
+                tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
+                rubro_operativo__isnull=False,
+                sucursal_gasto__isnull=False,
+                periodo_pago__isnull=False,
+            )
+        return queryset
+
+    movements = _filtrar_imputacion(period_movements)
     totals = movements.aggregate(
         ingresos=Sum("monto", filter=Q(tipo__in=CENTRAL_CASH_IN_TYPES)),
         egresos=Sum("monto", filter=Q(tipo__in=CENTRAL_CASH_OUT_TYPES)),
@@ -2413,9 +2423,27 @@ def central_cash_movements(request):
     total_ingresos = totals["ingresos"] or Decimal("0.00")
     total_egresos = totals["egresos"] or Decimal("0.00")
     filtered_count = movements.count()
+    # El LISTADO incluye los anulados (con su motivo) aunque los totales de
+    # arriba no los cuenten: si se ocultaran, quien anulo no podria ver que anulo.
+    movements_listado = _filtrar_imputacion(
+        scope_central_cash_movements(
+            MovimientoCajaCentral.objects.filter(fecha__range=(first_day, last_day)).select_related(
+                "pago_tesoreria",
+                "creado_por",
+                "caja_central__empresa",
+                "rubro_operativo",
+                "sucursal_gasto",
+                "sucursal_origen",
+            ),
+            sucursal=sucursal,
+            empresa_ids=empresa_ids,
+            incluir_anulados=True,
+        )
+    )
     
+    puede_anular = can_delete_central_cash_movement(request.user)
     items = []
-    for m in movements[:100]:
+    for m in movements_listado[:100]:
         # Simplistic: INGRESO/APORTE/RETIRO_BANCO are positive for cash
         if m.tipo in CENTRAL_CASH_IN_TYPES:
             badge_class = "badge-success"
@@ -2441,7 +2469,7 @@ def central_cash_movements(request):
             periodo_label = "sin periodo"
         usuario_label = m.creado_por.get_username() if m.creado_por_id else "sin usuario"
 
-        items.append({
+        item = {
             "title": f"{m.get_tipo_display()}",
             "subtitle": f"{m.fecha:%d/%m/%Y} - {m.concepto}",
             "badge": f"{prefix}{_money(m.monto)}",
@@ -2450,7 +2478,17 @@ def central_cash_movements(request):
                 f"Sucursal: {sucursal_label} | Rubro: {rubro_label} | "
                 f"Periodo: {periodo_label} | Usuario: {usuario_label}"
             ),
-        })
+        }
+        # Los anulados SE SIGUEN MOSTRANDO, con su motivo: si se ocultaran, quien
+        # anulo no podria ver que anulo. Lo que no hacen es sumar en los totales.
+        if m.esta_anulado:
+            item["title"] = f"{m.get_tipo_display()} (anulado)"
+            item["badge_class"] = "badge-muted"
+            item["meta"] = f"{item['meta']} | Anulado: {m.motivo_anulacion}"
+        elif puede_anular and is_central_cash_movement_annullable(m):
+            item["action_href"] = reverse("treasury:central_cash_annul_confirm", args=[m.pk])
+            item["action_label"] = "Anular"
+        items.append(item)
         
     # El saldo que se muestra es el del alcance que el usuario acaba de filtrar.
     # Antes se imprimia el saldo de una sola caja mientras se listaban los
@@ -2552,6 +2590,63 @@ def carga_inicial_caja_central(request):
         "form": form,
         "back_url": reverse("treasury:central_cash_list"),
     })
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def central_cash_annul_confirm(request, pk):
+    """Anula un movimiento de la boveda cargado por error, con motivo.
+
+    Reemplaza la practica de compensarlo con un ajuste positivo a mano, que es
+    lo que venia haciendo administracion por no tener esta pantalla.
+    """
+    _require_treasury_admin(request)
+    ensure_delete_central_cash_movement(request.user)
+    movement = get_object_or_404(
+        MovimientoCajaCentral.objects.select_related("caja_central__empresa"), pk=pk
+    )
+    if not is_central_cash_movement_annullable(movement):
+        messages.error(
+            request,
+            "Este movimiento no se puede anular desde aca: lo genero otro proceso "
+            "o pertenece a un mes ya cerrado.",
+        )
+        return redirect("treasury:central_cash_list")
+    form = CentralCashMovementAnnulForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        try:
+            annul_central_cash_movement(
+                movement=movement,
+                motivo=form.cleaned_data["motivo"],
+                actor=request.user,
+            )
+        except ValidationError as error:
+            _handle_operation_error(form, error, "No se pudo anular el movimiento.")
+        else:
+            messages.success(
+                request,
+                "Movimiento anulado. El saldo de la caja fuerte queda recalculado sin este movimiento.",
+            )
+            return redirect("treasury:central_cash_list")
+    return render(
+        request,
+        "treasury/confirm_action.html",
+        {
+            "title": "Anular movimiento de caja fuerte",
+            "subtitle": f"{movement.concepto} - {_money(movement.monto)}",
+            "question": "¿Seguro que querés anular este movimiento?",
+            "body": (
+                "El movimiento deja de sumar en el saldo de la caja fuerte, en el arqueo y en "
+                "los reportes. No se borra: queda con el motivo, tu usuario y la fecha."
+            ),
+            "form": form,
+            "post_url": reverse("treasury:central_cash_annul_confirm", args=[movement.pk]),
+            "confirm_label": "Sí, anular",
+            "confirm_kind": "danger",
+            "back_url": reverse("treasury:central_cash_list"),
+        },
+        status=400 if request.method == "POST" and not form.is_valid() else 200,
+    )
 
 
 @login_required

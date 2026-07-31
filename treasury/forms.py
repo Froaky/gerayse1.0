@@ -681,6 +681,19 @@ class BankMovementAnnulForm(TreasuryStyledFormMixin, forms.Form):
         self._apply_input_classes()
 
 
+class CentralCashMovementAnnulForm(TreasuryStyledFormMixin, forms.Form):
+    # Sin max_length: el campo del modelo es TextField, para no cortarle la
+    # explicacion a quien tiene que justificar por que saca plata de la boveda.
+    motivo = forms.CharField(
+        label="Motivo de la anulacion",
+        widget=forms.Textarea(attrs={"placeholder": "Explicá por qué se anula este movimiento"}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._apply_input_classes()
+
+
 class PosBatchForm(TreasuryStyledFormMixin, forms.ModelForm):
     class Meta:
         model = LotePOS

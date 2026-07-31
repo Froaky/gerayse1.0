@@ -62,6 +62,11 @@ urlpatterns = [
     path("efectivo-central/nuevo/", views.central_cash_create, name="central_cash_create"),
     path("efectivo-central/carga-inicial/", views.carga_inicial_caja_central, name="carga_inicial_caja_central"),
     path("efectivo-central/egreso/", views.egreso_tesoreria_create, name="egreso_tesoreria_create"),
+    path(
+        "efectivo-central/<int:pk>/anular/",
+        views.central_cash_annul_confirm,
+        name="central_cash_annul_confirm",
+    ),
     path("arqueos/", views.arqueo_list, name="arqueo_list"),
     path("arqueos/nuevo/", views.arqueo_create, name="arqueo_create"),
 ]

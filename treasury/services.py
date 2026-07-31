@@ -1737,7 +1737,9 @@ def _pending_central_treasury_expenses(base_queryset):
     )
 
 
-def scope_central_cash_movements(movements, *, sucursal=None, empresa_ids=None):
+def scope_central_cash_movements(
+    movements, *, sucursal=None, empresa_ids=None, incluir_anulados=False
+):
     """Acota los movimientos de boveda al alcance pedido.
 
     Por EMPRESA es un filtro directo, porque la boveda tiene empresa. Antes se
@@ -1760,7 +1762,11 @@ def scope_central_cash_movements(movements, *, sucursal=None, empresa_ids=None):
     # Los anulados salen de TODO alcance, en forma positiva (que es la
     # convencion del repo para movimientos). Aca cubre de una el saldo
     # acumulado, los snapshots financiero y de disponibilidades, y el libro.
-    movements = movements.filter(estado=MovimientoCajaCentral.Estado.REGISTRADO)
+    # `incluir_anulados` existe solo para el LISTADO del libro: los anulados se
+    # muestran con su motivo (si se ocultaran, quien anulo no veria que anulo)
+    # pero no suman en ningun total.
+    if not incluir_anulados:
+        movements = movements.filter(estado=MovimientoCajaCentral.Estado.REGISTRADO)
     if sucursal is not None:
         return movements.filter(Q(sucursal_gasto=sucursal) | Q(sucursal_origen=sucursal))
     if empresa_ids is not None:

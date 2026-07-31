@@ -1,17 +1,38 @@
 <div class="list mt-16">
   {% for item in items %}
-    <a class="list-item" href="{{ item.href }}">
-      <div class="row">
-        <div>
-          <strong>{{ item.title }}</strong>
-          <div class="muted mt-8">{{ item.subtitle }}</div>
+    {% if item.action_href %}
+      {# Item con accion propia: no puede ser un <a> entero porque tendria un
+         <a> anidado. Se deja como rama aparte para que todas las otras listas
+         de tesoreria sigan renderizando exactamente igual que antes. #}
+      <div class="list-item">
+        <div class="row">
+          <div>
+            <strong>{{ item.title }}</strong>
+            <div class="muted mt-8">{{ item.subtitle }}</div>
+          </div>
+          <span class="badge {% if item.badge_class %}{{ item.badge_class }}{% endif %}">{{ item.badge }}</span>
         </div>
-        <span class="badge {% if item.badge_class %}{{ item.badge_class }}{% endif %}">{{ item.badge }}</span>
+        {% if item.meta %}
+          <div class="muted mt-8">{{ item.meta }}</div>
+        {% endif %}
+        <div class="list-actions mt-8">
+          <a class="button-secondary" href="{{ item.action_href }}">{{ item.action_label }}</a>
+        </div>
       </div>
-      {% if item.meta %}
-        <div class="muted mt-8">{{ item.meta }}</div>
-      {% endif %}
-    </a>
+    {% else %}
+      <a class="list-item" href="{{ item.href }}">
+        <div class="row">
+          <div>
+            <strong>{{ item.title }}</strong>
+            <div class="muted mt-8">{{ item.subtitle }}</div>
+          </div>
+          <span class="badge {% if item.badge_class %}{{ item.badge_class }}{% endif %}">{{ item.badge }}</span>
+        </div>
+        {% if item.meta %}
+          <div class="muted mt-8">{{ item.meta }}</div>
+        {% endif %}
+      </a>
+    {% endif %}
   {% empty %}
     <p class="muted">{{ empty_message|default:"Todavia no hay registros para esta seccion." }}</p>
   {% endfor %}
