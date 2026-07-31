@@ -1342,6 +1342,62 @@ Last updated: 2026-07-08
 - Archivos: `users/models.py`, `users/views.py`, `users/migrations/0015_*`, `users/tests.py`, `cashops/permissions.py`, `cashops/services.py`, `cashops/views.py`, `cashops/urls.py`, `templates/cashops/partials/movement_list.html`, `templates/cashops/box_detail.html`, `cashops/tests.py`, `context.md`.
 - Tests: users +1 clase `MovementDeletePermissionTests` (4) + conteo modulos 7->8; cashops +3 servicio movimiento, +4 vista movimiento (abierta/permiso/aislamiento), +3 servicio deuda, +4 vista deuda. Renombrados los tests de delete de caja cerrada (siguen verdes por la logica OR).
 
+### URGENTE 1 de la auditoria: el pago ahora SI baja el saldo del banco 2026-07-31
+
+Hallazgo de la auditoria del 29/07: `register_payment` generaba movimiento de
+disponibilidad SOLO para EFECTIVO (caja fuerte). Transferencia, cheque y ECHEQ
+bajaban `saldo_pendiente` de la deuda pero NO tocaban el banco, asi que el saldo
+bancario quedaba inflado y el KPI "Banco menos deuda pendiente" era
+sistematicamente OPTIMISTA: la deuda bajaba y el banco no. Urgente porque se
+acababa de entregar "pagar por proveedor" para atacar los $497M y pagan casi todo
+por transferencia: cada pago agrandaba el error.
+
+- `_create_bank_movement_for_payment` (treasury/services.py): crea el DEBITO con
+  `origen=PAGO_TESORERIA` heredando proveedor, categoria, rubro, sucursal y periodo
+  de la deuda pagada (misma herencia que ya hacia `link_payment_to_bank_movement`),
+  y marca el pago `estado_bancario=IMPACTADO`. La clase sale de
+  `_infer_bank_movement_class`: TRANSFERENCIA_TERCEROS / CHEQUE / ECHEQ.
+- Se llama en `register_payment` como rama `elif bank_account is not None` del if de
+  EFECTIVO. ORDEN CRITICO: va ANTES de `_recalculate_payable_locked`, porque una vez
+  que la deuda queda PAGADA el `clean()` de PagoTesoreria rechaza cualquier
+  re-guardado del pago ("La cuenta por pagar ya esta cancelada") y el save de
+  estado_bancario explotaria. El test de pago total cubre esa dependencia.
+- SALIDA SEGURA: si la deuda no tiene rubro + sucursal + periodo, NO se crea el
+  debito (el clean del modelo lo exigiria) y el pago se registra igual con
+  estado_bancario PENDIENTE. Preferimos no bloquear una cobranza por un dato de
+  catalogo faltante. En produccion las 694 deudas nacen de cajas y tienen los tres
+  datos, asi que el caso normal queda cubierto.
+- `generado_por_pago` (BooleanField, migracion `treasury/0029`, aditiva sin
+  backfill): distingue el debito que genero el sistema del que alguien cargo a mano
+  y despues vinculo. Cambia la ANULACION del pago:
+  * generado por el sistema -> el debito se ANULA (nunca existio en el banco; si
+    quedara vigente como MANUAL inflaria el egreso y contaria el gasto DOS VECES,
+    porque la deuda ya lo conto al cargarse y un debito MANUAL cuenta por si mismo).
+  * cargado a mano y vinculado -> se libera a MANUAL sin anular, como antes: esa
+    plata SI salio del banco y borrarla es decision de la persona.
+  Los historicos quedan en False = comportamiento previo intacto.
+- Se desvincula siempre antes de anular: el `clean()` de MovimientoBancario exige
+  pago REGISTRADO cuando hay pago vinculado, sin exencion para el movimiento anulado.
+- PROBADO EN LA BASE DEMO (pago de $180.000): banco 31.873.000 -> 31.693.000 y
+  deuda 109.360.000 -> 109.180.000, con la COBERTURA IGUAL en -77.487.000. Antes
+  solo bajaba la deuda y la cobertura "mejoraba" $180.000 sin que saliera un peso.
+  Al anular, los tres numeros volvieron exactos al original.
+- Tests: `treasury/tests_bank_impact.py` (7 nuevos: transferencia crea el debito con
+  imputacion heredada, cheque/ECHEQ con su clase, efectivo intacto, deuda sin
+  sucursal no bloquea el pago, banco+cobertura reflejan el pago, anular anula el
+  autogenerado, anular NO anula el cargado a mano). Helper
+  `_discard_auto_generated_bank_movement` en TreasuryTestCase para los casos que
+  ejercitan vincular a mano (pago_tesoreria es OneToOne y el pago ya trae el suyo).
+  Se actualizo `test_transfer_payment_hits_financial_only_with_real_bank_movement`
+  -> `..._hits_financial_when_paid_and_economic_counts_once`: documentaba el
+  comportamiento viejo; su invariante real (el gasto no se cuenta dos veces en la
+  lectura economica) se mantiene y sigue verde.
+- BUG PREEXISTENTE ENCONTRADO, NO arreglado en este slice: "Vincular a pago" no
+  funciona si la deuda quedo PAGADA, porque `link_payment_to_bank_movement`
+  re-guarda el pago y el `clean()` de PagoTesoreria lo rechaza. Afecta a la salida
+  manual del caso sin imputacion completa.
+- Suite: 428 -> 435 tests, todos en verde.
+
 ### Suite 24x mas rapida + baja de codigo muerto en core 2026-07-29
 
 Pregunta del usuario: "es necesario 430 tests o podriamos sacar algunos?". Se

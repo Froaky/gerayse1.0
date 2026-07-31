@@ -675,7 +675,9 @@ def register_payment(
         creado_por=actor,
     )
     payment.save(skip_domain_guard=True)
-    
+
+    # Todo pago tiene que mover la disponibilidad de donde salio la plata: el
+    # efectivo baja la caja fuerte, y transferencia/cheque/ECHEQ bajan el banco.
     if medio_pago == PagoTesoreria.MedioPago.EFECTIVO:
         register_central_cash_movement(
             tipo=MovimientoCajaCentral.Tipo.EGRESO_PAGO,
@@ -685,7 +687,9 @@ def register_payment(
             pago_tesoreria=payment,
             actor=actor,
         )
-        
+    elif bank_account is not None:
+        _create_bank_movement_for_payment(payment, payable=locked_payable, actor=actor)
+
     _recalculate_payable_locked(locked_payable)
     locked_payable.refresh_from_db()
     _mark_special_commitment_if_paid(locked_payable, actor=actor)
@@ -840,6 +844,58 @@ def register_cash_payment(
     )
 
 
+def _create_bank_movement_for_payment(payment: PagoTesoreria, *, payable: CuentaPorPagar, actor=None):
+    """Genera el debito bancario del pago, para que el saldo del banco baje de verdad.
+
+    Antes de esto solo el pago en EFECTIVO movia una disponibilidad (la caja fuerte).
+    Transferencia, cheque y ECHEQ bajaban el saldo_pendiente de la deuda pero NO
+    tocaban el banco, asi que el saldo bancario y el KPI de cobertura de deuda
+    quedaban sistematicamente optimistas hasta que alguien cargara el debito a mano.
+
+    La imputacion (proveedor, categoria, rubro, sucursal, periodo) se hereda de la
+    deuda pagada, igual que hace link_payment_to_bank_movement con un movimiento
+    cargado a mano.
+
+    Devuelve None sin crear nada si la deuda no tiene la imputacion completa: el
+    clean() del modelo exige rubro + sucursal + periodo en todo debito vigente, y
+    preferimos que el pago se registre igual antes que bloquear una cobranza por un
+    dato de catalogo faltante. En ese caso el pago queda con estado_bancario
+    PENDIENTE, visible como badge en el listado de pagos.
+    OJO: para esos casos "Vincular a pago" NO siempre alcanza como salida, porque
+    link_payment_to_bank_movement re-guarda el pago y el clean() de PagoTesoreria
+    rechaza el re-guardado si la deuda ya quedo PAGADA. Es una limitacion previa a
+    este slice; se completa la imputacion de la deuda y se re-registra el pago.
+
+    ORDEN IMPORTANTE: se llama ANTES de _recalculate_payable_locked, cuando la deuda
+    todavia no esta marcada PAGADA. Al reves, el mismo clean() del pago bloquearia el
+    save() que marca estado_bancario. El test de pago total cubre esta dependencia.
+    """
+    rubro = payable.categoria.rubro_operativo if payable.categoria_id else None
+    if not rubro or not payable.sucursal_id or not payable.periodo_referencia:
+        return None
+    movement = create_bank_movement(
+        cuenta_bancaria=payment.cuenta_bancaria,
+        tipo=MovimientoBancario.Tipo.DEBITO,
+        fecha=payment.fecha_pago,
+        monto=payment.monto,
+        concepto=f"Pago a {payable.proveedor}: {payable.concepto}"[:160],
+        categoria=payable.categoria,
+        rubro_operativo=rubro,
+        proveedor=payable.proveedor,
+        sucursal_gasto=payable.sucursal,
+        periodo_pago=payable.periodo_referencia,
+        referencia=payment.referencia,
+        origen=MovimientoBancario.Origen.PAGO_TESORERIA,
+        pago_tesoreria=payment,
+        generado_por_pago=True,
+        actor=actor,
+    )
+    payment.estado_bancario = PagoTesoreria.EstadoBancario.IMPACTADO
+    payment.actualizado_por = actor
+    payment.save(skip_domain_guard=True)
+    return movement
+
+
 def _release_bank_movement_from_annulled_payment(payment: PagoTesoreria, *, motivo: str, actor=None):
     """Al anular un pago, su movimiento bancario quedaba COLGADO: apuntando a un
     pago anulado y con origen PAGO_TESORERIA, combinacion que el clean() del
@@ -848,15 +904,24 @@ def _release_bank_movement_from_annulled_payment(payment: PagoTesoreria, *, moti
     se arreglaba por shell.
 
     Se lo devuelve a MANUAL conservando la imputacion (rubro/sucursal/periodo) y
-    el proveedor. No se anula: el debito es REAL, la plata salio del banco; lo que
-    se deshizo es su imputacion a esa deuda. Asi queda libre para re-vincularlo a
-    la factura correcta o eliminarlo desde la pantalla de bancos.
+    el proveedor. Se desvincula siempre (el clean() exige pago REGISTRADO cuando hay
+    pago vinculado, sin excepcion ni para el movimiento anulado).
+
+    Y ADEMAS se anula el movimiento si lo habia generado el sistema al registrar el
+    pago (generado_por_pago): en ese caso el debito nunca existio en el banco, nadie
+    lo vio en un resumen, asi que dejarlo vigente como MANUAL inflaria el egreso y
+    contaria el gasto DOS VECES en la lectura economica (la deuda ya lo conto al
+    cargarse, y un debito MANUAL cuenta como gasto por si mismo). Los movimientos
+    cargados a mano y despues vinculados siguen liberandose sin anular: esa plata SI
+    salio del banco y la decision de borrarla es de la persona.
     """
     movement = getattr(payment, "movimiento_bancario", None)
     if movement is None:
         return None
+    generado_por_el_sistema = movement.generado_por_pago
     movement.pago_tesoreria = None
     movement.origen = MovimientoBancario.Origen.MANUAL
+    movement.generado_por_pago = False
     # Estas clases exigen proveedor; si el movimiento no lo tiene, se baja a
     # "otro egreso" para que siga siendo un movimiento manual valido.
     if movement.clase in {
@@ -867,6 +932,11 @@ def _release_bank_movement_from_annulled_payment(payment: PagoTesoreria, *, moti
         movement.clase = MovimientoBancario.Clase.OTRO_EGRESO
     nota = f"Pago #{payment.pk} anulado: {motivo}"
     movement.observaciones = f"{movement.observaciones} {nota}".strip()[:255]
+    if generado_por_el_sistema:
+        movement.estado = MovimientoBancario.Estado.ANULADO
+        movement.motivo_anulacion = f"Anulacion del pago #{payment.pk}: {motivo}"[:255]
+        movement.anulado_por = actor
+        movement.anulado_en = timezone.now()
     movement.actualizado_por = actor
     _save_instance(movement)
     return movement
@@ -1087,6 +1157,7 @@ def create_bank_movement(
     observaciones: str = "",
     origen: str = MovimientoBancario.Origen.MANUAL,
     pago_tesoreria: PagoTesoreria = None,
+    generado_por_pago: bool = False,
     actor=None,
 ) -> MovimientoBancario:
     _require_actor(actor)
@@ -1106,6 +1177,7 @@ def create_bank_movement(
         observaciones=observaciones,
         origen=origen,
         pago_tesoreria=pago_tesoreria,
+        generado_por_pago=generado_por_pago,
         creado_por=actor,
     )
     return _save_instance(movement)

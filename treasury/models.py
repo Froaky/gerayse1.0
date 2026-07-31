@@ -1038,6 +1038,13 @@ class MovimientoBancario(models.Model):
         blank=True,
         related_name="movimiento_bancario",
     )
+    # True cuando el debito lo genero el sistema al registrar un pago (no lo cargo
+    # una persona mirando el resumen del banco). Cambia que pasa al anular el pago:
+    # si lo genero el sistema, el debito nunca existio en el banco y se anula; si lo
+    # cargo alguien a mano y despues lo vinculo, la plata SI salio y el movimiento se
+    # libera a MANUAL para que la persona decida. Los historicos quedan en False,
+    # que es justamente el comportamiento que ya tenian.
+    generado_por_pago = models.BooleanField(default=False)
     rubro_operativo = models.ForeignKey(
         "cashops.RubroOperativo",
         on_delete=models.SET_NULL,

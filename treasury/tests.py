@@ -122,6 +122,25 @@ class TreasuryTestCase(TestCase):
         request.user = user
         return request
 
+    def _discard_auto_generated_bank_movement(self, payment):
+        """Descarta el debito que register_payment genera solo al registrar el pago.
+
+        Sirve para los casos que ejercitan el camino de vincular un movimiento
+        cargado A MANO: como MovimientoBancario.pago_tesoreria es OneToOne, el pago
+        ya viene con el suyo y no admite un segundo. Se escribe directo (sin pasar
+        por el servicio) porque es armado de escenario, no la operacion bajo prueba.
+        """
+        movement = MovimientoBancario.objects.filter(pago_tesoreria=payment).first()
+        if movement is None:
+            return None
+        movement.pago_tesoreria = None
+        movement.origen = MovimientoBancario.Origen.MANUAL
+        movement.generado_por_pago = False
+        movement.estado = MovimientoBancario.Estado.ANULADO
+        movement.motivo_anulacion = "Descartado en el test para vincular uno manual"
+        movement.save()
+        return movement
+
 
 class TreasuryPermissionTests(TreasuryTestCase):
     def test_admin_role_is_treasury_admin(self):
@@ -729,6 +748,7 @@ class TreasuryServiceTests(TreasuryTestCase):
             referencia="TRF-ANULAR",
             actor=self.admin,
         )
+        self._discard_auto_generated_bank_movement(payment)
         movement = create_bank_movement(
             cuenta_bancaria=self.bank_account,
             tipo=MovimientoBancario.Tipo.DEBITO,
@@ -3908,6 +3928,7 @@ class EP10BankDebitImputationTests(TreasuryTestCase):
             referencia="TRF-HEREDA",
             actor=self.admin,
         )
+        self._discard_auto_generated_bank_movement(payment)
         movement = self._create_historic_incomplete_debit(
             monto=Decimal("120.00"),
             concepto="Debito historico a vincular",
@@ -4386,7 +4407,13 @@ class EP13DebtEconomicFinancialTests(TreasuryTestCase):
         self.assertEqual(financial_june["central_cash_total"], Decimal("700.00"))
         self.assertEqual(financial_june["pending_total"], Decimal("0.00"))
 
-    def test_transfer_payment_hits_financial_only_with_real_bank_movement(self):
+    def test_transfer_payment_hits_financial_when_paid_and_economic_counts_once(self):
+        """Antes este test documentaba que el pago por transferencia NO tocaba el
+        banco hasta que alguien cargara el debito a mano: la deuda bajaba y el banco
+        no, asi que la cobertura quedaba optimista. Ahora register_payment genera el
+        debito, y lo que se sigue cuidando es que el gasto NO se cuente dos veces en
+        la lectura economica (la deuda ya lo conto al cargarse, y los debitos con
+        origen PAGO_TESORERIA quedan fuera del gasto economico)."""
         payable = register_payable(
             sucursal=self.sucursal,
             proveedor=self.supplier,
@@ -4408,27 +4435,10 @@ class EP13DebtEconomicFinancialTests(TreasuryTestCase):
             actor=self.admin,
         )
 
-        before = build_financial_period_snapshot(
-            date_from=timezone.datetime(2026, 6, 1).date(),
-            date_to=timezone.datetime(2026, 6, 30).date(),
-        )
-        self.assertEqual(before["bank_debits"], Decimal("0.00"))
-
-        movement = create_bank_movement(
-            cuenta_bancaria=self.bank_account,
-            tipo=MovimientoBancario.Tipo.DEBITO,
-            fecha=timezone.datetime(2026, 6, 10).date(),
-            monto=Decimal("400.00"),
-            concepto="Transferencia a proveedor",
-            categoria=self.category,
-            rubro_operativo=self.rubro_servicios,
-            proveedor=self.supplier,
-            sucursal_gasto=self.sucursal,
-            periodo_pago=timezone.datetime(2026, 6, 1).date(),
-            actor=self.admin,
-        )
-        payment = payable.pagos.get()
-        link_payment_to_bank_movement(payment=payment, bank_movement=movement, actor=self.admin)
+        # El debito lo genera el propio pago: no hay que cargarlo a mano.
+        movement = MovimientoBancario.objects.get(pago_tesoreria=payable.pagos.get())
+        self.assertEqual(movement.origen, MovimientoBancario.Origen.PAGO_TESORERIA)
+        self.assertTrue(movement.generado_por_pago)
 
         after = build_financial_period_snapshot(
             date_from=timezone.datetime(2026, 6, 1).date(),
