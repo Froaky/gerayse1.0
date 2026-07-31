@@ -49,6 +49,11 @@ urlpatterns = [
     path("bancos/<int:pk>/editar/", views.bank_movements_update, name="bank_movements_update"),
     path("bancos/<int:pk>/confirmar-eliminacion/", views.bank_movements_delete_confirm, name="bank_movements_delete_confirm"),
     path("bancos/<int:pk>/vincular/", views.bank_movements_link, name="bank_movements_link"),
+    path(
+        "bancos/<int:pk>/pagar-deuda/",
+        views.bank_movements_pay_debt,
+        name="bank_movements_pay_debt",
+    ),
     path("bancos/<int:pk>/imputar/", views.bank_movements_imputation, name="bank_movements_imputation"),
     path("lotes-pos/", views.pos_batches_list, name="pos_batches_list"),
     path("lotes-pos/nuevo/", views.pos_batches_create, name="pos_batches_create"),

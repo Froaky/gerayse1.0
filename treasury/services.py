@@ -675,6 +675,7 @@ def register_payment(
     fecha_diferida=None,
     observaciones: str = "",
     empresa=None,
+    bank_movement: MovimientoBancario = None,
     actor=None,
 ) -> PagoTesoreria:
     _require_actor(actor)
@@ -716,6 +717,14 @@ def register_payment(
             fecha=fecha_pago,
             pago_tesoreria=payment,
             actor=actor,
+        )
+    elif bank_movement is not None:
+        # El debito ya existe en el extracto: se vincula en lugar de crear otro.
+        # Va ANTES de _recalculate_payable_locked a proposito: si la deuda queda
+        # PAGADA, el clean de PagoTesoreria rechaza volver a guardar el pago y la
+        # vinculacion ya no se puede hacer.
+        link_payment_to_bank_movement(
+            payment=payment, bank_movement=bank_movement, actor=actor
         )
     elif bank_account is not None:
         _create_bank_movement_for_payment(payment, payable=locked_payable, actor=actor)
@@ -793,6 +802,7 @@ def register_transfer_payment(
     monto: Decimal,
     referencia: str = "",
     observaciones: str = "",
+    bank_movement: MovimientoBancario = None,
     actor=None,
 ) -> PagoTesoreria:
     return register_payment(
@@ -803,6 +813,54 @@ def register_transfer_payment(
         monto=monto,
         referencia=referencia,
         observaciones=observaciones,
+        bank_movement=bank_movement,
+        actor=actor,
+    )
+
+
+def pay_debt_from_bank_movement(
+    *,
+    bank_movement: MovimientoBancario,
+    payable: CuentaPorPagar,
+    observaciones: str = "",
+    actor=None,
+) -> PagoTesoreria:
+    """Paga una deuda desde una transferencia que ya esta en el extracto.
+
+    Antes habia que cargar el pago a mano y despues vincularlo. Ahora se elige la
+    factura y el pago se genera solo, por el importe exacto del movimiento, y
+    queda vinculado sin crear un segundo debito.
+
+    El importe es siempre el del movimiento: `link_payment_to_bank_movement`
+    exige que coincidan, y `MovimientoBancario.pago_tesoreria` es OneToOne, asi
+    que una transferencia paga UNA factura (total o parcialmente).
+    """
+    _require_actor(actor)
+    if bank_movement.estado != MovimientoBancario.Estado.REGISTRADO:
+        raise ValidationError({"__all__": "El movimiento bancario esta anulado."})
+    if bank_movement.tipo != MovimientoBancario.Tipo.DEBITO:
+        raise ValidationError({"__all__": "Solo un debito puede pagar una deuda."})
+    if bank_movement.pago_tesoreria_id:
+        raise ValidationError({"__all__": "Este movimiento ya esta vinculado a un pago."})
+    if payable.estado == CuentaPorPagar.Estado.ANULADA:
+        raise ValidationError({"cuenta_por_pagar": "La deuda esta anulada."})
+    if bank_movement.monto > payable.saldo_pendiente:
+        raise ValidationError(
+            {
+                "cuenta_por_pagar": (
+                    f"La transferencia es de {bank_movement.monto} y a la factura le quedan "
+                    f"{payable.saldo_pendiente}. Elegi una factura con saldo suficiente."
+                )
+            }
+        )
+    return register_transfer_payment(
+        payable=payable,
+        bank_account=bank_movement.cuenta_bancaria,
+        fecha_pago=bank_movement.fecha,
+        monto=bank_movement.monto,
+        referencia=bank_movement.referencia or "",
+        observaciones=observaciones,
+        bank_movement=bank_movement,
         actor=actor,
     )
 
