@@ -27,7 +27,7 @@ from .models import (
     Proveedor,
     SaldoInicialCuentaBancaria,
 )
-from .permissions import ensure_treasury_admin
+from .permissions import ensure_delete_central_cash_movement, ensure_treasury_admin
 
 
 def _require_actor(actor) -> None:
@@ -987,6 +987,9 @@ def annul_payment(*, payment: PagoTesoreria, motivo: str, actor=None) -> PagoTes
     # Antes de marcar el pago como anulado: el movimiento vinculado no puede
     # quedar apuntando a un pago no REGISTRADO (lo rechaza su propio clean).
     _release_bank_movement_from_annulled_payment(locked_payment, motivo=motivo, actor=actor)
+    # Y el efectivo tiene que volver a la boveda: si el pago fue en efectivo,
+    # su EGRESO_PAGO quedaba vivo y la plata no volvia de ningun lado.
+    _release_central_cash_movement_from_annulled_payment(locked_payment, motivo=motivo, actor=actor)
     locked_payment.estado = PagoTesoreria.Estado.ANULADO
     locked_payment.estado_bancario = PagoTesoreria.EstadoBancario.ANULADO
     locked_payment.motivo_anulacion = motivo
@@ -1264,6 +1267,118 @@ def annul_bank_movement(*, movement: MovimientoBancario, motivo: str, actor=None
     movement.anulado_en = timezone.now()
     movement.actualizado_por = actor
     return _save_instance(movement)
+
+
+def _mes_de_tesoreria_cerrado(fecha) -> bool:
+    return CierreMensualTesoreria.objects.filter(mes=fecha.replace(day=1), cerrado=True).exists()
+
+
+def _ensure_central_cash_movement_annullable(movement: MovimientoCajaCentral) -> None:
+    """Que se puede anular de la boveda y que no.
+
+    Lo generado por otro proceso se anula desde su origen, no desde aca: si se
+    anulara el movimiento suelto, el pago o la caja quedarian diciendo que la
+    plata se movio cuando ya no se movio.
+    """
+    if movement.estado == MovimientoCajaCentral.Estado.ANULADO:
+        raise ValidationError({"__all__": "El movimiento ya esta anulado."})
+    if movement.reversa_de_id:
+        raise ValidationError({"__all__": "No se puede anular la reversa de otro movimiento."})
+    if movement.pago_tesoreria_id:
+        raise ValidationError(
+            {"__all__": "Este movimiento lo genero un pago de tesoreria: anula el pago."}
+        )
+    if movement.caja_cierre_id:
+        raise ValidationError(
+            {"__all__": "Este movimiento lo genero el cierre de una caja: anula la caja."}
+        )
+    if movement.tipo in {
+        MovimientoCajaCentral.Tipo.INGRESO_CAJA,
+        MovimientoCajaCentral.Tipo.EGRESO_PAGO,
+    }:
+        raise ValidationError(
+            {"__all__": "Los ingresos de caja y los egresos por pago no se anulan a mano."}
+        )
+    # Pendiente de definicion con administracion: para un mes ya cerrado no
+    # alcanza con anular. El saldo inicial de cada mes sale del valor GUARDADO en
+    # CierreMensualTesoreria, asi que anular hacia atras no devuelve la plata a
+    # ningun lado: hace falta contra-asentar en el mes abierto. Falta definir si
+    # esa reversa tambien tiene que corregir el gasto por rubro del mes cerrado.
+    # Hoy no hay ningun mes cerrado en produccion, asi que esto no bloquea nada.
+    if _mes_de_tesoreria_cerrado(movement.fecha):
+        raise ValidationError(
+            {
+                "__all__": (
+                    f"El mes {movement.fecha:%m/%Y} esta cerrado en tesoreria. "
+                    "Todavia no esta definido como se contra-asienta en el mes abierto."
+                )
+            }
+        )
+
+
+def is_central_cash_movement_annullable(movement: MovimientoCajaCentral) -> bool:
+    try:
+        _ensure_central_cash_movement_annullable(movement)
+    except ValidationError:
+        return False
+    return True
+
+
+@transaction.atomic
+def annul_central_cash_movement(
+    *, movement: MovimientoCajaCentral, motivo: str, actor=None
+) -> MovimientoCajaCentral:
+    """Anula un movimiento de la boveda con motivo y auditoria.
+
+    Reemplaza la practica de compensar a mano con un ajuste positivo: en
+    produccion 7 de los 8 AJUSTE_POSITIVO son parches de gastos cargados dos
+    veces, cargados asi porque no habia forma de anular.
+    """
+    _require_actor(actor)
+    ensure_delete_central_cash_movement(actor)
+    # of=("self",) es obligatorio: el modelo tiene varias FK nullable y sus LEFT
+    # JOIN invalidan el FOR UPDATE en Postgres (el SQLite local lo esconde).
+    locked = MovimientoCajaCentral.objects.select_for_update(of=("self",)).get(pk=movement.pk)
+    _ensure_central_cash_movement_annullable(locked)
+    motivo = (motivo or "").strip()
+    if not motivo:
+        raise ValidationError({"motivo": "El motivo es obligatorio para anular."})
+    locked.estado = MovimientoCajaCentral.Estado.ANULADO
+    locked.motivo_anulacion = motivo
+    locked.anulado_por = actor
+    locked.anulado_en = timezone.now()
+    return _save_instance(locked)
+
+
+def _release_central_cash_movement_from_annulled_payment(
+    payment: PagoTesoreria, *, motivo: str, actor=None
+) -> None:
+    """Devuelve a la boveda el efectivo de un pago que se anula.
+
+    Sin esto, anular un pago en efectivo dejaba vivo su EGRESO_PAGO: la deuda
+    volvia a quedar pendiente pero la plata nunca volvia a la caja fuerte. El
+    EGRESO_PAGO siempre lo genera el sistema, asi que siempre se anula.
+    """
+    movimientos = MovimientoCajaCentral.objects.filter(
+        pago_tesoreria=payment,
+        estado=MovimientoCajaCentral.Estado.REGISTRADO,
+    )
+    for movimiento in movimientos:
+        nota = f"Anulacion del pago #{payment.pk}: {motivo}"
+        movimiento.estado = MovimientoCajaCentral.Estado.ANULADO
+        movimiento.motivo_anulacion = nota
+        movimiento.anulado_por = actor
+        movimiento.anulado_en = timezone.now()
+        movimiento.observaciones = f"{movimiento.observaciones} {nota}".strip()[:255]
+        movimiento.save(
+            update_fields=[
+                "estado",
+                "motivo_anulacion",
+                "anulado_por",
+                "anulado_en",
+                "observaciones",
+            ]
+        )
 
 
 def complete_bank_movement_imputation(
@@ -1599,6 +1714,29 @@ def _pending_bank_treasury_expenses(base_queryset):
     )
 
 
+def _mapped_central_treasury_expenses(base_queryset):
+    """Egresos de la boveda que se pueden leer como gasto economico.
+
+    Espejo de `_mapped_bank_treasury_expenses`. Solo EGRESO_ADMIN: el EGRESO_PAGO
+    queda afuera a proposito, igual que del lado bancario queda afuera el origen
+    PAGO_TESORERIA, porque ese gasto ya entro a la lectura economica como deuda
+    (`CuentaPorPagar.importe_total`). Contarlo tambien aca lo duplicaria.
+    """
+    return base_queryset.filter(
+        estado=MovimientoCajaCentral.Estado.REGISTRADO,
+        tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
+    )
+
+
+def _pending_central_treasury_expenses(base_queryset):
+    """Egresos de la boveda a los que todavia les falta imputacion economica."""
+    return _mapped_central_treasury_expenses(base_queryset).filter(
+        Q(rubro_operativo__isnull=True)
+        | Q(sucursal_gasto__isnull=True)
+        | Q(periodo_pago__isnull=True)
+    )
+
+
 def scope_central_cash_movements(movements, *, sucursal=None, empresa_ids=None):
     """Acota los movimientos de boveda al alcance pedido.
 
@@ -1619,6 +1757,10 @@ def scope_central_cash_movements(movements, *, sucursal=None, empresa_ids=None):
     la suma de las sucursales puede ser menor que el total de la empresa, y esa
     diferencia es exactamente lo que falta imputar.
     """
+    # Los anulados salen de TODO alcance, en forma positiva (que es la
+    # convencion del repo para movimientos). Aca cubre de una el saldo
+    # acumulado, los snapshots financiero y de disponibilidades, y el libro.
+    movements = movements.filter(estado=MovimientoCajaCentral.Estado.REGISTRADO)
     if sucursal is not None:
         return movements.filter(Q(sucursal_gasto=sucursal) | Q(sucursal_origen=sucursal))
     if empresa_ids is not None:
@@ -1723,12 +1865,13 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
         for row in expenses.values("rubro_operativo").annotate(total=Sum("monto"))
     }
 
-    central_treasury_expenses = MovimientoCajaCentral.objects.filter(
-        tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
-        periodo_pago__gte=period_from,
-        periodo_pago__lt=period_end_exclusive,
-        rubro_operativo__isnull=False,
-        sucursal_gasto__isnull=False,
+    central_treasury_expenses = _mapped_central_treasury_expenses(
+        MovimientoCajaCentral.objects.filter(
+            periodo_pago__gte=period_from,
+            periodo_pago__lt=period_end_exclusive,
+            rubro_operativo__isnull=False,
+            sucursal_gasto__isnull=False,
+        )
     )
     bank_treasury_expenses = _mapped_bank_treasury_expenses(
         MovimientoBancario.objects.filter(
@@ -1759,11 +1902,12 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
             row["total"] or Decimal("0.00")
         )
 
-    pending_central_treasury_expenses = MovimientoCajaCentral.objects.filter(
-        tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
-        fecha__gte=date_from,
-        fecha__lte=date_to,
-    ).filter(Q(rubro_operativo__isnull=True) | Q(sucursal_gasto__isnull=True) | Q(periodo_pago__isnull=True))
+    pending_central_treasury_expenses = _pending_central_treasury_expenses(
+        MovimientoCajaCentral.objects.filter(
+            fecha__gte=date_from,
+            fecha__lte=date_to,
+        )
+    )
     pending_bank_treasury_expenses = _pending_bank_treasury_expenses(
         MovimientoBancario.objects.filter(
             fecha__gte=date_from,
@@ -2014,12 +2158,13 @@ def build_economic_rubro_detail(*, rubro_id: int, date_from: date, date_to: date
     elif empresa_ids is not None:
         cash_expenses = cash_expenses.filter(caja__sucursal__empresa_id__in=empresa_ids)
 
-    central_treasury_expenses = MovimientoCajaCentral.objects.filter(
-        tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
-        periodo_pago__gte=period_from,
-        periodo_pago__lt=period_end_exclusive,
-        rubro_operativo=rubro,
-        sucursal_gasto__isnull=False,
+    central_treasury_expenses = _mapped_central_treasury_expenses(
+        MovimientoCajaCentral.objects.filter(
+            periodo_pago__gte=period_from,
+            periodo_pago__lt=period_end_exclusive,
+            rubro_operativo=rubro,
+            sucursal_gasto__isnull=False,
+        )
     ).select_related("sucursal_gasto")
     bank_treasury_expenses = _mapped_bank_treasury_expenses(
         MovimientoBancario.objects.filter(

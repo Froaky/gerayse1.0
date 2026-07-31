@@ -48,6 +48,10 @@ PERMISSION_MODULE_META = {
         "label": "Tesorería",
         "scope": "Proveedores, deudas, pagos, bancos, caja central y reportes.",
     },
+    PermissionModule.TREASURY_MOV_DELETE: {
+        "label": "Anular movimientos de caja fuerte",
+        "scope": "Anular (con motivo y auditoría) un movimiento de la bóveda cargado por error. Va aparte de escribir en tesorería: cargar y sacarle plata a la caja fuerte no son la misma responsabilidad.",
+    },
     PermissionModule.USERS: {
         "label": "Usuarios",
         "scope": "Alta, edición, roles, permisos, archivo, baja y links de primer ingreso.",

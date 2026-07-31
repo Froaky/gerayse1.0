@@ -1422,7 +1422,12 @@ class CajaCentral(models.Model):
 
     @property
     def saldo_actual(self) -> Decimal:
-        sums = self.movimientos.aggregate(
+        # Los anulados no cuentan. Este filtro es critico: esta property es la
+        # que alimenta el arqueo, y si se olvida, el conteo fisico arrastra una
+        # diferencia fantasma para siempre contra un movimiento que ya no vale.
+        sums = self.movimientos.filter(
+            estado=MovimientoCajaCentral.Estado.REGISTRADO
+        ).aggregate(
             ingresos=Sum("monto", filter=Q(tipo__in=[
                 MovimientoCajaCentral.Tipo.INGRESO_CAJA,
                 MovimientoCajaCentral.Tipo.APORTE,
@@ -1451,6 +1456,10 @@ class MovimientoCajaCentral(models.Model):
         DEPOSITO_BANCO = "DEPOSITO_BANCO", "Depósito en Banco"
         AJUSTE_POSITIVO = "AJUSTE_POSITIVO", "Ajuste de Saldo (+)"
         AJUSTE_NEGATIVO = "AJUSTE_NEGATIVO", "Ajuste de Saldo (-)"
+
+    class Estado(models.TextChoices):
+        REGISTRADO = "REGISTRADO", "Registrado"
+        ANULADO = "ANULADO", "Anulado"
 
     caja_central = models.ForeignKey(CajaCentral, on_delete=models.PROTECT, related_name="movimientos")
     fecha = models.DateField(default=timezone.localdate)
@@ -1512,6 +1521,29 @@ class MovimientoCajaCentral(models.Model):
         related_name="egresos_caja_central",
     )
     periodo_pago = models.DateField(null=True, blank=True)
+    estado = models.CharField(max_length=12, choices=Estado.choices, default=Estado.REGISTRADO)
+    motivo_anulacion = models.TextField(blank=True)
+    anulado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="movimientos_caja_central_anulados",
+    )
+    anulado_en = models.DateTimeField(null=True, blank=True)
+    # Cuando el movimiento que se anula pertenece a un mes ya cerrado, el
+    # original NO se toca: se postea esta reversa en el mes abierto y apunta al
+    # original. Es la practica contable de siempre (no se borra un asiento de un
+    # periodo cerrado, se contra-asienta en el abierto) y es lo que eligio la
+    # administradora: el mes cerrado queda como lo informo y la plata se acomoda
+    # ahora. Si el mes esta abierto no hace falta reversa: alcanza con anular.
+    reversa_de = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="reversas",
+    )
     creado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -1532,10 +1564,29 @@ class MovimientoCajaCentral(models.Model):
         ]
         # Con una sola boveda por empresa todos los movimientos cuelgan de dos
         # filas, asi que la fecha pasa a ser el discriminante de todo reporte.
+        # El indice con estado es para que sumar el saldo excluyendo anulados no
+        # degrade: es la agregacion que corre en cada pantalla de tesoreria.
         indexes = [
             models.Index(fields=["caja_central", "fecha"]),
             models.Index(fields=["tipo", "periodo_pago"]),
+            models.Index(fields=["caja_central", "estado"]),
         ]
+
+    def clean(self) -> None:
+        self.concepto = (self.concepto or "").strip()
+        self.observaciones = (self.observaciones or "").strip()
+        self.motivo_anulacion = (self.motivo_anulacion or "").strip()
+        if self.estado == self.Estado.ANULADO and not self.motivo_anulacion:
+            raise ValidationError({"motivo_anulacion": "El motivo es obligatorio para anular."})
+
+    @property
+    def esta_anulado(self) -> bool:
+        return self.estado == self.Estado.ANULADO
+
+    @property
+    def esta_reversado(self) -> bool:
+        """El original de un mes cerrado sigue REGISTRADO pero tiene su reversa."""
+        return self.reversas.exists()
 
     def __str__(self) -> str:
         return f"{self.get_tipo_display()} - {self.fecha} - {self.monto}"

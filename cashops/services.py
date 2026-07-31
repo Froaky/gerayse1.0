@@ -2068,12 +2068,18 @@ def _reverse_central_cash_closure_for_box(caja: Caja, *, actor) -> None:
     MovimientoCajaCentral = apps.get_model("treasury", "MovimientoCajaCentral")
     CierreMensualTesoreria = apps.get_model("treasury", "CierreMensualTesoreria")
     reversal_concept = f"Anulacion cierre caja #{caja.id}"
-    if MovimientoCajaCentral.objects.filter(concepto=reversal_concept).exists():
+    if MovimientoCajaCentral.objects.filter(
+        concepto=reversal_concept, estado="REGISTRADO"
+    ).exists():
         return
 
+    # Los dos filtros llevan estado: un movimiento ya anulado no se revierte de
+    # nuevo. Sin esto, anular el ingreso de un cierre y despues anular la caja
+    # sacaba la plata dos veces contra un solo ingreso.
     closure_concepts = [f"Cierre caja #{caja.id}", f"Cierre caja #{caja.id} - saldo negativo"]
     closure_movements = MovimientoCajaCentral.objects.filter(
         tipo__in=["INGRESO_CAJA", "AJUSTE_NEGATIVO"],
+        estado="REGISTRADO",
     ).filter(
         Q(caja_cierre=caja) | Q(concepto__in=closure_concepts)
     )
@@ -2516,9 +2522,13 @@ def _push_box_closure_to_central_cash(caja: Caja, *, saldo_fisico: Decimal, acto
 
     MovimientoCajaCentral = apps.get_model("treasury", "MovimientoCajaCentral")
     CierreMensualTesoreria = apps.get_model("treasury", "CierreMensualTesoreria")
+    # El guard filtra estado: si el ingreso de un cierre se anulo, este push
+    # tiene que poder volver a empujar el efectivo. Sin el filtro, el guard veia
+    # el movimiento anulado y la revalidacion no reponia la plata.
     if MovimientoCajaCentral.objects.filter(
         caja_cierre=caja,
         tipo__in=["INGRESO_CAJA", "AJUSTE_NEGATIVO"],
+        estado="REGISTRADO",
     ).exists():
         return
     if not caja.sucursal.empresa_id:

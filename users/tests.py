@@ -560,7 +560,9 @@ class PersonalViewTests(TestCase):
 
         self.assertEqual(create_response.status_code, 302)
         role = Role.objects.get(code="LECTURA")
-        self.assertEqual(role.permissions.count(), 8)
+        # Un rol nuevo nace con una fila por modulo. Se ata al enum y no a un
+        # numero fijo: el invariante es "todos los modulos", no "ocho".
+        self.assertEqual(role.permissions.count(), len(PermissionModule.choices))
 
         toggle_response = self.client.post(
             reverse(

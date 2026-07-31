@@ -18,6 +18,11 @@ class PermissionModule(models.TextChoices):
     CASHOPS_MOV_DELETE = "cashops_mov_del", "Eliminar movimientos de caja"
     CONFIG = "config", "Configuración"
     TREASURY = "treasury", "Tesorería"
+    # Permiso por accion (asignable/removible): habilita ANULAR movimientos de
+    # la caja fuerte. Va separado de escribir en tesoreria porque cargar un
+    # movimiento y sacarle plata a la boveda no son la misma responsabilidad:
+    # en produccion lo tienen solo dos personas de administracion.
+    TREASURY_MOV_DELETE = "treasury_mov_del", "Anular movimientos de caja fuerte"
     USERS = "users", "Usuarios"
 
 
@@ -191,6 +196,9 @@ class User(AbstractUser):
 
     def can_write_treasury(self) -> bool:
         return self.has_module_permission(PermissionModule.TREASURY, "write")
+
+    def can_delete_central_cash_movement(self) -> bool:
+        return self.has_module_permission(PermissionModule.TREASURY_MOV_DELETE, "write")
 
     def can_read_users(self) -> bool:
         return self.has_module_permission(PermissionModule.USERS, "read")
