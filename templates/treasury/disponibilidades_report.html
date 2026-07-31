@@ -209,20 +209,29 @@
                 {% endif %}
             </p>
         </div>
-        <div>
-            {% if not snapshot.is_closed %}
-                <form action="{% url 'treasury:close_month' %}" method="post">
-                    {% csrf_token %}
-                    <input type="hidden" name="year" value="{{ snapshot.year|unlocalize }}">
-                    <input type="hidden" name="month" value="{{ snapshot.month|unlocalize }}">
-                    <button type="submit" class="button" style="background: var(--danger);"
-                            onclick="return confirm('¿Estas seguro de cerrar este mes? Esta acción congelará los saldos para el siguiente período.')">
-                        Cerrar Mes {{ snapshot.month|unlocalize }}/{{ snapshot.year|unlocalize }}
-                    </button>
-                </form>
-            {% else %}
-                <button class="button-secondary" disabled>Periodo Congelado</button>
-            {% endif %}
+        <div class="stack" style="gap:8px;">
+            {# Cada empresa cierra su mes por separado: un boton por empresa, y
+               las que ya cerraron quedan deshabilitadas. Antes habia un solo
+               boton global y ninguna empresa podia cerrar hasta que la otra
+               tuviera todas sus cajas validadas. #}
+            {% for empresa in empresas_para_cierre %}
+                {% if empresa.cerrada %}
+                    <button class="button-secondary" disabled>{{ empresa.nombre }}: mes cerrado</button>
+                {% else %}
+                    <form action="{% url 'treasury:close_month' %}" method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="year" value="{{ snapshot.year|unlocalize }}">
+                        <input type="hidden" name="month" value="{{ snapshot.month|unlocalize }}">
+                        <input type="hidden" name="empresa" value="{{ empresa.pk|unlocalize }}">
+                        <button type="submit" class="button" style="background: var(--danger);"
+                                onclick="return confirm('Vas a cerrar {{ empresa.nombre }} para {{ snapshot.month|unlocalize }}/{{ snapshot.year|unlocalize }}. Los saldos de esa empresa quedan congelados y pasan a ser el saldo inicial del mes siguiente. Seguis?')">
+                            Cerrar {{ empresa.nombre }} - {{ snapshot.month|unlocalize }}/{{ snapshot.year|unlocalize }}
+                        </button>
+                    </form>
+                {% endif %}
+            {% empty %}
+                <span class="muted">No hay empresas habilitadas para cerrar.</span>
+            {% endfor %}
         </div>
     </div>
 </section>

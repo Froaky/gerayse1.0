@@ -298,13 +298,13 @@ class EP05DisponibilidadesTests(TestCase):
             actor=self.user
         )
 
-        closing = close_treasury_month(today.year, today.month, actor=self.user)
+        closing = close_treasury_month(today.year, today.month, empresa=self.empresa, actor=self.user)
         self.assertTrue(closing.cerrado)
         self.assertEqual(closing.saldo_final_efectivo, Decimal("1000.00"))
 
         # Ensure it can't be closed twice
         with self.assertRaises(Exception):
-            close_treasury_month(today.year, today.month, actor=self.user)
+            close_treasury_month(today.year, today.month, empresa=self.empresa, actor=self.user)
 
     def test_arqueo_calculates_difference(self):
         register_central_cash_movement(

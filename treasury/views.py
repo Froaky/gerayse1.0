@@ -2344,9 +2344,27 @@ def disponibilidades_report(request):
 
     snapshot = build_disponibilidades_snapshot(year, month, sucursal=sucursal, empresa_ids=empresa_ids)
 
+    # El cierre es por empresa: hay que decir cual. Se ofrecen las habilitadas y
+    # se marca cuales ya cerraron este mes, para no dejar cerrar dos veces ni
+    # cerrar la empresa equivocada en silencio.
+    from cashops.models import Empresa
+
+    empresas = Empresa.objects.filter(activa=True).order_by("nombre")
+    if empresa_ids is not None:
+        empresas = empresas.filter(pk__in=empresa_ids)
+    ya_cerradas = set(
+        CierreMensualTesoreria.objects.filter(
+            mes=snapshot["first_day"], cerrado=True
+        ).values_list("empresa_id", flat=True)
+    )
+    empresas_para_cierre = [
+        {"pk": e.pk, "nombre": e.nombre, "cerrada": e.pk in ya_cerradas} for e in empresas
+    ]
+
     return render(request, "treasury/disponibilidades_report.html", {
         "form": form,
         "snapshot": snapshot,
+        "empresas_para_cierre": empresas_para_cierre,
         "title": "Flujo de Disponibilidades",
         "subtitle": f"Consolidado de Efectivo y Bancos - {snapshot['first_day']:%m/%Y}" if not sucursal else f"Sucursal: {sucursal.nombre} - {snapshot['first_day']:%m/%Y}",
         "reset_url": reverse("cashops:reset_operational_data") if settings.ENABLE_DANGER_RESET else "",
@@ -2749,8 +2767,14 @@ def close_month_action(request):
     if request.method == "POST":
         year = int(request.POST.get("year"))
         month = int(request.POST.get("month"))
+        # Cada empresa cierra su mes. Si el usuario tiene mas de una habilitada,
+        # cierra la que esta viendo; el form manda la empresa explicita.
+        empresa_ids = _get_empresa_ids(request)
+        empresa_id = request.POST.get("empresa") or (empresa_ids[0] if empresa_ids else None)
         try:
-            close_treasury_month(year, month, actor=request.user)
+            if not empresa_id:
+                raise ValidationError("Elegi la empresa cuyo mes queres cerrar.")
+            close_treasury_month(year, month, empresa=int(empresa_id), actor=request.user)
             messages.success(request, f"Periodo {month}/{year} cerrado correctamente.")
         except ValidationError as e:
             # str(ValidationError) devuelve repr(list(...)): el usuario veria el

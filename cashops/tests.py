@@ -3283,10 +3283,10 @@ class EP13ReviewFixTests(CashopsTestCase):
         caja = self._pending_box()
 
         with self.assertRaises(ValidationError):
-            close_treasury_month(2026, 3, actor=self.admin)
+            close_treasury_month(2026, 3, empresa=self.empresa_a, actor=self.admin)
 
         validate_box_cash(caja=caja, actor=self.admin)
-        closing = close_treasury_month(2026, 3, actor=self.admin)
+        closing = close_treasury_month(2026, 3, empresa=self.empresa_a, actor=self.admin)
         self.assertTrue(closing.cerrado)
 
     def test_validation_after_month_close_redates_central_push(self):
@@ -3324,14 +3324,14 @@ class EP13ReviewFixTests(CashopsTestCase):
         )
 
         with self.assertRaises(ValidationError) as ctx:
-            close_treasury_month(2026, 3, actor=self.admin)
+            close_treasury_month(2026, 3, empresa=self.empresa_a, actor=self.admin)
         self.assertIn("todavia abiertas", " ".join(ctx.exception.messages))
 
         close_box(caja=caja, saldo_fisico=Decimal("100.00"), cerrado_por=self.operator, actor=self.operator)
         caja.refresh_from_db()
         validate_box_cash(caja=caja, actor=self.admin)
 
-        closing = close_treasury_month(2026, 3, actor=self.admin)
+        closing = close_treasury_month(2026, 3, empresa=self.empresa_a, actor=self.admin)
         self.assertTrue(closing.cerrado)
 
     def test_open_box_blocked_when_treasury_month_is_closed(self):

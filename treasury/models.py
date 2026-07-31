@@ -1594,9 +1594,19 @@ class MovimientoCajaCentral(models.Model):
 
 class CierreMensualTesoreria(models.Model):
     mes = models.DateField(help_text="Primer dia del mes que se cierra")
+    # Cada empresa cierra su mes por separado. Antes habia una sola fila global:
+    # con dos empresas, ninguna podia cerrar hasta que la otra tuviera todas sus
+    # cajas validadas, y el saldo inicial de cada mes mezclaba las dos.
+    empresa = models.ForeignKey(
+        "cashops.Empresa",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="cierres_mensuales_tesoreria",
+    )
     saldo_inicial_efectivo = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
     saldo_final_efectivo = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
-    
+
     sucursal = models.ForeignKey(
         "cashops.Sucursal",
         on_delete=models.PROTECT,
@@ -1626,14 +1636,19 @@ class CierreMensualTesoreria(models.Model):
     class Meta:
         ordering = ["-mes"]
         constraints = [
+            # El unique pasa a ser por mes Y empresa: cada empresa cierra el mismo
+            # mes por su cuenta. Antes era solo por mes, asi que la primera empresa
+            # que cerraba le bloqueaba el cierre a la otra.
             models.UniqueConstraint(
-                fields=["mes"],
-                name="unique_monthly_closing_per_month",
-                violation_error_message="Ese mes ya tiene un cierre mensual de tesorería.",
+                fields=["mes", "empresa"],
+                name="unique_monthly_closing_per_company",
+                violation_error_message="Esa empresa ya tiene un cierre para ese mes.",
             ),
         ]
 
     def __str__(self) -> str:
+        if self.empresa_id:
+            return f"Cierre {self.mes:%m/%Y} - {self.empresa.nombre}"
         return f"Cierre {self.mes:%m/%Y}"
 
 

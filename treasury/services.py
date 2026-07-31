@@ -2722,23 +2722,20 @@ def build_disponibilidades_snapshot(year: int, month: int, sucursal=None, empres
         next_month = timezone.datetime(year, month + 1, 1).date()
     last_day = next_month - timedelta(days=1)
 
-    # 1. Opening Balance (from previous closing)
+    # 1. Saldo inicial: sale del cierre anterior, acotado al MISMO alcance que el
+    # flujo del periodo. Antes el filtro ignoraba empresa_ids y el sumatorio
+    # global ni aplicaba su propio filtro, asi que filtrar por una empresa daba
+    # el flujo de esa empresa con el saldo inicial de las dos.
     closing_filter = Q(mes__lt=first_day)
     if sucursal:
         closing_filter &= Q(sucursal=sucursal)
-    else:
-        closing_filter &= Q(sucursal__isnull=True) if not CierreMensualTesoreria.objects.filter(mes__lt=first_day, sucursal__isnull=False).exists() else Q()
-        # If any branch cierre exists, we must be careful with global sum. 
-        # For now, if no sucursal, we sum all closings of that month.
-        pass
+    elif empresa_ids is not None:
+        closing_filter &= Q(empresa_id__in=empresa_ids)
 
     closings_prev = CierreMensualTesoreria.objects.filter(closing_filter).order_by("-mes")
-    
-    # We take the most recent closing for the scope
-    # Note: If global, we might have multiple branch closings. 
-    # For simplicity, we calculate the sum.
+
     saldo_inicial_efectivo = Decimal("0.00")
-    saldos_iniciales_bancarios = {} # Dict {str(id): combined_saldo}
+    saldos_iniciales_bancarios = {}  # Dict {str(id): combined_saldo}
 
     if sucursal:
         cp = closings_prev.first()
@@ -2746,10 +2743,11 @@ def build_disponibilidades_snapshot(year: int, month: int, sucursal=None, empres
             saldo_inicial_efectivo = cp.saldo_final_efectivo
             saldos_iniciales_bancarios = cp.saldos_bancarios_json
     else:
-        # Global: Sum of all branch closings for the last available month
-        last_closing_month = closings_prev.values_list('mes', flat=True).first()
+        # Se suman los cierres del ultimo mes disponible DENTRO del alcance: con
+        # una fila por empresa, el consolidado es la suma de las dos.
+        last_closing_month = closings_prev.values_list("mes", flat=True).first()
         if last_closing_month:
-            relevant_closings = CierreMensualTesoreria.objects.filter(mes=last_closing_month)
+            relevant_closings = closings_prev.filter(mes=last_closing_month)
             for c in relevant_closings:
                 saldo_inicial_efectivo += c.saldo_final_efectivo
                 for acc_id, balance in c.saldos_bancarios_json.items():
@@ -2821,22 +2819,39 @@ def build_disponibilidades_snapshot(year: int, month: int, sucursal=None, empres
 
 
 @transaction.atomic
-def close_treasury_month(year: int, month: int, actor=None) -> CierreMensualTesoreria:
+def close_treasury_month(
+    year: int, month: int, *, empresa, actor=None
+) -> CierreMensualTesoreria:
+    """Cierra el mes de UNA empresa.
+
+    Antes era un cierre global: con dos empresas, ninguna podia cerrar hasta que
+    la otra tuviera todas sus cajas validadas, y el saldo inicial del mes
+    siguiente mezclaba las dos. La administradora pidio que cada empresa cierre
+    por separado.
+    """
     _require_actor(actor)
-    snapshot = build_disponibilidades_snapshot(year, month)
-    
+    if empresa is None:
+        raise ValidationError({"empresa": "Hace falta la empresa para cerrar el mes."})
+    empresa_id = getattr(empresa, "pk", empresa)
+    snapshot = build_disponibilidades_snapshot(year, month, empresa_ids=[empresa_id])
+
     first_day = snapshot["first_day"]
-    if CierreMensualTesoreria.objects.filter(mes=first_day, cerrado=True).exists():
-        raise ValidationError("Este mes ya se encuentra cerrado.")
+    if CierreMensualTesoreria.objects.filter(
+        mes=first_day, empresa_id=empresa_id, cerrado=True
+    ).exists():
+        raise ValidationError("Esta empresa ya tiene cerrado este mes.")
 
     # EP-13: el efectivo de una caja pendiente de validacion todavia no llego
     # a la caja central; cerrar el mes asi congelaria un saldo incompleto que
     # despues no se puede reconciliar.
     from cashops.models import Caja
 
+    # Solo las cajas de ESTA empresa: una caja sin validar de la otra empresa no
+    # tiene por que impedirle cerrar el mes a esta.
     boxes_in_month = Caja.objects.filter(
         fecha_operativa__gte=first_day,
         fecha_operativa__lt=_first_day_of_next_month(first_day),
+        sucursal__empresa_id=empresa_id,
     )
 
     # Un mes cerrado es una FOTO congelada: su saldo final pasa a ser el saldo
@@ -2860,7 +2875,9 @@ def close_treasury_month(year: int, month: int, actor=None) -> CierreMensualTeso
             "Valida o rechaza esas cajas antes de cerrar."
         )
 
-    closing, created = CierreMensualTesoreria.objects.get_or_create(mes=first_day)
+    closing, created = CierreMensualTesoreria.objects.get_or_create(
+        mes=first_day, empresa_id=empresa_id
+    )
     closing.saldo_inicial_efectivo = snapshot["saldo_inicial_efectivo"]
     closing.saldo_final_efectivo = snapshot["saldo_final_efectivo"]
     
