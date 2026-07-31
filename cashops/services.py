@@ -2098,6 +2098,9 @@ def _reverse_central_cash_closure_for_box(caja: Caja, *, actor) -> None:
             concepto=reversal_concept,
             observaciones=observations,
             caja_cierre=caja,
+            # La reversa hereda la sucursal del movimiento que revierte, si no
+            # el egreso compensatorio queda sin local y descuadra el traqueo.
+            sucursal_origen_id=movement.sucursal_origen_id or caja.sucursal_id,
             creado_por=actor,
         )
 
@@ -2492,16 +2495,25 @@ def close_box(
 
 
 def _push_box_closure_to_central_cash(caja: Caja, *, saldo_fisico: Decimal, actor) -> None:
-    """Registra el saldo fisico del cierre en la caja central de la sucursal.
+    """Registra el saldo fisico del cierre en la boveda de la empresa.
 
     Idempotente por vinculo estructural (caja_cierre): un movimiento manual
     de tesoreria con el mismo texto de concepto no puede suprimir el push.
+
+    Antes esto buscaba una caja central de la sucursal y, si no existia, la
+    creaba al vuelo. Asi nacieron 6 cajas en produccion, una por sucursal, con
+    toda la recaudacion adentro, mientras los egresos salian de otra caja: la
+    plata estaba bien pero ninguna pantalla lo mostraba. Ahora el efectivo entra
+    a la boveda de la empresa y la sucursal queda registrada en el movimiento
+    (`sucursal_origen`), que es lo que sostiene la contabilidad por local.
     """
     if saldo_fisico == 0 or not caja.sucursal_id:
         return
     from django.apps import apps
+    from django.core.exceptions import ValidationError
 
-    CajaCentral = apps.get_model("treasury", "CajaCentral")
+    from treasury.services import get_boveda
+
     MovimientoCajaCentral = apps.get_model("treasury", "MovimientoCajaCentral")
     CierreMensualTesoreria = apps.get_model("treasury", "CierreMensualTesoreria")
     if MovimientoCajaCentral.objects.filter(
@@ -2509,13 +2521,19 @@ def _push_box_closure_to_central_cash(caja: Caja, *, saldo_fisico: Decimal, acto
         tipo__in=["INGRESO_CAJA", "AJUSTE_NEGATIVO"],
     ).exists():
         return
-    caja_central = CajaCentral.objects.filter(sucursal=caja.sucursal, activo=True).first()
-    if caja_central is None:
-        caja_central = CajaCentral.objects.create(
-            sucursal=caja.sucursal,
-            nombre=f"Caja Central {caja.sucursal.nombre}",
-            activo=True,
+    if not caja.sucursal.empresa_id:
+        raise ValidationError(
+            {
+                "sucursal": (
+                    f"La sucursal {caja.sucursal.nombre} no tiene empresa asignada, "
+                    "asi que no se sabe a que boveda mandar el efectivo."
+                )
+            }
         )
+    # Un solo resolvedor de boveda en todo el sistema. Que existan dos era
+    # exactamente el bug: cashops mandaba el efectivo a una caja por sucursal y
+    # treasury sacaba los egresos de otra caja global.
+    caja_central = get_boveda(caja.sucursal.empresa_id)
     if saldo_fisico > 0:
         central_type = "INGRESO_CAJA"
         central_amount = saldo_fisico
@@ -2547,6 +2565,9 @@ def _push_box_closure_to_central_cash(caja: Caja, *, saldo_fisico: Decimal, acto
         concepto=central_concept,
         observaciones=central_observations,
         caja_cierre=caja,
+        # La sucursal viaja en el movimiento, no en la boveda: es de donde
+        # salio este efectivo y es lo que permite el traqueo por local.
+        sucursal_origen_id=caja.sucursal_id,
         creado_por=actor,
     )
 

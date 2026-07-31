@@ -1014,6 +1014,7 @@ class TreasuryServiceTests(TreasuryTestCase):
             actor=self.operator,
         )
         register_central_cash_movement(
+            empresa=empresa,
             tipo=MovimientoCajaCentral.Tipo.APORTE,
             monto=Decimal("400.00"),
             concepto="Aporte inicial",
@@ -1331,6 +1332,7 @@ class TreasuryServiceTests(TreasuryTestCase):
         )
         rubro = RubroOperativo.objects.create(nombre="Servicios Central")
         register_egreso_tesoreria(
+            empresa=branch.empresa,
             fuente=EgresoTesoreriaForm.FUENTE_CAJA,
             fecha=timezone.localdate(),
             monto=Decimal("85.00"),
@@ -1362,7 +1364,7 @@ class TreasuryServiceTests(TreasuryTestCase):
             razon_social="Salidas Caja Fuerte SRL",
             empresa=empresa,
         )
-        central_cash = CajaCentral.objects.create(nombre="Caja fuerte salidas", sucursal=branch)
+        central_cash = CajaCentral.objects.create(nombre="Boveda salidas", empresa=empresa)
         MovimientoCajaCentral.objects.create(
             caja_central=central_cash,
             fecha=timezone.datetime(2026, 6, 5).date(),
@@ -1381,16 +1383,29 @@ class TreasuryServiceTests(TreasuryTestCase):
             creado_por=self.admin,
         )
 
+        # El corte se mide a nivel EMPRESA porque el deposito en banco no es de
+        # ninguna sucursal: es un traslado boveda->banco de la empresa.
         snapshot = build_financial_period_snapshot(
             date_from=timezone.datetime(2026, 6, 1).date(),
             date_to=timezone.datetime(2026, 6, 30).date(),
-            sucursal=branch,
             empresa_ids=[empresa.pk],
         )
 
         self.assertEqual(snapshot["central_cash_expense_period"], Decimal("350.00"))
         self.assertEqual(snapshot["central_cash_admin_expense_period"], Decimal("100.00"))
         self.assertEqual(snapshot["central_cash_other_out_period"], Decimal("250.00"))
+
+        # Filtrando por la sucursal solo aparece lo que se le imputo. El deposito
+        # queda afuera a proposito: si se le cargara al local, el local mostraria
+        # una salida de plata que no fue un gasto suyo.
+        branch_snapshot = build_financial_period_snapshot(
+            date_from=timezone.datetime(2026, 6, 1).date(),
+            date_to=timezone.datetime(2026, 6, 30).date(),
+            sucursal=branch,
+            empresa_ids=[empresa.pk],
+        )
+        self.assertEqual(branch_snapshot["central_cash_admin_expense_period"], Decimal("100.00"))
+        self.assertEqual(branch_snapshot["central_cash_other_out_period"], Decimal("0.00"))
 
     def test_economic_period_snapshot_groups_sales_cash_expense_and_period_debt_by_rubro(self):
         branch = Sucursal.objects.create(codigo="SUC-E", nombre="Sucursal Economica", razon_social="Economica SRL")
@@ -1524,6 +1539,7 @@ class TreasuryServiceTests(TreasuryTestCase):
             actor=self.operator,
         )
         register_egreso_tesoreria(
+            empresa=branch.empresa,
             fuente=EgresoTesoreriaForm.FUENTE_CAJA,
             fecha=timezone.datetime(2026, 5, 16).date(),
             monto=Decimal("120.00"),
@@ -1534,6 +1550,7 @@ class TreasuryServiceTests(TreasuryTestCase):
             actor=self.admin,
         )
         register_egreso_tesoreria(
+            empresa=branch.empresa,
             fuente=EgresoTesoreriaForm.FUENTE_BANCO,
             cuenta_bancaria=account,
             fecha=timezone.datetime(2026, 5, 17).date(),
@@ -1649,6 +1666,7 @@ class TreasuryServiceTests(TreasuryTestCase):
     def test_register_egreso_tesoreria_requires_economic_imputation(self):
         with self.assertRaises(ValidationError) as context:
             register_egreso_tesoreria(
+                empresa=self.empresa,
                 fuente=EgresoTesoreriaForm.FUENTE_CAJA,
                 fecha=timezone.datetime(2026, 7, 13).date(),
                 monto=Decimal("10.00"),
@@ -1920,6 +1938,7 @@ class TreasuryServiceTests(TreasuryTestCase):
             actor=self.operator,
         )
         register_egreso_tesoreria(
+            empresa=branch.empresa,
             fuente=EgresoTesoreriaForm.FUENTE_BANCO,
             cuenta_bancaria=account,
             fecha=timezone.datetime(2026, 5, 13).date(),
@@ -2306,6 +2325,7 @@ class TreasuryViewTests(TreasuryTestCase):
         self.bank_account.save(update_fields=["sucursal"])
         period_day = timezone.datetime(2026, 6, 5).date()
         register_central_cash_movement(
+            empresa=empresa,
             tipo=MovimientoCajaCentral.Tipo.APORTE,
             monto=Decimal("400.00"),
             concepto="Saldo junio",
@@ -2313,6 +2333,7 @@ class TreasuryViewTests(TreasuryTestCase):
             actor=self.admin,
         )
         register_central_cash_movement(
+            empresa=empresa,
             tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
             monto=Decimal("100.00"),
             concepto="Egreso junio",
@@ -2360,6 +2381,7 @@ class TreasuryViewTests(TreasuryTestCase):
         self.sucursal.save(update_fields=["empresa"])
         period_day = timezone.datetime(2026, 6, 7).date()
         register_central_cash_movement(
+            empresa=empresa,
             tipo=MovimientoCajaCentral.Tipo.APORTE,
             monto=Decimal("500.00"),
             concepto="Aporte junio",
@@ -2367,6 +2389,7 @@ class TreasuryViewTests(TreasuryTestCase):
             actor=self.admin,
         )
         register_egreso_tesoreria(
+            empresa=empresa,
             fuente="CAJA_CENTRAL",
             fecha=period_day,
             monto=Decimal("120.00"),
@@ -2401,13 +2424,18 @@ class TreasuryViewTests(TreasuryTestCase):
         self.sucursal.save(update_fields=["empresa"])
         period_day = timezone.datetime(2026, 6, 9).date()
         register_central_cash_movement(
+            empresa=empresa,
             tipo=MovimientoCajaCentral.Tipo.INGRESO_CAJA,
             monto=Decimal("700.00"),
             concepto="Cierre caja terminal",
             fecha=period_day,
+            # Un ingreso trae la sucursal de la que salio el efectivo: es lo que
+            # lo hace visible al filtrar el libro por ese local.
+            sucursal_origen=self.sucursal,
             actor=self.admin,
         )
         register_egreso_tesoreria(
+            empresa=empresa,
             fuente=EgresoTesoreriaForm.FUENTE_CAJA,
             fecha=period_day,
             monto=Decimal("120.00"),
@@ -2417,8 +2445,12 @@ class TreasuryViewTests(TreasuryTestCase):
             periodo=period_day.replace(day=1),
             actor=self.admin,
         )
+        # El egreso sin imputar vive en la boveda de la empresa, igual que
+        # cualquier otro: lo que le falta es rubro, sucursal y periodo, no dueno.
+        # Antes este escenario usaba una caja sin empresa y aparecia al filtrar
+        # por CUALQUIER empresa; esa era justamente la fuga del doble conteo.
         MovimientoCajaCentral.objects.create(
-            caja_central=CajaCentral.objects.create(nombre="Caja pendiente imputacion"),
+            caja_central=CajaCentral.objects.get(empresa=empresa, activo=True),
             fecha=period_day,
             tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
             monto=Decimal("55.00"),
@@ -2548,6 +2580,7 @@ class TreasuryViewTests(TreasuryTestCase):
 
         cash_form = EgresoTesoreriaForm(
             data={
+                "empresa": self.empresa.pk,
                 "fuente": EgresoTesoreriaForm.FUENTE_CAJA,
                 "cuenta_bancaria": self.bank_account.pk,
                 "fecha": today.isoformat(),
@@ -2564,6 +2597,7 @@ class TreasuryViewTests(TreasuryTestCase):
 
         bank_form = EgresoTesoreriaForm(
             data={
+                "empresa": self.empresa.pk,
                 "fuente": EgresoTesoreriaForm.FUENTE_BANCO,
                 "cuenta_bancaria": "",
                 "fecha": today.isoformat(),
@@ -2580,6 +2614,7 @@ class TreasuryViewTests(TreasuryTestCase):
 
         valid_bank_form = EgresoTesoreriaForm(
             data={
+                "empresa": self.empresa.pk,
                 "fuente": EgresoTesoreriaForm.FUENTE_BANCO,
                 "cuenta_bancaria": self.bank_account.pk,
                 "fecha": today.isoformat(),
@@ -2654,6 +2689,7 @@ class TreasuryViewTests(TreasuryTestCase):
         response = self.client.post(
             reverse("treasury:egreso_tesoreria_create"),
             {
+                "empresa": self.empresa.pk,
                 "fuente": EgresoTesoreriaForm.FUENTE_CAJA,
                 "cuenta_bancaria": self.bank_account.pk,
                 "fecha": today.isoformat(),
@@ -2681,6 +2717,7 @@ class TreasuryViewTests(TreasuryTestCase):
         response = self.client.post(
             reverse("treasury:egreso_tesoreria_create"),
             {
+                "empresa": self.empresa.pk,
                 "fuente": EgresoTesoreriaForm.FUENTE_BANCO,
                 "cuenta_bancaria": self.bank_account.pk,
                 "fecha": today.isoformat(),
@@ -2710,6 +2747,7 @@ class TreasuryViewTests(TreasuryTestCase):
         self.client.post(
             reverse("treasury:egreso_tesoreria_create"),
             {
+                "empresa": self.empresa.pk,
                 "fuente": EgresoTesoreriaForm.FUENTE_CAJA,
                 "cuenta_bancaria": "",
                 "fecha": today.isoformat(),
@@ -2736,6 +2774,7 @@ class TreasuryViewTests(TreasuryTestCase):
         self.client.post(
             reverse("treasury:egreso_tesoreria_create"),
             {
+                "empresa": self.empresa.pk,
                 "fuente": EgresoTesoreriaForm.FUENTE_BANCO,
                 "cuenta_bancaria": self.bank_account.pk,
                 "fecha": today.isoformat(),
@@ -3456,6 +3495,7 @@ class TreasuryViewTests(TreasuryTestCase):
             actor=self.admin,
         )
         register_egreso_tesoreria(
+            empresa=branch.empresa,
             fuente=EgresoTesoreriaForm.FUENTE_CAJA,
             fecha=timezone.localdate(),
             monto=Decimal("45.00"),
@@ -4218,6 +4258,7 @@ class EP10DebtVsBankCoverageTests(TreasuryTestCase):
         )
         self._register_pending_payable(Decimal("400.00"))
         register_central_cash_movement(
+            empresa=self.empresa,
             tipo=MovimientoCajaCentral.Tipo.APORTE,
             monto=Decimal("999.00"),
             concepto="Efectivo que no debe sumar al banco",
@@ -4369,6 +4410,7 @@ class EP13DebtEconomicFinancialTests(TreasuryTestCase):
     def test_cash_payment_moves_financial_in_its_period_without_duplicating_economic(self):
         payable = self._register_may_payable("300.00", "EP13-C-1")
         register_central_cash_movement(
+            empresa=self.empresa,
             tipo=MovimientoCajaCentral.Tipo.APORTE,
             monto=Decimal("1000.00"),
             concepto="Fondo inicial de caja central",

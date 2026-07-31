@@ -1451,10 +1451,13 @@ class CashopsServiceTests(CashopsTestCase):
         close_box(caja=caja, saldo_fisico=Decimal("-90.00"), cerrado_por=self.operator, actor=self.operator)
         validate_box_cash(caja=caja, actor=self.admin)
 
-        central_box = CajaCentral.objects.get(sucursal=self.branch_a)
+        # La boveda es de la empresa, no de la sucursal. La sucursal de la que
+        # vino el efectivo viaja en el movimiento (sucursal_origen).
+        central_box = CajaCentral.objects.get(empresa=self.empresa_a, activo=True)
         central_movement = MovimientoCajaCentral.objects.get(caja_central=central_box)
         self.assertEqual(central_movement.tipo, MovimientoCajaCentral.Tipo.AJUSTE_NEGATIVO)
         self.assertEqual(central_movement.monto, Decimal("90.00"))
+        self.assertEqual(central_movement.sucursal_origen_id, self.branch_a.pk)
         self.assertEqual(central_box.saldo_actual, Decimal("-90.00"))
 
 
@@ -1902,7 +1905,7 @@ class CashopsViewTests(CashopsTestCase):
         )
         close_box(caja=self.owned_box, saldo_fisico=Decimal("1040.00"), cerrado_por=self.operator, actor=self.operator)
         validate_box_cash(caja=self.owned_box, actor=self.admin)
-        caja_central = CajaCentral.objects.get(sucursal=self.branch_a)
+        caja_central = CajaCentral.objects.get(empresa=self.empresa_a, activo=True)
         self.assertEqual(caja_central.saldo_actual, Decimal("1040.00"))
 
         annul_box(caja=self.owned_box, motivo="Caja duplicada", actor=self.operator)
@@ -3410,6 +3413,7 @@ class EP13ReviewFixTests(CashopsTestCase):
 
         caja = self._pending_box()
         register_central_cash_movement(
+            empresa=self.empresa_a,
             tipo=MovimientoCajaCentral.Tipo.APORTE,
             monto=Decimal("1.00"),
             concepto=f"Cierre caja #{caja.pk}",
@@ -3770,6 +3774,7 @@ class EP13BoxExpenseDebtTests(CashopsTestCase):
         self.assertEqual(financial["pending_total"], Decimal("80.00"))
 
         register_central_cash_movement(
+            empresa=self.empresa_a,
             tipo=MovimientoCajaCentral.Tipo.APORTE,
             monto=Decimal("500.00"),
             concepto="Fondo central",
@@ -4180,6 +4185,7 @@ class EP13BoxExpenseDebtTests(CashopsTestCase):
 
         deuda = self._register_debt()
         register_central_cash_movement(
+            empresa=self.empresa_a,
             tipo=MovimientoCajaCentral.Tipo.APORTE,
             monto=Decimal("500.00"),
             concepto="Fondo central",
@@ -4240,6 +4246,7 @@ class EP13BoxExpenseDebtTests(CashopsTestCase):
         self._grant_movement_delete(self.cajero)
         deuda = self._register_debt()
         register_central_cash_movement(
+            empresa=self.empresa_a,
             tipo=MovimientoCajaCentral.Tipo.APORTE,
             monto=Decimal("500.00"),
             concepto="Fondo central",

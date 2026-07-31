@@ -635,6 +635,34 @@ def build_special_commitments_snapshot(*, date_from: date, date_to: date, sucurs
     }
 
 
+def _empresa_de_la_deuda(payable: CuentaPorPagar, empresa=None) -> int:
+    """De que empresa sale el efectivo que paga esta deuda.
+
+    Primero se deduce de la deuda: su sucursal, o la caja de la que nacio si fue
+    un gasto cargado en caja. Muchas deudas se cargan sin sucursal, asi que la
+    vista de pago aporta la empresa activa como respaldo. Si no hay ninguna de
+    las dos hay que cortar: antes todo pago en efectivo caia en una caja global
+    sin empresa, y eso es justo lo que dejo plata sin dueno en produccion.
+    """
+    empresa_id = None
+    if payable.sucursal_id and payable.sucursal.empresa_id:
+        empresa_id = payable.sucursal.empresa_id
+    elif payable.caja_origen_id and payable.caja_origen.sucursal_id:
+        empresa_id = payable.caja_origen.sucursal.empresa_id
+    if not empresa_id and empresa is not None:
+        empresa_id = getattr(empresa, "pk", empresa)
+    if not empresa_id:
+        raise ValidationError(
+            {
+                "cuenta_por_pagar": (
+                    "No se puede saber de que boveda sale el efectivo: la deuda no tiene "
+                    "sucursal y no se indico empresa. Asignale sucursal a la deuda."
+                )
+            }
+        )
+    return empresa_id
+
+
 @transaction.atomic
 def register_payment(
     *,
@@ -646,6 +674,7 @@ def register_payment(
     referencia: str = "",
     fecha_diferida=None,
     observaciones: str = "",
+    empresa=None,
     actor=None,
 ) -> PagoTesoreria:
     _require_actor(actor)
@@ -680,6 +709,7 @@ def register_payment(
     # efectivo baja la caja fuerte, y transferencia/cheque/ECHEQ bajan el banco.
     if medio_pago == PagoTesoreria.MedioPago.EFECTIVO:
         register_central_cash_movement(
+            empresa=_empresa_de_la_deuda(locked_payable, empresa),
             tipo=MovimientoCajaCentral.Tipo.EGRESO_PAGO,
             monto=monto,
             concepto=f"Pago a {locked_payable.proveedor}: {locked_payable.concepto}",
@@ -831,6 +861,7 @@ def register_cash_payment(
     fecha_pago,
     monto: Decimal,
     observaciones: str = "",
+    empresa=None,
     actor=None,
 ) -> PagoTesoreria:
     return register_payment(
@@ -840,6 +871,7 @@ def register_cash_payment(
         fecha_pago=fecha_pago,
         monto=monto,
         observaciones=observaciones,
+        empresa=empresa,
         actor=actor,
     )
 
@@ -1568,19 +1600,31 @@ def _pending_bank_treasury_expenses(base_queryset):
 
 
 def scope_central_cash_movements(movements, *, sucursal=None, empresa_ids=None):
+    """Acota los movimientos de boveda al alcance pedido.
+
+    Por EMPRESA es un filtro directo, porque la boveda tiene empresa. Antes se
+    filtraba por `caja_central.sucursal` y habia una clausula que matcheaba
+    cualquier movimiento sin sucursal para CUALQUIER empresa: por eso los mismos
+    $21.799.835 se contaban enteros en las dos empresas y la suma de los
+    informes por empresa daba mas que el consolidado real.
+
+    Por SUCURSAL, cada movimiento pertenece a la sucursal que lo explica: un
+    egreso a la que se lo imputo (`sucursal_gasto`) y un ingreso a la que lo
+    aporto (`sucursal_origen`). Antes salia de `caja_central.sucursal`, que con
+    una boveda por empresa es siempre None.
+
+    Los movimientos que no son de ninguna sucursal en particular (APORTE,
+    RETIRO_BANCO, DEPOSITO_BANCO y los ajustes sin imputar) quedan fuera del
+    alcance por sucursal a proposito: son de la empresa, no de un local. Por eso
+    la suma de las sucursales puede ser menor que el total de la empresa, y esa
+    diferencia es exactamente lo que falta imputar.
+    """
     if sucursal is not None:
-        return movements.filter(
-            Q(caja_central__sucursal=sucursal)
-            | Q(tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN, sucursal_gasto=sucursal)
-        )
+        return movements.filter(Q(sucursal_gasto=sucursal) | Q(sucursal_origen=sucursal))
     if empresa_ids is not None:
         if not empresa_ids:
             return movements.none()
-        return movements.filter(
-            Q(caja_central__sucursal__empresa_id__in=empresa_ids)
-            | Q(caja_central__sucursal__isnull=True, sucursal_gasto__isnull=True)
-            | Q(caja_central__sucursal__isnull=True, sucursal_gasto__empresa_id__in=empresa_ids)
-        )
+        return movements.filter(caja_central__empresa_id__in=empresa_ids)
     return movements
 
 
@@ -2348,13 +2392,42 @@ def build_supplier_history_snapshot(*, supplier: Proveedor, date_from=None, date
 
 # --- Flujo de Disponibilidades (EP-05) ---
 
-def get_or_create_default_caja_central() -> CajaCentral:
-    caja, created = CajaCentral.objects.get_or_create(nombre="Efectivo Central")
-    return caja
+def get_boveda(empresa) -> CajaCentral:
+    """La boveda de efectivo de una empresa; la crea si la empresa es nueva.
+
+    Antes esto era un get_or_create por NOMBRE ("Efectivo Central"), sin empresa
+    ni sucursal, y convivia con otro resolvedor en cashops que creaba una caja
+    por sucursal al vuelo. Entre los dos dejaron 7 cajas en produccion: los
+    egresos salian de una y los ingresos entraban en otras seis.
+
+    Este get_or_create es distinto y si es seguro: la clave es la empresa, que es
+    lo que de verdad identifica a una boveda, y el UniqueConstraint de
+    `unique_active_boveda_por_empresa` impide que existan dos. Se crea por
+    demanda para que dar de alta una empresa nueva no requiera una migracion.
+    Solo lo llaman caminos de escritura: ninguna pantalla crea una boveda con un GET.
+    """
+    from cashops.models import Empresa
+
+    if empresa is None:
+        raise ValidationError({"empresa": "Hace falta la empresa para resolver la boveda de efectivo."})
+    empresa_id = getattr(empresa, "pk", empresa)
+    boveda = CajaCentral.objects.filter(empresa_id=empresa_id, activo=True).order_by("pk").first()
+    if boveda is not None:
+        return boveda
+    empresa_obj = Empresa.objects.filter(pk=empresa_id).first()
+    if empresa_obj is None:
+        raise ValidationError({"empresa": "La empresa no existe."})
+    return CajaCentral.objects.create(
+        empresa_id=empresa_id,
+        sucursal=None,
+        nombre=f"Boveda {empresa_obj.nombre}"[:120],
+        activo=True,
+    )
 
 
 def register_central_cash_movement(
     *,
+    empresa,
     tipo: MovimientoCajaCentral.Tipo,
     monto: Decimal,
     concepto: str,
@@ -2362,10 +2435,11 @@ def register_central_cash_movement(
     pago_tesoreria: PagoTesoreria = None,
     movimiento_bancario: MovimientoBancario = None,
     observaciones: str = "",
+    sucursal_origen=None,
     actor=None,
 ) -> MovimientoCajaCentral:
     _require_actor(actor)
-    caja = get_or_create_default_caja_central()
+    caja = get_boveda(empresa)
     movement = MovimientoCajaCentral(
         caja_central=caja,
         fecha=fecha or timezone.localdate(),
@@ -2375,6 +2449,7 @@ def register_central_cash_movement(
         pago_tesoreria=pago_tesoreria,
         movimiento_bancario=movimiento_bancario,
         observaciones=observaciones,
+        sucursal_origen=sucursal_origen,
         creado_por=actor,
     )
     return _save_instance(movement)
@@ -2382,6 +2457,7 @@ def register_central_cash_movement(
 
 def register_carga_inicial_caja_central(
     *,
+    empresa,
     fecha,
     monto: Decimal,
     motivo: str,
@@ -2395,6 +2471,7 @@ def register_carga_inicial_caja_central(
     if monto <= 0:
         raise ValidationError({"monto": "El importe debe ser mayor que cero."})
     return register_central_cash_movement(
+        empresa=empresa,
         tipo=MovimientoCajaCentral.Tipo.AJUSTE_POSITIVO,
         monto=monto,
         concepto=f"Carga inicial: {motivo}",
@@ -2406,6 +2483,7 @@ def register_carga_inicial_caja_central(
 
 def register_egreso_tesoreria(
     *,
+    empresa,
     fuente: str,
     fecha,
     monto: Decimal,
@@ -2432,6 +2510,18 @@ def register_egreso_tesoreria(
         imputation_errors["periodo"] = "El periodo es obligatorio para el egreso administrativo."
     if imputation_errors:
         raise ValidationError(imputation_errors)
+    # El egreso no puede cruzar de empresa: ni imputarse a una sucursal ajena ni
+    # salir de una cuenta bancaria ajena. El form acota los querysets, pero la
+    # regla vive aca porque el form no es el unico camino.
+    empresa_id = getattr(empresa, "pk", empresa)
+    if sucursal.empresa_id and sucursal.empresa_id != empresa_id:
+        raise ValidationError({"sucursal": "La sucursal no pertenece a la empresa del egreso."})
+    if (
+        cuenta_bancaria is not None
+        and cuenta_bancaria.empresa_id
+        and cuenta_bancaria.empresa_id != empresa_id
+    ):
+        raise ValidationError({"cuenta_bancaria": "La cuenta bancaria no pertenece a la empresa del egreso."})
     periodo = _first_day_of_month(periodo)
 
     if fuente == "BANCO":
@@ -2453,7 +2543,7 @@ def register_egreso_tesoreria(
         )
         return _save_instance(movement)
 
-    caja = get_or_create_default_caja_central()
+    caja = get_boveda(empresa)
     movement = MovimientoCajaCentral(
         caja_central=caja,
         fecha=fecha or timezone.localdate(),

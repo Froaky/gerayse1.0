@@ -1364,7 +1364,28 @@ DescuentoBancario = DescuentoAcreditacion
 # --- Flujo de Disponibilidades (EP-05) ---
 
 class CajaCentral(models.Model):
+    """La boveda de efectivo de una empresa: exactamente una activa por empresa.
+
+    Antes no tenia empresa y habia dos resolvedores que no se hablaban: los
+    egresos de tesoreria caian en una caja global buscada por nombre y el cierre
+    de caja creaba una caja por sucursal al vuelo. En produccion eso dejo 7
+    cajas, la global en negativo (todo salia de ahi) y las de sucursal con toda
+    la recaudacion. La regla del negocio es una boveda por empresa; la
+    trazabilidad por sucursal la da `MovimientoCajaCentral.sucursal_origen`
+    para los ingresos y `sucursal_gasto` para los egresos, no esta caja.
+    """
+
     nombre = models.CharField(max_length=120, default="Efectivo Central")
+    empresa = models.ForeignKey(
+        "cashops.Empresa",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="cajas_centrales",
+    )
+    # Historico: la sucursal de las cajas que existieron antes de consolidar.
+    # Ya no participa de ninguna resolucion ni de ningun filtro; se conserva
+    # para poder leer de donde vino cada caja desactivada.
     sucursal = models.ForeignKey(
         "cashops.Sucursal",
         on_delete=models.SET_NULL,
@@ -1378,6 +1399,23 @@ class CajaCentral(models.Model):
 
     class Meta:
         verbose_name_plural = "Cajas Centrales"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["empresa"],
+                condition=Q(activo=True),
+                name="unique_active_boveda_por_empresa",
+                violation_error_message="Ya existe una boveda de efectivo activa para esta empresa.",
+            ),
+        ]
+
+    def clean(self) -> None:
+        self.nombre = (self.nombre or "").strip()
+        if not self.nombre:
+            raise ValidationError({"nombre": "El nombre de la boveda es obligatorio."})
+        if not self.empresa_id and self.sucursal_id and self.sucursal.empresa_id:
+            self.empresa_id = self.sucursal.empresa_id
+        if self._state.adding and not self.empresa_id:
+            raise ValidationError({"empresa": "La empresa propietaria de la boveda es obligatoria."})
 
     def __str__(self) -> str:
         return self.nombre
@@ -1442,6 +1480,21 @@ class MovimientoCajaCentral(models.Model):
         blank=True,
         related_name="movimientos_centrales_de_cierre",
     )
+    # De que sucursal entro este efectivo a la boveda. Es la trazabilidad por
+    # sucursal de los INGRESO_CAJA, y existe porque `caja_cierre` NO sirve para
+    # eso: ese campo se agrego el 14/07/2026 (migracion treasury/0025) con un
+    # AddField sin backfill, asi que todo lo anterior lo tiene en NULL. Hasta
+    # ahora la sucursal de un ingreso se deducia de `caja_central.sucursal`, y
+    # al consolidar las cajas por empresa esa deduccion se pierde: sin este
+    # campo, todos los ingresos previos al 14/07 quedaban sin sucursal.
+    # La migracion lo rellena con COALESCE(caja_cierre.sucursal, caja_central.sucursal).
+    sucursal_origen = models.ForeignKey(
+        "cashops.Sucursal",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ingresos_caja_central",
+    )
 
     observaciones = models.CharField(max_length=255, blank=True)
     rubro_operativo = models.ForeignKey(
@@ -1476,6 +1529,12 @@ class MovimientoCajaCentral(models.Model):
                 name="central_cash_movement_positive",
                 violation_error_message="El monto del movimiento de caja central debe ser mayor que cero.",
             ),
+        ]
+        # Con una sola boveda por empresa todos los movimientos cuelgan de dos
+        # filas, asi que la fecha pasa a ser el discriminante de todo reporte.
+        indexes = [
+            models.Index(fields=["caja_central", "fecha"]),
+            models.Index(fields=["tipo", "periodo_pago"]),
         ]
 
     def __str__(self) -> str:

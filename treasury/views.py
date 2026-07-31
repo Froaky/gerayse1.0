@@ -71,6 +71,7 @@ from .models import (
 )
 from .permissions import ensure_treasury_permission
 from .services import (
+    _central_cash_balance_until,
     annul_payable,
     annul_payment,
     bank_account_empresa_scope_query,
@@ -92,7 +93,7 @@ from .services import (
     create_pos_batch,
     create_supplier,
     decide_special_commitment,
-    get_or_create_default_caja_central,
+    get_boveda,
     link_payment_to_bank_movement,
     register_arqueo,
     register_card_accreditation,
@@ -1398,10 +1399,11 @@ def _register_payment_view(request, form_class, service_func, title: str, subtit
     # empresa_ids acota las deudas y las cuentas bancarias ofrecidas a las
     # empresas seleccionadas: sin esto el desplegable mezclaba deudas de todas
     # las empresas (el listado de cuentas por pagar si filtraba).
+    empresa_ids = _get_empresa_ids(request)
     form = form_class(
         request.POST or None,
         initial=_payment_form_initial(request),
-        empresa_ids=_get_empresa_ids(request),
+        empresa_ids=empresa_ids,
     )
     if request.method == "POST" and form.is_valid():
         kwargs = {
@@ -1411,6 +1413,12 @@ def _register_payment_view(request, form_class, service_func, title: str, subtit
             "observaciones": form.cleaned_data.get("observaciones", ""),
             "actor": request.user,
         }
+        # El pago en efectivo sale de la boveda de una empresa. Normalmente la
+        # deduce de la sucursal de la deuda, pero muchas deudas se cargan sin
+        # sucursal: si el usuario tiene una sola empresa habilitada, esa es la
+        # respuesta y no hace falta molestarlo.
+        if service_func is register_cash_payment and empresa_ids and len(empresa_ids) == 1:
+            kwargs["empresa"] = empresa_ids[0]
         if "cuenta_bancaria" in form.cleaned_data:
             kwargs["bank_account"] = form.cleaned_data["cuenta_bancaria"]
         if "referencia" in form.cleaned_data:
@@ -2365,9 +2373,10 @@ def central_cash_movements(request):
         MovimientoCajaCentral.objects.filter(fecha__range=(first_day, last_day)).select_related(
             "pago_tesoreria",
             "creado_por",
-            "caja_central__sucursal",
+            "caja_central__empresa",
             "rubro_operativo",
             "sucursal_gasto",
+            "sucursal_origen",
         ),
         sucursal=sucursal,
         empresa_ids=empresa_ids,
@@ -2415,11 +2424,14 @@ def central_cash_movements(request):
             badge_class = "badge-danger"
             prefix = "-"
 
+        # La sucursal sale del movimiento, nunca de la boveda: un egreso la
+        # trae en sucursal_gasto y un ingreso en sucursal_origen. El fallback a
+        # caja_central.sucursal ya no sirve, porque la boveda es de la empresa.
         sucursal_label = "sin sucursal imputada"
         if m.sucursal_gasto_id:
             sucursal_label = m.sucursal_gasto.nombre
-        elif m.caja_central.sucursal_id:
-            sucursal_label = m.caja_central.sucursal.nombre
+        elif m.sucursal_origen_id:
+            sucursal_label = m.sucursal_origen.nombre
         rubro_label = m.rubro_operativo.nombre if m.rubro_operativo_id else "sin rubro"
         if m.periodo_pago:
             periodo_label = f"{m.periodo_pago:%m/%Y}"
@@ -2440,10 +2452,16 @@ def central_cash_movements(request):
             ),
         })
         
-    caja = get_or_create_default_caja_central()
+    # El saldo que se muestra es el del alcance que el usuario acaba de filtrar.
+    # Antes se imprimia el saldo de una sola caja mientras se listaban los
+    # movimientos de todas: en produccion eso mostraba -$61.826.287,87 al lado de
+    # una lista que sumaba otra cosa. Y de paso un GET ya no crea ninguna caja.
+    saldo_del_alcance = _central_cash_balance_until(
+        reference_date=last_day, sucursal=sucursal, empresa_ids=empresa_ids
+    )
     subtitle = (
         f"Periodo {first_day:%m/%Y}. Ingresos: {_money(total_ingresos)}. "
-        f"Egresos: {_money(total_egresos)}. Saldo actual: {_money(caja.saldo_actual)}."
+        f"Egresos: {_money(total_egresos)}. Saldo acumulado: {_money(saldo_del_alcance)}."
     )
     if imputacion == "pendientes":
         subtitle += " Mostrando solo egresos administrativos con sucursal, rubro o periodo pendiente."
@@ -2477,11 +2495,13 @@ def central_cash_movements(request):
 @login_required
 def central_cash_create(request):
     _require_treasury_admin(request)
+    empresa_ids = _get_empresa_ids(request)
     if request.method == "POST":
-        form = CentralCashMovementForm(request.POST)
+        form = CentralCashMovementForm(request.POST, empresa_ids=empresa_ids)
         if form.is_valid():
             try:
                 register_central_cash_movement(
+                    empresa=form.cleaned_data["empresa"],
                     tipo=form.cleaned_data["tipo"],
                     monto=form.cleaned_data["monto"],
                     concepto=form.cleaned_data["concepto"],
@@ -2494,8 +2514,8 @@ def central_cash_create(request):
             except ValidationError as e:
                 form.add_error(None, e)
     else:
-        form = CentralCashMovementForm()
-        
+        form = CentralCashMovementForm(empresa_ids=empresa_ids)
+
     return render(request, "treasury/form_page.html", {
         "title": "Nuevo Movimiento de Efectivo",
         "form": form,
@@ -2507,11 +2527,13 @@ def central_cash_create(request):
 @require_http_methods(["GET", "POST"])
 def carga_inicial_caja_central(request):
     _require_treasury_admin(request)
+    empresa_ids = _get_empresa_ids(request)
     if request.method == "POST":
-        form = CargaInicialCajaCentralForm(request.POST)
+        form = CargaInicialCajaCentralForm(request.POST, empresa_ids=empresa_ids)
         if form.is_valid():
             try:
                 register_carga_inicial_caja_central(
+                    empresa=form.cleaned_data["empresa"],
                     fecha=form.cleaned_data["fecha"],
                     monto=form.cleaned_data["monto"],
                     motivo=form.cleaned_data["motivo"],
@@ -2523,7 +2545,7 @@ def carga_inicial_caja_central(request):
             except ValidationError as e:
                 form.add_error(None, e)
     else:
-        form = CargaInicialCajaCentralForm()
+        form = CargaInicialCajaCentralForm(empresa_ids=empresa_ids)
     return render(request, "treasury/form_page.html", {
         "title": "Carga inicial de caja fuerte central",
         "subtitle": "Registra o ajusta el saldo inicial de efectivo de tesoreria. Queda auditado con fecha, usuario y motivo. No requiere una caja operativa abierta.",
@@ -2536,11 +2558,13 @@ def carga_inicial_caja_central(request):
 @require_http_methods(["GET", "POST"])
 def egreso_tesoreria_create(request):
     _require_treasury_admin(request)
+    empresa_ids = _get_empresa_ids(request)
     if request.method == "POST":
-        form = EgresoTesoreriaForm(request.POST)
+        form = EgresoTesoreriaForm(request.POST, empresa_ids=empresa_ids)
         if form.is_valid():
             try:
                 register_egreso_tesoreria(
+                    empresa=form.cleaned_data["empresa"],
                     fuente=form.cleaned_data["fuente"],
                     fecha=form.cleaned_data["fecha"],
                     monto=form.cleaned_data["monto"],
@@ -2557,7 +2581,7 @@ def egreso_tesoreria_create(request):
             except ValidationError as e:
                 form.add_error(None, e)
     else:
-        form = EgresoTesoreriaForm()
+        form = EgresoTesoreriaForm(empresa_ids=empresa_ids)
     return render(request, "treasury/form_page.html", {
         "title": "Egreso administrativo de tesoreria",
         "subtitle": "Pagos y gastos que salen directamente de tesorería (no de una caja operativa de sucursal). Si el origen es caja fuerte, reduce el libro de efectivo central. Si es banco, impacta el libro bancario.",
@@ -2594,23 +2618,31 @@ def arqueo_list(request):
 @login_required
 def arqueo_create(request):
     _require_treasury_admin(request)
-    caja = get_or_create_default_caja_central()
+    empresa_ids = _get_empresa_ids(request)
     if request.method == "POST":
-        form = ArqueoForm(request.POST)
+        form = ArqueoForm(request.POST, empresa_ids=empresa_ids)
         if form.is_valid():
-            register_arqueo(
-                caja_central=caja,
-                saldo_contado=form.cleaned_data["saldo_contado_efectivo"],
-                observaciones=form.cleaned_data["observaciones"],
-                actor=request.user
-            )
-            messages.success(request, "Arqueo registrado correctamente.")
-            return redirect("treasury:arqueo_list")
+            try:
+                register_arqueo(
+                    caja_central=get_boveda(form.cleaned_data["empresa"]),
+                    saldo_contado=form.cleaned_data["saldo_contado_efectivo"],
+                    observaciones=form.cleaned_data["observaciones"],
+                    actor=request.user
+                )
+            except ValidationError as e:
+                form.add_error(None, e)
+            else:
+                messages.success(request, "Arqueo registrado correctamente.")
+                return redirect("treasury:arqueo_list")
     else:
-        form = ArqueoForm(initial={"saldo_contado_efectivo": caja.saldo_actual})
-        
+        form = ArqueoForm(empresa_ids=empresa_ids)
+
     return render(request, "treasury/form_page.html", {
         "title": "Realizar Arqueo de Efectivo",
+        "subtitle": (
+            "Se cuenta el efectivo de la boveda de una empresa y el sistema calcula la "
+            "diferencia contra su saldo. Elegi la empresa que estas contando."
+        ),
         "form": form,
         "back_url": reverse("treasury:arqueo_list")
     })

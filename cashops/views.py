@@ -1963,7 +1963,9 @@ def reset_operational_data(request):
                 MovimientoBancario.objects.all().delete()
                 MovimientoCajaCentral.objects.all().delete()
                 ArqueoDisponibilidades.objects.all().delete()
-                CajaCentral.objects.all().delete()
+                # Las bovedas NO se borran: son dato maestro, una por empresa,
+                # creadas por migracion. Si el reset las borrara, toda pantalla
+                # de tesoreria empezaria a fallar por falta de boveda.
                 CompromisoEspecial.objects.all().delete()
                 PagoTesoreria.objects.all().delete()
                 CuentaPorPagar.objects.all().delete()

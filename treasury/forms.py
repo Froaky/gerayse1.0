@@ -781,7 +781,36 @@ class BankReconciliationFilterForm(TreasuryStyledFormMixin, forms.Form):
 
 # --- Flujo de Disponibilidades (EP-05) ---
 
-class CentralCashMovementForm(TreasuryStyledFormMixin, forms.ModelForm):
+class BovedaEmpresaFieldMixin:
+    """Agrega el selector de empresa a los formularios que mueven la boveda.
+
+    Ahora hay una boveda de efectivo por empresa, asi que toda escritura tiene
+    que decir de cual se trata: antes todo caia en una caja global sin dueno y
+    esos movimientos se contaban en las dos empresas a la vez. Si el usuario
+    tiene una sola empresa habilitada se preselecciona y no hay nada que elegir.
+    """
+
+    def _setup_empresa_field(self, empresa_ids=None):
+        empresas = Empresa.objects.filter(activa=True).order_by("nombre")
+        if empresa_ids is not None:
+            empresas = empresas.filter(pk__in=empresa_ids)
+        campo = self.fields["empresa"]
+        campo.queryset = empresas
+        campo.required = True
+        if len(empresas) == 1:
+            unica = empresas[0]
+            campo.initial = unica.pk
+            campo.empty_label = None
+            campo.widget.attrs["data-unica-empresa"] = "1"
+
+
+class CentralCashMovementForm(BovedaEmpresaFieldMixin, TreasuryStyledFormMixin, forms.ModelForm):
+    empresa = forms.ModelChoiceField(
+        queryset=Empresa.objects.none(),
+        label="Empresa",
+        help_text="De que boveda de efectivo sale o entra este movimiento.",
+    )
+
     class Meta:
         model = MovimientoCajaCentral
         fields = ["fecha", "tipo", "monto", "concepto", "observaciones"]
@@ -792,7 +821,7 @@ class CentralCashMovementForm(TreasuryStyledFormMixin, forms.ModelForm):
             "observaciones": forms.Textarea(attrs={"placeholder": "Notas adicionales"}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, empresa_ids=None, **kwargs):
         super().__init__(*args, **kwargs)
         # Exclude types that should be automatic (EGRESO_PAGO, INGRESO_CAJA)
         manual_choices = [
@@ -803,10 +832,16 @@ class CentralCashMovementForm(TreasuryStyledFormMixin, forms.ModelForm):
             (MovimientoCajaCentral.Tipo.AJUSTE_NEGATIVO, "Ajuste de Saldo (-)"),
         ]
         self.fields["tipo"].choices = manual_choices
+        self._setup_empresa_field(empresa_ids)
         self._apply_input_classes()
 
 
-class CargaInicialCajaCentralForm(TreasuryStyledFormMixin, forms.Form):
+class CargaInicialCajaCentralForm(BovedaEmpresaFieldMixin, TreasuryStyledFormMixin, forms.Form):
+    empresa = forms.ModelChoiceField(
+        queryset=Empresa.objects.none(),
+        label="Empresa",
+        help_text="De que boveda de efectivo es este saldo inicial.",
+    )
     fecha = forms.DateField(
         label="Fecha",
         widget=forms.DateInput(attrs={"type": "date"}),
@@ -831,14 +866,15 @@ class CargaInicialCajaCentralForm(TreasuryStyledFormMixin, forms.Form):
         widget=forms.Textarea(attrs={"placeholder": "Contexto adicional (opcional)"}),
     )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, empresa_ids=None, **kwargs):
         super().__init__(*args, **kwargs)
         import datetime
         self.fields["fecha"].initial = datetime.date.today()
+        self._setup_empresa_field(empresa_ids)
         self._apply_input_classes()
 
 
-class EgresoTesoreriaForm(TreasuryStyledFormMixin, forms.Form):
+class EgresoTesoreriaForm(BovedaEmpresaFieldMixin, TreasuryStyledFormMixin, forms.Form):
     FUENTE_CAJA = "CAJA_CENTRAL"
     FUENTE_BANCO = "BANCO"
     FUENTE_CHOICES = [
@@ -846,6 +882,11 @@ class EgresoTesoreriaForm(TreasuryStyledFormMixin, forms.Form):
         (FUENTE_BANCO, "Cuenta bancaria"),
     ]
 
+    empresa = forms.ModelChoiceField(
+        queryset=Empresa.objects.none(),
+        label="Empresa",
+        help_text="De que empresa es este gasto. Acota la boveda, las cuentas y las sucursales.",
+    )
     fuente = forms.ChoiceField(
         choices=FUENTE_CHOICES,
         label="Origen del egreso",
@@ -894,15 +935,23 @@ class EgresoTesoreriaForm(TreasuryStyledFormMixin, forms.Form):
         widget=forms.Textarea(attrs={"placeholder": "Detalle adicional (opcional)"}),
     )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, empresa_ids=None, **kwargs):
         super().__init__(*args, **kwargs)
         import datetime
         today = datetime.date.today()
         self.fields["fecha"].initial = today
         self.fields["periodo"].initial = today.replace(day=1)
-        self.fields["cuenta_bancaria"].queryset = CuentaBancaria.objects.filter(activa=True).order_by("banco", "nombre")
+        cuentas = CuentaBancaria.objects.filter(activa=True)
+        sucursales = Sucursal.objects.filter(activa=True)
+        # Un gasto no puede cruzar de empresa: ni imputarse a una sucursal ajena
+        # ni salir de una cuenta ajena. Antes las dos listas venian completas.
+        if empresa_ids is not None:
+            cuentas = cuentas.filter(empresa_id__in=empresa_ids)
+            sucursales = sucursales.filter(empresa_id__in=empresa_ids)
+        self.fields["cuenta_bancaria"].queryset = cuentas.order_by("banco", "nombre")
         self.fields["rubro"].queryset = RubroOperativo.objects.filter(activo=True, es_sistema=False).order_by("nombre")
-        self.fields["sucursal"].queryset = Sucursal.objects.filter(activa=True).order_by("nombre")
+        self.fields["sucursal"].queryset = sucursales.order_by("nombre")
+        self._setup_empresa_field(empresa_ids)
         selected_source = self.data.get(self.add_prefix("fuente")) if self.is_bound else self.initial.get("fuente")
         self.show_bank_account_field = selected_source == self.FUENTE_BANCO
         self.conditional_bank_account = True
@@ -931,7 +980,13 @@ class EgresoTesoreriaForm(TreasuryStyledFormMixin, forms.Form):
         return cleaned_data
 
 
-class ArqueoForm(TreasuryStyledFormMixin, forms.ModelForm):
+class ArqueoForm(BovedaEmpresaFieldMixin, TreasuryStyledFormMixin, forms.ModelForm):
+    empresa = forms.ModelChoiceField(
+        queryset=Empresa.objects.none(),
+        label="Empresa",
+        help_text="Que boveda se esta contando. Cada empresa tiene la suya.",
+    )
+
     class Meta:
         model = ArqueoDisponibilidades
         fields = ["saldo_contado_efectivo", "observaciones"]
@@ -943,8 +998,9 @@ class ArqueoForm(TreasuryStyledFormMixin, forms.ModelForm):
             "observaciones": forms.Textarea(attrs={"placeholder": "Notas sobre el arqueo o diferencias"}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, empresa_ids=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self._setup_empresa_field(empresa_ids)
         self._apply_input_classes()
 
 
