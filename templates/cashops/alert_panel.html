@@ -126,6 +126,15 @@
             </div>
           </div>
           <div class="muted" style="margin-top:8px;">Creada {{ alerta.creada_en }}</div>
+          {% if not alerta.resuelta and puede_resolver_alertas %}
+            <form method="post" action="{% url 'cashops:resolve_alert' alerta.id|unlocalize %}" style="margin-top:12px;">
+              {% csrf_token %}
+              <button class="button-secondary" type="submit">Marcar como resuelta</button>
+              <small class="muted" style="display:block;margin-top:6px;">
+                Si el rubro sigue excedido, la alerta vuelve a abrirse sola en el proximo recalculo.
+              </small>
+            </form>
+          {% endif %}
         </article>
       {% empty %}
         <p class="muted">No hay alertas para los filtros seleccionados.</p>

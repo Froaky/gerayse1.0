@@ -4694,3 +4694,72 @@ class PostgresRowLockingTests(CashopsTestCase):
 
         movement.refresh_from_db()
         self.assertEqual(movement.monto, Decimal("250.00"))
+
+
+class ResolveAlertViewTests(CashopsTestCase):
+    """La ruta existia pero reventaba con NameError (AlertaOperativa no estaba
+    importado a nivel de modulo) y ningun template la enlazaba: en la practica una
+    alerta de diferencia grave quedaba en el panel para siempre, porque solo las de
+    rubro excedido se auto-resuelven."""
+
+    def setUp(self):
+        super().setUp()
+        self.alerta = AlertaOperativa.objects.create(
+            tipo=AlertaOperativa.Tipo.DIFERENCIA_GRAVE,
+            sucursal=self.branch_a,
+            periodo_fecha=self.fecha_op,
+            mensaje="Diferencia grave en el cierre",
+        )
+
+    def test_admin_resuelve_la_alerta(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.post(reverse("cashops:resolve_alert", args=[self.alerta.pk]))
+
+        self.assertEqual(response.status_code, 302)
+        self.alerta.refresh_from_db()
+        self.assertTrue(self.alerta.resuelta)
+
+    def test_get_no_resuelve(self):
+        """Es una escritura: no puede dispararse abriendo un link."""
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("cashops:resolve_alert", args=[self.alerta.pk]))
+
+        self.assertEqual(response.status_code, 405)
+        self.alerta.refresh_from_db()
+        self.assertFalse(self.alerta.resuelta)
+
+    def test_operador_sin_config_no_puede_resolver(self):
+        self.client.force_login(self.operator)
+
+        response = self.client.post(reverse("cashops:resolve_alert", args=[self.alerta.pk]))
+
+        self.assertEqual(response.status_code, 403)
+        self.alerta.refresh_from_db()
+        self.assertFalse(self.alerta.resuelta)
+
+    def test_el_panel_ofrece_el_boton_solo_a_quien_puede_escribir_config(self):
+        """El panel se abre con Configuracion en LECTURA, pero resolver es una
+        escritura: quien solo mira no tiene que ver el boton."""
+        from users.models import PermissionModule, UserPermission
+
+        url = reverse("cashops:alert_panel")
+
+        self.client.force_login(self.admin)
+        como_admin = self.client.get(url)
+        self.assertEqual(como_admin.status_code, 200)
+        self.assertContains(como_admin, "Marcar como resuelta")
+        self.assertContains(como_admin, reverse("cashops:resolve_alert", args=[self.alerta.pk]))
+
+        solo_lectura = User.objects.create_user(
+            username="mira-alertas", password="test", role=self.operator_role
+        )
+        solo_lectura.empresas_permitidas.set([self.empresa_a])
+        UserPermission.objects.create(
+            user=solo_lectura, module=PermissionModule.CONFIG, can_read=True, can_write=False
+        )
+        self.client.force_login(solo_lectura)
+        como_lector = self.client.get(url)
+        self.assertEqual(como_lector.status_code, 200)
+        self.assertNotContains(como_lector, "Marcar como resuelta")

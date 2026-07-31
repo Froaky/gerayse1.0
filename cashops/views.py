@@ -37,7 +37,7 @@ from .forms import (
     TransferenciaEntreSucursalesForm,
     VentaGeneralForm,
 )
-from .models import CajaCorreccion, CajaValidacion, CanalIngreso, Caja, CierreCaja, Empresa, LimiteRubroOperativo, MovimientoCaja, MovimientoCajaCorreccion, RubroOperativo, Sucursal, Turno
+from .models import AlertaOperativa, CajaCorreccion, CajaValidacion, CanalIngreso, Caja, CierreCaja, Empresa, LimiteRubroOperativo, MovimientoCaja, MovimientoCajaCorreccion, RubroOperativo, Sucursal, Turno
 from .permissions import (
     can_correct_closed_box,
     can_delete_movement_in_box,
@@ -872,6 +872,7 @@ def alert_panel(request):
             "sucursales": sucursales_qs.order_by("nombre"),
             "scope_policy": OPERATIONAL_ALERT_SCOPE_POLICY,
             "scope_policy_rules": OPERATIONAL_ALERT_SCOPE_POLICY_RULES,
+            "puede_resolver_alertas": request.user.is_cashops_admin(),
         },
     )
 
@@ -1665,7 +1666,16 @@ def close_box_view(request, box_id: int):
     )
 
 @login_required
+@require_http_methods(["POST"])
 def resolve_alert(request, alert_id: int):
+    """Cierra una alerta a mano. Solo POST: es una escritura y no puede dispararse
+    con un simple link.
+
+    Sirve sobre todo para las alertas de DIFERENCIA GRAVE, que nacen de un cierre
+    concreto y no se auto-resuelven nunca (a diferencia de RUBRO EXCEDIDO, que se
+    resuelve y se reabre sola segun el consumo del periodo). Sin esto quedaban en el
+    panel para siempre.
+    """
     _require_config_write(request)
     alert = get_object_or_404(AlertaOperativa, pk=alert_id)
     alert.resuelta = True
@@ -1929,7 +1939,7 @@ def reset_operational_data(request):
 
         if step == "2":
             from django.db import transaction
-            from .models import AlertaOperativa, MovimientoCaja, CierreCaja, Transferencia
+            from .models import Transferencia
             from treasury.models import (
                 DescuentoAcreditacion, AcreditacionTarjeta, MovimientoBancario,
                 MovimientoCajaCentral, ArqueoDisponibilidades, CajaCentral,

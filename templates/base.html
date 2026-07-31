@@ -35,11 +35,12 @@
     <main class="layout {% if not request.user.is_authenticated %}layout--auth{% endif %}">
       {% if request.user.is_authenticated %}
         <aside class="sidebar">
+          {# Se quitaron los links a #acciones, #movimientos y #cierre: eran anclas
+             que no existen en ninguna pagina que use este layout (landing, login,
+             primer ingreso y cambio de password obligatorio), asi que no hacian
+             nada al clickearlas. #}
           <nav class="nav-card" aria-label="Navegacion principal">
-            <a class="nav-card__item" href="{% url 'cashops:dashboard' %}">Dashboard</a>
-            <a class="nav-card__item" href="#acciones">Operacion rapida</a>
-            <a class="nav-card__item" href="#movimientos">Movimientos</a>
-            <a class="nav-card__item" href="#cierre">Cierre</a>
+            <a class="nav-card__item" href="{% url 'cashops:dashboard' %}">Ir al sistema</a>
           </nav>
           <section class="info-card">
             <p class="eyebrow">Regla operativa</p>
@@ -61,14 +62,10 @@
       </section>
     </main>
 
-    {% if request.user.is_authenticated %}
-      <nav class="mobile-nav" aria-label="Acciones rapidas">
-        <a href="{% url 'cashops:dashboard' %}">Inicio</a>
-        <a href="#acciones">Caja</a>
-        <a href="#movimientos">Movimientos</a>
-        <a href="#cierre">Cerrar</a>
-      </nav>
-    {% endif %}
+    {# Se elimino la barra inferior movil: 3 de sus 4 links apuntaban a anclas
+       inexistentes y este layout solo lo usan la landing, el login, el primer
+       ingreso y el cambio de password obligatorio. Las pantallas de operacion
+       tienen su propia navegacion en cashops/layout.html y treasury/layout.html. #}
 
     {% block scripts %}{% endblock %}
   </body>

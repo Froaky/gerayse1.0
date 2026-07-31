@@ -1342,6 +1342,51 @@ Last updated: 2026-07-08
 - Archivos: `users/models.py`, `users/views.py`, `users/migrations/0015_*`, `users/tests.py`, `cashops/permissions.py`, `cashops/services.py`, `cashops/views.py`, `cashops/urls.py`, `templates/cashops/partials/movement_list.html`, `templates/cashops/box_detail.html`, `cashops/tests.py`, `context.md`.
 - Tests: users +1 clase `MovementDeletePermissionTests` (4) + conteo modulos 7->8; cashops +3 servicio movimiento, +4 vista movimiento (abierta/permiso/aislamiento), +3 servicio deuda, +4 vista deuda. Renombrados los tests de delete de caja cerrada (siguen verdes por la logica OR).
 
+### Cierre de los pendientes cosmeticos de la auditoria + resolver alertas 2026-07-31
+
+Se cerraron los 4 cosmeticos que quedaban de la auditoria del 29/07 y el bug de
+resolver alertas a mano.
+
+- RESOLVER ALERTAS (era un 500 esperando): `resolve_alert` usaba `AlertaOperativa`
+  sin tenerlo importado a nivel de modulo (el unico import vivia dentro de
+  `reset_operational_data`) -> NameError al entrar. Se agrego al import de
+  `cashops/views.py` y se saco el import local que quedo redundante. Ademas la ruta
+  no estaba enlazada en NINGUN template: se agrego el boton "Marcar como resuelta"
+  en `alert_panel.html`, gateado por `puede_resolver_alertas`
+  (= `request.user.is_cashops_admin()`), porque el panel se abre con Configuracion en
+  LECTURA pero resolver es escritura. Y se limito la vista a POST con
+  `@require_http_methods(["POST"])`: antes un GET alcanzaba para cerrar una alerta.
+  POR QUE IMPORTA: las alertas de DIFERENCIA GRAVE nacen de un cierre concreto y no
+  se auto-resuelven nunca (solo las de RUBRO EXCEDIDO se resuelven y reabren solas),
+  asi que sin esto quedaban en el panel para siempre.
+- TYPO: "conciliacion de de ventas" -> "conciliación de ventas"
+  (`reconciliation_page.html`).
+- BARRA HARDCODEADA: la distribucion efectivo/banco de Disponibilidades estaba fija
+  en 40%/60%, o sea dibujaba una proporcion inventada. Ahora usa `{% widthratio %}`
+  sobre `saldo_final_efectivo` y `total_bancos_final` contra `total_consolidado`, y
+  solo se dibuja si el total y las dos partes son positivos (con banco negativo la
+  proporcion no tiene sentido visual). Verificado en la demo: 97% / 3%, que coincide
+  con $244.834.600 de efectivo contra $7.193.000 de banco.
+- VARIABLES CSS INEXISTENTES en `disponibilidades_report.html`: `var(--transition)`,
+  `var(--success)` y `var(--gradient-primary)` no estan definidas en ningun layout,
+  por eso el encabezado se veia gris roto. Reemplazadas por las del tema
+  (`--accent`, `--forest-deep`, `--accent-soft`).
+- LINKS MUERTOS en `templates/base.html`: la barra lateral y la barra inferior movil
+  apuntaban a `#acciones`, `#movimientos` y `#cierre`, anclas que no existen en
+  ninguna pagina que use ese layout. Importa porque ese layout lo usa
+  `password_change_required.html`, que SI ve un usuario autenticado (la landing y el
+  login redirigen al autenticado, esa pantalla no). Se dejo un solo link "Ir al
+  sistema" y se elimino la barra movil completa: las pantallas de operacion tienen su
+  propia navegacion en cashops/layout.html y treasury/layout.html.
+- Tests: `ResolveAlertViewTests` en cashops/tests.py (4: admin resuelve, GET da 405,
+  operador sin Configuracion da 403, y el boton aparece solo para quien puede
+  escribir config, usando un UserPermission de solo lectura).
+- Suite: 435 -> 439 tests, todos en verde.
+- PENDIENTE DE DATOS DE DEMO (no de producto): la base de demo quedo con 188 alertas
+  de RUBRO_EXCEDIDO sin resolver porque el sembrado puso limites de 6% y 4% en
+  Mantenimiento y Limpieza. El motor de alertas funciona bien, pero para una reunion
+  comercial conviene subir esos limites en `Demo/sembrar-demo.py` y regenerar.
+
 ### URGENTE 1 de la auditoria: el pago ahora SI baja el saldo del banco 2026-07-31
 
 Hallazgo de la auditoria del 29/07: `register_payment` generaba movimiento de

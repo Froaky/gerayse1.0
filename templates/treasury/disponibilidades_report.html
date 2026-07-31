@@ -14,9 +14,11 @@
         margin-top: 10px;
         display: flex;
     }
-    .bar-segment { height: 100%; transition: var(--transition); }
-    .bar-cash { background: var(--success); }
-    .bar-bank { background: var(--accent); }
+    /* --transition y --success no existen en ningun layout: se usan las variables
+       reales del tema para que la barra se vea. */
+    .bar-segment { height: 100%; }
+    .bar-cash { background: var(--accent); }
+    .bar-bank { background: var(--forest-deep); }
     
     .report-header {
         display: flex;
@@ -26,8 +28,10 @@
     }
     
     .total-card-highlight {
-        background: var(--gradient-primary) !important;
-        color: #fff !important;
+        /* --gradient-primary no existe: sin fallback la tarjeta quedaba con fondo
+           gris del navegador y el titulo casi ilegible. */
+        background: var(--accent-soft) !important;
+        border-left: 2px solid var(--accent) !important;
     }
     .total-card-highlight .muted, .total-card-highlight .has-text-primary {
         color: rgba(255,255,255,0.85) !important;
@@ -82,11 +86,21 @@
         <div class="summary total-card-highlight">
             <span class="muted">Disponibilidad Total</span>
             <strong>{{ snapshot.total_consolidado|money }}</strong>
-            <div class="distribution-bar">
-                <!-- Simple logic to show distribution if positive -->
-                <div class="bar-segment bar-cash" style="width: 40%"></div>
-                <div class="bar-segment bar-bank" style="width: 60%"></div>
-            </div>
+            {% comment %}
+            Reparto real efectivo/banco sobre el total. Antes estaba fijo en 40/60,
+            asi que la barra dibujaba una proporcion inventada. Solo se muestra si el
+            total y las dos partes son positivos: con un saldo bancario negativo la
+            proporcion no tiene sentido visual y es mejor no dibujar nada.
+            {% endcomment %}
+            {% if snapshot.total_consolidado > 0 and snapshot.saldo_final_efectivo >= 0 and snapshot.total_bancos_final >= 0 %}
+                <div class="distribution-bar"
+                     title="Efectivo {{ snapshot.saldo_final_efectivo|money }} · Banco {{ snapshot.total_bancos_final|money }}">
+                    <div class="bar-segment bar-cash"
+                         style="width: {% widthratio snapshot.saldo_final_efectivo snapshot.total_consolidado 100 %}%"></div>
+                    <div class="bar-segment bar-bank"
+                         style="width: {% widthratio snapshot.total_bancos_final snapshot.total_consolidado 100 %}%"></div>
+                </div>
+            {% endif %}
         </div>
     </div>
 </section>
