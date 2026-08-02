@@ -1697,3 +1697,52 @@ Archivos: `treasury/services.py`, `treasury/views.py`, `treasury/forms.py`,
 - Archivos: `cashops/services.py`, `cashops/tests.py`, `context.md`.
 - Tests: clase nueva `PostgresRowLockingTests` (3 casos: anular deuda, anular movimiento, corregir movimiento de caja cerrada), con `@skipUnless(connection.vendor == "postgresql")` siguiendo el patron de `TreasuryConcurrencyTests`. **SE SALTEAN en local**: no hay forma de reproducir esto con SQLite. Suite completa sigue verde.
 - Pendiente / trampa para el proximo agente: cualquier `select_for_update()` nuevo que venga con `select_related()` sobre una FK nullable va a fallar en produccion y pasar en local. Si se agrega uno, usar `of=` y verificar compilando contra Postgres como se hizo aca. Correr la suite contra Postgres alguna vez cerraria el agujero de raiz.
+
+
+### El rechazo de validacion devuelve la caja al cajero 2026-08-02
+
+- Pedido del usuario (viene de la queja de la administracion): al rechazar una validacion de efectivo, que la caja vuelva "abierta" al cajero para que corrija y vuelva a cerrarla; el aviso por ahora es manual (WhatsApp) y el sistema queda preparado para el futuro modulo de avisos (punto de extension comentado en `reject_box_cash`).
+- Idea central (del usuario): la caja "no cierra definitivamente hasta que este completa la validacion". Eso evito el costo grande: NO hay segundo `CierreCaja` (es OneToOne) ni migracion estructural. El re-cierre ACTUALIZA el cierre existente (`close_box` ahora hace select_for_update + update o create; `cerrado_en` se re-estampa a mano porque auto_now_add solo aplica en insert). El detalle de cada intento queda en `CajaValidacion` (efectivo declarado + motivo del rechazo), asi que no se pierde historia.
+- `reject_box_cash`: tras registrar el RECHAZO, anula con auditoria el `AJUSTE_CIERRE` del cierre rechazado (helper nuevo `_annul_closing_adjustment`; sin esto el saldo esperado de la caja reabierta arrancaba distorsionado), resuelve la alerta DIFERENCIA_GRAVE de ese cierre (el upsert por cierre la reactiva si el re-cierre vuelve a dar grave), y deja la caja `ABIERTA` + `RECHAZADA` (sigue fuera de TODOS los totales: `VALIDACION_BLOQUEA_TOTALES` no mira `estado`), con `cerrada_en/por` en NULL. Guards nuevos con mensaje humano: mes de tesoreria cerrado y otra caja abierta del mismo cajero/turno/sucursal/fecha (chocaria con `unique_open_box_by_user_turn_branch_date`).
+- Helper nuevo `_treasury_month_is_closed_for_empresa(fecha, empresa_id)`: desde treasury 0034 el cierre mensual es POR EMPRESA, pero `treasury_month_is_closed` quedo global y sobre-bloquea cruzado (una empresa cierra su mes y frena a las demas: `open_box`, `update_box_metadata`, anulacion de boveda). Los guards nuevos usan el helper por empresa; **el viejo sigue global en sus 3 llamadores previos: BUG conocido pendiente de otro slice**.
+- UI: estado nuevo "Devuelta por rechazo" (badge-danger) en `describe_box_follow_up`; banner con el motivo textual del rechazo en el dashboard del cajero (card Caja activa) y en el detalle de caja; `box_reject_view` avisa y redirige si la caja ya no esta cerrada-pendiente; el texto del form de rechazo explica que la caja vuelve al cajero.
+- Datos: SIN migraciones. Las cajas CERRADA+RECHAZADA viejas de produccion quedan como estan; re-rechazarlas desde la cola las devuelve al cajero (el guard acepta RECHAZADA). Semantica conocida: una transferencia hacia una caja devuelta mete plata en una caja que no contabiliza hasta validarse (igual que antes del cierre).
+- Tests: `RechazoDevuelveCajaTests` (8) + `test_reject_requires_motivo_and_returns_box_to_cashier` reescrito al flujo nuevo (rechazar -> corregir -> re-cerrar -> validar; ya no se puede validar directo una rechazada).
+
+### Revertir la validacion del efectivo (US-02) 2026-08-02
+
+- El agujero sin salida: validar empuja `saldo_fisico` a la boveda y `VALIDADA` era terminal; una validacion equivocada solo se arreglaba eliminando la caja entera.
+- `revert_box_cash_validation(caja, motivo, actor)`: anula (estado ANULADO + motivo/autor/fecha, nada se borra) los `MovimientoCajaCentral` del push (`caja_cierre=caja`, tipos INGRESO_CAJA/AJUSTE_NEGATIVO, filtrando REGISTRADO) y devuelve la caja a `PENDIENTE` con `validada_por/en` en NULL. Evento `REVERSION` nuevo en `CajaValidacion` (la validacion original queda al lado).
+- NO se reuso `annul_central_cash_movement` de treasury: rechaza justamente INGRESO_CAJA y movimientos con `caja_cierre` ("se anulan desde su origen") y exige TREASURY_MOV_DELETE. Este ES el origen. Se siguio el precedente de `_release_central_cash_movement_from_annulled_payment` (anulacion de sistema) re-implementando a proposito los guards que si aplican: mes cerrado POR EMPRESA y doble anulacion (filtro REGISTRADO).
+- Guard de saldo (no existia en NINGUNA anulacion de boveda): si el efectivo del cierre ya se uso y la boveda quedaria negativa, corta con mensaje claro antes de escribir.
+- La matriz completa mueve la plata UNA vez por diseño previo que ya lo soportaba: el guard del push filtra REGISTRADO (revalidar tras revertir re-empuja el monto vigente) y `_reverse_central_cash_closure_for_box` tambien (eliminar tras revertir no descuenta de nuevo). Testeada entera contra `saldo_actual` real.
+- Permiso nuevo `cashops_val_undo` ("Revertir validacion de efectivo"), separado de validar porque revertir SACA plata (mismo criterio que TREASURY_MOV_DELETE). Sembrado lazy denegado salvo roles admin. Toques obligatorios del patron: choices en `users/models.py` + `PERMISSION_MODULE_META` en `users/views.py` (sin la entrada, la ficha de permisos revienta con KeyError) + wrapper `can_revert_validacion_efectivo`.
+- UI: boton "Revertir validacion" en seguimiento y detalle (solo cajas CERRADA+VALIDADA con permiso), form de confirmacion con motivo (patron disable_htmx).
+- Datos: migraciones `users/0018` y `cashops/0025`, solo AlterField de choices (no reescriben tablas ni tocan filas).
+- Tests: `ReversionValidacionTests` (8).
+
+### Corregir el efectivo declarado del cierre (US-03) 2026-08-02
+
+- El caso "declaro 904.485 y habia 804.485": los movimientos estan bien, el conteo declarado no. `saldo_fisico` se cargaba una unica vez en el form de cierre y no habia correccion posible.
+- `update_declared_closing_cash(caja, saldo_fisico, justificacion, motivo, actor)`: solo cajas CERRADAS con validacion PENDIENTE/RECHAZADA. Sobre VALIDADA se bloquea apuntando a revertir primero (US-02): ese declarado ya esta en la boveda. Rehace la matematica del cierre igual que `close_box`: anula el ajuste viejo (reusa `_annul_closing_adjustment`), recalcula diferencia contra el esperado vigente, ajuste nuevo o justificacion obligatoria si supera 10.000, alerta grave upsert/resuelta.
+- No mueve plata: el push llega recien al validar y lleva el monto corregido (test lo fija).
+- Bitacora: evento `CORRECCION` en `CajaValidacion` con "de $X a $Y" + motivo + autor. Permiso: el de correccion de cajas cerradas existente. UI: boton "Corregir declarado" en la cola de validacion.
+- Datos: migracion `cashops/0026`, solo AlterField de choices.
+- Tests: `CorreccionDeclaradoTests` (6).
+
+### Editar movimientos en caja abierta con permiso propio (US-01) 2026-08-02
+
+- La queja original de la administracion: "Editar" solo tocaba la cabecera de la caja y editar por movimiento solo existia en cajas CERRADAS; en una caja en curso la unica salida era eliminar y recargar. Decision de la administradora: ver y editar SEPARADOS (Ver composicion sigue de solo lectura) y permiso configurable por usuario o rol.
+- Permiso nuevo `cashops_open_fix` ("Correccion de movimientos en caja abierta"). Reglas en `can_correct_movement_in_box(user, box)`: caja CERRADA -> permiso de cerradas de siempre; caja ABIERTA -> el permiso nuevo O el de cerradas (quien corrige lo contabilizado puede corregir lo que todavia no lo esta). Mismo patron que el borrado (`can_delete_movement_in_box`).
+- `update_closed_box_movement` se generalizo a `update_box_movement` (el nombre viejo queda como ALIAS para llamadores/tests). Validador nuevo `_validate_box_movement_for_correction` (reemplaza a `_validate_closed_box_movement_for_correction`, referida en la entrada FOR UPDATE del 2026-07-27: el `of=("self","caja")` se conserva tal cual): decide el permiso sobre el estado YA lockeado (si la caja se cierra mientras se espera el lock, rigen las reglas de cerrada), y bifurca el recalculo como ya hacia el annul: CERRADA con cierre -> `_recalculate_closed_box_after_correction`; ABIERTA -> `resync_operational_control_for_caja` (el saldo esperado es property y se corrige solo). `is_closed_box_movement_correctable` -> `is_box_movement_correctable` (caja no ANULADA en vez de CERRADA; mismos 6 tipos bloqueados: apertura, 4 patas de transferencia, ajuste de cierre).
+- Cambio de comportamiento deliberado: alguien con permiso de cerradas ahora puede editar movimientos de cajas ABIERTAS (antes: ValidationError "Solo se pueden corregir movimientos de cajas cerradas"). Ningun test fijaba lo contrario.
+- UI: el boton Editar por movimiento aparece en el detalle tambien para cajas abiertas (flag `movement.can_edit`, antes `can_fix_closed_box`); textos del form/vista neutralizados (ya no dicen "caja cerrada"). La URL conserva el name `closed_box_movement_edit` para no romper nada; renombrarla es cosmetico y queda para otro slice.
+- Datos: migracion `users/0019`, solo AlterField de choices.
+- Tests: `EdicionMovimientoCajaAbiertaTests` (8: separacion de permisos en ambos sentidos, tipos estructurales bloqueados, editar-y-cerrar deja la matematica bien, flujo de vista completo, composicion sigue sin acciones).
+
+### Pendientes que dejo esta tanda 2026-08-02
+
+- `treasury_month_is_closed` global vs cierre mensual por empresa: los llamadores viejos (`open_box`, `update_box_metadata`, `_push_box_closure_to_central_cash` linea ~2563, y `_mes_de_tesoreria_cerrado` de treasury) siguen bloqueando cruzado entre empresas. Slice propio: pasarlos a la version por empresa.
+- Modulo de avisos (propuesta comercial ya enviada): el punto de insercion esta comentado en `reject_box_cash`.
+- `token_alta` para las altas de treasury (PagoProveedor, MovimientoBancario, boveda): sigue abierto, y con las features nuevas de treasury hay MAS flujos de alta que cuando se anoto.
+- 22 movimientos de caja duplicados en produccion sin anular (se hacen por UI) y 2 deudas a revisar a mano (OSSOLA 443, LA CANADA 30).
