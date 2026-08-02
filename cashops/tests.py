@@ -64,6 +64,7 @@ from .services import (
     transfer_between_branches,
     register_general_sale,
     update_closed_box_movement,
+    update_declared_closing_cash,
     validate_box_cash,
 )
 
@@ -5170,3 +5171,170 @@ class ReversionValidacionTests(CashopsTestCase):
         self.client.force_login(self.operator)
         page = self.client.get(reverse("cashops:box_tracking"))
         self.assertNotContains(page, undo_url)
+
+
+class CorreccionDeclaradoTests(CashopsTestCase):
+    """Corregir el efectivo declarado de un cierre pendiente: rehace la
+    matematica del cierre (ajuste incluido) sin mover plata en tesoreria; el
+    push a la boveda llega recien al validar y lleva el monto corregido."""
+
+    def _caja_pendiente(self, *, fisico="155.00", justificacion=""):
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("100.00"),
+            actor=self.operator,
+        )
+        register_cash_income(
+            caja=caja,
+            monto=Decimal("50.00"),
+            categoria="Mostrador",
+            observacion="",
+            actor=self.operator,
+        )
+        close_box(
+            caja=caja,
+            saldo_fisico=Decimal(fisico),
+            justificacion=justificacion,
+            cerrado_por=self.operator,
+            actor=self.operator,
+        )
+        caja.refresh_from_db()
+        return caja
+
+    def test_corrige_declarado_recalcula_diferencia_y_ajuste(self):
+        # esperado 150, declarado 155 -> ajuste viejo de +5
+        caja = self._caja_pendiente(fisico="155.00")
+        ajuste_viejo = caja.cierre.ajuste_movimiento
+        self.assertIsNotNone(ajuste_viejo)
+
+        update_declared_closing_cash(
+            caja=caja,
+            saldo_fisico=Decimal("150.00"),
+            motivo="Se conto dos veces un fajo de 5",
+            actor=self.admin,
+        )
+
+        caja.refresh_from_db()
+        cierre = caja.cierre
+        self.assertEqual(cierre.saldo_fisico, Decimal("150.00"))
+        self.assertEqual(cierre.saldo_esperado, Decimal("150.00"))
+        self.assertEqual(cierre.diferencia, Decimal("0.00"))
+        self.assertEqual(cierre.estado, CierreCaja.Estado.AUTO)
+        self.assertIsNone(cierre.ajuste_movimiento)
+
+        ajuste_viejo.refresh_from_db()
+        self.assertEqual(ajuste_viejo.estado, MovimientoCaja.Estado.ANULADO)
+        self.assertEqual(caja.saldo_esperado, Decimal("150.00"))
+
+        evento = CajaValidacion.objects.get(caja=caja, accion=CajaValidacion.Accion.CORRECCION)
+        self.assertIn("155.00", evento.motivo)
+        self.assertIn("150.00", evento.motivo)
+        self.assertIn("Se conto dos veces", evento.motivo)
+
+    def test_validar_despues_empuja_el_monto_corregido(self):
+        from treasury.models import MovimientoCajaCentral
+
+        caja = self._caja_pendiente(fisico="155.00")
+        update_declared_closing_cash(
+            caja=caja,
+            saldo_fisico=Decimal("150.00"),
+            motivo="Conteo corregido",
+            actor=self.admin,
+        )
+        caja.refresh_from_db()
+        validate_box_cash(caja=caja, actor=self.admin)
+
+        empujes = MovimientoCajaCentral.objects.filter(caja_cierre=caja, estado="REGISTRADO")
+        self.assertEqual(empujes.count(), 1)
+        self.assertEqual(empujes.first().monto, Decimal("150.00"))
+
+    def test_bloqueada_en_caja_validada_apunta_a_revertir(self):
+        caja = self._caja_pendiente(fisico="150.00")
+        validate_box_cash(caja=caja, actor=self.admin)
+        caja.refresh_from_db()
+
+        with self.assertRaises(ValidationError) as ctx:
+            update_declared_closing_cash(
+                caja=caja,
+                saldo_fisico=Decimal("140.00"),
+                motivo="Tarde",
+                actor=self.admin,
+            )
+        self.assertIn("revertir", str(ctx.exception).lower())
+
+    def test_requiere_permiso_y_motivo(self):
+        caja = self._caja_pendiente()
+        with self.assertRaises(PermissionDenied):
+            update_declared_closing_cash(
+                caja=caja,
+                saldo_fisico=Decimal("150.00"),
+                motivo="Sin permiso",
+                actor=self.operator,
+            )
+        with self.assertRaises(ValidationError):
+            update_declared_closing_cash(
+                caja=caja,
+                saldo_fisico=Decimal("150.00"),
+                motivo="   ",
+                actor=self.admin,
+            )
+
+    def test_diferencia_grave_requiere_justificacion_y_maneja_alerta(self):
+        caja = self._caja_pendiente(fisico="150.00")
+        cierre = caja.cierre
+
+        with self.assertRaises(ValidationError):
+            update_declared_closing_cash(
+                caja=caja,
+                saldo_fisico=Decimal("200000.00"),
+                motivo="Aparecio un sobre sin contar",
+                actor=self.admin,
+            )
+
+        update_declared_closing_cash(
+            caja=caja,
+            saldo_fisico=Decimal("200000.00"),
+            justificacion="Sobre de la venta del mediodia sin contar",
+            motivo="Aparecio un sobre sin contar",
+            actor=self.admin,
+        )
+        cierre.refresh_from_db()
+        self.assertEqual(cierre.estado, CierreCaja.Estado.JUSTIFICADO)
+        alerta = AlertaOperativa.objects.get(
+            tipo=AlertaOperativa.Tipo.DIFERENCIA_GRAVE, cierre=cierre
+        )
+        self.assertFalse(alerta.resuelta)
+
+        # Corregir de vuelta a un valor sin diferencia resuelve la alerta.
+        update_declared_closing_cash(
+            caja=caja,
+            saldo_fisico=Decimal("150.00"),
+            motivo="El sobre era de otra caja",
+            actor=self.admin,
+        )
+        alerta.refresh_from_db()
+        self.assertTrue(alerta.resuelta)
+        cierre.refresh_from_db()
+        self.assertEqual(cierre.diferencia, Decimal("0.00"))
+
+    def test_view_flow_desde_la_cola(self):
+        caja = self._caja_pendiente(fisico="155.00")
+        self.client.force_login(self.admin)
+        url = reverse("cashops:box_declared_cash_edit", args=[caja.pk])
+
+        queue = self.client.get(reverse("cashops:box_validation_queue"))
+        self.assertContains(queue, "Corregir declarado")
+
+        get_response = self.client.get(url)
+        self.assertEqual(get_response.status_code, 200)
+
+        response = self.client.post(
+            url,
+            {"saldo_fisico": "150.00", "justificacion": "", "motivo": "Conteo corregido"},
+        )
+        self.assertEqual(response.status_code, 302)
+        caja.refresh_from_db()
+        self.assertEqual(caja.cierre.saldo_fisico, Decimal("150.00"))

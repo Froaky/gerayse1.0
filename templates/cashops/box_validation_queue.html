@@ -75,6 +75,9 @@
               <button class="button" type="submit">Validar</button>
             </form>
             <a class="button-secondary" href="{{ row.reject_url }}">Rechazar</a>
+            {% if can_fix_declared %}
+              <a class="button-secondary" href="{{ row.fix_declared_url }}">Corregir declarado</a>
+            {% endif %}
             <a class="button-secondary" href="{{ row.detail_url }}">Ver detalle</a>
           </div>
         </article>

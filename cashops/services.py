@@ -2877,3 +2877,105 @@ def revert_box_cash_validation(*, caja: Caja, motivo: str, actor=None) -> Caja:
     )
     resync_operational_control_for_caja(caja)
     return caja
+
+
+@transaction.atomic
+def update_declared_closing_cash(*, caja: Caja, saldo_fisico: Decimal, justificacion: str = "", motivo: str, actor=None) -> CierreCaja:
+    """Corrige el efectivo fisico declarado al cerrar una caja (US-03).
+
+    Es para el error de conteo: los movimientos estan bien, lo que esta mal es
+    el numero que se declaro al cerrar. Solo sobre cajas cerradas PENDIENTES o
+    RECHAZADAS: nunca sobre una validada, porque ese declarado ya se empujo a
+    la boveda (para eso esta revert_box_cash_validation). Rehace la matematica
+    del cierre igual que close_box: anula el ajuste de cierre viejo (auditado),
+    recalcula la diferencia contra el esperado vigente y genera el ajuste o la
+    justificacion que corresponda. No mueve plata en tesoreria: el push llega
+    recien al validar, y va a llevar el monto corregido.
+    """
+    _require_actor(actor)
+    ensure_closed_box_correction(actor)
+    motivo = (motivo or "").strip()
+    if not motivo:
+        raise ValidationError({"motivo": "El motivo de la corrección es obligatorio."})
+    caja = Caja.objects.select_for_update().select_related("sucursal", "turno", "usuario").get(pk=caja.pk)
+    if caja.estado != Caja.Estado.CERRADA:
+        raise ValidationError({"caja": "Solo se puede corregir el efectivo declarado de una caja cerrada."})
+    if caja.validacion_estado == Caja.ValidacionEstado.VALIDADA:
+        raise ValidationError(
+            {"caja": "La caja ya tiene el efectivo validado. Primero hay que revertir la validación."}
+        )
+    if caja.validacion_estado not in Caja.VALIDACION_BLOQUEA_TOTALES:
+        raise ValidationError({"caja": "La caja no está pendiente de validación."})
+    cierre = CierreCaja.objects.select_for_update().filter(caja=caja).first()
+    if cierre is None:
+        raise ValidationError({"caja": "La caja no tiene un cierre para corregir."})
+
+    declarado_anterior = cierre.saldo_fisico
+
+    # Misma matematica que close_box: primero se anula el ajuste viejo (que
+    # absorbia la diferencia del declarado anterior), despues se recalcula.
+    _annul_closing_adjustment(cierre, motivo=f"Corrección del efectivo declarado: {motivo}", actor=actor)
+
+    saldo_esperado = caja.saldo_esperado
+    diferencia = saldo_fisico - saldo_esperado
+    abs_difference = abs(diferencia)
+
+    if abs_difference > CLOSING_DIFF_THRESHOLD and not justificacion.strip():
+        raise ValidationError({"justificacion": "La diferencia supera 10.000 y requiere justificacion."})
+
+    ajuste_movimiento = None
+    if diferencia != 0 and abs_difference <= CLOSING_DIFF_THRESHOLD:
+        ajuste_movimiento = _create_movement(
+            caja=caja,
+            tipo=MovimientoCaja.Tipo.AJUSTE_CIERRE,
+            sentido=MovimientoCaja.Sentido.INGRESO if diferencia > 0 else MovimientoCaja.Sentido.EGRESO,
+            monto=abs_difference,
+            categoria="CIERRE",
+            observacion="Ajuste de cierre automatico (declarado corregido)",
+            creado_por=actor,
+        )
+
+    cierre.saldo_esperado = saldo_esperado
+    cierre.saldo_fisico = saldo_fisico
+    cierre.diferencia = diferencia
+    cierre.estado = (
+        CierreCaja.Estado.JUSTIFICADO if abs_difference > CLOSING_DIFF_THRESHOLD else CierreCaja.Estado.AUTO
+    )
+    cierre.ajuste_movimiento = ajuste_movimiento
+    cierre.save(update_fields=["saldo_esperado", "saldo_fisico", "diferencia", "estado", "ajuste_movimiento"])
+
+    if abs_difference > CLOSING_DIFF_THRESHOLD and justificacion.strip():
+        Justificacion.objects.update_or_create(
+            cierre=cierre,
+            defaults={"motivo": justificacion.strip(), "creado_por": actor},
+        )
+        _upsert_alert(
+            dedupe_key=_build_closing_alert_key(cierre=cierre),
+            tipo=AlertaOperativa.Tipo.DIFERENCIA_GRAVE,
+            cierre=cierre,
+            caja=caja,
+            turno=caja.turno,
+            sucursal=caja.sucursal,
+            usuario=caja.usuario,
+            rubro_operativo=None,
+            periodo_fecha=caja.fecha_operativa,
+            mensaje=f"Diferencia grave detectada en caja {caja.id}: {diferencia}.",
+            resuelta=False,
+        )
+    else:
+        AlertaOperativa.objects.filter(
+            tipo=AlertaOperativa.Tipo.DIFERENCIA_GRAVE,
+            cierre=cierre,
+            resuelta=False,
+        ).update(resuelta=True)
+
+    # Bitacora: el valor anterior y el nuevo quedan a la vista de quien valida.
+    CajaValidacion.objects.create(
+        caja=caja,
+        accion=CajaValidacion.Accion.CORRECCION,
+        motivo=f"Efectivo declarado corregido de ${declarado_anterior} a ${saldo_fisico}. Motivo: {motivo}",
+        efectivo_esperado=saldo_fisico,
+        usuario=actor,
+    )
+    resync_operational_control_for_caja(caja)
+    return cierre

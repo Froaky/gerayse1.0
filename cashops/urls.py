@@ -34,6 +34,7 @@ urlpatterns = [
     path("cajas/<int:box_id>/validar/", views.box_validate_view, name="box_validate"),
     path("cajas/<int:box_id>/rechazar/", views.box_reject_view, name="box_reject"),
     path("cajas/<int:box_id>/validacion/revertir/", views.box_validation_undo_view, name="box_validation_undo"),
+    path("cajas/<int:box_id>/cierre/declarado/", views.box_declared_cash_edit_view, name="box_declared_cash_edit"),
     path("cajas/nueva/", views.open_box_view, name="box_open"),
     path("cajas/<int:box_id>/detalle/", views.box_detail_view, name="box_detail"),
     path("cajas/<int:box_id>/editar/", views.box_edit_view, name="box_edit"),

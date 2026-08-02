@@ -728,6 +728,9 @@ class CajaValidacion(models.Model):
         # La reversion deshace una validacion hecha por error: la validacion
         # original NO se borra, queda este evento nuevo al lado en la bitacora.
         REVERSION = "REVERSION", "Reversión de validación"
+        # Correccion del efectivo declarado en el cierre (error de conteo):
+        # el valor anterior y el nuevo quedan en el motivo del evento.
+        CORRECCION = "CORRECCION", "Corrección del efectivo declarado"
 
     caja = models.ForeignKey(Caja, on_delete=models.CASCADE, related_name="validaciones")
     accion = models.CharField(max_length=15, choices=Accion.choices)

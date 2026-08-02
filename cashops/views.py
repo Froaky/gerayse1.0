@@ -22,6 +22,7 @@ from .forms import (
     CajaAperturaForm,
     CajaValidacionRechazoForm,
     CajaValidacionReversionForm,
+    CierreDeclaradoForm,
     CanalIngresoForm,
     GastoComoDeudaForm,
     ClosedBoxMovementAnnulForm,
@@ -86,6 +87,7 @@ from .services import (
     register_expense,
     reject_box_cash,
     revert_box_cash_validation,
+    update_declared_closing_cash,
     resync_operational_control_for_rubro,
     transfer_between_boxes,
     transfer_between_branches,
@@ -2055,6 +2057,9 @@ def box_validation_queue(request):
         boxes = boxes.filter(sucursal=selected_sucursal)
     # Las acciones llevan el filtro para volver a la misma sucursal tras validar/rechazar.
     filtro_qs = f"?sucursal={selected_sucursal.pk}" if selected_sucursal else ""
+    # Corregir el declarado es del permiso de correccion, no del de validar.
+    can_fix_declared = can_correct_closed_box(request.user)
+    fix_next_query = urlencode({"next": _validation_queue_url(request)})
     rows = []
     for box in boxes:
         cierre = getattr(box, "cierre", None)
@@ -2070,6 +2075,7 @@ def box_validation_queue(request):
                 "detail_url": reverse("cashops:box_detail", args=[box.pk]),
                 "validate_url": reverse("cashops:box_validate", args=[box.pk]) + filtro_qs,
                 "reject_url": reverse("cashops:box_reject", args=[box.pk]) + filtro_qs,
+                "fix_declared_url": f"{reverse('cashops:box_declared_cash_edit', args=[box.pk])}?{fix_next_query}",
             }
         )
     return render(
@@ -2079,6 +2085,7 @@ def box_validation_queue(request):
             "rows": rows,
             "sucursales": sucursales_qs,
             "selected_sucursal": selected_sucursal,
+            "can_fix_declared": can_fix_declared,
         },
     )
 
@@ -2180,6 +2187,69 @@ def box_validation_undo_view(request, box_id: int):
             ),
             "form": form,
             "submit_label": "Revertir validación",
+            "form_action": form_action,
+            "back_url": back_url,
+            "next_url": back_url,
+            "disable_htmx": True,
+        },
+        status=400 if request.method == "POST" and not form.is_valid() else 200,
+    )
+
+
+def box_declared_cash_edit_view(request, box_id: int):
+    ensure_closed_box_correction(request.user)
+    box = get_object_or_404(
+        Caja.objects.select_related("sucursal", "turno", "usuario", "cierre"), pk=box_id
+    )
+    if box.sucursal.empresa_id not in _get_empresa_ids(request):
+        raise PermissionDenied("Esta caja no pertenece a las empresas seleccionadas.")
+    default_back_url = reverse("cashops:box_validation_queue")
+    back_url = _safe_next_url(request, default_back_url)
+    cierre = getattr(box, "cierre", None)
+    if box.estado != Caja.Estado.CERRADA or cierre is None:
+        messages.error(request, f"La caja #{box.pk} no tiene un cierre para corregir.")
+        return _hx_redirect(back_url) if _is_htmx(request) else redirect(back_url)
+    if box.validacion_estado == Caja.ValidacionEstado.VALIDADA:
+        messages.error(
+            request,
+            f"La caja #{box.pk} ya tiene el efectivo validado. Primero hay que revertir la validación.",
+        )
+        return _hx_redirect(back_url) if _is_htmx(request) else redirect(back_url)
+    if box.validacion_estado not in Caja.VALIDACION_BLOQUEA_TOTALES:
+        messages.error(request, f"La caja #{box.pk} no está pendiente de validación.")
+        return _hx_redirect(back_url) if _is_htmx(request) else redirect(back_url)
+    form = CierreDeclaradoForm(request.POST or None, initial={"saldo_fisico": cierre.saldo_fisico})
+    form_action = f"{reverse('cashops:box_declared_cash_edit', args=[box.pk])}?{urlencode({'next': back_url})}"
+    if request.method == "POST" and form.is_valid():
+        try:
+            update_declared_closing_cash(
+                caja=box,
+                saldo_fisico=form.cleaned_data["saldo_fisico"],
+                justificacion=form.cleaned_data.get("justificacion", ""),
+                motivo=form.cleaned_data["motivo"],
+                actor=request.user,
+            )
+        except ValidationError as exc:
+            _handle_operation_error(form, exc, "No se pudo corregir el efectivo declarado.")
+        else:
+            messages.success(
+                request,
+                f"Caja #{box.pk}: efectivo declarado corregido a ${form.cleaned_data['saldo_fisico']}. "
+                "La diferencia se recalculó; no se movió plata.",
+            )
+            return _hx_redirect(back_url) if _is_htmx(request) else redirect(back_url)
+    return _render_form(
+        request,
+        "cashops/form_page.html",
+        "cashops/partials/form_card.html",
+        {
+            "title": f"Corregir efectivo declarado de caja #{box.pk}",
+            "subtitle": (
+                f"Declarado actual: ${cierre.saldo_fisico} · Esperado por sistema: ${cierre.saldo_esperado}. "
+                "La corrección recalcula la diferencia del cierre y queda auditada; la plata se mueve recién al validar."
+            ),
+            "form": form,
+            "submit_label": "Corregir declarado",
             "form_action": form_action,
             "back_url": back_url,
             "next_url": back_url,

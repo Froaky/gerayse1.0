@@ -495,6 +495,29 @@ class CajaValidacionReversionForm(forms.Form):
             field.widget.attrs.setdefault("class", "input textarea")
 
 
+class CierreDeclaradoForm(forms.Form):
+    saldo_fisico = forms.DecimalField(
+        label="Efectivo declarado corregido",
+        max_digits=14,
+        decimal_places=2,
+    )
+    justificacion = forms.CharField(
+        label="Justificación (solo si la diferencia supera 10.000)",
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 2}),
+    )
+    motivo = forms.CharField(
+        label="Motivo de la corrección",
+        widget=forms.Textarea(attrs={"rows": 3, "placeholder": "Explicá qué se contó o declaró mal"}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["saldo_fisico"].widget.attrs.setdefault("class", "input")
+        self.fields["justificacion"].widget.attrs.setdefault("class", "input textarea")
+        self.fields["motivo"].widget.attrs.setdefault("class", "input textarea")
+
+
 class VentaGeneralForm(AltaIdempotenteForm):
     tipo_venta = forms.ChoiceField(choices=[], label="Medio de ingreso")
     rubro = forms.ModelChoiceField(
