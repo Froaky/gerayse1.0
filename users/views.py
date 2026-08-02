@@ -32,6 +32,10 @@ PERMISSION_MODULE_META = {
         "label": "Validación de efectivo",
         "scope": "Ver cajas pendientes de validación y validar o rechazar el efectivo entregado.",
     },
+    PermissionModule.CASHOPS_OPEN_FIX: {
+        "label": "Corrección de movimientos en caja abierta",
+        "scope": "Editar monto, rubro u observación de un movimiento de una caja abierta, con motivo y auditoría, sin eliminarlo y recargarlo. No abre las cajas cerradas.",
+    },
     PermissionModule.CASHOPS_VALIDATE_UNDO: {
         "label": "Revertir validación de efectivo",
         "scope": "Deshacer la validación de una caja ya validada: la plata vuelve a salir de la bóveda y la caja queda otra vez pendiente. Va aparte de validar porque revertir mueve plata.",

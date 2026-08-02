@@ -6,6 +6,11 @@ from django.db import models
 class PermissionModule(models.TextChoices):
     CASHOPS = "cashops", "Caja operativa"
     CASHOPS_CLOSED_FIX = "cashops_closed_fix", "Corrección de cajas cerradas"
+    # Permiso por accion (asignable/removible): corregir movimientos (monto,
+    # rubro, observacion) de una caja ABIERTA sin tener que eliminarlos y
+    # recargarlos. Separado de la correccion de cajas cerradas para poder
+    # darselo a un cajero de confianza sin abrirle las cajas contabilizadas.
+    CASHOPS_OPEN_FIX = "cashops_open_fix", "Corrección de movimientos en caja abierta"
     # EP-13: permiso por accion. Habilita validar o rechazar el efectivo de
     # cajas pendientes; no otorga ningun otro acceso de caja.
     CASHOPS_VALIDATE = "cashops_validate", "Validación de efectivo"
@@ -174,6 +179,9 @@ class User(AbstractUser):
 
     def can_revert_validacion_efectivo(self) -> bool:
         return self.has_module_permission(PermissionModule.CASHOPS_VALIDATE_UNDO, "write")
+
+    def can_fix_open_box_movements(self) -> bool:
+        return self.has_module_permission(PermissionModule.CASHOPS_OPEN_FIX, "write")
 
     def can_load_debt_on_closed_box(self) -> bool:
         return self.has_module_permission(PermissionModule.CASHOPS_DEBT_CLOSED, "write")

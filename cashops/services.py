@@ -30,6 +30,7 @@ from .permissions import (
     ensure_cash_validation,
     ensure_cash_validation_undo,
     ensure_closed_box_correction,
+    ensure_correct_movement_in_box,
     ensure_delete_movement_in_box,
     is_cashops_admin,
 )
@@ -1941,17 +1942,20 @@ def transfer_between_branches(
     return transferencia
 
 
-def is_closed_box_movement_correctable(movement: MovimientoCaja) -> bool:
+def is_box_movement_correctable(movement: MovimientoCaja) -> bool:
+    """Un movimiento se puede corregir (monto/rubro/observacion) si su caja no
+    esta anulada, sigue REGISTRADO y no es pieza estructural (apertura, ajuste
+    de cierre, patas de transferencia). Aplica a cajas ABIERTAS y CERRADAS: el
+    permiso que corresponde a cada estado lo decide can_correct_movement_in_box."""
     return (
-        movement.caja.estado == Caja.Estado.CERRADA
+        movement.caja.estado != Caja.Estado.ANULADA
         and movement.estado == MovimientoCaja.Estado.REGISTRADO
         and movement.tipo not in CLOSED_BOX_CORRECTION_BLOCKED_TYPES
     )
 
 
-def _validate_closed_box_movement_for_correction(movement: MovimientoCaja, *, actor) -> MovimientoCaja:
+def _validate_box_movement_for_correction(movement: MovimientoCaja, *, actor) -> MovimientoCaja:
     _require_actor(actor)
-    ensure_closed_box_correction(actor)
     movement = (
         # of=("self","caja"): `rubro_operativo` es nullable, asi que su
         # select_related entra como LEFT OUTER JOIN y Postgres rechaza un FOR
@@ -1962,8 +1966,11 @@ def _validate_closed_box_movement_for_correction(movement: MovimientoCaja, *, ac
         .select_related("caja", "caja__turno", "caja__sucursal", "caja__usuario", "rubro_operativo")
         .get(pk=movement.pk)
     )
-    if movement.caja.estado != Caja.Estado.CERRADA:
-        raise ValidationError({"caja": "Solo se pueden corregir movimientos de cajas cerradas."})
+    # El permiso se decide sobre el estado YA bloqueado: si la caja se cerro
+    # mientras esperabamos el lock, rigen las reglas de caja cerrada.
+    ensure_correct_movement_in_box(actor, movement.caja)
+    if movement.caja.estado == Caja.Estado.ANULADA:
+        raise ValidationError({"caja": "La caja está anulada; no se pueden corregir sus movimientos."})
     if movement.estado != MovimientoCaja.Estado.REGISTRADO:
         raise ValidationError({"movimiento": "El movimiento ya fue anulado."})
     if movement.tipo in CLOSED_BOX_CORRECTION_BLOCKED_TYPES:
@@ -2294,7 +2301,7 @@ def annul_box(
 
 
 @transaction.atomic
-def update_closed_box_movement(
+def update_box_movement(
     *,
     movement: MovimientoCaja,
     monto: Decimal,
@@ -2304,7 +2311,12 @@ def update_closed_box_movement(
     motivo: str,
     actor=None,
 ) -> MovimientoCaja:
-    movement = _validate_closed_box_movement_for_correction(movement, actor=actor)
+    """Corrige monto/rubro/observacion de un movimiento, en cajas ABIERTAS o
+    CERRADAS (US-01). El permiso depende del estado de la caja (ver
+    can_correct_movement_in_box). Todo queda en MovimientoCajaCorreccion; en
+    cerradas se recalcula el cierre, en abiertas el saldo esperado se corrige
+    solo (es una property) y se resincroniza el control operativo."""
+    movement = _validate_box_movement_for_correction(movement, actor=actor)
     motivo = (motivo or "").strip()
     if not motivo:
         raise ValidationError({"motivo": "El motivo de la corrección es obligatorio."})
@@ -2343,8 +2355,19 @@ def update_closed_box_movement(
         rubro_operativo_nuevo=movement.rubro_operativo,
         creado_por=actor,
     )
-    _recalculate_closed_box_after_correction(movement.caja, actor=actor, motivo=motivo)
+    caja = movement.caja
+    if caja.estado == Caja.Estado.CERRADA and hasattr(caja, "cierre"):
+        _recalculate_closed_box_after_correction(caja, actor=actor, motivo=motivo)
+    else:
+        # Caja abierta: saldo_esperado es una property que ya lee el monto
+        # nuevo; solo hay que resincronizar snapshots y alertas de rubros.
+        resync_operational_control_for_caja(caja)
     return movement
+
+
+# Alias historico: el circuito nacio para cajas cerradas y los llamadores
+# viejos conservan el nombre; hoy corrige en abiertas y cerradas.
+update_closed_box_movement = update_box_movement
 
 
 @transaction.atomic

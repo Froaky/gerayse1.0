@@ -40,6 +40,30 @@ def ensure_closed_box_correction(user) -> None:
         raise PermissionDenied("No tenes permisos para corregir cajas cerradas.")
 
 
+def can_correct_open_box_movement(user) -> bool:
+    return _has_module_permission(user, PermissionModule.CASHOPS_OPEN_FIX, "write")
+
+
+def can_correct_movement_in_box(user, box) -> bool:
+    # Caja cerrada: rige el permiso de correccion de cajas cerradas de siempre.
+    # Caja abierta: permiso propio, asignable a un cajero de confianza sin
+    # regalarle la correccion de cajas ya cerradas y contabilizadas. Quien
+    # puede corregir cerradas tambien puede corregir abiertas (es menos
+    # riesgoso: nadie valido nada todavia).
+    if box is None:
+        return False
+    if box.estado == box.Estado.CERRADA:
+        return can_correct_closed_box(user)
+    if box.estado == box.Estado.ABIERTA:
+        return can_correct_open_box_movement(user) or can_correct_closed_box(user)
+    return False
+
+
+def ensure_correct_movement_in_box(user, box) -> None:
+    if not can_correct_movement_in_box(user, box):
+        raise PermissionDenied("No tenés permiso para corregir movimientos de esta caja.")
+
+
 def can_validate_cash(user) -> bool:
     return _has_module_permission(user, PermissionModule.CASHOPS_VALIDATE, "write")
 

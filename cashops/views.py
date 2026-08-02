@@ -42,6 +42,7 @@ from .forms import (
 from .models import AlertaOperativa, CajaCorreccion, CajaValidacion, CanalIngreso, Caja, CierreCaja, Empresa, LimiteRubroOperativo, MovimientoCaja, MovimientoCajaCorreccion, RubroOperativo, Sucursal, Turno
 from .permissions import (
     can_correct_closed_box,
+    can_correct_movement_in_box,
     can_delete_movement_in_box,
     can_load_debt_on_closed_box,
     can_register_cash_income,
@@ -51,6 +52,7 @@ from .permissions import (
     ensure_cash_validation,
     ensure_cash_validation_undo,
     ensure_cashops_read,
+    ensure_correct_movement_in_box,
     ensure_cashops_write,
     ensure_closed_box_correction,
     ensure_config_read,
@@ -79,7 +81,7 @@ from .services import (
     get_cash_movement_type_label,
     get_income_channel_map,
     is_box_movement_deletable,
-    is_closed_box_movement_correctable,
+    is_box_movement_correctable,
     open_box,
     register_box_expense_debt,
     register_cash_income,
@@ -92,7 +94,7 @@ from .services import (
     transfer_between_boxes,
     transfer_between_branches,
     update_box_metadata,
-    update_closed_box_movement,
+    update_box_movement,
     validate_box_cash,
 )
 def _boxes_for_request(request):
@@ -648,14 +650,17 @@ def box_detail_view(request, box_id: int):
     latest_event = timeline[0] if timeline else None
     channel_map = get_income_channel_map()
     can_fix_closed_box = can_correct_closed_box(request.user)
+    # Editar por movimiento: en cajas cerradas rige el permiso de correccion
+    # de cerradas; en abiertas, el permiso propio de caja abierta (US-01).
+    can_fix_movements = can_correct_movement_in_box(request.user, box)
     can_delete_here = can_delete_movement_in_box(request.user, box)
     return_to = request.get_full_path()
     correction_query = urlencode({"next": return_to})
     for movement in movements:
         movement.tipo_label = get_cash_movement_type_label(movement.tipo, channel_map)
-        movement.can_fix_closed_box = can_fix_closed_box and is_closed_box_movement_correctable(movement)
+        movement.can_edit = can_fix_movements and is_box_movement_correctable(movement)
         movement.can_delete = can_delete_here and is_box_movement_deletable(movement)
-        if movement.can_fix_closed_box:
+        if movement.can_edit:
             movement.edit_url = f"{reverse('cashops:closed_box_movement_edit', args=[movement.pk])}?{correction_query}"
         if movement.can_delete:
             movement.delete_url = f"{reverse('cashops:box_movement_delete', args=[movement.pk])}?{correction_query}"
@@ -701,11 +706,13 @@ def box_detail_view(request, box_id: int):
 
 
 def _get_correctable_movement_for_request(request, movement_id: int) -> MovimientoCaja:
-    ensure_closed_box_correction(request.user)
     movement = get_object_or_404(
         MovimientoCaja.objects.select_related("caja", "caja__sucursal", "caja__turno", "caja__usuario", "rubro_operativo"),
         pk=movement_id,
     )
+    # El permiso depende del estado de la caja: cerrada exige correccion de
+    # cerradas; abierta acepta ademas el permiso propio de caja abierta.
+    ensure_correct_movement_in_box(request.user, movement.caja)
     _get_box_for_request(request, movement.caja_id)
     return movement
 
@@ -721,7 +728,7 @@ def closed_box_movement_edit_view(request, movement_id: int):
     form_action = f"{reverse('cashops:closed_box_movement_edit', args=[movement.id])}?{urlencode({'next': back_url})}"
     if request.method == "POST" and form.is_valid():
         try:
-            update_closed_box_movement(
+            update_box_movement(
                 movement=movement,
                 monto=form.cleaned_data["monto"],
                 categoria=form.cleaned_data["categoria"],
@@ -743,7 +750,7 @@ def closed_box_movement_edit_view(request, movement_id: int):
         "cashops/partials/form_card.html",
         {
             "title": f"Editar movimiento #{movement.id}",
-            "subtitle": "Seguro que queres editar este movimiento de una caja cerrada? Se guardara el motivo y se recalculara el cierre.",
+            "subtitle": "La corrección queda auditada con su motivo y los saldos de la caja se recalculan solos.",
             "form": form,
             "submit_label": "Confirmar edicion",
             "form_action": form_action,

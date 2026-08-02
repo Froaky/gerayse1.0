@@ -296,7 +296,7 @@ class ClosedBoxMovementEditForm(forms.Form):
     )
     motivo = forms.CharField(
         label="Motivo de corrección",
-        widget=forms.Textarea(attrs={"placeholder": "Explica por qué se corrige esta caja cerrada"}),
+        widget=forms.Textarea(attrs={"placeholder": "Explicá por qué se corrige este movimiento"}),
     )
 
     def __init__(self, *args, movement=None, **kwargs):

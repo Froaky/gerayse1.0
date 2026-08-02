@@ -63,6 +63,8 @@ from .services import (
     transfer_between_boxes,
     transfer_between_branches,
     register_general_sale,
+    is_box_movement_correctable,
+    update_box_movement,
     update_closed_box_movement,
     update_declared_closing_cash,
     validate_box_cash,
@@ -5338,3 +5340,168 @@ class CorreccionDeclaradoTests(CashopsTestCase):
         self.assertEqual(response.status_code, 302)
         caja.refresh_from_db()
         self.assertEqual(caja.cierre.saldo_fisico, Decimal("150.00"))
+
+
+class EdicionMovimientoCajaAbiertaTests(CashopsTestCase):
+    """US-01: corregir movimientos de una caja ABIERTA con el permiso propio
+    (cashops_open_fix), sin eliminarlos y recargarlos. Las cajas cerradas
+    siguen rigiendose por el permiso de correccion de cerradas."""
+
+    def _grant_open_fix(self, user):
+        return UserPermission.objects.create(
+            user=user,
+            module=PermissionModule.CASHOPS_OPEN_FIX,
+            can_read=True,
+            can_write=True,
+        )
+
+    def _open_box_with_expense(self):
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("100.00"),
+            actor=self.operator,
+        )
+        gasto = register_expense(
+            caja=caja,
+            monto=Decimal("50.00"),
+            rubro_operativo=self.rubro_insumos,
+            categoria="Insumos",
+            observacion="Compra de insumos",
+            actor=self.operator,
+        )
+        return caja, gasto
+
+    def test_cashier_without_permission_cannot_edit(self):
+        caja, gasto = self._open_box_with_expense()
+        with self.assertRaises(PermissionDenied):
+            update_box_movement(
+                movement=gasto,
+                monto=Decimal("40.00"),
+                rubro_operativo=self.rubro_insumos,
+                motivo="Estaba mal el ticket",
+                actor=self.operator,
+            )
+
+    def test_cashier_with_open_fix_edits_own_open_box_movement(self):
+        caja, gasto = self._open_box_with_expense()
+        self._grant_open_fix(self.operator)
+        saldo_antes = caja.saldo_esperado
+
+        update_box_movement(
+            movement=gasto,
+            monto=Decimal("40.00"),
+            rubro_operativo=self.rubro_insumos,
+            observacion="Compra de insumos",
+            motivo="El ticket decia 40, no 50",
+            actor=self.operator,
+        )
+
+        gasto.refresh_from_db()
+        caja.refresh_from_db()
+        self.assertEqual(gasto.monto, Decimal("40.00"))
+        # Un gasto que baja de 50 a 40 devuelve 10 al saldo esperado.
+        self.assertEqual(caja.saldo_esperado, saldo_antes + Decimal("10.00"))
+        correccion = MovimientoCajaCorreccion.objects.get(
+            movimiento=gasto, accion=MovimientoCajaCorreccion.Accion.EDICION
+        )
+        self.assertEqual(correccion.monto_anterior, Decimal("50.00"))
+        self.assertEqual(correccion.monto_nuevo, Decimal("40.00"))
+
+    def test_open_fix_does_not_open_closed_boxes(self):
+        caja, gasto = self._open_box_with_expense()
+        close_box(caja=caja, saldo_fisico=Decimal("50.00"), cerrado_por=self.operator, actor=self.operator)
+        self._grant_open_fix(self.operator)
+        with self.assertRaises(PermissionDenied):
+            update_box_movement(
+                movement=gasto,
+                monto=Decimal("40.00"),
+                rubro_operativo=self.rubro_insumos,
+                motivo="Tarde: la caja ya cerro",
+                actor=self.operator,
+            )
+
+    def test_closed_fix_holder_can_edit_open_box_movement(self):
+        caja, gasto = self._open_box_with_expense()
+        self._grant_closed_box_fix(self.operator)
+        update_box_movement(
+            movement=gasto,
+            monto=Decimal("45.00"),
+            rubro_operativo=self.rubro_insumos,
+            motivo="Corregir abierta con permiso de cerradas",
+            actor=self.operator,
+        )
+        gasto.refresh_from_db()
+        self.assertEqual(gasto.monto, Decimal("45.00"))
+
+    def test_structural_movements_stay_blocked_in_open_boxes(self):
+        caja, _ = self._open_box_with_expense()
+        self._grant_open_fix(self.operator)
+        apertura = caja.movimientos.get(tipo=MovimientoCaja.Tipo.APERTURA)
+        self.assertFalse(is_box_movement_correctable(apertura))
+        with self.assertRaises(ValidationError):
+            update_box_movement(
+                movement=apertura,
+                monto=Decimal("99.00"),
+                motivo="No deberia poder",
+                actor=self.operator,
+            )
+
+    def test_edit_then_close_keeps_closing_math_right(self):
+        caja, gasto = self._open_box_with_expense()
+        self._grant_open_fix(self.operator)
+        update_box_movement(
+            movement=gasto,
+            monto=Decimal("40.00"),
+            rubro_operativo=self.rubro_insumos,
+            motivo="Ticket corregido",
+            actor=self.operator,
+        )
+        caja.refresh_from_db()
+        # esperado: 100 inicial - 40 gasto = 60
+        cierre = close_box(caja=caja, saldo_fisico=Decimal("60.00"), cerrado_por=self.operator, actor=self.operator)
+        self.assertEqual(cierre.saldo_esperado, Decimal("60.00"))
+        self.assertEqual(cierre.diferencia, Decimal("0.00"))
+
+    def test_view_flow_for_cashier_on_own_open_box(self):
+        caja, gasto = self._open_box_with_expense()
+        url = reverse("cashops:closed_box_movement_edit", args=[gasto.pk])
+
+        # Sin permiso: ni el boton en el detalle ni la vista.
+        self.client.force_login(self.operator)
+        detail = self.client.get(reverse("cashops:box_detail", args=[caja.pk]))
+        self.assertNotContains(detail, url)
+        denied = self.client.get(url)
+        self.assertEqual(denied.status_code, 403)
+
+        # Con el permiso aparece el boton y el flujo completo funciona.
+        self._grant_open_fix(self.operator)
+        detail = self.client.get(reverse("cashops:box_detail", args=[caja.pk]))
+        self.assertContains(detail, url)
+
+        get_response = self.client.get(url)
+        self.assertEqual(get_response.status_code, 200)
+        response = self.client.post(
+            url,
+            {
+                "monto": "40.00",
+                "rubro_operativo": str(self.rubro_insumos.pk),
+                "categoria": "",
+                "observacion": "Compra de insumos",
+                "motivo": "El ticket decia 40",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        gasto.refresh_from_db()
+        self.assertEqual(gasto.monto, Decimal("40.00"))
+
+    def test_composition_section_stays_read_only(self):
+        caja, gasto = self._open_box_with_expense()
+        self._grant_open_fix(self.operator)
+        self.client.force_login(self.operator)
+        detail = self.client.get(reverse("cashops:box_detail", args=[caja.pk]))
+        contenido = detail.content.decode("utf-8")
+        composicion = contenido.split('id="ventas"')[1].split("Todos los movimientos")[0]
+        self.assertNotIn("Editar", composicion)
