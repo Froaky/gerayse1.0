@@ -725,6 +725,9 @@ class CajaValidacion(models.Model):
     class Accion(models.TextChoices):
         VALIDACION = "VALIDACION", "Validación"
         RECHAZO = "RECHAZO", "Rechazo"
+        # La reversion deshace una validacion hecha por error: la validacion
+        # original NO se borra, queda este evento nuevo al lado en la bitacora.
+        REVERSION = "REVERSION", "Reversión de validación"
 
     caja = models.ForeignKey(Caja, on_delete=models.CASCADE, related_name="validaciones")
     accion = models.CharField(max_length=15, choices=Accion.choices)

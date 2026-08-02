@@ -44,6 +44,18 @@ def can_validate_cash(user) -> bool:
     return _has_module_permission(user, PermissionModule.CASHOPS_VALIDATE, "write")
 
 
+def can_undo_cash_validation(user) -> bool:
+    # Permiso propio, separado de validar: revertir una validacion saca plata
+    # de la boveda, la misma responsabilidad por la que TREASURY_MOV_DELETE
+    # va aparte de escribir en tesoreria.
+    return _has_module_permission(user, PermissionModule.CASHOPS_VALIDATE_UNDO, "write")
+
+
+def ensure_cash_validation_undo(user) -> None:
+    if not can_undo_cash_validation(user):
+        raise PermissionDenied("No tenés permiso para revertir una validación de efectivo.")
+
+
 def can_load_debt_on_closed_box(user) -> bool:
     return _has_module_permission(user, PermissionModule.CASHOPS_DEBT_CLOSED, "write")
 

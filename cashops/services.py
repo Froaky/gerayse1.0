@@ -28,6 +28,7 @@ from .permissions import (
     can_assign_box_to_user,
     ensure_can_operate_box,
     ensure_cash_validation,
+    ensure_cash_validation_undo,
     ensure_closed_box_correction,
     ensure_delete_movement_in_box,
     is_cashops_admin,
@@ -2785,4 +2786,94 @@ def reject_box_cash(*, caja: Caja, motivo: str, actor=None) -> Caja:
     # Punto de extension del modulo de avisos: cuando exista, el aviso al
     # cajero ("Validacion de efectivo rechazada" + motivo textual) nace aca,
     # con el rechazo confirmado y la caja ya devuelta, en esta transaccion.
+    return caja
+
+
+@transaction.atomic
+def revert_box_cash_validation(*, caja: Caja, motivo: str, actor=None) -> Caja:
+    """Deshace la validacion del efectivo de una caja (EP-13 al reves).
+
+    Validar empuja el saldo fisico del cierre a la boveda de la empresa. Si la
+    validacion estuvo mal (se conto mal, se valido otra caja), la unica salida
+    era eliminar la caja entera. Revertir anula ese ingreso en la boveda
+    (auditado, nada se borra) y devuelve la caja a Pendiente de validacion:
+    desde ahi se puede corregir y revalidar, o eliminar la caja, en cualquier
+    orden y sin que la plata se mueva dos veces. El guard del push filtra por
+    estado REGISTRADO, asi que una revalidacion posterior vuelve a empujar el
+    monto vigente una sola vez; y la anulacion de caja tambien filtra por
+    REGISTRADO, asi que eliminar despues de revertir no descuenta de nuevo.
+    """
+    from django.apps import apps
+
+    _require_actor(actor)
+    ensure_cash_validation_undo(actor)
+    motivo = (motivo or "").strip()
+    if not motivo:
+        raise ValidationError({"motivo": "El motivo es obligatorio para revertir una validacion."})
+    caja = Caja.objects.select_for_update().select_related("sucursal", "turno", "usuario").get(pk=caja.pk)
+    if caja.estado != Caja.Estado.CERRADA or caja.validacion_estado != Caja.ValidacionEstado.VALIDADA:
+        raise ValidationError({"caja": "Solo se puede revertir una caja con el efectivo ya validado."})
+    if _treasury_month_is_closed_for_empresa(caja.fecha_operativa, caja.sucursal.empresa_id):
+        raise ValidationError(
+            {
+                "caja": (
+                    "El mes de tesoreria de esa caja ya esta cerrado: es una foto congelada "
+                    "y la plata de esa validacion quedo dentro del mes. No se puede revertir."
+                )
+            }
+        )
+
+    MovimientoCajaCentral = apps.get_model("treasury", "MovimientoCajaCentral")
+    empujes = list(
+        MovimientoCajaCentral.objects.select_for_update(of=("self",)).filter(
+            caja_cierre=caja,
+            tipo__in=["INGRESO_CAJA", "AJUSTE_NEGATIVO"],
+            estado="REGISTRADO",
+        )
+    )
+
+    # La boveda no puede quedar en negativo en silencio: si el efectivo de este
+    # cierre ya se uso (pagos, depositos), se corta aca con un mensaje claro.
+    delta = Decimal("0.00")
+    boveda = None
+    for movimiento in empujes:
+        boveda = movimiento.caja_central
+        if movimiento.tipo == "INGRESO_CAJA":
+            delta -= movimiento.monto
+        else:
+            delta += movimiento.monto
+    if boveda is not None and delta < 0 and boveda.saldo_actual + delta < 0:
+        raise ValidationError(
+            {
+                "caja": (
+                    "Ese efectivo ya se uso: revertir la validacion dejaria la boveda "
+                    f"{boveda.nombre} con saldo negativo. Revisa los movimientos de la "
+                    "boveda antes de revertir esta caja."
+                )
+            }
+        )
+
+    now = timezone.now()
+    for movimiento in empujes:
+        movimiento.estado = "ANULADO"
+        movimiento.motivo_anulacion = f"Reversión de validación caja #{caja.pk}: {motivo}"
+        movimiento.anulado_por = actor
+        movimiento.anulado_en = now
+        movimiento.full_clean()
+        movimiento.save(update_fields=["estado", "motivo_anulacion", "anulado_por", "anulado_en"])
+
+    cierre = getattr(caja, "cierre", None)
+    caja.validacion_estado = Caja.ValidacionEstado.PENDIENTE
+    caja.validada_por = None
+    caja.validada_en = None
+    caja.save(update_fields=["validacion_estado", "validada_por", "validada_en"])
+    # La validacion original queda en la bitacora; la reversion es un evento mas.
+    CajaValidacion.objects.create(
+        caja=caja,
+        accion=CajaValidacion.Accion.REVERSION,
+        motivo=motivo,
+        efectivo_esperado=cierre.saldo_fisico if cierre is not None else Decimal("0.00"),
+        usuario=actor,
+    )
+    resync_operational_control_for_caja(caja)
     return caja

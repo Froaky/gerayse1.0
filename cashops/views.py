@@ -21,6 +21,7 @@ from .forms import (
     BoxEditForm,
     CajaAperturaForm,
     CajaValidacionRechazoForm,
+    CajaValidacionReversionForm,
     CanalIngresoForm,
     GastoComoDeudaForm,
     ClosedBoxMovementAnnulForm,
@@ -43,9 +44,11 @@ from .permissions import (
     can_delete_movement_in_box,
     can_load_debt_on_closed_box,
     can_register_cash_income,
+    can_undo_cash_validation,
     can_validate_cash,
     ensure_cash_income,
     ensure_cash_validation,
+    ensure_cash_validation_undo,
     ensure_cashops_read,
     ensure_cashops_write,
     ensure_closed_box_correction,
@@ -82,6 +85,7 @@ from .services import (
     register_general_sale,
     register_expense,
     reject_box_cash,
+    revert_box_cash_validation,
     resync_operational_control_for_rubro,
     transfer_between_boxes,
     transfer_between_branches,
@@ -493,6 +497,7 @@ def box_tracking_view(request):
 
     rows = []
     can_fix_boxes = can_correct_closed_box(request.user)
+    can_undo_validation = can_undo_cash_validation(request.user)
     return_to = request.get_full_path()
     for box in boxes:
         movements = list(getattr(box, "prefetched_movements", []))
@@ -510,6 +515,12 @@ def box_tracking_view(request):
                 "can_edit_box": can_fix_boxes,
                 "edit_url": f"{reverse('cashops:box_edit', args=[box.pk])}?{box_action_query}",
                 "delete_url": f"{reverse('cashops:box_delete', args=[box.pk])}?{box_action_query}",
+                "can_undo_validation": (
+                    can_undo_validation
+                    and box.estado == Caja.Estado.CERRADA
+                    and box.validacion_estado == Caja.ValidacionEstado.VALIDADA
+                ),
+                "undo_validation_url": f"{reverse('cashops:box_validation_undo', args=[box.pk])}?{box_action_query}",
             }
         )
 
@@ -661,12 +672,20 @@ def box_detail_view(request, box_id: int):
             .first()
         )
 
+    can_undo_validation = (
+        can_undo_cash_validation(request.user)
+        and box.estado == Caja.Estado.CERRADA
+        and box.validacion_estado == Caja.ValidacionEstado.VALIDADA
+    )
+
     return render(
         request,
         "cashops/box_detail.html",
         {
             "box": box,
             "movements": movements,
+            "can_undo_validation": can_undo_validation,
+            "undo_validation_url": f"{reverse('cashops:box_validation_undo', args=[box.pk])}?{correction_query}",
             "sales_breakdown": sales_breakdown,
             "follow_up": follow_up,
             "last_rejection": last_rejection,
@@ -2117,4 +2136,54 @@ def box_reject_view(request, box_id: int):
             "form": form,
             "back_url": _validation_queue_url(request),
         },
+    )
+
+
+def box_validation_undo_view(request, box_id: int):
+    ensure_cash_validation_undo(request.user)
+    box = get_object_or_404(
+        Caja.objects.select_related("sucursal", "turno", "usuario", "cierre"), pk=box_id
+    )
+    if box.sucursal.empresa_id not in _get_empresa_ids(request):
+        raise PermissionDenied("Esta caja no pertenece a las empresas seleccionadas.")
+    default_back_url = reverse("cashops:box_tracking")
+    back_url = _safe_next_url(request, default_back_url)
+    if box.estado != Caja.Estado.CERRADA or box.validacion_estado != Caja.ValidacionEstado.VALIDADA:
+        messages.error(request, f"La caja #{box.pk} no tiene una validación para revertir.")
+        return _hx_redirect(back_url) if _is_htmx(request) else redirect(back_url)
+    form = CajaValidacionReversionForm(request.POST or None)
+    form_action = f"{reverse('cashops:box_validation_undo', args=[box.pk])}?{urlencode({'next': back_url})}"
+    if request.method == "POST" and form.is_valid():
+        try:
+            revert_box_cash_validation(caja=box, motivo=form.cleaned_data["motivo"], actor=request.user)
+        except ValidationError as exc:
+            _handle_operation_error(form, exc, "No se pudo revertir la validación.")
+        else:
+            messages.success(
+                request,
+                f"Caja #{box.pk}: validación revertida. La plata volvió a salir de la bóveda "
+                "y la caja quedó otra vez pendiente de validación.",
+            )
+            return _hx_redirect(back_url) if _is_htmx(request) else redirect(back_url)
+    cierre = getattr(box, "cierre", None)
+    monto = cierre.saldo_fisico if cierre is not None else Decimal("0.00")
+    return _render_form(
+        request,
+        "cashops/form_page.html",
+        "cashops/partials/form_card.html",
+        {
+            "title": f"Revertir validación de caja #{box.pk}",
+            "subtitle": (
+                f"El efectivo validado (${monto}) vuelve a salir de la bóveda y la caja "
+                "queda otra vez pendiente de validación. La validación original no se borra: "
+                "queda en el historial junto con esta reversión."
+            ),
+            "form": form,
+            "submit_label": "Revertir validación",
+            "form_action": form_action,
+            "back_url": back_url,
+            "next_url": back_url,
+            "disable_htmx": True,
+        },
+        status=400 if request.method == "POST" and not form.is_valid() else 200,
     )

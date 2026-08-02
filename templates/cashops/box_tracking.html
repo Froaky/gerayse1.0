@@ -102,6 +102,9 @@
               <a class="button-secondary" href="{{ row.edit_url }}">Editar</a>
               <a class="button-secondary" href="{{ row.delete_url }}">Eliminar</a>
             {% endif %}
+            {% if row.can_undo_validation %}
+              <a class="button-secondary" href="{{ row.undo_validation_url }}">Revertir validación</a>
+            {% endif %}
           </div>
         </article>
       {% empty %}

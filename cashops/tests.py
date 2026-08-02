@@ -59,6 +59,7 @@ from .services import (
     register_box_expense_debt,
     register_expense,
     reject_box_cash,
+    revert_box_cash_validation,
     transfer_between_boxes,
     transfer_between_branches,
     register_general_sale,
@@ -4974,3 +4975,198 @@ class RechazoDevuelveCajaTests(CashopsTestCase):
         )
         alerta.refresh_from_db()
         self.assertFalse(alerta.resuelta)
+
+
+class ReversionValidacionTests(CashopsTestCase):
+    """Revertir la validacion del efectivo: la plata vuelve a salir de la boveda
+    (anulacion auditada del ingreso, nada se borra) y la caja queda otra vez
+    Pendiente de validacion. La matriz completa de caminos posteriores tiene que
+    mover la plata UNA sola vez."""
+
+    def _caja_validada(self, *, fisico="150.00"):
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("100.00"),
+            actor=self.operator,
+        )
+        register_cash_income(
+            caja=caja,
+            monto=Decimal("50.00"),
+            categoria="Mostrador",
+            observacion="",
+            actor=self.operator,
+        )
+        close_box(caja=caja, saldo_fisico=Decimal(fisico), cerrado_por=self.operator, actor=self.operator)
+        caja.refresh_from_db()
+        validate_box_cash(caja=caja, actor=self.admin)
+        caja.refresh_from_db()
+        return caja
+
+    def _saldo_boveda(self):
+        from treasury.services import get_boveda
+
+        return get_boveda(self.empresa_a).saldo_actual
+
+    def test_revert_pulls_cash_back_and_returns_box_to_pending(self):
+        from treasury.models import MovimientoCajaCentral
+
+        saldo_previo = self._saldo_boveda()
+        caja = self._caja_validada(fisico="150.00")
+        self.assertEqual(self._saldo_boveda(), saldo_previo + Decimal("150.00"))
+
+        revert_box_cash_validation(caja=caja, motivo="Se validó con un conteo equivocado", actor=self.admin)
+
+        caja.refresh_from_db()
+        self.assertEqual(caja.validacion_estado, Caja.ValidacionEstado.PENDIENTE)
+        self.assertIsNone(caja.validada_por)
+        self.assertIsNone(caja.validada_en)
+        self.assertEqual(self._saldo_boveda(), saldo_previo)
+
+        # El ingreso no se borro: quedo anulado con motivo y autor.
+        empuje = MovimientoCajaCentral.objects.get(caja_cierre=caja)
+        self.assertEqual(empuje.estado, "ANULADO")
+        self.assertIn("Reversión de validación", empuje.motivo_anulacion)
+        self.assertEqual(empuje.anulado_por, self.admin)
+
+        # Bitacora completa: la validacion original sigue, la reversion se suma.
+        acciones = list(
+            CajaValidacion.objects.filter(caja=caja).order_by("id").values_list("accion", flat=True)
+        )
+        self.assertEqual(acciones, [CajaValidacion.Accion.VALIDACION, CajaValidacion.Accion.REVERSION])
+
+    def test_revert_requires_its_own_permission(self):
+        caja = self._caja_validada()
+
+        # Validar no alcanza: revertir saca plata de la boveda y es otro permiso.
+        UserPermission.objects.create(
+            user=self.operator,
+            module=PermissionModule.CASHOPS_VALIDATE,
+            can_read=True,
+            can_write=True,
+        )
+        with self.assertRaises(PermissionDenied):
+            revert_box_cash_validation(caja=caja, motivo="Probar", actor=self.operator)
+
+        UserPermission.objects.create(
+            user=self.operator,
+            module=PermissionModule.CASHOPS_VALIDATE_UNDO,
+            can_read=True,
+            can_write=True,
+        )
+        revert_box_cash_validation(caja=caja, motivo="Ahora si", actor=self.operator)
+        caja.refresh_from_db()
+        self.assertEqual(caja.validacion_estado, Caja.ValidacionEstado.PENDIENTE)
+
+    def test_revert_requires_motivo_and_validated_box(self):
+        caja = self._caja_validada()
+        with self.assertRaises(ValidationError):
+            revert_box_cash_validation(caja=caja, motivo="   ", actor=self.admin)
+
+        revert_box_cash_validation(caja=caja, motivo="Conteo equivocado", actor=self.admin)
+        caja.refresh_from_db()
+        with self.assertRaises(ValidationError):
+            revert_box_cash_validation(caja=caja, motivo="Otra vez", actor=self.admin)
+
+    def test_matrix_boveda_moves_money_exactly_once(self):
+        from treasury.models import MovimientoCajaCentral
+
+        saldo_base = self._saldo_boveda()
+
+        # Camino 1: validar -> revertir -> revalidar. Un solo ingreso vivo.
+        caja = self._caja_validada(fisico="150.00")
+        revert_box_cash_validation(caja=caja, motivo="Conteo equivocado", actor=self.admin)
+        caja.refresh_from_db()
+        validate_box_cash(caja=caja, actor=self.admin)
+        vivos = MovimientoCajaCentral.objects.filter(caja_cierre=caja, estado="REGISTRADO")
+        self.assertEqual(vivos.count(), 1)
+        self.assertEqual(vivos.first().monto, Decimal("150.00"))
+        self.assertEqual(self._saldo_boveda(), saldo_base + Decimal("150.00"))
+
+        # Camino 2: ... -> revertir -> eliminar la caja. La plata sale una vez
+        # con la reversion y la eliminacion no la descuenta de nuevo.
+        revert_box_cash_validation(caja=caja, motivo="Va de nuevo", actor=self.admin)
+        caja.refresh_from_db()
+        annul_box(caja=caja, motivo="Caja de prueba mal cargada", actor=self.admin)
+        self.assertEqual(self._saldo_boveda(), saldo_base)
+        self.assertFalse(
+            MovimientoCajaCentral.objects.filter(caja_cierre=caja, estado="REGISTRADO").exists()
+        )
+
+        # Camino 3: validar -> eliminar directo (sin revertir). Neto cero.
+        caja2 = self._caja_validada(fisico="150.00")
+        self.assertEqual(self._saldo_boveda(), saldo_base + Decimal("150.00"))
+        annul_box(caja=caja2, motivo="Tambien de prueba", actor=self.admin)
+        self.assertEqual(self._saldo_boveda(), saldo_base)
+
+    def test_revert_blocked_if_boveda_would_go_negative(self):
+        from treasury.models import MovimientoCajaCentral
+        from treasury.services import get_boveda
+
+        caja = self._caja_validada(fisico="150.00")
+        boveda = get_boveda(self.empresa_a)
+        # Se gasta casi todo el efectivo de la boveda: revertir dejaria negativo.
+        MovimientoCajaCentral.objects.create(
+            caja_central=boveda,
+            tipo="EGRESO_ADMIN",
+            monto=Decimal("140.00"),
+            concepto="Gasto que uso el efectivo del cierre",
+            creado_por=self.admin,
+        )
+        with self.assertRaises(ValidationError):
+            revert_box_cash_validation(caja=caja, motivo="Conteo equivocado", actor=self.admin)
+
+        caja.refresh_from_db()
+        self.assertEqual(caja.validacion_estado, Caja.ValidacionEstado.VALIDADA)
+        empuje = MovimientoCajaCentral.objects.get(caja_cierre=caja)
+        self.assertEqual(empuje.estado, "REGISTRADO")
+
+    def test_revert_month_closed_guard_is_per_empresa(self):
+        from treasury.models import CierreMensualTesoreria
+
+        caja = self._caja_validada()
+        mes = self.fecha_op.replace(day=1)
+
+        CierreMensualTesoreria.objects.create(mes=mes, empresa=self.empresa_a, cerrado=True)
+        with self.assertRaises(ValidationError):
+            revert_box_cash_validation(caja=caja, motivo="Conteo equivocado", actor=self.admin)
+
+        # El cierre de otra empresa no bloquea.
+        CierreMensualTesoreria.objects.filter(empresa=self.empresa_a).delete()
+        CierreMensualTesoreria.objects.create(mes=mes, empresa=self.empresa_b, cerrado=True)
+        revert_box_cash_validation(caja=caja, motivo="Conteo equivocado", actor=self.admin)
+        caja.refresh_from_db()
+        self.assertEqual(caja.validacion_estado, Caja.ValidacionEstado.PENDIENTE)
+
+    def test_undo_view_full_flow(self):
+        caja = self._caja_validada()
+        self.client.force_login(self.admin)
+        url = reverse("cashops:box_validation_undo", args=[caja.pk])
+
+        get_response = self.client.get(url)
+        self.assertEqual(get_response.status_code, 200)
+        self.assertContains(get_response, "Revertir validación")
+
+        response = self.client.post(url, {"motivo": "Se validó la caja equivocada"})
+        self.assertEqual(response.status_code, 302)
+        caja.refresh_from_db()
+        self.assertEqual(caja.validacion_estado, Caja.ValidacionEstado.PENDIENTE)
+
+        # Sin validacion vigente, la vista avisa y redirige sin romper.
+        second = self.client.get(url)
+        self.assertEqual(second.status_code, 302)
+
+    def test_tracking_shows_undo_button_only_for_validated_boxes(self):
+        caja = self._caja_validada()
+        undo_url = reverse("cashops:box_validation_undo", args=[caja.pk])
+
+        self.client.force_login(self.admin)
+        page = self.client.get(reverse("cashops:box_tracking"))
+        self.assertContains(page, undo_url)
+
+        # El operador sin el permiso no ve la accion.
+        self.client.force_login(self.operator)
+        page = self.client.get(reverse("cashops:box_tracking"))
+        self.assertNotContains(page, undo_url)

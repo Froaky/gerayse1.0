@@ -483,6 +483,18 @@ class CajaValidacionRechazoForm(forms.Form):
             field.widget.attrs.setdefault("class", "input textarea")
 
 
+class CajaValidacionReversionForm(forms.Form):
+    motivo = forms.CharField(
+        label="Motivo de la reversión",
+        widget=forms.Textarea(attrs={"placeholder": "Explicá por qué se deshace esta validación (la plata vuelve a salir de la bóveda)"}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs.setdefault("class", "input textarea")
+
+
 class VentaGeneralForm(AltaIdempotenteForm):
     tipo_venta = forms.ChoiceField(choices=[], label="Medio de ingreso")
     rubro = forms.ModelChoiceField(

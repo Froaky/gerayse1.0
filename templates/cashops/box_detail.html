@@ -10,6 +10,9 @@
       </div>
       <div class="list-actions">
         <a class="button-secondary" href="{{ tracking_url }}">Seguimiento</a>
+        {% if can_undo_validation %}
+          <a class="button-secondary" href="{{ undo_validation_url }}">Revertir validación</a>
+        {% endif %}
         {% if box.estado == "ABIERTA" %}
           <a class="button" href="{{ resume_url }}">Retomar carga</a>
         {% else %}
