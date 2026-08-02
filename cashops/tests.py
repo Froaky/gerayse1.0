@@ -51,6 +51,7 @@ from .services import (
     build_operational_control_snapshot,
     build_operational_period_summary,
     close_box,
+    describe_box_follow_up,
     get_uncategorized_operational_category,
     open_box,
     register_cash_income,
@@ -3211,7 +3212,7 @@ class EP13CashValidationTests(CashopsTestCase):
         with self.assertRaises(ValidationError):
             validate_box_cash(caja=caja, actor=self.admin)
 
-    def test_reject_requires_motivo_and_box_can_be_validated_later(self):
+    def test_reject_requires_motivo_and_returns_box_to_cashier(self):
         caja = self._open_operator_box()
         close_box(caja=caja, saldo_fisico=Decimal("100.00"), cerrado_por=self.operator, actor=self.operator)
 
@@ -3220,8 +3221,13 @@ class EP13CashValidationTests(CashopsTestCase):
 
         reject_box_cash(caja=caja, motivo="Faltan 100 pesos contra lo entregado", actor=self.admin)
 
+        # El rechazo devuelve la caja: queda abierta a nombre del mismo cajero,
+        # sin contabilizar, y ya no se puede validar directo (hay que corregir
+        # y volver a cerrarla).
         caja.refresh_from_db()
+        self.assertEqual(caja.estado, Caja.Estado.ABIERTA)
         self.assertEqual(caja.validacion_estado, Caja.ValidacionEstado.RECHAZADA)
+        self.assertIsNone(caja.cerrada_en)
         evento = CajaValidacion.objects.get(caja=caja, accion=CajaValidacion.Accion.RECHAZO)
         self.assertEqual(evento.motivo, "Faltan 100 pesos contra lo entregado")
         summary = build_operational_period_summary(
@@ -3230,6 +3236,13 @@ class EP13CashValidationTests(CashopsTestCase):
             sucursal=self.branch_a,
         )
         self.assertEqual(summary["cajas_periodo_count"], 0)
+
+        with self.assertRaises(ValidationError):
+            validate_box_cash(caja=caja, actor=self.admin)
+
+        close_box(caja=caja, saldo_fisico=Decimal("100.00"), cerrado_por=self.operator, actor=self.operator)
+        caja.refresh_from_db()
+        self.assertEqual(caja.validacion_estado, Caja.ValidacionEstado.PENDIENTE)
 
         validate_box_cash(caja=caja, actor=self.admin)
 
@@ -4770,3 +4783,194 @@ class ResolveAlertViewTests(CashopsTestCase):
         como_lector = self.client.get(url)
         self.assertEqual(como_lector.status_code, 200)
         self.assertNotContains(como_lector, "Marcar como resuelta")
+
+
+class RechazoDevuelveCajaTests(CashopsTestCase):
+    """El rechazo de la validacion devuelve la caja ABIERTA al mismo cajero para
+    que corrija y vuelva a cerrarla. Nada se borra: el CierreCaja se actualiza en
+    el re-cierre y cada intento queda auditado en CajaValidacion."""
+
+    def _caja_cerrada_pendiente(self, *, income="50.00", fisico="150.00", justificacion=""):
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("100.00"),
+            actor=self.operator,
+        )
+        if income:
+            register_cash_income(
+                caja=caja,
+                monto=Decimal(income),
+                categoria="Mostrador",
+                observacion="",
+                actor=self.operator,
+            )
+        close_box(
+            caja=caja,
+            saldo_fisico=Decimal(fisico),
+            justificacion=justificacion,
+            cerrado_por=self.operator,
+            actor=self.operator,
+        )
+        caja.refresh_from_db()
+        return caja
+
+    def test_reject_reopens_box_and_annuls_closing_adjustment(self):
+        # esperado 150, declarado 155 -> ajuste de cierre INGRESO por 5
+        caja = self._caja_cerrada_pendiente(fisico="155.00")
+        ajuste = caja.cierre.ajuste_movimiento
+        self.assertIsNotNone(ajuste)
+        self.assertEqual(caja.saldo_esperado, Decimal("155.00"))
+
+        reject_box_cash(caja=caja, motivo="El conteo estaba inflado", actor=self.admin)
+
+        caja.refresh_from_db()
+        self.assertEqual(caja.estado, Caja.Estado.ABIERTA)
+        self.assertEqual(caja.validacion_estado, Caja.ValidacionEstado.RECHAZADA)
+        self.assertIsNone(caja.cerrada_en)
+        self.assertIsNone(caja.cerrada_por)
+
+        # El ajuste del cierre rechazado queda anulado con auditoria y el saldo
+        # esperado vuelve al valor previo al cierre.
+        ajuste.refresh_from_db()
+        self.assertEqual(ajuste.estado, MovimientoCaja.Estado.ANULADO)
+        self.assertIn("Rechazo de validación", ajuste.motivo_anulacion)
+        self.assertTrue(
+            MovimientoCajaCorreccion.objects.filter(
+                movimiento=ajuste, accion=MovimientoCajaCorreccion.Accion.ANULACION
+            ).exists()
+        )
+        self.assertEqual(caja.saldo_esperado, Decimal("150.00"))
+
+    def test_reclose_updates_same_cierre_and_goes_back_to_queue(self):
+        caja = self._caja_cerrada_pendiente(fisico="155.00")
+        cierre_pk = caja.cierre.pk
+        reject_box_cash(caja=caja, motivo="Recontar el efectivo", actor=self.admin)
+        caja.refresh_from_db()
+
+        # La caja devuelta se puede seguir operando con los permisos de siempre.
+        register_cash_income(
+            caja=caja,
+            monto=Decimal("10.00"),
+            categoria="Mostrador",
+            observacion="",
+            actor=self.operator,
+        )
+        close_box(caja=caja, saldo_fisico=Decimal("160.00"), cerrado_por=self.operator, actor=self.operator)
+        caja.refresh_from_db()
+
+        self.assertEqual(CierreCaja.objects.filter(caja=caja).count(), 1)
+        cierre = caja.cierre
+        self.assertEqual(cierre.pk, cierre_pk)
+        self.assertEqual(cierre.saldo_fisico, Decimal("160.00"))
+        self.assertEqual(cierre.diferencia, Decimal("0.00"))
+        self.assertEqual(caja.estado, Caja.Estado.CERRADA)
+        self.assertEqual(caja.validacion_estado, Caja.ValidacionEstado.PENDIENTE)
+
+        self.client.force_login(self.admin)
+        queue = self.client.get(reverse("cashops:box_validation_queue"))
+        self.assertContains(queue, f"Caja #{caja.pk}")
+
+    def test_full_cycle_pushes_corrected_amount_once(self):
+        from treasury.models import MovimientoCajaCentral
+
+        caja = self._caja_cerrada_pendiente(fisico="155.00")
+        reject_box_cash(caja=caja, motivo="Habia 150, no 155", actor=self.admin)
+        caja.refresh_from_db()
+        close_box(caja=caja, saldo_fisico=Decimal("150.00"), cerrado_por=self.operator, actor=self.operator)
+        caja.refresh_from_db()
+        validate_box_cash(caja=caja, actor=self.admin)
+
+        empujes = MovimientoCajaCentral.objects.filter(caja_cierre=caja, estado="REGISTRADO")
+        self.assertEqual(empujes.count(), 1)
+        self.assertEqual(empujes.first().monto, Decimal("150.00"))
+
+    def test_reject_blocked_when_cashier_already_has_open_box_in_same_slot(self):
+        caja = self._caja_cerrada_pendiente()
+        open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("0.00"),
+            actor=self.operator,
+        )
+        with self.assertRaises(ValidationError):
+            reject_box_cash(caja=caja, motivo="Recontar", actor=self.admin)
+        caja.refresh_from_db()
+        self.assertEqual(caja.estado, Caja.Estado.CERRADA)
+        self.assertEqual(caja.validacion_estado, Caja.ValidacionEstado.PENDIENTE)
+
+    def test_reject_month_closed_guard_is_per_empresa(self):
+        from treasury.models import CierreMensualTesoreria
+
+        caja = self._caja_cerrada_pendiente()
+        mes = self.fecha_op.replace(day=1)
+
+        # El cierre de mes de OTRA empresa no bloquea la devolucion.
+        CierreMensualTesoreria.objects.create(mes=mes, empresa=self.empresa_b, cerrado=True)
+        reject_box_cash(caja=caja, motivo="Recontar", actor=self.admin)
+        caja.refresh_from_db()
+        self.assertEqual(caja.estado, Caja.Estado.ABIERTA)
+
+        # Con el mes de SU empresa cerrado, el rechazo se bloquea.
+        close_box(caja=caja, saldo_fisico=Decimal("150.00"), cerrado_por=self.operator, actor=self.operator)
+        caja.refresh_from_db()
+        CierreMensualTesoreria.objects.create(mes=mes, empresa=self.empresa_a, cerrado=True)
+        with self.assertRaises(ValidationError):
+            reject_box_cash(caja=caja, motivo="Recontar de nuevo", actor=self.admin)
+        caja.refresh_from_db()
+        self.assertEqual(caja.estado, Caja.Estado.CERRADA)
+
+    def test_dashboard_shows_rejection_reason_to_cashier(self):
+        caja = self._caja_cerrada_pendiente()
+        reject_box_cash(caja=caja, motivo="Faltaron 5000 pesos en el sobre", actor=self.admin)
+
+        self.client.force_login(self.operator)
+        response = self.client.get(f"{reverse('cashops:dashboard')}?scope=box&box={caja.pk}")
+        self.assertContains(response, "Validación de efectivo rechazada")
+        self.assertContains(response, "Faltaron 5000 pesos en el sobre")
+
+    def test_follow_up_label_for_returned_box(self):
+        caja = self._caja_cerrada_pendiente()
+        reject_box_cash(caja=caja, motivo="Recontar", actor=self.admin)
+        caja.refresh_from_db()
+        follow_up = describe_box_follow_up(caja, [])
+        self.assertEqual(follow_up["label"], "Devuelta por rechazo")
+        self.assertEqual(follow_up["badge_class"], "badge-danger")
+
+    def test_grave_difference_cycle_updates_justificacion_and_alert(self):
+        from cashops.models import Justificacion
+
+        # esperado 150, declarado 200000 -> diferencia grave con justificacion
+        caja = self._caja_cerrada_pendiente(fisico="200000.00", justificacion="Conteo distinto")
+        cierre = caja.cierre
+        self.assertEqual(cierre.estado, CierreCaja.Estado.JUSTIFICADO)
+        alerta = AlertaOperativa.objects.get(
+            tipo=AlertaOperativa.Tipo.DIFERENCIA_GRAVE, cierre=cierre
+        )
+        self.assertFalse(alerta.resuelta)
+
+        reject_box_cash(caja=caja, motivo="Ese conteo no puede ser", actor=self.admin)
+        alerta.refresh_from_db()
+        self.assertTrue(alerta.resuelta)
+
+        # Re-cierre otra vez grave: la Justificacion se actualiza (OneToOne, no
+        # se duplica) y la alerta se reactiva sobre el mismo cierre.
+        caja.refresh_from_db()
+        close_box(
+            caja=caja,
+            saldo_fisico=Decimal("250000.00"),
+            justificacion="Segundo conteo con la administradora",
+            cerrado_por=self.operator,
+            actor=self.operator,
+        )
+        self.assertEqual(Justificacion.objects.filter(cierre=cierre).count(), 1)
+        self.assertEqual(
+            Justificacion.objects.get(cierre=cierre).motivo,
+            "Segundo conteo con la administradora",
+        )
+        alerta.refresh_from_db()
+        self.assertFalse(alerta.resuelta)

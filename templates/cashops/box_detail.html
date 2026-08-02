@@ -17,6 +17,15 @@
         {% endif %}
       </div>
     </div>
+    {% if last_rejection %}
+      <div class="alert alert--error mt-16">
+        <strong>Validación de efectivo rechazada</strong>
+        <p style="margin-top:6px;">“{{ last_rejection.motivo }}”</p>
+        <p class="muted" style="margin-top:6px;">
+          Rechazada por {{ last_rejection.usuario }} el {{ last_rejection.creado_en|date:"d/m/Y H:i" }}.
+        </p>
+      </div>
+    {% endif %}
     <div class="summary-grid mt-16">
       <div class="summary">
         <span class="muted">Estado</span>

@@ -160,6 +160,16 @@
             </div>
             <a class="button-secondary" href="{% url 'cashops:dashboard' %}?scope=box&box={{ selected_box.id|unlocalize }}">Recargar</a>
           </div>
+          {% if selected_box_rejection %}
+            <div class="alert alert--error" style="margin-top:14px;">
+              <strong>Validación de efectivo rechazada</strong>
+              <p style="margin-top:6px;">“{{ selected_box_rejection.motivo }}”</p>
+              <p class="muted" style="margin-top:6px;">
+                Rechazada por {{ selected_box_rejection.usuario }} el {{ selected_box_rejection.creado_en|date:"d/m/Y H:i" }}.
+                Corregí lo que haga falta y volvé a cerrar la caja para pedir la validación de nuevo.
+              </p>
+            </div>
+          {% endif %}
           <div class="summary-grid" style="margin-top:14px;">
             <div class="summary">
               <span class="muted">Efectivo en caja</span>

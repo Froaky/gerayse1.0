@@ -427,8 +427,19 @@ def dashboard(request):
 
     is_admin = scope_context["is_admin"]
 
+    # Caja devuelta por rechazo: el cajero tiene que ver el motivo textual de
+    # administracion en su propia pantalla, no enterarse por otro canal.
+    selected_box_rejection = None
+    if selected_box is not None and selected_box.validacion_estado == Caja.ValidacionEstado.RECHAZADA:
+        selected_box_rejection = (
+            selected_box.validaciones.filter(accion=CajaValidacion.Accion.RECHAZO)
+            .select_related("usuario")
+            .first()
+        )
+
     context = {
         "selected_box": selected_box,
+        "selected_box_rejection": selected_box_rejection,
         "selected_branch": scope_context["selected_branch"],
         "open_boxes": boxes.filter(estado=Caja.Estado.ABIERTA),
         "recent_movements": recent_movements,
@@ -642,6 +653,14 @@ def box_detail_view(request, box_id: int):
             if event.get("kind") == "GASTO_DEUDA" and event.get("debt_active") and event.get("debt_id"):
                 event["delete_url"] = f"{reverse('cashops:box_debt_delete', args=[event['debt_id']])}?{correction_query}"
 
+    last_rejection = None
+    if box.validacion_estado == Caja.ValidacionEstado.RECHAZADA:
+        last_rejection = (
+            box.validaciones.filter(accion=CajaValidacion.Accion.RECHAZO)
+            .select_related("usuario")
+            .first()
+        )
+
     return render(
         request,
         "cashops/box_detail.html",
@@ -650,6 +669,7 @@ def box_detail_view(request, box_id: int):
             "movements": movements,
             "sales_breakdown": sales_breakdown,
             "follow_up": follow_up,
+            "last_rejection": last_rejection,
             "timeline": timeline,
             "latest_event": latest_event,
             "can_correct_closed_box": can_fix_closed_box,
@@ -2067,6 +2087,13 @@ def box_reject_view(request, box_id: int):
     box = get_object_or_404(Caja.objects.select_related("sucursal", "turno", "usuario", "cierre"), pk=box_id)
     if box.sucursal.empresa_id not in _get_empresa_ids(request):
         raise PermissionDenied("Esta caja no pertenece a las empresas seleccionadas.")
+    # Una caja que ya no esta cerrada-pendiente (por ejemplo, devuelta al
+    # cajero por un rechazo anterior) no tiene nada para rechazar: mejor
+    # avisar y volver a la cola que mostrar numeros de un cierre que no rige.
+    if box.estado != Caja.Estado.CERRADA or box.validacion_estado not in Caja.VALIDACION_BLOQUEA_TOTALES:
+        messages.error(request, f"La caja #{box.pk} ya no esta pendiente de validacion.")
+        url = _validation_queue_url(request)
+        return _hx_redirect(url) if _is_htmx(request) else redirect(url)
     form = CajaValidacionRechazoForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         try:
@@ -2076,7 +2103,8 @@ def box_reject_view(request, box_id: int):
         else:
             messages.success(
                 request,
-                f"Caja #{box.pk} rechazada. Sigue sin contabilizar hasta corregirse y validarse.",
+                f"Caja #{box.pk} rechazada y devuelta abierta a {box.usuario}: "
+                "va a ver tu motivo en su pantalla para corregir y volver a cerrar.",
             )
             url = _validation_queue_url(request)
             return _hx_redirect(url) if _is_htmx(request) else redirect(url)

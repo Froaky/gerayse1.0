@@ -156,6 +156,16 @@ def describe_box_follow_up(caja: Caja, movements) -> dict:
             "last_activity_at": last_activity_at,
             "post_opening_count": len(post_opening_movements),
         }
+    if caja.estado == Caja.Estado.ABIERTA and caja.validacion_estado == Caja.ValidacionEstado.RECHAZADA:
+        # Caja devuelta al cajero por un rechazo de validacion: sigue abierta
+        # para corregirla, pero fuera de todos los totales hasta revalidarse.
+        return {
+            "label": "Devuelta por rechazo",
+            "badge_class": "badge-danger",
+            "detail": "La validación del efectivo fue rechazada y la caja volvió al cajero: corregí lo que haga falta y volvé a cerrarla para pedir la validación de nuevo.",
+            "last_activity_at": last_activity_at,
+            "post_opening_count": len(post_opening_movements),
+        }
     if caja.estado == Caja.Estado.CERRADA and caja.validacion_estado == Caja.ValidacionEstado.PENDIENTE:
         return {
             "label": "Pendiente de validación",
@@ -1410,6 +1420,26 @@ MONTH_CLOSED_MESSAGE = (
 )
 
 
+def _treasury_month_is_closed_for_empresa(fecha, empresa_id) -> bool:
+    """Mes de tesoreria cerrado PARA ESA EMPRESA.
+
+    Desde que el cierre mensual es por empresa (treasury 0034),
+    treasury_month_is_closed quedo global y sobre-bloquea cruzado: una empresa
+    que cierra su mes frena a las demas. Los guards nuevos usan este, que
+    filtra por la empresa de la caja. Una fila de cierre sin empresa (legacy)
+    bloquea igual, porque no se sabe de quien es la foto."""
+    from django.apps import apps
+
+    if fecha is None:
+        return False
+    CierreMensualTesoreria = apps.get_model("treasury", "CierreMensualTesoreria")
+    return CierreMensualTesoreria.objects.filter(
+        Q(empresa_id=empresa_id) | Q(empresa__isnull=True),
+        mes=fecha.replace(day=1),
+        cerrado=True,
+    ).exists()
+
+
 @transaction.atomic
 def open_box(*, user, turno: Turno, sucursal: Sucursal, fecha_operativa, monto_inicial: Decimal, actor=None) -> Caja:
     actor = actor or user
@@ -2438,18 +2468,44 @@ def close_box(
             creado_por=actor,
         )
 
-    cierre = CierreCaja.objects.create(
-        caja=caja,
-        saldo_esperado=saldo_esperado,
-        saldo_fisico=saldo_fisico,
-        diferencia=diferencia,
-        estado=CierreCaja.Estado.JUSTIFICADO if abs_difference > CLOSING_DIFF_THRESHOLD else CierreCaja.Estado.AUTO,
-        ajuste_movimiento=ajuste_movimiento,
-        cerrado_por=actor,
-    )
+    # Una caja devuelta por rechazo de validacion conserva su CierreCaja
+    # (registro auditable: no se borra). Al volver a cerrarla, ese cierre se
+    # actualiza con los numeros nuevos; el detalle de cada intento anterior
+    # queda en CajaValidacion (efectivo declarado + motivo del rechazo).
+    estado_cierre = CierreCaja.Estado.JUSTIFICADO if abs_difference > CLOSING_DIFF_THRESHOLD else CierreCaja.Estado.AUTO
+    cierre = CierreCaja.objects.select_for_update().filter(caja=caja).first()
+    if cierre is not None:
+        cierre.saldo_esperado = saldo_esperado
+        cierre.saldo_fisico = saldo_fisico
+        cierre.diferencia = diferencia
+        cierre.estado = estado_cierre
+        cierre.ajuste_movimiento = ajuste_movimiento
+        cierre.cerrado_por = actor
+        # auto_now_add solo aplica en el insert: en el re-cierre la fecha se
+        # actualiza a mano para que el cierre refleje ESTE cierre, no el rechazado.
+        cierre.cerrado_en = timezone.now()
+        cierre.save(update_fields=[
+            "saldo_esperado", "saldo_fisico", "diferencia", "estado",
+            "ajuste_movimiento", "cerrado_por", "cerrado_en",
+        ])
+    else:
+        cierre = CierreCaja.objects.create(
+            caja=caja,
+            saldo_esperado=saldo_esperado,
+            saldo_fisico=saldo_fisico,
+            diferencia=diferencia,
+            estado=estado_cierre,
+            ajuste_movimiento=ajuste_movimiento,
+            cerrado_por=actor,
+        )
 
     if abs_difference > CLOSING_DIFF_THRESHOLD and justificacion.strip():
-        Justificacion.objects.create(cierre=cierre, motivo=justificacion.strip(), creado_por=actor)
+        # update_or_create: el re-cierre de una caja devuelta puede volver a dar
+        # diferencia grave y la Justificacion es OneToOne con el cierre.
+        Justificacion.objects.update_or_create(
+            cierre=cierre,
+            defaults={"motivo": justificacion.strip(), "creado_por": actor},
+        )
         _upsert_alert(
             dedupe_key=_build_closing_alert_key(cierre=cierre),
             tipo=AlertaOperativa.Tipo.DIFERENCIA_GRAVE,
@@ -2615,9 +2671,52 @@ def validate_box_cash(*, caja: Caja, actor=None) -> Caja:
     return caja
 
 
+def _annul_closing_adjustment(cierre: CierreCaja, *, motivo: str, actor) -> None:
+    """Anula (con auditoria, nada se borra) el AJUSTE_CIERRE de un cierre cuya
+    caja vuelve a manos del cajero. El ajuste absorbia la diferencia del cierre
+    rechazado; anulado, el saldo esperado de la caja reabierta vuelve al valor
+    previo al cierre, porque la property saldo_esperado ignora lo ANULADO."""
+    movimiento = cierre.ajuste_movimiento
+    if movimiento is None or movimiento.estado != MovimientoCaja.Estado.REGISTRADO:
+        return
+    MovimientoCajaCorreccion.objects.create(
+        movimiento=movimiento,
+        accion=MovimientoCajaCorreccion.Accion.ANULACION,
+        motivo=motivo,
+        monto_anterior=movimiento.monto,
+        monto_nuevo=None,
+        categoria_anterior=movimiento.categoria,
+        categoria_nueva=movimiento.categoria,
+        observacion_anterior=movimiento.observacion,
+        observacion_nueva=movimiento.observacion,
+        rubro_operativo_anterior=movimiento.rubro_operativo,
+        rubro_operativo_nuevo=movimiento.rubro_operativo,
+        creado_por=actor,
+    )
+    movimiento.estado = MovimientoCaja.Estado.ANULADO
+    movimiento.motivo_anulacion = motivo
+    movimiento.anulado_por = actor
+    movimiento.anulado_en = timezone.now()
+    movimiento.actualizado_por = actor
+    movimiento.full_clean()
+    movimiento.save(update_fields=[
+        "estado", "motivo_anulacion", "anulado_por", "anulado_en",
+        "actualizado_por", "actualizado_en",
+    ])
+
+
 @transaction.atomic
 def reject_box_cash(*, caja: Caja, motivo: str, actor=None) -> Caja:
-    """EP-13: rechaza la validacion con motivo; la caja sigue sin contabilizar."""
+    """EP-13: rechaza la validacion con motivo y DEVUELVE la caja al cajero.
+
+    Antes el rechazo dejaba la caja cerrada en un callejon sin salida: el
+    cajero no podia corregirla (corregir caja cerrada es otro permiso) ni
+    volver a presentarla. Ahora rechazar tiene dos efectos: registra el motivo
+    (auditado en CajaValidacion, visible para el cajero) y reabre la caja a
+    nombre del mismo responsable para que corrija y vuelva a cerrarla. La caja
+    queda ABIERTA + RECHAZADA: sigue fuera de todos los totales hasta que se
+    cierre de nuevo y se valide.
+    """
     _require_actor(actor)
     ensure_cash_validation(actor)
     motivo = (motivo or "").strip()
@@ -2628,6 +2727,33 @@ def reject_box_cash(*, caja: Caja, motivo: str, actor=None) -> Caja:
         raise ValidationError({"caja": "Solo se puede rechazar la validacion de una caja cerrada."})
     if caja.validacion_estado not in Caja.VALIDACION_BLOQUEA_TOTALES:
         raise ValidationError({"caja": "La caja no esta pendiente de validacion."})
+    if _treasury_month_is_closed_for_empresa(caja.fecha_operativa, caja.sucursal.empresa_id):
+        raise ValidationError(
+            {
+                "caja": (
+                    "El mes de tesoreria de esa caja ya esta cerrado: es una foto congelada "
+                    "y no se puede devolver la caja para corregirla."
+                )
+            }
+        )
+    # El rechazo reabre la caja a nombre del mismo cajero: si ya abrio otra en
+    # el mismo turno/sucursal/fecha, chocarian. Mejor un mensaje claro antes
+    # que la constraint de unica caja abierta.
+    if Caja.objects.filter(
+        estado=Caja.Estado.ABIERTA,
+        usuario=caja.usuario,
+        turno=caja.turno,
+        sucursal=caja.sucursal,
+        fecha_operativa=caja.fecha_operativa,
+    ).exists():
+        raise ValidationError(
+            {
+                "caja": (
+                    f"{caja.usuario} ya tiene otra caja abierta para ese turno, sucursal y fecha, "
+                    "y el rechazo le devuelve esta caja abierta. Resolvé esa caja primero."
+                )
+            }
+        )
     cierre = getattr(caja, "cierre", None)
     caja.validacion_estado = Caja.ValidacionEstado.RECHAZADA
     caja.save(update_fields=["validacion_estado"])
@@ -2638,4 +2764,25 @@ def reject_box_cash(*, caja: Caja, motivo: str, actor=None) -> Caja:
         efectivo_esperado=cierre.saldo_fisico if cierre is not None else Decimal("0.00"),
         usuario=actor,
     )
+
+    # --- Devolucion de la caja al cajero ------------------------------------
+    if cierre is not None:
+        # Sin esto, el ajuste del cierre rechazado seguiria REGISTRADO y el
+        # saldo esperado de la caja reabierta arrancaria distorsionado.
+        _annul_closing_adjustment(cierre, motivo=f"Rechazo de validación: {motivo}", actor=actor)
+        # La alerta de diferencia grave describia un cierre que ya no rige; si
+        # el re-cierre vuelve a dar grave, el upsert por cierre la reactiva.
+        AlertaOperativa.objects.filter(
+            tipo=AlertaOperativa.Tipo.DIFERENCIA_GRAVE,
+            cierre=cierre,
+            resuelta=False,
+        ).update(resuelta=True)
+    caja.estado = Caja.Estado.ABIERTA
+    caja.cerrada_en = None
+    caja.cerrada_por = None
+    caja.save(update_fields=["estado", "cerrada_en", "cerrada_por"])
+    resync_operational_control_for_caja(caja)
+    # Punto de extension del modulo de avisos: cuando exista, el aviso al
+    # cajero ("Validacion de efectivo rechazada" + motivo textual) nace aca,
+    # con el rechazo confirmado y la caja ya devuelta, en esta transaccion.
     return caja
