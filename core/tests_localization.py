@@ -10,11 +10,11 @@ ids llegan a 4 digitos, cosa que en produccion es cuestion de tiempo. Sin estos
 tests, la regresion apareceria en silencio meses despues del deploy.
 """
 import re
-from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.utils import timezone
 
 from cashops.models import (
     Caja,
@@ -53,7 +53,11 @@ class SeparadorDeMilesRegressionTests(TestCase):
         self.admin.empresas_permitidas.set([self.empresa])
         self.rubro = RubroOperativo.objects.create(pk=1300, nombre="Insumos")
         self.turno = Turno.objects.create(empresa=self.empresa, tipo=Turno.Tipo.MANANA, creado_por=self.admin)
-        self.fecha = date(2026, 7, 15)
+        # Fecha del dia de la corrida, no una fija: el dashboard global ventanea
+        # por fecha actual, y con una fecha fija el test caduco solo al cambiar
+        # el mes (paso el 2026-08: escrito en julio con date(2026, 7, 15), la
+        # caja quedo fuera de la ventana y el monto desaparecio de los KPIs).
+        self.fecha = timezone.localdate()
 
         self.caja_abierta = Caja.objects.create(
             pk=4321, sucursal=self.sucursal, turno=self.turno, usuario=self.admin,
