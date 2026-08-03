@@ -212,6 +212,32 @@ class AnulacionBovedaTests(TestCase):
         self.assertEqual(despues["treasury_unmapped_expenses_total"], Decimal("0.00"))
 
 
+    def test_mes_cerrado_de_otra_empresa_no_bloquea_la_anulacion(self):
+        from treasury.models import CierreMensualTesoreria
+
+        self._fondear()
+        egreso = self._egreso()
+        otra = Empresa.objects.create(nombre="Otra Empresa Anulacion")
+        CierreMensualTesoreria.objects.create(
+            mes=self.hoy.replace(day=1), empresa=otra, cerrado=True
+        )
+        anulado = annul_central_cash_movement(
+            movement=egreso, motivo="Cargado de mas", actor=self.admin
+        )
+        self.assertEqual(anulado.estado, MovimientoCajaCentral.Estado.ANULADO)
+
+        # El cierre de la PROPIA empresa si bloquea.
+        self._fondear()
+        egreso2 = self._egreso()
+        CierreMensualTesoreria.objects.create(
+            mes=self.hoy.replace(day=1), empresa=self.empresa, cerrado=True
+        )
+        with self.assertRaises(ValidationError):
+            annul_central_cash_movement(
+                movement=egreso2, motivo="No deberia poder", actor=self.admin
+            )
+
+
 class AnulacionBovedaVistaTests(TestCase):
     """La pantalla: el boton, el permiso y que el anulado se siga viendo."""
 

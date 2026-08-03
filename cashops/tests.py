@@ -5574,10 +5574,11 @@ class ReversionValidacionRobustezTests(CashopsTestCase):
     def test_month_guard_follows_the_push_month_not_the_operative_date(self):
         from treasury.models import CierreMensualTesoreria, MovimientoCajaCentral
 
-        # Camino real del desfasaje: OTRA empresa cierra el mes operativo antes
-        # de la validacion, el chequeo global del push re-fecha el empuje al dia
-        # de hoy (mes abierto). Despues nuestra empresa tambien cierra ese mes:
-        # el guard viejo (fecha operativa) bloqueaba para siempre la reversion
+        # Camino del desfasaje: la caja quedo pendiente, el mes de SU empresa
+        # se marco cerrado (estado legacy, igual que en
+        # test_validation_after_month_close_redates_central_push) y la
+        # validacion posterior re-fecho el empuje al dia de hoy (mes abierto).
+        # El guard viejo (fecha operativa) bloqueaba para siempre la reversion
         # de un movimiento que vive en un mes abierto; el nuevo la permite.
         mes = self.fecha_op.replace(day=1)
         caja = open_box(
@@ -5590,15 +5591,12 @@ class ReversionValidacionRobustezTests(CashopsTestCase):
         )
         close_box(caja=caja, saldo_fisico=Decimal("150.00"), cerrado_por=self.operator, actor=self.operator)
         caja.refresh_from_db()
-        # Recien ahora la otra empresa cierra el mes (antes bloquearia hasta la
-        # apertura, por el chequeo global de open_box).
-        CierreMensualTesoreria.objects.create(mes=mes, empresa=self.empresa_b, cerrado=True)
+        CierreMensualTesoreria.objects.create(mes=mes, empresa=self.empresa_a, cerrado=True)
         validate_box_cash(caja=caja, actor=self.admin)
         caja.refresh_from_db()
         empuje = MovimientoCajaCentral.objects.get(caja_cierre=caja)
         self.assertNotEqual(empuje.fecha.replace(day=1), mes)  # re-fechado a hoy
 
-        CierreMensualTesoreria.objects.create(mes=mes, empresa=self.empresa_a, cerrado=True)
         revert_box_cash_validation(caja=caja, motivo="El empuje vive en un mes abierto", actor=self.admin)
         caja.refresh_from_db()
         self.assertEqual(caja.validacion_estado, Caja.ValidacionEstado.PENDIENTE)
@@ -5648,3 +5646,101 @@ class ReversionValidacionRobustezTests(CashopsTestCase):
             response = self.client.get(url)
             self.assertEqual(response.status_code, 302, url)
             self.assertIn("login", response.url)
+
+
+class MesCerradoPorEmpresaTests(CashopsTestCase):
+    """Los guards de mes cerrado son por empresa: el cierre mensual de una
+    empresa no frena la operacion de la otra (el chequeo global anterior
+    sobre-bloqueaba cruzado y re-fechaba empujes al mes equivocado)."""
+
+    def test_open_box_not_blocked_by_other_company_closure(self):
+        from treasury.models import CierreMensualTesoreria
+
+        mes = self.fecha_op.replace(day=1)
+        CierreMensualTesoreria.objects.create(mes=mes, empresa=self.empresa_b, cerrado=True)
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("0.00"),
+            actor=self.operator,
+        )
+        self.assertEqual(caja.estado, Caja.Estado.ABIERTA)
+
+        # El cierre de la PROPIA empresa si bloquea la apertura.
+        close_box(caja=caja, saldo_fisico=Decimal("0.00"), cerrado_por=self.operator, actor=self.operator)
+        CierreMensualTesoreria.objects.create(mes=mes, empresa=self.empresa_a, cerrado=True)
+        with self.assertRaises(ValidationError):
+            open_box(
+                user=self.operator,
+                turno=self.turno_a,
+                sucursal=self.branch_a,
+                fecha_operativa=self.fecha_op,
+                monto_inicial=Decimal("0.00"),
+                actor=self.operator,
+            )
+
+    def test_update_box_metadata_month_guard_is_per_empresa(self):
+        from treasury.models import CierreMensualTesoreria
+
+        from .services import update_box_metadata
+
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("100.00"),
+            actor=self.operator,
+        )
+        abril = date(2026, 4, 15)
+        CierreMensualTesoreria.objects.create(mes=date(2026, 4, 1), empresa=self.empresa_b, cerrado=True)
+        update_box_metadata(
+            caja=caja,
+            usuario=self.operator,
+            sucursal=self.branch_a,
+            turno=self.turno_a,
+            fecha_operativa=abril,
+            monto_inicial=caja.monto_inicial,
+            motivo="Fecha equivocada",
+            actor=self.admin,
+        )
+        caja.refresh_from_db()
+        self.assertEqual(caja.fecha_operativa, abril)
+
+        mayo = date(2026, 5, 10)
+        CierreMensualTesoreria.objects.create(mes=date(2026, 5, 1), empresa=self.empresa_a, cerrado=True)
+        with self.assertRaises(ValidationError):
+            update_box_metadata(
+                caja=caja,
+                usuario=self.operator,
+                sucursal=self.branch_a,
+                turno=self.turno_a,
+                fecha_operativa=mayo,
+                monto_inicial=caja.monto_inicial,
+                motivo="Otra vez",
+                actor=self.admin,
+            )
+
+    def test_push_not_redated_by_other_company_closure(self):
+        from treasury.models import CierreMensualTesoreria, MovimientoCajaCentral
+
+        mes = self.fecha_op.replace(day=1)
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("150.00"),
+            actor=self.operator,
+        )
+        close_box(caja=caja, saldo_fisico=Decimal("150.00"), cerrado_por=self.operator, actor=self.operator)
+        caja.refresh_from_db()
+        CierreMensualTesoreria.objects.create(mes=mes, empresa=self.empresa_b, cerrado=True)
+        validate_box_cash(caja=caja, actor=self.admin)
+
+        # El efectivo queda fechado en SU mes operativo: el cierre de la otra
+        # empresa ya no lo corre al mes siguiente de la cadena propia.
+        empuje = MovimientoCajaCentral.objects.get(caja_cierre=caja)
+        self.assertEqual(empuje.fecha, self.fecha_op)

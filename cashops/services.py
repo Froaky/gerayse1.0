@@ -15,6 +15,7 @@ from .models import (
     CajaValidacion,
     CanalIngreso,
     CierreCaja,
+    Empresa,
     Justificacion,
     LimiteRubroOperativo,
     MovimientoCaja,
@@ -1402,20 +1403,6 @@ def resync_all_operational_controls() -> int:
     return recalculated
 
 
-def treasury_month_is_closed(fecha) -> bool:
-    """True si el mes de tesoreria de esa fecha ya esta cerrado. El cierre es
-    GLOBAL (CierreMensualTesoreria solo tiene unique por mes y nunca se escribe
-    la sucursal), asi que NO hay que filtrar por sucursal: filtrarla daria
-    siempre False. Import perezoso via apps.get_model para no acoplar cashops
-    a treasury (mismo patron que _push_box_closure_to_central_cash)."""
-    from django.apps import apps
-
-    if fecha is None:
-        return False
-    CierreMensualTesoreria = apps.get_model("treasury", "CierreMensualTesoreria")
-    return CierreMensualTesoreria.objects.filter(mes=fecha.replace(day=1), cerrado=True).exists()
-
-
 MONTH_CLOSED_MESSAGE = (
     "El mes de tesoreria de esa fecha ya esta cerrado: es una foto congelada y no se "
     "pueden agregar cajas a un periodo cerrado. Elegi una fecha de un mes abierto."
@@ -1425,11 +1412,12 @@ MONTH_CLOSED_MESSAGE = (
 def _treasury_month_is_closed_for_empresa(fecha, empresa_id) -> bool:
     """Mes de tesoreria cerrado PARA ESA EMPRESA.
 
-    Desde que el cierre mensual es por empresa (treasury 0034),
-    treasury_month_is_closed quedo global y sobre-bloquea cruzado: una empresa
-    que cierra su mes frena a las demas. Los guards nuevos usan este, que
-    filtra por la empresa de la caja. Una fila de cierre sin empresa (legacy)
-    bloquea igual, porque no se sabe de quien es la foto."""
+    El cierre mensual es por empresa (treasury 0034). El helper global anterior
+    sobre-bloqueaba cruzado (una empresa que cerraba su mes frenaba a las demas
+    en open_box y update_box_metadata) y re-fechaba empujes al mes equivocado:
+    todos los guards de cashops pasan ahora por aca. Una fila de cierre sin
+    empresa (legacy) bloquea igual, porque no se sabe de quien es la foto.
+    Import perezoso via apps.get_model para no acoplar cashops a treasury."""
     from django.apps import apps
 
     if fecha is None:
@@ -1452,7 +1440,7 @@ def open_box(*, user, turno: Turno, sucursal: Sucursal, fecha_operativa, monto_i
         raise PermissionDenied("No tenes permiso para asignar una caja a otro usuario.")
     if monto_inicial < 0:
         raise ValidationError({"monto_inicial": "El monto inicial no puede ser negativo."})
-    if treasury_month_is_closed(fecha_operativa):
+    if _treasury_month_is_closed_for_empresa(fecha_operativa, sucursal.empresa_id):
         raise ValidationError({"fecha_operativa": MONTH_CLOSED_MESSAGE})
     if not is_cashops_admin(actor) and getattr(user, "usuario_fijo", False):
         base_sucursal_id = getattr(user, "sucursal_base_id", None)
@@ -2104,7 +2092,6 @@ def _reverse_central_cash_closure_for_box(caja: Caja, *, actor) -> None:
     from django.apps import apps
 
     MovimientoCajaCentral = apps.get_model("treasury", "MovimientoCajaCentral")
-    CierreMensualTesoreria = apps.get_model("treasury", "CierreMensualTesoreria")
     reversal_concept = f"Anulacion cierre caja #{caja.id}"
     if MovimientoCajaCentral.objects.filter(
         concepto=reversal_concept, estado="REGISTRADO"
@@ -2128,10 +2115,11 @@ def _reverse_central_cash_closure_for_box(caja: Caja, *, actor) -> None:
         else:
             reversal_type = "AJUSTE_POSITIVO"
             observations = "Reversa auditada de saldo negativo por anulacion de caja cerrada."
-        # Igual que el push: si el mes original ya esta cerrado, la reversa se
-        # fecha al dia de la anulacion para no alterar un snapshot congelado.
+        # Igual que el push: si el mes original ya esta cerrado PARA ESTA
+        # empresa, la reversa se fecha al dia de la anulacion para no alterar
+        # un snapshot congelado. El cierre de otra empresa no re-fecha.
         reversal_date = movement.fecha
-        if CierreMensualTesoreria.objects.filter(mes=movement.fecha.replace(day=1), cerrado=True).exists():
+        if _treasury_month_is_closed_for_empresa(movement.fecha, caja.sucursal.empresa_id):
             reversal_date = timezone.localdate()
             observations = f"{observations} Mes de tesoreria original cerrado; reversa fechada al dia de la anulacion."
         MovimientoCajaCentral.objects.create(
@@ -2178,7 +2166,7 @@ def update_box_metadata(
         fecha_operativa
         and caja.fecha_operativa
         and fecha_operativa.replace(day=1) != caja.fecha_operativa.replace(day=1)
-        and treasury_month_is_closed(fecha_operativa)
+        and _treasury_month_is_closed_for_empresa(fecha_operativa, sucursal.empresa_id)
     ):
         raise ValidationError({"fecha_operativa": MONTH_CLOSED_MESSAGE})
     if caja.estado == Caja.Estado.ABIERTA and Caja.objects.filter(
@@ -2247,6 +2235,11 @@ def annul_box(
     motivo = (motivo or "").strip()
     if not motivo:
         raise ValidationError({"motivo": "El motivo de la eliminación es obligatorio."})
+    # Mismo mutex de Empresa que revert_box_cash_validation: anular una caja
+    # validada tambien saca plata del mes que close_treasury_month puede estar
+    # congelando en paralelo.
+    if caja.sucursal.empresa_id:
+        Empresa.objects.select_for_update().get(pk=caja.sucursal.empresa_id)
 
     # EP-13: la anulacion de la caja debe revertir TODO su impacto, incluidas
     # las deudas que origino. Con pagos registrados no se puede anular:
@@ -2601,7 +2594,6 @@ def _push_box_closure_to_central_cash(caja: Caja, *, saldo_fisico: Decimal, acto
     from treasury.services import get_boveda
 
     MovimientoCajaCentral = apps.get_model("treasury", "MovimientoCajaCentral")
-    CierreMensualTesoreria = apps.get_model("treasury", "CierreMensualTesoreria")
     # El guard filtra estado: si el ingreso de un cierre se anulo, este push
     # tiene que poder volver a empujar el efectivo. Sin el filtro, el guard veia
     # el movimiento anulado y la revalidacion no reponia la plata.
@@ -2634,13 +2626,14 @@ def _push_box_closure_to_central_cash(caja: Caja, *, saldo_fisico: Decimal, acto
         central_amount = abs(saldo_fisico)
         central_concept = f"Cierre caja #{caja.id} - saldo negativo"
         central_observations = "Saldo fisico negativo informado al cierre de caja."
-    # Si el mes de la fecha operativa ya esta cerrado en tesoreria, el
-    # movimiento se fecha al dia de la validacion: el snapshot mensual
-    # congelado es inmutable y un movimiento retro-fechado desapareceria de
-    # la cadena de disponibilidades.
+    # Si el mes de la fecha operativa ya esta cerrado en tesoreria PARA ESTA
+    # empresa, el movimiento se fecha al dia de la validacion: el snapshot
+    # mensual congelado es inmutable y un movimiento retro-fechado
+    # desapareceria de la cadena de disponibilidades. El cierre de OTRA
+    # empresa ya no re-fecha (atribuia el efectivo al mes equivocado de la
+    # cadena propia).
     movement_date = caja.fecha_operativa
-    month_start = caja.fecha_operativa.replace(day=1)
-    if CierreMensualTesoreria.objects.filter(mes=month_start, cerrado=True).exists():
+    if _treasury_month_is_closed_for_empresa(caja.fecha_operativa, caja.sucursal.empresa_id):
         movement_date = timezone.localdate()
         nota = (
             f"Efectivo del cierre de caja del {caja.fecha_operativa:%d/%m/%Y} "
@@ -2839,6 +2832,12 @@ def revert_box_cash_validation(*, caja: Caja, motivo: str, actor=None) -> Caja:
     caja = Caja.objects.select_for_update().select_related("sucursal", "turno", "usuario").get(pk=caja.pk)
     if caja.estado != Caja.Estado.CERRADA or caja.validacion_estado != Caja.ValidacionEstado.VALIDADA:
         raise ValidationError({"caja": "Solo se puede revertir una caja con el efectivo ya validado."})
+    # Mutex con close_treasury_month: ambos lados toman el lock de la Empresa,
+    # asi la reversion no anula un empuje mientras el mes se esta congelando
+    # (ni al reves). SQLite ignora el lock; en Postgres serializa. Orden de
+    # locks: siempre Caja -> Empresa (nadie toma Empresa -> Caja con lock).
+    if caja.sucursal.empresa_id:
+        Empresa.objects.select_for_update().get(pk=caja.sucursal.empresa_id)
 
     MovimientoCajaCentral = apps.get_model("treasury", "MovimientoCajaCentral")
     # Matcher DOBLE, igual que _reverse_central_cash_closure_for_box:

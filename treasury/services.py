@@ -1327,8 +1327,15 @@ def annul_bank_movement(*, movement: MovimientoBancario, motivo: str, actor=None
     return _save_instance(movement)
 
 
-def _mes_de_tesoreria_cerrado(fecha) -> bool:
-    return CierreMensualTesoreria.objects.filter(mes=fecha.replace(day=1), cerrado=True).exists()
+def _mes_de_tesoreria_cerrado(fecha, empresa_id=None) -> bool:
+    """Mes cerrado para UNA empresa (el cierre mensual es por empresa desde la
+    0034). Sin empresa_id se mantiene el chequeo global, solo para llamadores
+    que de verdad no tienen empresa. Una fila legacy sin empresa bloquea
+    igual: no se sabe de quien es la foto."""
+    qs = CierreMensualTesoreria.objects.filter(mes=fecha.replace(day=1), cerrado=True)
+    if empresa_id is not None:
+        qs = qs.filter(Q(empresa_id=empresa_id) | Q(empresa__isnull=True))
+    return qs.exists()
 
 
 def _ensure_central_cash_movement_annullable(movement: MovimientoCajaCentral) -> None:
@@ -1363,7 +1370,7 @@ def _ensure_central_cash_movement_annullable(movement: MovimientoCajaCentral) ->
     # ningun lado: hace falta contra-asentar en el mes abierto. Falta definir si
     # esa reversa tambien tiene que corregir el gasto por rubro del mes cerrado.
     # Hoy no hay ningun mes cerrado en produccion, asi que esto no bloquea nada.
-    if _mes_de_tesoreria_cerrado(movement.fecha):
+    if _mes_de_tesoreria_cerrado(movement.fecha, movement.caja_central.empresa_id):
         raise ValidationError(
             {
                 "__all__": (
@@ -2891,6 +2898,17 @@ def close_treasury_month(
     if empresa is None:
         raise ValidationError({"empresa": "Hace falta la empresa para cerrar el mes."})
     empresa_id = getattr(empresa, "pk", empresa)
+    # Mutex contra las operaciones de cashops que sacan plata del mes que se
+    # esta congelando (revertir una validacion, eliminar una caja validada):
+    # ambos lados toman el lock de la Empresa. Sin esto, en Postgres el chequeo
+    # de cajas pendientes y el snapshot podian correr con el estado viejo de
+    # una reversion concurrente y el mes congelaba plata recien anulada.
+    from cashops.models import Empresa
+
+    try:
+        Empresa.objects.select_for_update().get(pk=empresa_id)
+    except Empresa.DoesNotExist:
+        raise ValidationError({"empresa": "La empresa indicada no existe."})
     snapshot = build_disponibilidades_snapshot(year, month, empresa_ids=[empresa_id])
 
     first_day = snapshot["first_day"]
