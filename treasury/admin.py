@@ -191,10 +191,15 @@ class PagoTesoreriaAdmin(TreasuryReadOnlyAdminMixin, admin.ModelAdmin):
 
 @admin.register(MovimientoBancario)
 class MovimientoBancarioAdmin(TreasuryReadOnlyAdminMixin, admin.ModelAdmin):
-    list_display = ("fecha", "cuenta_bancaria", "tipo", "estado", "origen", "monto", "concepto", "pago_tesoreria")
+    list_display = ("fecha", "cuenta_bancaria", "tipo", "estado", "origen", "monto", "concepto", "facturas_pagadas")
     list_filter = ("estado", "tipo", "origen", "fecha", "cuenta_bancaria")
     search_fields = ("concepto", "referencia", "observaciones")
-    autocomplete_fields = ("cuenta_bancaria", "pago_tesoreria", "creado_por")
+    autocomplete_fields = ("cuenta_bancaria", "creado_por")
+
+    @admin.display(description="Facturas pagadas")
+    def facturas_pagadas(self, obj):
+        # US-4.10: un movimiento puede pagar varias facturas.
+        return obj.pagos.count()
 
 
 @admin.register(LotePOS)

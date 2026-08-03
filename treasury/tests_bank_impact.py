@@ -99,7 +99,7 @@ class PaymentBankImpactTests(TestCase):
             actor=self.admin,
         )
 
-        movement = MovimientoBancario.objects.get(pago_tesoreria=payment)
+        movement = MovimientoBancario.objects.get(pagos=payment)
         self.assertEqual(movement.tipo, MovimientoBancario.Tipo.DEBITO)
         self.assertEqual(movement.origen, MovimientoBancario.Origen.PAGO_TESORERIA)
         self.assertEqual(movement.clase, MovimientoBancario.Clase.TRANSFERENCIA_TERCEROS)
@@ -136,11 +136,11 @@ class PaymentBankImpactTests(TestCase):
         )
 
         self.assertEqual(
-            MovimientoBancario.objects.get(pago_tesoreria=cheque).clase,
+            MovimientoBancario.objects.get(pagos=cheque).clase,
             MovimientoBancario.Clase.CHEQUE,
         )
         self.assertEqual(
-            MovimientoBancario.objects.get(pago_tesoreria=echeq).clase,
+            MovimientoBancario.objects.get(pagos=echeq).clase,
             MovimientoBancario.Clase.ECHEQ,
         )
 
@@ -153,7 +153,7 @@ class PaymentBankImpactTests(TestCase):
             actor=self.admin,
         )
 
-        self.assertFalse(MovimientoBancario.objects.filter(pago_tesoreria=payment).exists())
+        self.assertFalse(MovimientoBancario.objects.filter(pagos=payment).exists())
         self.assertTrue(
             MovimientoCajaCentral.objects.filter(
                 pago_tesoreria=payment,
@@ -178,7 +178,7 @@ class PaymentBankImpactTests(TestCase):
 
         payable.refresh_from_db()
         self.assertEqual(payable.estado, CuentaPorPagar.Estado.PAGADA)
-        self.assertFalse(MovimientoBancario.objects.filter(pago_tesoreria=payment).exists())
+        self.assertFalse(MovimientoBancario.objects.filter(pagos=payment).exists())
         payment.refresh_from_db()
         self.assertEqual(payment.estado_bancario, PagoTesoreria.EstadoBancario.PENDIENTE)
 
@@ -232,7 +232,7 @@ class PaymentBankImpactTests(TestCase):
             referencia="TRF-ANULAR",
             actor=self.admin,
         )
-        movement_id = MovimientoBancario.objects.get(pago_tesoreria=payment).pk
+        movement_id = MovimientoBancario.objects.get(pagos=payment).pk
 
         annul_payment(
             payment=payment, motivo="Se cargo el proveedor equivocado", actor=self.admin
@@ -242,7 +242,7 @@ class PaymentBankImpactTests(TestCase):
         self.assertEqual(movement.estado, MovimientoBancario.Estado.ANULADO)
         self.assertIn("Se cargo el proveedor equivocado", movement.motivo_anulacion)
         self.assertEqual(movement.anulado_por, self.admin)
-        self.assertIsNone(movement.pago_tesoreria_id)
+        self.assertFalse(movement.pagos.exists())
         self.assertFalse(movement.generado_por_pago)
         # El banco vuelve a su saldo: el egreso anulado no cuenta en ningun total.
         snapshot = build_financial_period_snapshot(date_from=self.fecha, date_to=self.fecha)
@@ -282,9 +282,10 @@ class PaymentBankImpactTests(TestCase):
         )
         # El pago autogenero su propio debito; para este escenario se descarta ese y
         # se usa el que la persona cargo a mano, como haria desde la pantalla.
-        auto = MovimientoBancario.objects.filter(pago_tesoreria=payment).first()
+        auto = MovimientoBancario.objects.filter(pagos=payment).first()
         self.assertIsNotNone(auto)
-        auto.pago_tesoreria = None
+        payment.movimiento_bancario = None
+        payment.save(skip_domain_guard=True)
         auto.origen = MovimientoBancario.Origen.MANUAL
         auto.generado_por_pago = False
         auto.estado = MovimientoBancario.Estado.ANULADO
@@ -300,5 +301,5 @@ class PaymentBankImpactTests(TestCase):
         manual.refresh_from_db()
         self.assertEqual(manual.estado, MovimientoBancario.Estado.REGISTRADO)
         self.assertEqual(manual.origen, MovimientoBancario.Origen.MANUAL)
-        self.assertIsNone(manual.pago_tesoreria_id)
+        self.assertFalse(manual.pagos.exists())
         self.assertIn("anulado", manual.observaciones.lower())

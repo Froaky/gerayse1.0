@@ -33,9 +33,13 @@
             </span>
           </div>
           <div class="muted" style="margin-top: 6px;">{{ movement.concepto }} | {{ movement.referencia|default:"Sin referencia" }} | ${{ movement.monto }}</div>
-          {% if movement.pago_tesoreria %}
-            <div class="muted" style="margin-top: 6px;">Vinculado al pago #{{ movement.pago_tesoreria.pk }}</div>
-          {% endif %}
+          {% with pagados=movement.pagos.count %}
+            {% if pagados == 1 %}
+              <div class="muted" style="margin-top: 6px;">Vinculado al pago #{{ movement.pagos.first.pk }}</div>
+            {% elif pagados > 1 %}
+              <div class="muted" style="margin-top: 6px;">Repartido entre {{ pagados }} facturas</div>
+            {% endif %}
+          {% endwith %}
         </div>
       {% empty %}
         <p class="muted">Sin movimientos bancarios registrados.</p>

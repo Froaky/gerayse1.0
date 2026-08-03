@@ -1914,3 +1914,72 @@ cadena PROPIA aunque este abierta. Es parte del mismo slice pendiente por empres
   agregar objetivo por grupo hay que decidir la base: ventas totales del periodo
   (lo que ella entiende por "35% de las ventas") vs ventas del propio rubro (lo
   que hace hoy el codigo).
+
+### Una transferencia repartida entre varias facturas (US-4.10) 2026-08-03
+
+- Pedido de la administradora: el pago semanal de cuenta corriente sale como UNA
+  transferencia que cubre 6 facturas de proveedores distintos. Pidio ademas que en
+  el desplegable figuren TODOS los proveedores (no solo los que la transferencia
+  alcanzaba a pagar enteros) y un filtro por proveedor.
+- Diagnostico: los tres pedidos eran UNO. El desplegable filtraba por
+  `saldo_pendiente >= movimiento.monto` justamente porque una transferencia pagaba
+  una sola factura por su importe exacto. Sacar el filtro sin resolver el reparto
+  habria sido peor: elegir una factura de $200.000 y pagarle $1.209.905,08.
+- Vuelta de la relacion: `MovimientoBancario.pago_tesoreria` (OneToOne) pasa a
+  `PagoTesoreria.movimiento_bancario` (FK, related_name="pagos"). El vinculo tiene
+  que vivir del lado del pago porque son N pagos por movimiento. Detalle que
+  abarato todo: el accessor inverso YA se llamaba `movimiento_bancario`, asi que
+  las 8 lecturas `pago.movimiento_bancario` no se tocaron; solo cambiaron los 16
+  puntos que escribian o preguntaban desde el lado del movimiento.
+- Migracion `treasury/0036` escrita A MANO para fijar el orden: AlterField (libera
+  el nombre del accessor) -> AddField -> RunPython (copia los vinculos) ->
+  RemoveField. Asi ningun estado intermedio tiene dos cosas llamadas
+  `movimiento_bancario`. Reversible: la vuelta atras conserva UN pago por
+  movimiento (era OneToOne) tomando el mas viejo.
+- Impacto de datos: cada vinculo existente se copia uno a uno. Verificado con
+  `treasury/tests_migracion_vinculo_pago.py`, que vuelve a 0035 con
+  MigrationExecutor, crea filas vinculadas con los modelos de ESE estado y migra
+  hacia adelante (3 casos: el vinculo llega, un debito sin pago no se inventa uno,
+  y la vuelta atras lo devuelve). En Postgres AddField nullable y DropColumn son
+  metadata: sin reescritura de tabla.
+- Reglas que se movieron de sitio: las validaciones de `MovimientoBancario.clean()`
+  que comparaban contra EL pago (clase segun medio de pago, misma cuenta, pago
+  REGISTRADO, proveedor y categoria de la deuda) pasaron a
+  `link_payment_to_bank_movement`, que es el unico lugar que crea el vinculo. Ya no
+  podian vivir en clean(): los pagos se asocian DESPUES de guardar el movimiento.
+  Se perdio como invariante de modelo "origen PAGO_TESORERIA implica pago
+  vinculado"; queda garantizado por el servicio.
+- Con proveedores distintos el movimiento NO se queda con el proveedor de la
+  primera factura (seria mentir): `proveedor` y `categoria` quedan en NULL y los
+  proveedores se leen de los pagos. Para eso se relajo el clean(): la clase
+  TRANSFERENCIA_TERCEROS con origen PAGO_TESORERIA no exige proveedor. Cheque y
+  ECHEQ lo siguen exigiendo, porque tienen un solo beneficiario. El
+  rubro/sucursal/periodo heredados son los de la PRIMERA factura (clean los exige)
+  y no afectan ningun total: los debitos con origen PAGO_TESORERIA quedan fuera del
+  gasto economico, porque el costo ya lo conto la deuda.
+- Concurrencia: `link_payment_to_bank_movement` y `pay_debts_from_bank_movement`
+  bloquean la fila del movimiento (`select_for_update(of=("self",))`) ANTES de
+  sumar lo ya asignado. Sin el lock, dos vinculaciones simultaneas leen el mismo
+  "queda por asignar", las dos pasan y juntas se pasan del importe (write skew bajo
+  READ COMMITTED). Compilado contra el backend de Postgres sin servidor: FOR UPDATE
+  OF valido, sin LEFT OUTER JOIN. SQLite ignora el lock, asi que ese caso no se
+  puede testear local.
+- El reparto es todo o nada (`@transaction.atomic` + validacion de la suma antes de
+  crear): media transferencia repartida es peor que ninguna, porque despues no se
+  sabe que parte falto.
+- Anular UNO de los pagos libera solo su importe: el movimiento sigue REGISTRADO y
+  con origen PAGO_TESORERIA mientras le queden otros pagos vivos. Solo al anular el
+  ultimo vuelve a MANUAL (y se anula si lo habia generado el sistema, como antes).
+- Pantalla nueva `treasury/pay_debts_split.html`: todas las facturas impagas con
+  checkbox e importe por fila, filtro por proveedor, y en la cabecera importe de la
+  transferencia / ya asignado / queda por asignar. Lo que sobra queda sin asignar y
+  se puede usar despues; el detalle del movimiento lo muestra y ofrece "Asignar el
+  resto a otra deuda".
+- De paso: el formato de plata estaba duplicado en `views._money` y en el filtro
+  `money`. Ahora hay UNA implementacion (`services.formato_money`) y las otras dos
+  delegan, porque los servicios tambien arman mensajes con importes.
+- Tests: 20 nuevos (12 de servicio en `tests_pago_desde_banco.py` + 3 de vista + 3
+  de migracion + 2 reescritos). Se REESCRIBIO
+  `test_el_paso_uno_ofrece_solo_proveedores_con_facturas_alcanzables`: fijaba
+  justamente el comportamiento que ella pidio cambiar. Suite completa 564 OK, 4
+  skipped.

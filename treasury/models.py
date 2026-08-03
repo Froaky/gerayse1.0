@@ -788,6 +788,20 @@ class PagoTesoreria(models.Model):
         blank=True,
         related_name="pagos",
     )
+    # US-4.10: el vinculo con el extracto vive de este lado porque UNA
+    # transferencia puede pagar VARIAS facturas (el pago semanal de cuenta
+    # corriente sale en un solo monto). Antes era un OneToOne en
+    # MovimientoBancario y por eso una transferencia pagaba una sola factura.
+    # El nombre del campo es el mismo que tenia el accessor inverso, asi que
+    # `pago.movimiento_bancario` sigue leyendose igual que siempre.
+    movimiento_bancario = models.ForeignKey(
+        "MovimientoBancario",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="pagos",
+        verbose_name="Movimiento bancario",
+    )
     medio_pago = models.CharField(max_length=20, choices=MedioPago.choices)
     fecha_pago = models.DateField()
     fecha_diferida = models.DateField(null=True, blank=True)
@@ -1052,13 +1066,9 @@ class MovimientoBancario(models.Model):
         blank=True,
         related_name="movimientos_bancarios",
     )
-    pago_tesoreria = models.OneToOneField(
-        PagoTesoreria,
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name="movimiento_bancario",
-    )
+    # US-4.10: el vinculo con los pagos vive en PagoTesoreria.movimiento_bancario
+    # (FK), no aca, porque una transferencia puede pagar varias facturas. Se llega
+    # a ellos con `movimiento.pagos`.
     # True cuando el debito lo genero el sistema al registrar un pago (no lo cargo
     # una persona mirando el resumen del banco). Cambia que pasa al anular el pago:
     # si lo genero el sistema, el debito nunca existio en el banco y se anula; si lo
@@ -1175,41 +1185,28 @@ class MovimientoBancario(models.Model):
             self.periodo_pago = self.periodo_pago.replace(day=1)
         if self.rubro_operativo_id and (not self.rubro_operativo.activo or self.rubro_operativo.es_sistema):
             errors["rubro_operativo"] = "El rubro debe estar activo y no puede ser de sistema."
-        if self.clase in {
-            self.Clase.CHEQUE,
-            self.Clase.ECHEQ,
-            self.Clase.TRANSFERENCIA_TERCEROS,
-        } and not self.proveedor_id:
+        exige_proveedor = {self.Clase.CHEQUE, self.Clase.ECHEQ, self.Clase.TRANSFERENCIA_TERCEROS}
+        if self.clase == self.Clase.TRANSFERENCIA_TERCEROS and self.origen == self.Origen.PAGO_TESORERIA:
+            # US-4.10: una transferencia puede pagar facturas de proveedores
+            # distintos (el pago semanal de cuenta corriente). En ese caso no hay
+            # UN proveedor que poner en el movimiento: los proveedores se leen de
+            # los pagos vinculados. Cheque y ECHEQ lo siguen exigiendo, porque un
+            # cheque tiene un solo beneficiario.
+            exige_proveedor = {self.Clase.CHEQUE, self.Clase.ECHEQ}
+        if self.clase in exige_proveedor and not self.proveedor_id:
             errors["proveedor"] = "El proveedor es obligatorio para este tipo de movimiento."
         if self.cuenta_bancaria_id and not self.cuenta_bancaria.activa:
             errors["cuenta_bancaria"] = "La cuenta bancaria está inactiva."
-        if self.pago_tesoreria_id:
-            if self.tipo != self.Tipo.DEBITO:
-                errors["tipo"] = "Un pago de tesoreria solo puede vincularse a un debito bancario."
-            if self.origen != self.Origen.PAGO_TESORERIA:
-                errors["origen"] = "El origen debe ser pago de tesoreria cuando existe un pago vinculado."
-            expected_class = {
-                PagoTesoreria.MedioPago.CHEQUE: self.Clase.CHEQUE,
-                PagoTesoreria.MedioPago.ECHEQ: self.Clase.ECHEQ,
-            }.get(self.pago_tesoreria.medio_pago, self.Clase.TRANSFERENCIA_TERCEROS)
-            if self.clase != expected_class:
-                errors["clase"] = "La clase no coincide con el medio de pago vinculado."
-            if self.cuenta_bancaria_id and self.cuenta_bancaria_id != self.pago_tesoreria.cuenta_bancaria_id:
-                errors["cuenta_bancaria"] = "El movimiento debe usar la misma cuenta bancaria del pago."
-            if self.pago_tesoreria.estado != PagoTesoreria.Estado.REGISTRADO:
-                errors["pago_tesoreria"] = "Solo podes vincular pagos registrados."
-            payable = self.pago_tesoreria.cuenta_por_pagar
-            if self.proveedor_id and self.proveedor_id != payable.proveedor_id:
-                errors["proveedor"] = "El proveedor debe coincidir con la obligacion pagada."
-            if self.categoria_id and self.categoria_id != payable.categoria_id:
-                errors["categoria"] = "La categoria debe coincidir con la obligacion pagada."
-        elif self.origen == self.Origen.PAGO_TESORERIA:
-            errors["pago_tesoreria"] = "El origen pago de tesoreria requiere un pago vinculado."
+        if self.origen == self.Origen.PAGO_TESORERIA and self.tipo != self.Tipo.DEBITO:
+            errors["tipo"] = "Un pago de tesoreria solo puede vincularse a un debito bancario."
+        # US-4.10: las reglas que comparan contra EL pago vinculado (clase segun
+        # medio de pago, misma cuenta, pago registrado, proveedor y categoria de
+        # la deuda) se mudaron a link_payment_to_bank_movement, que es el unico
+        # lugar que crea el vinculo. Ya no pueden vivir aca: los pagos se asocian
+        # DESPUES de guardar el movimiento, y ahora pueden ser varios.
         if self.origen == self.Origen.EGRESO_TESORERIA:
             if self.tipo != self.Tipo.DEBITO:
                 errors["tipo"] = "Un egreso de tesoreria bancario solo puede ser debito."
-            if self.pago_tesoreria_id:
-                errors["pago_tesoreria"] = "Un egreso administrativo de tesoreria no debe vincularse a un pago."
         if self.origen == self.Origen.ACREDITACION_TARJETA and self.clase != self.Clase.ACREDITACION:
             errors["clase"] = "Las acreditaciones de tarjeta deben quedar tipificadas como acreditación."
         if errors:

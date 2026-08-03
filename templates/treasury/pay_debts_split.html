@@ -1,0 +1,119 @@
+{% extends "treasury/layout.html" %}
+{% load treasury_tags %}
+{% load l10n %}
+{% block title %}Repartir transferencia | Tesorería | Gerayse{% endblock %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Pagar deudas con esta transferencia</h1>
+        <p class="muted">
+          {{ movement.concepto }} - {{ movement.monto|money }} del {{ movement.fecha|date:"d/m/Y" }}.
+          Marca las facturas que cubre y cuanto va a cada una.
+        </p>
+      </div>
+      <a class="button-secondary" href="{{ back_url }}">Volver</a>
+    </div>
+    <div class="summary-grid mt-16">
+      <div class="summary">
+        <span class="muted">Importe de la transferencia</span>
+        <strong>{{ movement.monto|money }}</strong>
+      </div>
+      {% if ya_asignado %}
+        <div class="summary">
+          <span class="muted">Ya asignado a deudas</span>
+          <strong>{{ ya_asignado|money }}</strong>
+        </div>
+      {% endif %}
+      <div class="summary">
+        <span class="muted">Queda por asignar</span>
+        <strong data-sin-asignar-total>{{ sin_asignar|money }}</strong>
+        <small class="muted">Es el maximo que podes repartir ahora</small>
+      </div>
+    </div>
+  </section>
+
+  <section class="card mt-16">
+    <form method="get" class="row">
+      <div class="field" style="flex:1;">
+        <label for="filtro-proveedor">Filtrar por proveedor</label>
+        <select class="input select" id="filtro-proveedor" name="proveedor">
+          <option value="">Todos los proveedores</option>
+          {% for proveedor in proveedores %}
+            <option value="{{ proveedor.pk|unlocalize }}" {% if proveedor_elegido.pk == proveedor.pk %}selected{% endif %}>{{ proveedor.razon_social }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="list-actions">
+        <button class="button" type="submit">Filtrar</button>
+        {% if proveedor_elegido %}
+          <a class="button-secondary" href="{% url 'treasury:bank_movements_pay_debt' movement.pk %}">Ver todas</a>
+        {% endif %}
+      </div>
+    </form>
+  </section>
+
+  <form method="post" action="{% url 'treasury:bank_movements_pay_debt' movement.pk %}?{% if proveedor_elegido %}proveedor={{ proveedor_elegido.pk|unlocalize }}{% endif %}">
+    {% csrf_token %}
+    <section class="card mt-16">
+      <div class="row">
+        <div>
+          <h2>Facturas impagas</h2>
+          <p class="muted">
+            {% if proveedor_elegido %}
+              Solo las de {{ proveedor_elegido.razon_social }}.
+            {% else %}
+              De todos los proveedores. Podes mezclar facturas de proveedores distintos en el mismo reparto.
+            {% endif %}
+          </p>
+        </div>
+        <span class="badge">{{ facturas|length }}</span>
+      </div>
+      <div class="list mt-16">
+        {% for fila in facturas %}
+          <div class="list-item">
+            <div class="row">
+              <div>
+                <strong>{{ fila.payable.proveedor.razon_social }}</strong>
+                <div class="muted mt-8">{{ fila.payable.concepto }}</div>
+                <div class="muted mt-8">
+                  Vence {{ fila.payable.fecha_vencimiento|date:"d/m/Y" }} ·
+                  Total {{ fila.payable.importe_total|money }} ·
+                  Pendiente {{ fila.payable.saldo_pendiente|money }}
+                </div>
+              </div>
+              <div class="stack" style="gap:6px; min-width:220px;">
+                <label class="field" style="display:flex; align-items:center; gap:8px;">
+                  <input type="checkbox" class="checkbox" name="payable_id" value="{{ fila.payable.pk|unlocalize }}">
+                  <span>Pagar esta factura</span>
+                </label>
+                <label class="field">
+                  <span class="muted">Importe a asignar</span>
+                  <input class="input" type="text" inputmode="decimal"
+                         name="monto_{{ fila.payable.pk|unlocalize }}"
+                         value="{{ fila.sugerido|unlocalize }}">
+                </label>
+              </div>
+            </div>
+          </div>
+        {% empty %}
+          <p class="muted">
+            {% if proveedor_elegido %}
+              {{ proveedor_elegido.razon_social }} no tiene facturas impagas.
+            {% else %}
+              No hay facturas impagas para asignar.
+            {% endif %}
+          </p>
+        {% endfor %}
+      </div>
+      {% if facturas %}
+        <div class="row mt-16">
+          <span class="muted">
+            Si le asignas menos que el total, la diferencia queda sin asignar y la podes usar despues.
+          </span>
+          <button class="button" type="submit">Pagar las facturas marcadas</button>
+        </div>
+      {% endif %}
+    </section>
+  </form>
+{% endblock %}

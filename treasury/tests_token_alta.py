@@ -93,7 +93,7 @@ class TreasuryTokenAltaTests(TestCase):
         self.assertEqual(deuda.saldo_pendiente, Decimal("600.00"))
         # El debito bancario del pago tambien quedo uno solo.
         self.assertEqual(
-            MovimientoBancario.objects.filter(pago_tesoreria=primero).count(), 1
+            MovimientoBancario.objects.filter(pagos=primero).count(), 1
         )
 
     def test_new_token_creates_second_identical_payment(self):

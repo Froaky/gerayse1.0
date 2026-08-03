@@ -101,7 +101,11 @@ from .services import (
     create_supplier,
     decide_special_commitment,
     get_boveda,
+    formato_money,
+    importe_asignado_del_movimiento,
+    importe_sin_asignar_del_movimiento,
     pay_debt_from_bank_movement,
+    pay_debts_from_bank_movement,
     is_central_cash_movement_annullable,
     link_payment_to_bank_movement,
     register_arqueo,
@@ -232,9 +236,8 @@ def _filter_sucursal_qs(request, qs):
 
 
 def _money(value) -> str:
-    value = value or Decimal("0.00")
-    formatted = f"{value:,.2f}"
-    return f"$ {formatted.replace(',', '_').replace('.', ',').replace('_', '.')}"
+    # Un solo formato de plata en todo el sistema: services.formato_money.
+    return formato_money(value)
 
 
 def _payable_badge(payable: CuentaPorPagar) -> tuple[str, str]:
@@ -318,7 +321,7 @@ def _bank_movement_can_be_manually_changed(movement: MovimientoBancario) -> bool
         return False
     if movement.origen != MovimientoBancario.Origen.MANUAL:
         return False
-    if movement.pago_tesoreria_id:
+    if movement.pagos.filter(estado=PagoTesoreria.Estado.REGISTRADO).exists():
         return False
     return not hasattr(movement, "acreditacion_tarjeta")
 
@@ -1753,7 +1756,6 @@ def bank_movements_list(request):
     ).select_related(
         "cuenta_bancaria",
         "cuenta_bancaria__sucursal",
-        "pago_tesoreria",
         "creado_por",
         "categoria",
         "categoria__rubro_operativo",
@@ -2091,7 +2093,6 @@ def bank_movements_detail(request, pk):
     movement = get_object_or_404(
         MovimientoBancario.objects.select_related(
             "cuenta_bancaria",
-            "pago_tesoreria",
             "creado_por",
             "actualizado_por",
             "categoria",
@@ -2134,18 +2135,26 @@ def bank_movements_detail(request, pk):
     if _bank_movement_can_be_manually_changed(movement):
         actions.append(_action(reverse("treasury:bank_movements_edit_confirm", args=[movement.pk]), "Editar", "secondary"))
         actions.append(_action(reverse("treasury:bank_movements_delete_confirm", args=[movement.pk]), "Eliminar", "secondary"))
+    pagos_vinculados = list(
+        movement.pagos.filter(estado=PagoTesoreria.Estado.REGISTRADO)
+        .select_related("cuenta_por_pagar", "cuenta_por_pagar__proveedor")
+        .order_by("pk")
+    )
+    sin_asignar = importe_sin_asignar_del_movimiento(movement)
     if (
         movement.estado == MovimientoBancario.Estado.REGISTRADO
-        and not movement.pago_tesoreria
+        and sin_asignar > 0
         and movement.tipo == MovimientoBancario.Tipo.DEBITO
     ):
         # Dos caminos distintos y conviene que se lean como tales: "Pagar una
         # deuda" genera el pago solo desde esta transferencia (el camino nuevo),
         # y "Vincular a pago" asocia un pago que ya se cargo a mano.
+        # US-4.10: siguen apareciendo mientras quede plata sin asignar, porque una
+        # transferencia puede repartirse entre varias facturas.
         actions.append(
             _action(
                 reverse("treasury:bank_movements_pay_debt", args=[movement.pk]),
-                "Pagar una deuda",
+                "Pagar una deuda" if not pagos_vinculados else "Asignar el resto a otra deuda",
                 "primary",
             )
         )
@@ -2161,10 +2170,19 @@ def bank_movements_detail(request, pk):
         )
 
     extra_sections = []
-    if movement.pago_tesoreria:
+    if pagos_vinculados:
+        if len(pagos_vinculados) == 1 and sin_asignar <= 0:
+            titulo = "Pago vinculado"
+        else:
+            titulo = (
+                f"{len(pagos_vinculados)} factura{'s' if len(pagos_vinculados) > 1 else ''} "
+                f"pagada{'s' if len(pagos_vinculados) > 1 else ''} con esta transferencia"
+            )
+            if sin_asignar > 0:
+                titulo += f" - quedan {_money(sin_asignar)} sin asignar"
         extra_sections.append({
-            "title": "Pago vinculado",
-            "items": [_payment_item(movement.pago_tesoreria)],
+            "title": titulo,
+            "items": [_payment_item(pago) for pago in pagos_vinculados],
         })
 
     return render(request, "treasury/detail_page.html", {
@@ -2184,15 +2202,16 @@ def bank_movements_detail(request, pk):
 
 @login_required
 def bank_movements_pay_debt(request, pk):
-    """Paga una deuda directamente desde una transferencia ya cargada.
+    """Reparte una transferencia ya cargada entre una o varias facturas.
 
-    Antes habia que cargar el pago a mano y despues vincularlo al movimiento.
-    Aca se elige proveedor, se elige la factura y el pago se genera solo por el
-    importe exacto de la transferencia, sin crear un segundo debito.
+    US-4.10: el pago semanal de cuenta corriente sale en un solo monto y cubre
+    facturas de proveedores distintos, asi que se listan TODAS las facturas
+    impagas (no solo las que la transferencia alcanza a pagar enteras), con un
+    filtro por proveedor y un importe por factura.
 
-    Una transferencia paga UNA factura: MovimientoBancario.pago_tesoreria es
-    OneToOne y la vinculacion exige que los importes coincidan. Si la factura
-    debe mas que la transferencia, queda pagada parcialmente.
+    Se elige cuanto va a cada una; la suma no puede pasar lo que le queda sin
+    asignar a la transferencia. No se crea ningun debito nuevo: la transferencia
+    sigue siendo un solo movimiento del extracto.
     """
     _require_treasury_admin(request)
     empresa_ids = _get_empresa_ids(request)
@@ -2203,94 +2222,87 @@ def bank_movements_pay_debt(request, pk):
     if movement.tipo != MovimientoBancario.Tipo.DEBITO:
         messages.error(request, "Solo un debito puede pagar una deuda.")
         return redirect(detalle_url)
-    if movement.pago_tesoreria_id:
-        messages.error(request, "Este movimiento ya esta vinculado a un pago.")
+
+    sin_asignar = importe_sin_asignar_del_movimiento(movement)
+    if sin_asignar <= 0:
+        messages.error(request, "Esta transferencia ya esta asignada por completo.")
         return redirect(detalle_url)
 
-    # Paso 1: elegir proveedor. Solo los que tienen facturas que esta
-    # transferencia alcanza a pagar.
-    candidatas = open_payables_queryset(empresa_ids).filter(
-        saldo_pendiente__gte=movement.monto
-    )
-    proveedor_id = request.POST.get("proveedor") or request.GET.get("proveedor")
-    proveedor = None
-    if proveedor_id and str(proveedor_id).isdigit():
-        proveedor = Proveedor.objects.filter(
-            pk=proveedor_id, pk__in=candidatas.values_list("proveedor_id", flat=True)
-        ).first()
+    candidatas = open_payables_queryset(empresa_ids).select_related("proveedor", "categoria")
+    proveedores = Proveedor.objects.filter(
+        pk__in=candidatas.values_list("proveedor_id", flat=True)
+    ).order_by("razon_social")
 
-    if proveedor is None:
-        picker = SupplierPickerForm(request.GET or None, empresa_ids=empresa_ids)
-        picker.fields["proveedor"].queryset = Proveedor.objects.filter(
-            pk__in=candidatas.values_list("proveedor_id", flat=True)
-        ).order_by("razon_social")
-        picker.fields["proveedor"].help_text = (
-            f"Se listan los proveedores con facturas de {_money(movement.monto)} o mas."
-        )
-        return _render_form(
-            request,
-            {
-                "title": "Pagar una deuda con esta transferencia",
-                "subtitle": (
-                    f"{movement.concepto} - {_money(movement.monto)} del "
-                    f"{movement.fecha:%d/%m/%Y}. Elegi el proveedor y despues la factura."
-                ),
-                "form": picker,
-                "submit_label": "Ver sus facturas impagas",
-                "back_url": detalle_url,
-                "form_action": request.path,
-                "form_method": "get",
-            },
-        )
+    filtro_proveedor = (request.GET.get("proveedor") or "").strip()
+    proveedor_elegido = None
+    if filtro_proveedor.isdigit():
+        proveedor_elegido = proveedores.filter(pk=filtro_proveedor).first()
+        if proveedor_elegido is not None:
+            candidatas = candidatas.filter(proveedor=proveedor_elegido)
 
-    # Paso 2: elegir la factura.
-    facturas = candidatas.filter(proveedor=proveedor)
-    if request.method == "POST" and request.POST.get("payable_id"):
-        payable = get_object_or_404(facturas, pk=request.POST["payable_id"])
-        try:
-            payment = pay_debt_from_bank_movement(
-                bank_movement=movement, payable=payable, actor=request.user
-            )
-        except ValidationError as error:
-            messages.error(request, " ".join(error.messages))
-        else:
-            messages.success(
-                request,
-                f"Deuda pagada con esta transferencia. Le quedan "
-                f"{_money(payment.cuenta_por_pagar.saldo_pendiente)} pendientes.",
-            )
-            return redirect(detalle_url)
+    if request.method == "POST":
+        asignaciones = []
+        errores = []
+        elegidas = request.POST.getlist("payable_id")
+        for payable_id in elegidas:
+            factura = candidatas.filter(pk=payable_id).first()
+            if factura is None:
+                errores.append("Una de las facturas elegidas ya no esta disponible.")
+                continue
+            crudo = (request.POST.get(f"monto_{payable_id}") or "").strip()
+            if not crudo:
+                monto = min(factura.saldo_pendiente, sin_asignar)
+            else:
+                try:
+                    monto = Decimal(crudo.replace(",", "."))
+                except (InvalidOperation, ValueError):
+                    errores.append(f"El importe de {factura.concepto} no es un numero.")
+                    continue
+            asignaciones.append((factura, monto))
 
-    items = [
+        if not asignaciones and not errores:
+            errores.append("Elegi al menos una factura.")
+        if not errores:
+            try:
+                pagos = pay_debts_from_bank_movement(
+                    bank_movement=movement,
+                    asignaciones=asignaciones,
+                    actor=request.user,
+                )
+            except ValidationError as error:
+                errores.extend(error.messages)
+            else:
+                queda = importe_sin_asignar_del_movimiento(
+                    MovimientoBancario.objects.get(pk=movement.pk)
+                )
+                detalle = f"{len(pagos)} factura{'s' if len(pagos) > 1 else ''} pagada"
+                detalle += "s" if len(pagos) > 1 else ""
+                if queda > 0:
+                    detalle += f". Quedan {_money(queda)} de la transferencia sin asignar"
+                messages.success(request, f"{detalle}.")
+                return redirect(detalle_url)
+        for mensaje in errores:
+            messages.error(request, mensaje)
+
+    facturas = [
         {
-            "id": f.pk,
-            "title": f"{f.concepto}",
-            "subtitle": (
-                f"Vence {f.fecha_vencimiento:%d/%m/%Y} | Total {_money(f.importe_total)} | "
-                f"Pendiente {_money(f.saldo_pendiente)}"
-            ),
-            "badge": _money(f.saldo_pendiente),
+            "payable": factura,
+            "sugerido": min(factura.saldo_pendiente, sin_asignar),
         }
-        for f in facturas
+        for factura in candidatas.order_by("proveedor__razon_social", "fecha_vencimiento", "pk")
     ]
     return render(
         request,
-        "treasury/selection_page.html",
+        "treasury/pay_debts_split.html",
         {
-            "title": f"Facturas impagas de {proveedor.razon_social}",
-            "subtitle": (
-                f"Se va a pagar {_money(movement.monto)} (el importe de la transferencia) "
-                "contra la factura que elijas."
-            ),
-            "items": items,
-            "radio_name": "payable_id",
-            "submit_label": "Pagar esta factura",
-            "empty_message": (
-                f"{proveedor.razon_social} no tiene facturas impagas de "
-                f"{_money(movement.monto)} o mas."
-            ),
-            "post_url": f"{request.path}?proveedor={proveedor.pk}",
-            "back_url": request.path,
+            "movement": movement,
+            "sin_asignar": sin_asignar,
+            "ya_asignado": importe_asignado_del_movimiento(movement),
+            "facturas": facturas,
+            "proveedores": proveedores,
+            "proveedor_elegido": proveedor_elegido,
+            "back_url": detalle_url,
+            "money": _money,
         },
     )
 

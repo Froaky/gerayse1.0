@@ -30,6 +30,27 @@ from .models import (
 from .permissions import ensure_delete_central_cash_movement, ensure_treasury_admin
 
 
+def formato_money(value) -> str:
+    """Formato de plata argentino: $ 1.209.905,08.
+
+    Vive aca porque los servicios tambien arman mensajes con importes (los que ve
+    el usuario cuando algo no cuadra). `views._money` y el filtro `money` de las
+    plantillas delegan a esta, asi hay UN solo formato en todo el sistema.
+    """
+    if value is None:
+        value = Decimal("0.00")
+    if not isinstance(value, Decimal):
+        try:
+            value = Decimal(str(value))
+        except (ArithmeticError, TypeError, ValueError):
+            return "$ 0,00"
+    formatted = f"{value:,.2f}"
+    return f"$ {formatted.replace(',', '_').replace('.', ',').replace('_', '.')}"
+
+
+_money = formato_money
+
+
 def _require_actor(actor) -> None:
     if actor is None or not getattr(actor, "is_authenticated", False):
         raise PermissionDenied("Se requiere usuario para operar tesoreria.")
@@ -876,34 +897,48 @@ def pay_debt_from_bank_movement(
     *,
     bank_movement: MovimientoBancario,
     payable: CuentaPorPagar,
+    monto: Decimal = None,
     observaciones: str = "",
     actor=None,
 ) -> PagoTesoreria:
     """Paga una deuda desde una transferencia que ya esta en el extracto.
 
     Antes habia que cargar el pago a mano y despues vincularlo. Ahora se elige la
-    factura y el pago se genera solo, por el importe exacto del movimiento, y
-    queda vinculado sin crear un segundo debito.
+    factura y el pago se genera solo, sin crear un segundo debito.
 
-    El importe es siempre el del movimiento: `link_payment_to_bank_movement`
-    exige que coincidan, y `MovimientoBancario.pago_tesoreria` es OneToOne, asi
-    que una transferencia paga UNA factura (total o parcialmente).
+    US-4.10: `monto` permite usar solo una parte de la transferencia, para
+    repartirla entre varias facturas. Si no se pasa, se usa todo lo que le queda
+    sin asignar (el comportamiento de antes, cuando pagaba una sola factura).
     """
     _require_actor(actor)
     if bank_movement.estado != MovimientoBancario.Estado.REGISTRADO:
         raise ValidationError({"__all__": "El movimiento bancario esta anulado."})
     if bank_movement.tipo != MovimientoBancario.Tipo.DEBITO:
         raise ValidationError({"__all__": "Solo un debito puede pagar una deuda."})
-    if bank_movement.pago_tesoreria_id:
-        raise ValidationError({"__all__": "Este movimiento ya esta vinculado a un pago."})
     if payable.estado == CuentaPorPagar.Estado.ANULADA:
         raise ValidationError({"cuenta_por_pagar": "La deuda esta anulada."})
-    if bank_movement.monto > payable.saldo_pendiente:
+
+    sin_asignar = importe_sin_asignar_del_movimiento(bank_movement)
+    if sin_asignar <= 0:
+        raise ValidationError({"__all__": "Esta transferencia ya esta asignada por completo."})
+    monto = sin_asignar if monto is None else Decimal(monto)
+    if monto <= 0:
+        raise ValidationError({"monto": "El importe a asignar tiene que ser mayor que cero."})
+    if monto > sin_asignar:
+        raise ValidationError(
+            {
+                "monto": (
+                    f"A esta transferencia le quedan {_money(sin_asignar)} sin asignar y estas "
+                    f"queriendo asignar {_money(monto)}."
+                )
+            }
+        )
+    if monto > payable.saldo_pendiente:
         raise ValidationError(
             {
                 "cuenta_por_pagar": (
-                    f"La transferencia es de {bank_movement.monto} y a la factura le quedan "
-                    f"{payable.saldo_pendiente}. Elegi una factura con saldo suficiente."
+                    f"A la factura le quedan {_money(payable.saldo_pendiente)} y estas queriendo "
+                    f"asignarle {_money(monto)}."
                 )
             }
         )
@@ -911,12 +946,73 @@ def pay_debt_from_bank_movement(
         payable=payable,
         bank_account=bank_movement.cuenta_bancaria,
         fecha_pago=bank_movement.fecha,
-        monto=bank_movement.monto,
+        monto=monto,
         referencia=bank_movement.referencia or "",
         observaciones=observaciones,
         bank_movement=bank_movement,
         actor=actor,
     )
+
+
+@transaction.atomic
+def pay_debts_from_bank_movement(
+    *,
+    bank_movement: MovimientoBancario,
+    asignaciones,
+    observaciones: str = "",
+    actor=None,
+) -> list:
+    """US-4.10: reparte UNA transferencia entre VARIAS facturas.
+
+    `asignaciones` es una lista de (CuentaPorPagar, monto). Pueden ser de
+    proveedores distintos: el pago semanal de cuenta corriente sale en un solo
+    monto y cubre las facturas de varios proveedores a la vez.
+
+    Es todo o nada. Si una sola asignacion falla, no queda ninguna hecha: media
+    transferencia repartida es peor que ninguna, porque despues no se sabe que
+    parte falto.
+
+    La suma se controla contra lo que le queda sin asignar al movimiento, con la
+    fila bloqueada (ver link_payment_to_bank_movement).
+    """
+    _require_actor(actor)
+    if not asignaciones:
+        raise ValidationError({"__all__": "Elegi al menos una factura y su importe."})
+
+    bloqueado = MovimientoBancario.objects.select_for_update(of=("self",)).get(pk=bank_movement.pk)
+    if bloqueado.estado != MovimientoBancario.Estado.REGISTRADO:
+        raise ValidationError({"__all__": "El movimiento bancario esta anulado."})
+    if bloqueado.tipo != MovimientoBancario.Tipo.DEBITO:
+        raise ValidationError({"__all__": "Solo un debito puede pagar una deuda."})
+
+    total_a_asignar = sum((Decimal(monto) for _payable, monto in asignaciones), Decimal("0.00"))
+    sin_asignar = importe_sin_asignar_del_movimiento(bloqueado)
+    if total_a_asignar > sin_asignar:
+        raise ValidationError(
+            {
+                "__all__": (
+                    f"Estas repartiendo {_money(total_a_asignar)} y a la transferencia le quedan "
+                    f"{_money(sin_asignar)} sin asignar."
+                )
+            }
+        )
+
+    vistas = set()
+    pagos = []
+    for payable, monto in asignaciones:
+        if payable.pk in vistas:
+            raise ValidationError({"__all__": "Elegiste dos veces la misma factura."})
+        vistas.add(payable.pk)
+        pagos.append(
+            pay_debt_from_bank_movement(
+                bank_movement=bloqueado,
+                payable=payable,
+                monto=monto,
+                observaciones=observaciones,
+                actor=actor,
+            )
+        )
+    return pagos
 
 
 def register_cheque_payment(
@@ -1040,6 +1136,9 @@ def _create_bank_movement_for_payment(payment: PagoTesoreria, *, payable: Cuenta
         generado_por_pago=True,
         actor=actor,
     )
+    # US-4.10: el vinculo se escribe del lado del pago, asi que se setea despues
+    # de tener el movimiento creado (antes viajaba en el propio create).
+    payment.movimiento_bancario = movement
     payment.estado_bancario = PagoTesoreria.EstadoBancario.IMPACTADO
     payment.actualizado_por = actor
     payment.save(skip_domain_guard=True)
@@ -1069,7 +1168,25 @@ def _release_bank_movement_from_annulled_payment(payment: PagoTesoreria, *, moti
     if movement is None:
         return None
     generado_por_el_sistema = movement.generado_por_pago
-    movement.pago_tesoreria = None
+    payment.movimiento_bancario = None
+
+    # US-4.10: si el movimiento paga otras facturas, anular ESTE pago no lo
+    # devuelve a MANUAL ni lo anula: la transferencia sigue existiendo en el
+    # extracto y sigue pagando las demas. Solo se libera el importe de este pago,
+    # que vuelve a quedar sin asignar.
+    hermanos = (
+        MovimientoBancario.objects.get(pk=movement.pk)
+        .pagos.filter(estado=PagoTesoreria.Estado.REGISTRADO)
+        .exclude(pk=payment.pk)
+        .exists()
+    )
+    if hermanos:
+        nota = f"Pago #{payment.pk} anulado: {motivo}"
+        movement.observaciones = f"{movement.observaciones} {nota}".strip()[:255]
+        movement.actualizado_por = actor
+        _save_instance(movement)
+        return movement
+
     movement.origen = MovimientoBancario.Origen.MANUAL
     movement.generado_por_pago = False
     # Estas clases exigen proveedor; si el movimiento no lo tiene, se baja a
@@ -1283,7 +1400,7 @@ def _ensure_manual_bank_movement_mutable(movement: MovimientoBancario) -> None:
         raise ValidationError(
             {"__all__": "Solo se pueden editar o eliminar movimientos manuales desde esta pantalla."}
         )
-    if movement.pago_tesoreria_id:
+    if movement.pagos.filter(estado=PagoTesoreria.Estado.REGISTRADO).exists():
         raise ValidationError(
             {"__all__": "No se puede editar o eliminar un movimiento vinculado a un pago de tesorería."}
         )
@@ -1309,6 +1426,8 @@ def create_bank_movement(
     referencia: str = "",
     observaciones: str = "",
     origen: str = MovimientoBancario.Origen.MANUAL,
+    # Solo se usa para deducir la clase del movimiento (transferencia/cheque/echeq).
+    # El vinculo lo escribe el llamador en PagoTesoreria.movimiento_bancario.
     pago_tesoreria: PagoTesoreria = None,
     generado_por_pago: bool = False,
     token_alta=None,
@@ -1333,7 +1452,6 @@ def create_bank_movement(
         referencia=referencia,
         observaciones=observaciones,
         origen=origen,
-        pago_tesoreria=pago_tesoreria,
         generado_por_pago=generado_por_pago,
         token_alta=token_alta,
         creado_por=actor,
@@ -1678,6 +1796,19 @@ def register_card_accreditation(
     return accreditation
 
 
+def importe_asignado_del_movimiento(bank_movement: MovimientoBancario) -> Decimal:
+    """Cuanto del movimiento ya esta asignado a deudas (pagos vigentes)."""
+    total = bank_movement.pagos.filter(estado=PagoTesoreria.Estado.REGISTRADO).aggregate(
+        total=Sum("monto")
+    )["total"]
+    return total or Decimal("0.00")
+
+
+def importe_sin_asignar_del_movimiento(bank_movement: MovimientoBancario) -> Decimal:
+    """Cuanto del movimiento todavia no esta asignado a ninguna deuda."""
+    return bank_movement.monto - importe_asignado_del_movimiento(bank_movement)
+
+
 @transaction.atomic
 def link_payment_to_bank_movement(
     *,
@@ -1685,20 +1816,39 @@ def link_payment_to_bank_movement(
     bank_movement: MovimientoBancario,
     actor=None,
 ) -> MovimientoBancario:
-    """
-    US-4.5: Links a treasury payment to a bank movement.
-    Ensures they match in amount and account.
+    """US-4.5 + US-4.10: vincula un pago de tesoreria con su reflejo bancario.
+
+    Un movimiento puede tener VARIOS pagos (una transferencia que paga 6
+    facturas). Lo que ya no puede es que la suma de los pagos pase el importe del
+    movimiento: eso seria sacar del banco mas plata de la que salio.
+
+    El movimiento se bloquea antes de sumar. Sin el lock, dos vinculaciones
+    simultaneas leen el mismo "queda por asignar", las dos pasan el control y
+    juntas se pasan del importe (write skew clasico bajo READ COMMITTED). SQLite
+    ignora el lock, asi que este caso no se puede testear localmente.
     """
     _require_actor(actor)
 
     if bank_movement.estado != MovimientoBancario.Estado.REGISTRADO:
         raise ValidationError("No se puede vincular un movimiento bancario eliminado.")
-    if payment.monto != bank_movement.monto:
-        raise ValidationError("El monto del pago y el movimiento bancario no coinciden.")
     if payment.cuenta_bancaria_id != bank_movement.cuenta_bancaria_id:
         raise ValidationError("La cuenta bancaria del pago y el movimiento no coinciden.")
 
-    bank_movement.pago_tesoreria = payment
+    bank_movement = MovimientoBancario.objects.select_for_update(of=("self",)).get(pk=bank_movement.pk)
+    pagos_previos = list(
+        bank_movement.pagos.filter(estado=PagoTesoreria.Estado.REGISTRADO).exclude(pk=payment.pk)
+    )
+    ya_asignado = sum((p.monto for p in pagos_previos), Decimal("0.00"))
+    sin_asignar = bank_movement.monto - ya_asignado
+    if payment.monto > sin_asignar:
+        if pagos_previos:
+            raise ValidationError(
+                f"A esta transferencia le quedan {_money(sin_asignar)} sin asignar y el pago es de "
+                f"{_money(payment.monto)}."
+            )
+        raise ValidationError("El monto del pago y el movimiento bancario no coinciden.")
+
+    payment.movimiento_bancario = bank_movement
     bank_movement.origen = MovimientoBancario.Origen.PAGO_TESORERIA
     bank_movement.clase = _infer_bank_movement_class(
         tipo=bank_movement.tipo,
@@ -1706,13 +1856,27 @@ def link_payment_to_bank_movement(
         payment=payment,
     )
     payable = payment.cuenta_por_pagar
-    bank_movement.proveedor = payable.proveedor
-    bank_movement.categoria = payable.categoria
+    # Con un solo pago el movimiento hereda proveedor y categoria de la deuda.
+    # Con varios de proveedores distintos no hay UNO que poner: se dejan vacios y
+    # los proveedores se leen de los pagos. El rubro/sucursal/periodo heredados
+    # siguen siendo los de la PRIMERA factura porque clean() los exige; no se usan
+    # para la lectura economica (los debitos con origen PAGO_TESORERIA quedan
+    # fuera del gasto: el costo ya lo conto la deuda).
+    proveedores = {p.cuenta_por_pagar.proveedor_id for p in pagos_previos} | {payable.proveedor_id}
+    if len(proveedores) > 1:
+        bank_movement.proveedor = None
+        bank_movement.categoria = None
+    else:
+        bank_movement.proveedor = payable.proveedor
+        bank_movement.categoria = payable.categoria
     # US-10.13: el debito vinculado hereda la imputacion de la deuda pagada
     # cuando el movimiento no la tenia; si sigue incompleta, full_clean bloquea
     # la vinculacion indicando exactamente que dato falta. Una categoria legacy
     # sin rubro no pisa un rubro ya cargado en el movimiento.
-    if payable.categoria.rubro_operativo_id:
+    # US-4.10: el segundo pago en adelante NO pisa el rubro: con facturas de
+    # rubros distintos ganaria la ultima vinculada, que es arbitrario. Queda el de
+    # la primera y no afecta ningun total (ver comentario de arriba).
+    if payable.categoria.rubro_operativo_id and not pagos_previos:
         bank_movement.rubro_operativo = payable.categoria.rubro_operativo
     if not bank_movement.sucursal_gasto_id and payable.sucursal_id:
         bank_movement.sucursal_gasto = payable.sucursal

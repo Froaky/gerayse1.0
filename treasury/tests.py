@@ -126,14 +126,15 @@ class TreasuryTestCase(TestCase):
         """Descarta el debito que register_payment genera solo al registrar el pago.
 
         Sirve para los casos que ejercitan el camino de vincular un movimiento
-        cargado A MANO: como MovimientoBancario.pago_tesoreria es OneToOne, el pago
+        cargado A MANO: el pago ya viene con su propio debito autogenerado, asi que
         ya viene con el suyo y no admite un segundo. Se escribe directo (sin pasar
         por el servicio) porque es armado de escenario, no la operacion bajo prueba.
         """
-        movement = MovimientoBancario.objects.filter(pago_tesoreria=payment).first()
+        movement = MovimientoBancario.objects.filter(pagos=payment).first()
         if movement is None:
             return None
-        movement.pago_tesoreria = None
+        payment.movimiento_bancario = None
+        payment.save(skip_domain_guard=True)
         movement.origen = MovimientoBancario.Origen.MANUAL
         movement.generado_por_pago = False
         movement.estado = MovimientoBancario.Estado.ANULADO
@@ -769,7 +770,7 @@ class TreasuryServiceTests(TreasuryTestCase):
 
         movement.refresh_from_db()
         # Queda libre y operable: sin pago, origen MANUAL, imputacion conservada.
-        self.assertIsNone(movement.pago_tesoreria_id)
+        self.assertFalse(movement.pagos.exists())
         self.assertEqual(movement.origen, MovimientoBancario.Origen.MANUAL)
         self.assertEqual(movement.estado, MovimientoBancario.Estado.REGISTRADO)
         self.assertEqual(movement.rubro_operativo, self.rubro_servicios)
@@ -4011,7 +4012,7 @@ class EP10BankDebitImputationTests(TreasuryTestCase):
         self.assertIn("sucursal_gasto", context.exception.message_dict)
         movement.refresh_from_db()
         self.assertEqual(movement.origen, MovimientoBancario.Origen.MANUAL)
-        self.assertIsNone(movement.pago_tesoreria_id)
+        self.assertFalse(movement.pagos.exists())
 
     def test_completing_historic_debit_moves_it_into_economic_treasury_expense(self):
         movement = self._create_historic_incomplete_debit()
@@ -4206,10 +4207,12 @@ class EP10BankDebitImputationTests(TreasuryTestCase):
             concepto="Debito legacy vinculado a pago",
             clase=MovimientoBancario.Clase.TRANSFERENCIA_TERCEROS,
             origen=MovimientoBancario.Origen.PAGO_TESORERIA,
-            pago_tesoreria=payment,
             proveedor=self.supplier,
             categoria=self.category,
         )
+        # US-4.10: el vinculo vive del lado del pago.
+        payment.movimiento_bancario = movement
+        payment.save(skip_domain_guard=True)
 
         response = self.client.post(
             reverse("treasury:bank_movements_imputation", args=[movement.pk]),
@@ -4478,7 +4481,7 @@ class EP13DebtEconomicFinancialTests(TreasuryTestCase):
         )
 
         # El debito lo genera el propio pago: no hay que cargarlo a mano.
-        movement = MovimientoBancario.objects.get(pago_tesoreria=payable.pagos.get())
+        movement = MovimientoBancario.objects.get(pagos=payable.pagos.get())
         self.assertEqual(movement.origen, MovimientoBancario.Origen.PAGO_TESORERIA)
         self.assertTrue(movement.generado_por_pago)
 
