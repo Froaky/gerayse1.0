@@ -1742,10 +1742,11 @@ Archivos: `treasury/services.py`, `treasury/views.py`, `treasury/forms.py`,
 
 ### Pendientes que dejo esta tanda 2026-08-02
 
-- `treasury_month_is_closed` global vs cierre mensual por empresa: los llamadores viejos (`open_box`, `update_box_metadata`, `_push_box_closure_to_central_cash` linea ~2563, y `_mes_de_tesoreria_cerrado` de treasury) siguen bloqueando cruzado entre empresas. Slice propio: pasarlos a la version por empresa.
+- ~~`treasury_month_is_closed` global vs cierre mensual por empresa~~: RESUELTO el 2026-08-02 (commit 5ab8a89, ver entrada propia mas abajo).
+- ~~`token_alta` para las altas de treasury~~: RESUELTO el 2026-08-02 (ver entrada propia mas abajo).
 - Modulo de avisos (propuesta comercial ya enviada): el punto de insercion esta comentado en `reject_box_cash`.
-- `token_alta` para las altas de treasury (PagoProveedor, MovimientoBancario, boveda): sigue abierto, y con las features nuevas de treasury hay MAS flujos de alta que cuando se anoto.
 - 22 movimientos de caja duplicados en produccion sin anular (se hacen por UI) y 2 deudas a revisar a mano (OSSOLA 443, LA CANADA 30).
+- Carrera residual del cierre mensual: el mutex de Empresa cubre revert/annul_box vs close_treasury_month, pero validate_box_cash no toma ese lock (su ventana es benigna: el chequeo de cajas pendientes del cierre corta antes). Si algun dia se suma otro flujo que saque plata del mes, tiene que tomar el mismo lock de Empresa.
 
 ### Revision adversarial de la tanda: 7 hallazgos confirmados, 6 cerrados 2026-08-02
 
@@ -1795,3 +1796,66 @@ Trampa que dejo la revision para el proximo agente: el re-fechado del push
 (`_push_box_closure_to_central_cash`) sigue decidiendo con el chequeo GLOBAL de mes
 cerrado — si otra empresa cerro el mes, el efectivo se atribuye al mes siguiente de la
 cadena PROPIA aunque este abierta. Es parte del mismo slice pendiente por empresa.
+
+### El mes cerrado es por empresa de verdad + mutex del cierre mensual 2026-08-02
+
+- Sintoma: el cierre mensual ES por empresa desde treasury/0034, pero los guards
+  seguian consultando global. Cuando UNA empresa cerraba su mes: la otra no podia
+  abrir cajas de ese mes (open_box), ni moverles la fecha (update_box_metadata),
+  la anulacion de boveda se le bloqueaba, y el push del cierre re-fechaba su
+  efectivo al mes siguiente de su PROPIA cadena aunque estuviera abierta (foto
+  mensual corta, mes siguiente inflado). Ademas close_treasury_month no tomaba
+  ningun lock: en Postgres podia congelar el snapshot mientras una reversion de
+  validacion le sacaba plata al mes en paralelo (hallazgo 7 de la revision
+  adversarial, READ COMMITTED write skew; SQLite lo esconde).
+- Opcion: OPTIMA. Todos los guards pasan por el chequeo por empresa
+  (`_treasury_month_is_closed_for_empresa` en cashops; `_mes_de_tesoreria_cerrado`
+  gana `empresa_id` en treasury). Fila de cierre legacy sin empresa bloquea a
+  todos (no se sabe de quien es la foto). Se elimino el helper global
+  `treasury_month_is_closed` (sin llamadores). Mutex nuevo: close_treasury_month,
+  revert_box_cash_validation y annul_box toman `select_for_update` sobre la fila
+  de Empresa; orden de locks Caja -> Empresa, nadie lockea al reves.
+- Sin migraciones ni impacto de datos: los cierres mensuales guardados valen igual.
+- Tests: `MesCerradoPorEmpresaTests` (cashops), test por empresa en
+  `AnulacionBovedaTests` (treasury), y el test del guard de reversion
+  reconstruido sobre el camino legacy real. El mutex en si NO es testeable en
+  SQLite (lock ignorado): queda anotado para la clase guardian de Postgres.
+- Commit: 5ab8a89.
+
+### Token de alta para las altas de plata de treasury 2026-08-02
+
+- Cierra la deuda anotada al crear el token en cashops: las altas de treasury
+  seguian sin proteccion contra el doble submit (doble click, reintento tras
+  timeout, volver atras y reenviar), y con las features nuevas habia MAS flujos
+  que cuando se anoto.
+- Mismo contrato de 3 capas que cashops: short-circuit en el servicio ANTES de
+  cualquier lock, savepoint sobre la carrera, constraint parcial unica en la
+  base con mensaje humano (`violation_error_message`).
+- Modelos con `token_alta` + constraint (migracion treasury/0035, AddField
+  nullable + constraint parcial: sin reescritura de tabla, los registros
+  historicos quedan con NULL y fuera de la constraint):
+  - `PagoTesoreria` -> "Este pago ya fue registrado."
+  - `MovimientoBancario` -> "Este movimiento bancario ya fue registrado."
+  - `MovimientoCajaCentral` -> "Este movimiento de caja fuerte ya fue registrado."
+- Servicios cubiertos: register_payment (punto unico de TODOS los pagos:
+  transferencia, cheque, echeq, efectivo), el lote de proveedor (el token viaja
+  en el PRIMER pago; el reenvio devuelve ese pago y no paga de nuevo),
+  create_bank_movement, register_central_cash_movement, carga inicial y
+  register_egreso_tesoreria (el reenvio se busca en boveda Y banco porque el
+  egreso puede terminar en cualquiera de los dos).
+- Forms: `AltaIdempotenteMixin` en treasury/forms.py (campo dinamico, sirve en
+  Form y ModelForm; el partial de treasury ya renderizaba hidden_fields, asi que
+  no hubo que tocar templates). Rebasados los 7 forms de plata.
+  `update_bank_movement` acepta y IGNORA token_alta porque la vista de edicion
+  comparte el form de alta y pasa **cleaned_data.
+- Flujos que NO llevan token, a proposito:
+  - "Pagar desde extracto" (paso final): ya es idempotente por el vinculo
+    OneToOne movimiento->pago ("Este movimiento ya esta vinculado a un pago").
+  - Acreditaciones de tarjeta: ya tienen dedupe semantico propio
+    (`_existing_accreditation_duplicate_qs` corta el duplicado equivalente).
+- Tests: `treasury/tests_token_alta.py` (9 casos: reenvio por cada flujo, token
+  nuevo crea el segundo, lote no repaga, constraint en la base con mensaje
+  humano, el form renderiza el token oculto).
+- Trampa conocida: el save de PagoTesoreria pasa por full_clean, asi que el
+  duplicado en carrera sale como ValidationError (validate_unique) ademas de
+  IntegrityError: los savepoints atrapan las DOS.
