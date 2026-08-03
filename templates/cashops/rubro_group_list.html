@@ -1,0 +1,65 @@
+{% extends "cashops/layout.html" %}
+{% block title %}Grupos de Rubros | Gerayse{% endblock %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Grupos de rubros</h1>
+        <p class="muted">
+          Un grupo junta varios rubros en una sola fila de la situacion economica.
+          Al abrirlo se ve el desglose rubro por rubro.
+        </p>
+      </div>
+      <a class="button" href="{% url 'cashops:rubro_group_create' %}">Nuevo grupo</a>
+    </div>
+    <p class="muted" style="margin-top:8px;">
+      El grupo es solo una forma de leer: la plata se sigue cargando al rubro, nunca al grupo.
+      Los rubros sin grupo se muestran como fila propia, igual que hoy.
+    </p>
+    <div class="list" style="margin-top:16px;">
+      {% for group in groups %}
+        <article class="list-item">
+          <div class="row">
+            <strong>{{ group.nombre }}</strong>
+            {% if group.activo %}
+              <span class="badge badge-success">Activo</span>
+            {% else %}
+              <span class="badge-muted">Inactivo</span>
+            {% endif %}
+          </div>
+          <div class="muted" style="margin-top:8px;">
+            {% with total=group.rubros.count %}
+              {{ total }} rubro{{ total|pluralize }} adentro
+              {% if total %}
+                ·
+                {% for rubro in group.rubros.all %}{{ rubro.nombre }}{% if not forloop.last %}, {% endif %}{% endfor %}
+              {% endif %}
+            {% endwith %}
+          </div>
+          {% if not group.activo %}
+            <div class="muted" style="margin-top:8px;">Desactivado: sus rubros se muestran sueltos en el listado economico.</div>
+          {% endif %}
+          <div class="list-actions">
+            <a class="button-secondary" href="{% url 'cashops:rubro_group_update' group.id %}">Editar</a>
+            <form method="post" action="{% url 'cashops:rubro_group_toggle' group.id %}">
+              {% csrf_token %}
+              <button class="button-secondary" type="submit">
+                {% if group.activo %}Desactivar{% else %}Activar{% endif %}
+              </button>
+            </form>
+          </div>
+        </article>
+      {% empty %}
+        <p class="muted">
+          Todavia no hay grupos. Mientras no crees ninguno, la situacion economica se ve exactamente igual que antes.
+        </p>
+      {% endfor %}
+    </div>
+    <div class="list-actions" style="margin-top:16px;">
+      <a class="button-secondary" href="{% url 'cashops:operational_category_list' %}">Asignar rubros a grupos</a>
+    </div>
+    <p class="muted" style="margin-top:8px;">
+      {{ ungrouped_count }} rubro{{ ungrouped_count|pluralize }} activo{{ ungrouped_count|pluralize }} sin grupo.
+    </p>
+  </section>
+{% endblock %}

@@ -31,6 +31,7 @@ from .forms import (
     EmpresaForm,
     IngresoEfectivoForm,
     GastoRapidoForm,
+    GrupoRubroForm,
     LimiteRubroOperativoForm,
     RubroOperativoForm,
     SucursalForm,
@@ -39,7 +40,7 @@ from .forms import (
     TransferenciaEntreSucursalesForm,
     VentaGeneralForm,
 )
-from .models import AlertaOperativa, CajaCorreccion, CajaValidacion, CanalIngreso, Caja, CierreCaja, Empresa, LimiteRubroOperativo, MovimientoCaja, MovimientoCajaCorreccion, RubroOperativo, Sucursal, Turno
+from .models import AlertaOperativa, CajaCorreccion, CajaValidacion, CanalIngreso, Caja, CierreCaja, Empresa, GrupoRubro, LimiteRubroOperativo, MovimientoCaja, MovimientoCajaCorreccion, RubroOperativo, Sucursal, Turno
 from .permissions import (
     can_correct_closed_box,
     can_correct_movement_in_box,
@@ -1011,7 +1012,11 @@ def management_matrix_export(request):
 @login_required
 def operational_category_list(request):
     _require_config_read(request)
-    categories = RubroOperativo.objects.annotate(limit_count=Count("limites")).order_by("nombre")
+    categories = (
+        RubroOperativo.objects.select_related("grupo")
+        .annotate(limit_count=Count("limites"))
+        .order_by("nombre")
+    )
     return render(
         request,
         "cashops/operational_category_list.html",
@@ -1019,6 +1024,102 @@ def operational_category_list(request):
             "categories": categories,
         },
     )
+
+
+@login_required
+def rubro_group_list(request):
+    _require_config_read(request)
+    groups = GrupoRubro.objects.prefetch_related("rubros").order_by("nombre")
+    return render(
+        request,
+        "cashops/rubro_group_list.html",
+        {
+            "groups": groups,
+            "ungrouped_count": RubroOperativo.objects.filter(grupo__isnull=True, activo=True).count(),
+        },
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def rubro_group_create(request):
+    _require_config_write(request)
+    form = GrupoRubroForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        try:
+            group = form.save()
+        except IntegrityError as error:
+            _handle_operation_error(form, error, "No se pudo guardar el grupo.")
+        else:
+            messages.success(request, f"Grupo {group.nombre} guardado.")
+            url = reverse("cashops:rubro_group_list")
+            return _hx_redirect(url) if _is_htmx(request) else redirect(url)
+
+    return _render_form(
+        request,
+        "cashops/form_page.html",
+        "cashops/partials/form_card.html",
+        {
+            "title": "Nuevo grupo de rubros",
+            "subtitle": "Junta varios rubros en una sola fila de la situacion economica.",
+            "form": form,
+            "submit_label": "Guardar grupo",
+            "back_url": reverse("cashops:rubro_group_list"),
+            "form_action": reverse("cashops:rubro_group_create"),
+        },
+        status=400 if request.method == "POST" and not form.is_valid() else 200,
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def rubro_group_update(request, group_id: int):
+    _require_config_write(request)
+    group = get_object_or_404(GrupoRubro, pk=group_id)
+    form = GrupoRubroForm(request.POST or None, instance=group)
+    if request.method == "POST" and form.is_valid():
+        try:
+            group = form.save()
+        except IntegrityError as error:
+            _handle_operation_error(form, error, "No se pudo actualizar el grupo.")
+        else:
+            messages.success(request, f"Grupo {group.nombre} actualizado.")
+            url = reverse("cashops:rubro_group_list")
+            return _hx_redirect(url) if _is_htmx(request) else redirect(url)
+
+    return _render_form(
+        request,
+        "cashops/form_page.html",
+        "cashops/partials/form_card.html",
+        {
+            "title": f"Editar grupo: {group.nombre}",
+            "subtitle": "Podes renombrar, reordenar o desactivar el grupo.",
+            "form": form,
+            "submit_label": "Guardar cambios",
+            "back_url": reverse("cashops:rubro_group_list"),
+            "form_action": reverse("cashops:rubro_group_update", args=[group.pk]),
+        },
+        status=400 if request.method == "POST" and not form.is_valid() else 200,
+    )
+
+
+@login_required
+@require_http_methods(["POST"])
+def rubro_group_toggle(request, group_id: int):
+    _require_config_write(request)
+    group = get_object_or_404(GrupoRubro, pk=group_id)
+    group.activo = not group.activo
+    group.save(update_fields=["activo", "actualizado_en"])
+    if group.activo:
+        detalle = "vuelve a agrupar sus rubros"
+    else:
+        detalle = "sus rubros vuelven a mostrarse sueltos"
+    messages.success(
+        request,
+        f"Grupo {group.nombre} {'activado' if group.activo else 'desactivado'}: {detalle}.",
+    )
+    url = reverse("cashops:rubro_group_list")
+    return _hx_redirect(url) if _is_htmx(request) else redirect(url)
 
 
 @login_required

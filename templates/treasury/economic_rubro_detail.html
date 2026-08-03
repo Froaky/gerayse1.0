@@ -11,7 +11,7 @@
           {{ detail.period_from|date:"m/Y" }} a {{ detail.period_to|date:"m/Y" }}.
         </p>
       </div>
-      <a class="button-secondary" href="{{ back_url }}">Volver al dashboard</a>
+      <a class="button-secondary" href="{{ back_url }}">{{ back_label|default:"Volver al dashboard" }}</a>
     </div>
 
     <form method="get" class="stack" style="margin-top:16px;">

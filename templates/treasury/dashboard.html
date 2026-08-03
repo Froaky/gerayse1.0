@@ -246,8 +246,15 @@
           <div class="row">
             <div>
               <strong>{{ item.rubro_nombre }}</strong>
+              {% if item.grupo %}
+                <div class="muted mt-8">{{ item.children_count }} rubro{{ item.children_count|pluralize }} agrupado{{ item.children_count|pluralize }}</div>
+              {% endif %}
               <div class="muted mt-16">Ventas {{ item.sales_total|money }} - Gasto caja {{ item.cash_expense_total|money }} - Gasto tesoreria {{ item.treasury_expense_total|money }} - Deuda {{ item.debt_total|money }}</div>
-              {% if item.rubro %}
+              {% if item.grupo %}
+                <div class="mt-16">
+                  <a class="button-secondary" href="{% url 'treasury:economic_grupo_detail' item.grupo.pk %}?fecha_desde={{ economic_snapshot.date_from|date:'Y-m-d' }}&fecha_hasta={{ economic_snapshot.date_to|date:'Y-m-d' }}{% if selected_sucursal %}&sucursal={{ selected_sucursal.pk|unlocalize }}{% endif %}">Ver desglose</a>
+                </div>
+              {% elif item.rubro %}
                 <div class="mt-16">
                   <a class="button-secondary" href="{% url 'treasury:economic_rubro_detail' item.rubro.pk %}?fecha_desde={{ economic_snapshot.date_from|date:'Y-m-d' }}&fecha_hasta={{ economic_snapshot.date_to|date:'Y-m-d' }}{% if selected_sucursal %}&sucursal={{ selected_sucursal.pk|unlocalize }}{% endif %}">Ver composición</a>
                 </div>
@@ -264,6 +271,12 @@
             {% if item.payables_count %} - {{ item.payables_count }} deuda{{ item.payables_count|pluralize }} imputada{{ item.payables_count|pluralize }}{% endif %}
             {% if item.debt_pending %} - Pendiente {{ item.debt_pending|money }}{% endif %}
           </div>
+          {% if item.grupo and item.has_objective and not item.objective_covers_all_children %}
+            <div class="muted mt-8">
+              El objetivo compara {{ item.objective_children_count }} de {{ item.children_count }} rubros del grupo:
+              los otros todavia no tienen porcentaje cargado.
+            </div>
+          {% endif %}
         </div>
       {% empty %}
         <p class="muted">Todavia no hay rubros con ventas o gasto economico para este periodo.</p>

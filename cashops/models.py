@@ -267,8 +267,58 @@ class Transferencia(models.Model):
         return f"{self.get_tipo_display()} - {self.get_clase_display()} #{self.id}"
 
 
+class GrupoRubro(models.Model):
+    """Nivel de lectura por encima del rubro: junta varios rubros en una sola
+    fila de la situacion economica (por ejemplo MATERIA PRIMA con almacen,
+    verdura, carne y pollo adentro).
+
+    Es SOLO agrupacion para leer. Un grupo no recibe plata: no se le imputa un
+    gasto, ni una deuda, ni un limite. Por eso vive en un modelo aparte y no
+    como rubro padre: asi no puede aparecer en ningun selector de rubro y el
+    total del grupo siempre es la suma exacta de sus rubros.
+    """
+
+    nombre = models.CharField(max_length=120)
+    activo = models.BooleanField(default=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["nombre"]
+        verbose_name = "Grupo de rubros"
+        verbose_name_plural = "Grupos de rubros"
+        constraints = [
+            models.UniqueConstraint(
+                Lower("nombre"),
+                name="unique_rubro_group_name_ci",
+                violation_error_message="Ya existe un grupo con ese nombre.",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["activo", "nombre"]),
+        ]
+
+    def clean(self) -> None:
+        if self.nombre:
+            self.nombre = self.nombre.strip()
+        if not self.nombre:
+            raise ValidationError({"nombre": "El nombre del grupo es obligatorio."})
+
+    def __str__(self) -> str:
+        return self.nombre
+
+
 class RubroOperativo(models.Model):
     nombre = models.CharField(max_length=120)
+    grupo = models.ForeignKey(
+        GrupoRubro,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="rubros",
+        verbose_name="Grupo de lectura",
+        help_text="Opcional. Si tiene grupo, el rubro se muestra dentro de ese grupo en la situacion economica.",
+    )
     activo = models.BooleanField(default=True)
     es_sistema = models.BooleanField(default=False)
     creado_en = models.DateTimeField(auto_now_add=True)
@@ -285,6 +335,7 @@ class RubroOperativo(models.Model):
         ]
         indexes = [
             models.Index(fields=["activo", "nombre"]),
+            models.Index(fields=["grupo", "nombre"]),
         ]
 
     def clean(self) -> None:
@@ -292,6 +343,18 @@ class RubroOperativo(models.Model):
             self.nombre = self.nombre.strip()
         if not self.nombre:
             raise ValidationError({"nombre": "El nombre del rubro es obligatorio."})
+
+    @property
+    def grupo_de_lectura(self):
+        """Grupo con el que se agrupa este rubro, o None si va como fila propia.
+
+        Un grupo desactivado no agrupa: sus rubros vuelven al listado sueltos
+        sin perder importes.
+        """
+        grupo = self.grupo if self.grupo_id else None
+        if grupo is None or not grupo.activo:
+            return None
+        return grupo
 
     def __str__(self) -> str:
         return self.nombre

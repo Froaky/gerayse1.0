@@ -1859,3 +1859,58 @@ cadena PROPIA aunque este abierta. Es parte del mismo slice pendiente por empres
 - Trampa conocida: el save de PagoTesoreria pasa por full_clean, asi que el
   duplicado en carrera sale como ValidationError (validate_unique) ademas de
   IntegrityError: los savepoints atrapan las DOS.
+
+### Agrupacion de rubros en la lectura economica (US-11.11) 2026-08-03
+
+- Pedido de la administradora (audios): el listado de abajo del dashboard
+  economico tiene demasiadas filas. Quiere juntar todo lo que es mercaderia en un
+  solo item `MATERIA PRIMA` (cerveza, alcohol, coca cola, fiambres, almacen, pan,
+  cafe, verdura, carne, pollo, pescado, cadeteria, limpieza, descartable) y que
+  al abrirlo aparezca el desglose. El resto de los rubros quedan como estan,
+  porque quiere seguir entrando a ver que se imputa.
+- Aclaracion de alcance: la lista esta SOLO en "Situacion economica y
+  rentabilidad". "Situacion financiera por periodo" no tiene lista de rubros.
+- Opcion: OPTIMA con modelo nuevo `cashops.GrupoRubro` (nombre, activo) + FK
+  nullable `RubroOperativo.grupo`. NO se uso rubro padre (self FK) a proposito:
+  un rubro padre apareceria en todos los selectores de rubro y se le podria
+  imputar un gasto directo, y ahi el total del grupo dejaria de ser la suma de
+  sus hijos. Con modelo aparte es imposible por construccion: el grupo es solo
+  nivel de lectura, la plata siempre cae en un rubro.
+- `build_economic_period_snapshot` ahora devuelve DOS listas: `rubro_items` (la
+  plana por rubro, sin cambios) e `items` (lo que se muestra, con los agrupados
+  colapsados por `_collapse_economic_items_by_group`). Todos los totales de la
+  cabecera y `objective_items_count` se calculan sobre la plana, asi agrupar no
+  puede mover ningun numero de arriba. Test que lo fija comparando 9 claves antes
+  y despues de agrupar.
+- Desvio del grupo: se mide SOLO sobre los rubros con objetivo vigente (igual que
+  `objective_scope_real_total` de la cabecera) y la fila lleva
+  `objective_children_count` / `children_count` / `objective_covers_all_children`
+  para avisar en pantalla cuando el objetivo no cubre todo el grupo. Sin ese
+  aviso, un verde sobre 3 de 14 rubros se leeria como si cubriera el grupo.
+- Bug propio evitado: `economic_rubro_detail` buscaba su cabecera en `items`; un
+  rubro agrupado ya no tiene fila propia ahi y la cabecera quedaba vacia. Pasa a
+  buscar en `rubro_items`. Ademas el "volver" del rubro agrupado vuelve al
+  desglose del grupo, no al dashboard.
+- Grupo desactivado no agrupa: sus rubros vuelven al listado sueltos sin perder
+  importes (`RubroOperativo.grupo_de_lectura`). El form de rubro deja elegible un
+  grupo desactivado si ya estaba asignado, para no sacarlo sin querer al guardar.
+- Config nueva en cashops: `rubro_group_list/create/update/toggle`
+  (`/cajas/grupos-de-rubros/`), link en el menu Config y en la pantalla de
+  rubros; el form de rubro gano el selector "Grupo de lectura". Alta y baja de
+  grupos las hace ella sola, sin dev.
+- Migracion `cashops/0027`: CreateModel + AddField nullable + AddIndex. Sin
+  backfill y sin reescritura de tabla. Mientras no exista ningun grupo, la
+  pantalla se ve identica a antes (test que lo fija).
+- Tests: `treasury/tests_grupos_rubros.py` (12 casos: baseline sin grupos, suma
+  exacta, cabecera intacta, grupo desactivado, objetivo parcial y completo,
+  reconciliacion fila vs desglose, y las 4 de vistas incluida la composicion del
+  rubro agrupado). Suite completa 540 OK, 4 skipped.
+- PENDIENTE que bloquea el objetivo por grupo (lo pidio: "un general para toda la
+  materia prima, y tambien uno por cada rubro"): el objetivo se mide contra las
+  ventas imputadas AL MISMO RUBRO (`sales_by_rubro_month`), no contra las ventas
+  del periodo. Un rubro de gasto puro no recibe ventas, asi que su porcentaje
+  nunca compara y queda "Sin objetivo" para siempre. Fijado en el test
+  `test_un_objetivo_sobre_un_rubro_sin_ventas_propias_no_compara_nada`. Antes de
+  agregar objetivo por grupo hay que decidir la base: ventas totales del periodo
+  (lo que ella entiende por "35% de las ventas") vs ventas del propio rubro (lo
+  que hace hoy el codigo).

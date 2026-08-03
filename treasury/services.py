@@ -1932,6 +1932,102 @@ def _central_cash_balance_until(*, reference_date: date, sucursal=None, empresa_
     return (sums["ingresos"] or Decimal("0.00")) - (sums["egresos"] or Decimal("0.00"))
 
 
+def _collapse_economic_items_by_group(items: list, *, sales_total: Decimal) -> list:
+    """Junta en una sola fila los rubros que comparten grupo de lectura.
+
+    Solo agrupa para mostrar: no recalcula ni reimputa nada. Cada importe del
+    grupo es la suma exacta de los rubros que quedaron adentro, y los rubros sin
+    grupo pasan tal cual. Si no hay ningun grupo activo, devuelve la misma lista.
+
+    Objetivo y desvio del grupo se miden SOLO sobre los rubros que tienen
+    objetivo vigente (igual que los totales de la cabecera). Por eso la fila
+    lleva `objective_children_count` y `children_count`: sin ese dato, un desvio
+    verde sobre 3 de 14 rubros se leeria como si cubriera el grupo entero.
+    """
+    grouped: dict = {}
+    display: list = []
+    for item in items:
+        rubro = item.get("rubro")
+        grupo = rubro.grupo_de_lectura if rubro is not None else None
+        if grupo is None:
+            display.append(item)
+            continue
+        row = grouped.get(grupo.pk)
+        if row is None:
+            row = {
+                "rubro": None,
+                "grupo": grupo,
+                "rubro_nombre": grupo.nombre,
+                "sales_total": Decimal("0.00"),
+                "cash_expense_total": Decimal("0.00"),
+                "treasury_expense_total": Decimal("0.00"),
+                "debt_total": Decimal("0.00"),
+                "debt_pending": Decimal("0.00"),
+                "payables_count": 0,
+                "total_expense": Decimal("0.00"),
+                "objective_amount": Decimal("0.00"),
+                "objective_scope_expense": Decimal("0.00"),
+                "children_count": 0,
+                "objective_children_count": 0,
+                "objective_months": 0,
+                "objective_sources": set(),
+            }
+            grouped[grupo.pk] = row
+            display.append(row)
+        row["sales_total"] += item["sales_total"]
+        row["cash_expense_total"] += item["cash_expense_total"]
+        row["treasury_expense_total"] += item["treasury_expense_total"]
+        row["debt_total"] += item["debt_total"]
+        row["debt_pending"] += item["debt_pending"]
+        row["payables_count"] += item["payables_count"]
+        row["total_expense"] += item["total_expense"]
+        row["children_count"] += 1
+        if item["has_objective"]:
+            row["objective_amount"] += item["objective_amount"]
+            row["objective_scope_expense"] += item["total_expense"]
+            row["objective_children_count"] += 1
+            row["objective_months"] = max(row["objective_months"], item["objective_months"])
+            if item["objective_scope_label"]:
+                row["objective_sources"].update(
+                    part.strip() for part in item["objective_scope_label"].split("/") if part.strip()
+                )
+
+    for row in grouped.values():
+        row["expense_ratio_over_sales"] = (
+            ((row["total_expense"] * Decimal("100.00")) / sales_total).quantize(Decimal("0.01"))
+            if sales_total > 0
+            else Decimal("0.00")
+        )
+        row["has_objective"] = row["objective_children_count"] > 0
+        row["objective_amount"] = row["objective_amount"].quantize(Decimal("0.01"))
+        row["objective_ratio_over_sales"] = (
+            ((row["objective_amount"] * Decimal("100.00")) / row["sales_total"]).quantize(Decimal("0.01"))
+            if row["has_objective"] and row["sales_total"] > 0
+            else Decimal("0.00")
+        )
+        if row["has_objective"]:
+            row["deviation_amount"] = (row["objective_scope_expense"] - row["objective_amount"]).quantize(
+                Decimal("0.01")
+            )
+            scope_ratio = (
+                ((row["objective_scope_expense"] * Decimal("100.00")) / sales_total).quantize(Decimal("0.01"))
+                if sales_total > 0
+                else Decimal("0.00")
+            )
+            row["deviation_ratio_over_sales"] = (scope_ratio - row["objective_ratio_over_sales"]).quantize(
+                Decimal("0.01")
+            )
+        else:
+            row["deviation_amount"] = None
+            row["deviation_ratio_over_sales"] = None
+        row["objective_covers_all_children"] = (
+            row["objective_children_count"] == row["children_count"] and row["children_count"] > 0
+        )
+        sources = row.pop("objective_sources")
+        row["objective_scope_label"] = " / ".join(sorted(sources)) if sources else ""
+    return display
+
+
 def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=None, empresa_ids=None) -> dict:
     if date_to < date_from:
         raise ValidationError({"fecha_hasta": "La fecha hasta no puede ser anterior a la fecha desde."})
@@ -2142,7 +2238,7 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
     )
     rubros = {
         rubro.pk: rubro
-        for rubro in RubroOperativo.objects.filter(pk__in=rubro_ids)
+        for rubro in RubroOperativo.objects.select_related("grupo").filter(pk__in=rubro_ids)
     }
     objective_lookup = _resolve_economic_targets(
         period_from=period_from,
@@ -2219,6 +2315,12 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
             }
         )
     items.sort(key=lambda item: (-item["total_expense"], item["rubro_nombre"].lower()))
+    # `rubro_items` es la lista plana por rubro: de ahi salen los totales de la
+    # cabecera y el desglose de un grupo. `items` es lo que se muestra, con los
+    # rubros agrupados colapsados en una sola fila.
+    rubro_items = items
+    items = _collapse_economic_items_by_group(rubro_items, sales_total=sales_total)
+    items.sort(key=lambda item: (-item["total_expense"], item["rubro_nombre"].lower()))
 
     economic_result = sales_total - cash_expense_total - treasury_expense_total - debt_period_total
     margin_pct = (
@@ -2254,13 +2356,16 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
         "economic_result": economic_result,
         "margin_pct": margin_pct,
         "items": items,
+        "rubro_items": rubro_items,
         "objective_total": objective_total,
         "objective_scope_real_total": objective_scope_real_total,
         "objective_scope_sales_total": objective_scope_sales_total,
         "objective_scope_ratio": objective_scope_ratio,
         "real_scope_ratio": real_scope_ratio,
         "deviation_total": deviation_total,
-        "objective_items_count": sum(1 for item in items if item["has_objective"]),
+        # Se cuenta sobre la lista plana: la cabecera habla de rubros con
+        # objetivo, no de filas mostradas.
+        "objective_items_count": sum(1 for item in rubro_items if item["has_objective"]),
         "rubros_without_objective": rubros_without_objective,
         "branch_objectives_enabled": sucursal is not None,
         "unmapped_payables_total": unmapped_payables_total,

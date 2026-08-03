@@ -8,7 +8,7 @@ from django.db.models import Q
 
 from treasury.models import CategoriaCuentaPagar, Proveedor
 
-from .models import CanalIngreso, Caja, Empresa, LimiteRubroOperativo, MovimientoCaja, RubroOperativo, Sucursal, Transferencia, Turno
+from .models import CanalIngreso, Caja, Empresa, GrupoRubro, LimiteRubroOperativo, MovimientoCaja, RubroOperativo, Sucursal, Transferencia, Turno
 from .permissions import can_assign_box_to_user, is_cashops_admin
 from .services import CLOSING_DIFF_THRESHOLD, MAX_OPERATIONAL_LIMIT_PERCENTAGE
 
@@ -668,16 +668,57 @@ class CierreCajaForm(forms.Form):
         return cleaned_data
 
 
-class RubroOperativoForm(forms.ModelForm):
+class GrupoRubroForm(forms.ModelForm):
     class Meta:
-        model = RubroOperativo
+        model = GrupoRubro
         fields = ["nombre", "activo"]
         widgets = {
-            "nombre": forms.TextInput(attrs={"placeholder": "Insumos, mantenimiento, viaticos..."}),
+            "nombre": forms.TextInput(attrs={"placeholder": "MATERIA PRIMA, IMPUESTOS..."}),
+        }
+        help_texts = {
+            "activo": "Si lo desactivas, sus rubros vuelven a mostrarse sueltos en el listado economico.",
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            if isinstance(field.widget, forms.CheckboxInput):
+                field.widget.attrs.setdefault("class", "checkbox")
+            else:
+                field.widget.attrs.setdefault("class", "input")
+
+    def clean_nombre(self):
+        nombre = (self.cleaned_data.get("nombre") or "").strip()
+        queryset = GrupoRubro.objects.filter(nombre__iexact=nombre)
+        if self.instance.pk:
+            queryset = queryset.exclude(pk=self.instance.pk)
+        if queryset.exists():
+            raise forms.ValidationError("Ya existe un grupo con ese nombre.")
+        return nombre
+
+
+class RubroOperativoForm(forms.ModelForm):
+    class Meta:
+        model = RubroOperativo
+        fields = ["nombre", "grupo", "activo"]
+        widgets = {
+            "nombre": forms.TextInput(attrs={"placeholder": "Insumos, mantenimiento, viaticos..."}),
+        }
+        labels = {
+            "grupo": "Grupo de lectura",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        grupos = GrupoRubro.objects.filter(activo=True)
+        if self.instance.pk and self.instance.grupo_id:
+            # Un grupo desactivado sigue siendo elegible mientras este asignado,
+            # para que guardar el rubro no lo saque del grupo sin querer.
+            grupos = GrupoRubro.objects.filter(
+                Q(activo=True) | Q(pk=self.instance.grupo_id)
+            )
+        self.fields["grupo"].queryset = grupos
+        self.fields["grupo"].empty_label = "Sin grupo (fila propia)"
         for field in self.fields.values():
             if isinstance(field.widget, forms.Select):
                 field.widget.attrs.setdefault("class", "input select")

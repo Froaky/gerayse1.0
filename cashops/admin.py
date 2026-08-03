@@ -6,6 +6,7 @@ from .models import (
     CanalIngreso,
     CierreCaja,
     Empresa,
+    GrupoRubro,
     Justificacion,
     LimiteRubroOperativo,
     MovimientoCaja,
@@ -89,11 +90,19 @@ class MovimientoCajaAdmin(admin.ModelAdmin):
     autocomplete_fields = ("caja", "rubro_operativo", "transferencia", "creado_por")
 
 
+@admin.register(GrupoRubro)
+class GrupoRubroAdmin(admin.ModelAdmin):
+    list_display = ("nombre", "activo", "creado_en", "actualizado_en")
+    list_filter = ("activo",)
+    search_fields = ("nombre",)
+
+
 @admin.register(RubroOperativo)
 class RubroOperativoAdmin(admin.ModelAdmin):
-    list_display = ("nombre", "activo", "es_sistema", "creado_en", "actualizado_en")
-    list_filter = ("activo", "es_sistema")
+    list_display = ("nombre", "grupo", "activo", "es_sistema", "creado_en", "actualizado_en")
+    list_filter = ("activo", "es_sistema", "grupo")
     search_fields = ("nombre",)
+    autocomplete_fields = ("grupo",)
 
     def save_model(self, request, obj, form, change):
         super().save_model(request, obj, form, change)

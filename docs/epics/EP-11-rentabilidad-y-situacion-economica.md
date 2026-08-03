@@ -16,6 +16,7 @@ Construir una vista economica del negocio por periodo y sucursal que relacione v
 - reimputacion auditada de gastos historicos cuando se crea o corrige una sucursal
 - exclusion controlada de ventas que no deben integrar la base economica general
 - desglose trazable de cada total por rubro hasta los movimientos o documentos que lo componen
+- agrupacion de rubros para lectura gerencial, con desglose hacia los rubros que la componen
 
 ## No incluye todavia
 
@@ -38,6 +39,9 @@ Construir una vista economica del negocio por periodo y sucursal que relacione v
 - las ventas excluidas de la base economica general deben quedar marcadas por regla visible y no por borrado manual
 - todo total economico por rubro debe poder explicarse desde sus componentes cuando el usuario necesite auditar de donde sale el valor
 - el desglose de un rubro debe reconciliar contra el total mostrado para el mismo periodo, sucursal y empresa activa
+- un rubro puede pertenecer a un solo grupo de lectura, para que el total del grupo sea la suma exacta de sus rubros sin doble conteo
+- el grupo de rubros es solo un nivel de lectura: la plata se imputa siempre a un rubro, nunca a un grupo
+- reagrupar rubros no reimputa ni mueve importes historicos: cambia como se leen, no de donde salen
 
 ## User Stories
 
@@ -175,6 +179,27 @@ Criterios:
 - el desglose respeta empresa activa, sucursal, rubro y periodo seleccionados
 - el total del encabezado del desglose coincide con la suma de los componentes visibles o explica cualquier ajuste pendiente de imputacion
 
+### [ ] US-11.11 Agrupacion de rubros en la lectura economica
+
+Como administracion
+Quiero juntar varios rubros en un solo item del listado economico, por ejemplo `MATERIA PRIMA` con almacen, verdura, carne y pollo adentro
+Para leer el dashboard por concepto grande y abrir el desglose por rubro solo cuando lo necesito
+
+Criterios:
+- se puede crear un grupo con nombre propio y asignarle los rubros que lo componen desde configuracion, sin intervencion tecnica
+- un rubro pertenece a un solo grupo o a ninguno, de modo que el total del grupo es la suma exacta de sus rubros y no hay doble conteo
+- el listado de la situacion economica muestra una fila por grupo y una fila por cada rubro que no este agrupado, con los mismos importes y el mismo formato que hoy
+- la fila del grupo suma ventas, gasto de caja, gasto de tesoreria, deuda del periodo, deuda pendiente y cantidad de deudas de todos sus rubros
+- desde la fila del grupo se entra a un desglose que lista sus rubros con esos mismos importes, y desde cada rubro se sigue llegando al desglose de componentes de US-11.10
+- los rubros no agrupados conservan el comportamiento actual: se abre su composicion en un solo paso, sin niveles intermedios
+- el objetivo y el desvio del grupo se calculan sobre los rubros que tienen objetivo vigente, y la fila aclara cuantos rubros del grupo tienen objetivo cuando no lo tienen todos
+- el grupo es solo lectura: no se puede imputar un gasto, una deuda, un limite ni un objetivo a un grupo, siempre se imputa al rubro
+- crear, renombrar, reordenar o desactivar un grupo no mueve plata ni reimputa movimientos historicos
+- sacar un rubro de un grupo, o desactivar el grupo, devuelve esos rubros al listado como filas propias sin perder importes
+- el orden del listado sigue siendo por gasto real, con el grupo participando con su total agregado
+- la agrupacion respeta empresa activa, sucursal y periodo filtrados igual que el resto de la vista
+- mientras no exista ningun grupo definido, el listado se ve exactamente igual que antes de esta US
+
 ## Dependencias
 
 - EP-03 tesoreria central base
@@ -195,6 +220,7 @@ Criterios:
 7. habilitar reimputacion auditada de gastos historicos
 8. configurar exclusiones de ventas para base economica general
 9. agregar desglose auditable de componentes por rubro
+10. agrupar rubros para lectura gerencial sin tocar la imputacion
 
 ## Criterio de cierre
 
@@ -205,3 +231,4 @@ Criterios:
 - los gastos historicos mal imputados pueden corregirse con auditoria
 - las ventas internas o especiales quedan explicadas sin inflar la base general
 - cada total por rubro puede abrirse y reconciliarse contra sus componentes de origen
+- la administracion lee el listado economico por conceptos grandes y baja al rubro solo cuando necesita el detalle

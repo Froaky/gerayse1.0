@@ -7,7 +7,10 @@
         <h1>Rubros operativos</h1>
         <p class="muted">Clasificacion oficial de gastos operativos. Solo los rubros activos aparecen al cargar un gasto.</p>
       </div>
-      <a class="button" href="{% url 'cashops:operational_category_create' %}">Nuevo rubro</a>
+      <div class="list-actions">
+        <a class="button-secondary" href="{% url 'cashops:rubro_group_list' %}">Grupos de rubros</a>
+        <a class="button" href="{% url 'cashops:operational_category_create' %}">Nuevo rubro</a>
+      </div>
     </div>
     <div class="list" style="margin-top:16px;">
       {% for category in categories %}
@@ -22,7 +25,12 @@
               <span class="badge-muted">Inactivo</span>
             {% endif %}
           </div>
-          <div class="muted" style="margin-top:8px;">{{ category.limit_count }} limite{{ category.limit_count|pluralize }} configurado{{ category.limit_count|pluralize }}</div>
+          <div class="muted" style="margin-top:8px;">
+            {{ category.limit_count }} limite{{ category.limit_count|pluralize }} configurado{{ category.limit_count|pluralize }}
+            {% if category.grupo %}
+              · Se muestra dentro de {{ category.grupo.nombre }}{% if not category.grupo.activo %} (grupo desactivado){% endif %}
+            {% endif %}
+          </div>
           {% if not category.es_sistema %}
             <div class="list-actions">
               <a class="button-secondary" href="{% url 'cashops:operational_category_update' category.id %}">Editar</a>

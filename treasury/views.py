@@ -516,13 +516,23 @@ def economic_rubro_detail(request, rubro_id):
         sucursal=sucursal,
         empresa_ids=empresa_ids,
     )
+    # Contra la lista plana: si el rubro esta dentro de un grupo, en `items` ya
+    # no tiene fila propia y la cabecera de esta pantalla quedaria vacia.
     summary_item = next(
-        (item for item in summary["items"] if item["rubro"] and item["rubro"].pk == detail["rubro"].pk),
+        (item for item in summary["rubro_items"] if item["rubro"] and item["rubro"].pk == detail["rubro"].pk),
         None,
     )
-    back_url = f"{reverse('treasury:dashboard')}?fecha_desde={date_from.isoformat()}&fecha_hasta={date_to.isoformat()}"
+    periodo_qs = f"fecha_desde={date_from.isoformat()}&fecha_hasta={date_to.isoformat()}"
     if sucursal is not None:
-        back_url += f"&sucursal={sucursal.pk}"
+        periodo_qs += f"&sucursal={sucursal.pk}"
+    grupo = detail["rubro"].grupo_de_lectura
+    if grupo is not None:
+        # Se vuelve al desglose del grupo, que es de donde se entro.
+        back_url = f"{reverse('treasury:economic_grupo_detail', args=[grupo.pk])}?{periodo_qs}"
+        back_label = f"Volver a {grupo.nombre}"
+    else:
+        back_url = f"{reverse('treasury:dashboard')}?{periodo_qs}"
+        back_label = "Volver al dashboard"
 
     return render(
         request,
@@ -532,6 +542,73 @@ def economic_rubro_detail(request, rubro_id):
             "summary_item": summary_item,
             "filter_form": filter_form,
             "back_url": back_url,
+            "back_label": back_label,
+        },
+    )
+
+
+@login_required
+def economic_grupo_detail(request, grupo_id):
+    """Desglose de un grupo: sus rubros con los mismos importes de la fila.
+
+    No recalcula nada: toma la lista plana del mismo snapshot que arma el
+    dashboard y se queda con los rubros del grupo. Asi el total de la cabecera
+    reconcilia siempre contra la fila que se clickeo.
+    """
+    _require_treasury_admin(request)
+    from cashops.models import GrupoRubro, Sucursal
+
+    today = timezone.localdate()
+    first_day_of_month = today.replace(day=1)
+    grupo = get_object_or_404(GrupoRubro, pk=grupo_id)
+    filter_form = TreasuryDashboardFilterForm(
+        request.GET or None,
+        initial={"fecha_desde": first_day_of_month, "fecha_hasta": today},
+    )
+    filter_form.fields["sucursal"].queryset = _filter_sucursal_qs(request, Sucursal.objects.all())
+    if filter_form.is_valid():
+        sucursal = filter_form.cleaned_data.get("sucursal")
+        date_from = filter_form.cleaned_data.get("fecha_desde") or first_day_of_month
+        date_to = filter_form.cleaned_data.get("fecha_hasta") or today
+    else:
+        sucursal = None
+        date_from = first_day_of_month
+        date_to = today
+
+    empresa_ids = _get_empresa_ids(request)
+    summary = build_economic_period_snapshot(
+        date_from=date_from,
+        date_to=date_to,
+        sucursal=sucursal,
+        empresa_ids=empresa_ids,
+    )
+    rubro_ids = set(grupo.rubros.values_list("pk", flat=True))
+    items = [
+        item
+        for item in summary["rubro_items"]
+        if item["rubro"] is not None and item["rubro"].pk in rubro_ids
+    ]
+    grupo_row = next(
+        (row for row in summary["items"] if row.get("grupo") and row["grupo"].pk == grupo.pk),
+        None,
+    )
+    periodo_qs = f"fecha_desde={date_from.isoformat()}&fecha_hasta={date_to.isoformat()}"
+    if sucursal is not None:
+        periodo_qs += f"&sucursal={sucursal.pk}"
+    back_url = f"{reverse('treasury:dashboard')}?{periodo_qs}"
+
+    return render(
+        request,
+        "treasury/economic_grupo_detail.html",
+        {
+            "grupo": grupo,
+            "grupo_row": grupo_row,
+            "items": items,
+            "economic_snapshot": summary,
+            "selected_sucursal": sucursal,
+            "filter_form": filter_form,
+            "back_url": back_url,
+            "periodo_qs": periodo_qs,
         },
     )
 

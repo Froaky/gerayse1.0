@@ -1,0 +1,127 @@
+{% extends "treasury/layout.html" %}
+{% load treasury_tags %}
+{% load l10n %}
+{% block title %}Desglose de {{ grupo.nombre }} | Tesorería | Gerayse{% endblock %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Desglose de {{ grupo.nombre }}</h1>
+        <p class="muted">
+          Los rubros que componen esta fila del periodo economico
+          {{ economic_snapshot.period_from|date:"m/Y" }} a {{ economic_snapshot.period_to|date:"m/Y" }}.
+          {% if selected_sucursal %}Sucursal {{ selected_sucursal.nombre }}.{% else %}Vista consolidada.{% endif %}
+        </p>
+      </div>
+      <a class="button-secondary" href="{{ back_url }}">Volver al dashboard</a>
+    </div>
+
+    <form method="get" class="stack" style="margin-top:16px;">
+      <div class="summary-grid">
+        {% for field in filter_form.visible_fields %}
+          <div class="field">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+          </div>
+        {% endfor %}
+      </div>
+      <div class="list-actions">
+        <button class="button" type="submit">Actualizar desglose</button>
+        <a class="button-secondary" href="{% url 'treasury:economic_grupo_detail' grupo.pk %}">Limpiar</a>
+      </div>
+    </form>
+  </section>
+
+  {% if grupo_row %}
+    <section class="card" style="margin-top:16px;">
+      <div class="row">
+        <div>
+          <h2>Total del grupo</h2>
+          <p class="muted">Es la suma exacta de los rubros de abajo. La plata se imputa al rubro, nunca al grupo.</p>
+        </div>
+        {% if grupo_row.has_objective %}
+          <span class="badge {% if grupo_row.deviation_amount <= 0 %}badge-success{% else %}badge-danger{% endif %}">{{ grupo_row.deviation_amount|money }}</span>
+        {% else %}
+          <span class="badge badge-muted">Sin objetivo</span>
+        {% endif %}
+      </div>
+      <div class="summary-grid mt-16">
+        <div class="summary">
+          <span class="muted">Gasto real del grupo</span>
+          <strong>{{ grupo_row.total_expense|money }}</strong>
+          <small class="muted">{{ grupo_row.expense_ratio_over_sales }}% sobre las ventas del periodo</small>
+        </div>
+        <div class="summary">
+          <span class="muted">Gasto caja</span>
+          <strong>{{ grupo_row.cash_expense_total|money }}</strong>
+          <small class="muted">Egresos operativos cargados por rubro</small>
+        </div>
+        <div class="summary">
+          <span class="muted">Gasto tesoreria</span>
+          <strong>{{ grupo_row.treasury_expense_total|money }}</strong>
+          <small class="muted">Egresos administrativos imputados</small>
+        </div>
+        <div class="summary">
+          <span class="muted">Deuda del periodo</span>
+          <strong>{{ grupo_row.debt_total|money }}</strong>
+          <small class="muted">
+            {{ grupo_row.payables_count }} deuda{{ grupo_row.payables_count|pluralize }} imputada{{ grupo_row.payables_count|pluralize }}
+            {% if grupo_row.debt_pending %} - Pendiente {{ grupo_row.debt_pending|money }}{% endif %}
+          </small>
+        </div>
+        {% if grupo_row.sales_total %}
+          <div class="summary">
+            <span class="muted">Ventas del grupo</span>
+            <strong>{{ grupo_row.sales_total|money }}</strong>
+            <small class="muted">Ventas imputadas a rubros de este grupo</small>
+          </div>
+        {% endif %}
+      </div>
+      {% if grupo_row.has_objective and not grupo_row.objective_covers_all_children %}
+        <p class="muted mt-16">
+          El objetivo compara {{ grupo_row.objective_children_count }} de {{ grupo_row.children_count }} rubros del grupo.
+          A los otros todavia no les cargaste porcentaje, asi que no entran en el desvio.
+        </p>
+      {% endif %}
+    </section>
+  {% endif %}
+
+  <section class="card" style="margin-top:16px;">
+    <div class="row">
+      <div>
+        <h2>Rubros del grupo</h2>
+        <p class="muted">Entra a cualquiera para ver de que movimientos y deudas sale su total.</p>
+      </div>
+      <span class="badge">{{ items|length }}</span>
+    </div>
+    <div class="list mt-16">
+      {% for item in items %}
+        <div class="list-item">
+          <div class="row">
+            <div>
+              <strong>{{ item.rubro_nombre }}</strong>
+              <div class="muted mt-16">Ventas {{ item.sales_total|money }} - Gasto caja {{ item.cash_expense_total|money }} - Gasto tesoreria {{ item.treasury_expense_total|money }} - Deuda {{ item.debt_total|money }}</div>
+              <div class="mt-16">
+                <a class="button-secondary" href="{% url 'treasury:economic_rubro_detail' item.rubro.pk %}?{{ periodo_qs }}">Ver composición</a>
+              </div>
+            </div>
+            {% if item.has_objective %}
+              <span class="badge {% if item.deviation_amount <= 0 %}badge-success{% else %}badge-danger{% endif %}">{{ item.deviation_amount|money }}</span>
+            {% else %}
+              <span class="badge badge-muted">Sin objetivo</span>
+            {% endif %}
+          </div>
+          <div class="muted mt-16">
+            Real {{ item.total_expense|money }} ({{ item.expense_ratio_over_sales }}%)
+            {% if item.payables_count %} - {{ item.payables_count }} deuda{{ item.payables_count|pluralize }} imputada{{ item.payables_count|pluralize }}{% endif %}
+            {% if item.debt_pending %} - Pendiente {{ item.debt_pending|money }}{% endif %}
+          </div>
+        </div>
+      {% empty %}
+        <p class="muted">
+          Ninguno de los rubros de este grupo tuvo ventas ni gasto en el periodo filtrado.
+        </p>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}
