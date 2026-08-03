@@ -2133,6 +2133,14 @@ def box_reject_view(request, box_id: int):
             reject_box_cash(caja=box, motivo=form.cleaned_data["motivo"], actor=request.user)
         except ValidationError as exc:
             form.add_error(None, exc)
+        except IntegrityError:
+            # Carrera perdida contra una apertura simultanea del mismo cajero:
+            # mismo texto humano que el guard, nunca el error crudo.
+            form.add_error(
+                None,
+                f"{box.usuario} ya tiene otra caja abierta para ese turno, sucursal y fecha, "
+                "y el rechazo le devuelve esta caja abierta. Resolvé esa caja primero.",
+            )
         else:
             messages.success(
                 request,
@@ -2153,6 +2161,8 @@ def box_reject_view(request, box_id: int):
     )
 
 
+@login_required
+@require_http_methods(["GET", "POST"])
 def box_validation_undo_view(request, box_id: int):
     ensure_cash_validation_undo(request.user)
     box = get_object_or_404(
@@ -2203,13 +2213,16 @@ def box_validation_undo_view(request, box_id: int):
     )
 
 
+@login_required
+@require_http_methods(["GET", "POST"])
 def box_declared_cash_edit_view(request, box_id: int):
     ensure_closed_box_correction(request.user)
     box = get_object_or_404(
         Caja.objects.select_related("sucursal", "turno", "usuario", "cierre"), pk=box_id
     )
-    if box.sucursal.empresa_id not in _get_empresa_ids(request):
-        raise PermissionDenied("Esta caja no pertenece a las empresas seleccionadas.")
+    # Mismo aislamiento que los demas flujos de correccion: un no-admin solo
+    # corrige sus propias cajas (ademas del scope de empresa).
+    _get_box_for_request(request, box.pk)
     default_back_url = reverse("cashops:box_validation_queue")
     back_url = _safe_next_url(request, default_back_url)
     cierre = getattr(box, "cierre", None)

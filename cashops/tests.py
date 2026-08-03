@@ -5127,10 +5127,13 @@ class ReversionValidacionTests(CashopsTestCase):
         self.assertEqual(empuje.estado, "REGISTRADO")
 
     def test_revert_month_closed_guard_is_per_empresa(self):
-        from treasury.models import CierreMensualTesoreria
+        from treasury.models import CierreMensualTesoreria, MovimientoCajaCentral
 
         caja = self._caja_validada()
         mes = self.fecha_op.replace(day=1)
+        # El guard sigue el mes donde VIVE el empuje en la boveda (no la fecha
+        # operativa): se lo fija al mes operativo para probar el bloqueo.
+        MovimientoCajaCentral.objects.filter(caja_cierre=caja).update(fecha=self.fecha_op)
 
         CierreMensualTesoreria.objects.create(mes=mes, empresa=self.empresa_a, cerrado=True)
         with self.assertRaises(ValidationError):
@@ -5505,3 +5508,143 @@ class EdicionMovimientoCajaAbiertaTests(CashopsTestCase):
         contenido = detail.content.decode("utf-8")
         composicion = contenido.split('id="ventas"')[1].split("Todos los movimientos")[0]
         self.assertNotIn("Editar", composicion)
+
+
+class ReversionValidacionRobustezTests(CashopsTestCase):
+    """Casos duros que salieron de la revision adversarial de la tanda:
+    empujes legacy sin caja_cierre (el campo nacio el 14/07/2026 sin backfill),
+    empuje ausente, mes del empuje distinto del operativo, aislamiento de
+    duenio en corregir declarado y acceso anonimo a las vistas nuevas."""
+
+    def _caja_validada(self, *, fisico="150.00"):
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("100.00"),
+            actor=self.operator,
+        )
+        register_cash_income(
+            caja=caja,
+            monto=Decimal("50.00"),
+            categoria="Mostrador",
+            observacion="",
+            actor=self.operator,
+        )
+        close_box(caja=caja, saldo_fisico=Decimal(fisico), cerrado_por=self.operator, actor=self.operator)
+        caja.refresh_from_db()
+        validate_box_cash(caja=caja, actor=self.admin)
+        caja.refresh_from_db()
+        return caja
+
+    def test_revert_matches_legacy_push_by_concept(self):
+        from treasury.models import MovimientoCajaCentral
+        from treasury.services import get_boveda
+
+        saldo_previo = get_boveda(self.empresa_a).saldo_actual
+        caja = self._caja_validada(fisico="150.00")
+
+        # Se simula el empuje legacy: validado antes del 14/07/2026, cuando
+        # caja_cierre no existia y el vinculo era solo el concepto.
+        MovimientoCajaCentral.objects.filter(caja_cierre=caja).update(
+            caja_cierre=None, concepto=f"Cierre caja #{caja.pk}"
+        )
+
+        revert_box_cash_validation(caja=caja, motivo="Se valido la caja equivocada", actor=self.admin)
+
+        empuje = MovimientoCajaCentral.objects.get(concepto=f"Cierre caja #{caja.pk}")
+        self.assertEqual(empuje.estado, "ANULADO")
+        self.assertEqual(get_boveda(self.empresa_a).saldo_actual, saldo_previo)
+        caja.refresh_from_db()
+        self.assertEqual(caja.validacion_estado, Caja.ValidacionEstado.PENDIENTE)
+
+    def test_revert_blocks_when_push_is_missing(self):
+        from treasury.models import MovimientoCajaCentral
+
+        caja = self._caja_validada(fisico="150.00")
+        # Dato roto simulado: el cierre declaro plata pero el ingreso no esta.
+        MovimientoCajaCentral.objects.filter(caja_cierre=caja).delete()
+
+        with self.assertRaises(ValidationError):
+            revert_box_cash_validation(caja=caja, motivo="No deberia pasar", actor=self.admin)
+        caja.refresh_from_db()
+        self.assertEqual(caja.validacion_estado, Caja.ValidacionEstado.VALIDADA)
+
+    def test_month_guard_follows_the_push_month_not_the_operative_date(self):
+        from treasury.models import CierreMensualTesoreria, MovimientoCajaCentral
+
+        # Camino real del desfasaje: OTRA empresa cierra el mes operativo antes
+        # de la validacion, el chequeo global del push re-fecha el empuje al dia
+        # de hoy (mes abierto). Despues nuestra empresa tambien cierra ese mes:
+        # el guard viejo (fecha operativa) bloqueaba para siempre la reversion
+        # de un movimiento que vive en un mes abierto; el nuevo la permite.
+        mes = self.fecha_op.replace(day=1)
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("150.00"),
+            actor=self.operator,
+        )
+        close_box(caja=caja, saldo_fisico=Decimal("150.00"), cerrado_por=self.operator, actor=self.operator)
+        caja.refresh_from_db()
+        # Recien ahora la otra empresa cierra el mes (antes bloquearia hasta la
+        # apertura, por el chequeo global de open_box).
+        CierreMensualTesoreria.objects.create(mes=mes, empresa=self.empresa_b, cerrado=True)
+        validate_box_cash(caja=caja, actor=self.admin)
+        caja.refresh_from_db()
+        empuje = MovimientoCajaCentral.objects.get(caja_cierre=caja)
+        self.assertNotEqual(empuje.fecha.replace(day=1), mes)  # re-fechado a hoy
+
+        CierreMensualTesoreria.objects.create(mes=mes, empresa=self.empresa_a, cerrado=True)
+        revert_box_cash_validation(caja=caja, motivo="El empuje vive en un mes abierto", actor=self.admin)
+        caja.refresh_from_db()
+        self.assertEqual(caja.validacion_estado, Caja.ValidacionEstado.PENDIENTE)
+        empuje.refresh_from_db()
+        self.assertEqual(empuje.estado, "ANULADO")
+
+    def test_declared_edit_isolated_to_own_boxes_for_non_admin(self):
+        caja = open_box(
+            user=self.operator,
+            turno=self.turno_a,
+            sucursal=self.branch_a,
+            fecha_operativa=self.fecha_op,
+            monto_inicial=Decimal("100.00"),
+            actor=self.operator,
+        )
+        close_box(caja=caja, saldo_fisico=Decimal("100.00"), cerrado_por=self.operator, actor=self.operator)
+        caja.refresh_from_db()
+
+        intruso = User.objects.create_user(
+            username="intruso-fix", password="test", role=self.operator_role
+        )
+        intruso.empresas_permitidas.set([self.empresa_a])
+        UserPermission.objects.create(
+            user=intruso,
+            module=PermissionModule.CASHOPS_CLOSED_FIX,
+            can_read=True,
+            can_write=True,
+        )
+        self.client.force_login(intruso)
+        url = reverse("cashops:box_declared_cash_edit", args=[caja.pk])
+        self.assertEqual(self.client.get(url).status_code, 403)
+        response = self.client.post(
+            url, {"saldo_fisico": "50.00", "justificacion": "", "motivo": "Ajeno"}
+        )
+        self.assertEqual(response.status_code, 403)
+        caja.refresh_from_db()
+        self.assertEqual(caja.cierre.saldo_fisico, Decimal("100.00"))
+
+    def test_new_money_views_redirect_anonymous_to_login(self):
+        caja = self._caja_validada()
+        urls = [
+            reverse("cashops:box_validation_undo", args=[caja.pk]),
+            reverse("cashops:box_declared_cash_edit", args=[caja.pk]),
+        ]
+        self.client.logout()
+        for url in urls:
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 302, url)
+            self.assertIn("login", response.url)

@@ -2761,8 +2761,11 @@ def reject_box_cash(*, caja: Caja, motivo: str, actor=None) -> Caja:
             }
         )
     # El rechazo reabre la caja a nombre del mismo cajero: si ya abrio otra en
-    # el mismo turno/sucursal/fecha, chocarian. Mejor un mensaje claro antes
-    # que la constraint de unica caja abierta.
+    # el mismo turno/sucursal/fecha, chocarian. Mismo lock de Turno que toma
+    # open_box, para serializar la reapertura contra una apertura concurrente
+    # del mismo slot; sin el, la carrera termina en la constraint con un error
+    # crudo en vez de este mensaje. SQLite ignora el lock (solo cuenta en prod).
+    Turno.objects.select_for_update().get(pk=caja.turno_id)
     if Caja.objects.filter(
         estado=Caja.Estado.ABIERTA,
         usuario=caja.usuario,
@@ -2836,45 +2839,80 @@ def revert_box_cash_validation(*, caja: Caja, motivo: str, actor=None) -> Caja:
     caja = Caja.objects.select_for_update().select_related("sucursal", "turno", "usuario").get(pk=caja.pk)
     if caja.estado != Caja.Estado.CERRADA or caja.validacion_estado != Caja.ValidacionEstado.VALIDADA:
         raise ValidationError({"caja": "Solo se puede revertir una caja con el efectivo ya validado."})
-    if _treasury_month_is_closed_for_empresa(caja.fecha_operativa, caja.sucursal.empresa_id):
-        raise ValidationError(
-            {
-                "caja": (
-                    "El mes de tesoreria de esa caja ya esta cerrado: es una foto congelada "
-                    "y la plata de esa validacion quedo dentro del mes. No se puede revertir."
-                )
-            }
-        )
 
     MovimientoCajaCentral = apps.get_model("treasury", "MovimientoCajaCentral")
+    # Matcher DOBLE, igual que _reverse_central_cash_closure_for_box:
+    # `caja_cierre` existe recien desde treasury/0025 (14/07/2026, sin
+    # backfill), asi que los empujes de validaciones anteriores solo se
+    # identifican por concepto. Con el filtro simple, revertir una de esas no
+    # anulaba nada y la revalidacion duplicaba la plata en la boveda.
+    closure_concepts = [f"Cierre caja #{caja.id}", f"Cierre caja #{caja.id} - saldo negativo"]
     empujes = list(
-        MovimientoCajaCentral.objects.select_for_update(of=("self",)).filter(
-            caja_cierre=caja,
+        MovimientoCajaCentral.objects.select_for_update(of=("self",))
+        .filter(
             tipo__in=["INGRESO_CAJA", "AJUSTE_NEGATIVO"],
             estado="REGISTRADO",
         )
+        .filter(Q(caja_cierre=caja) | Q(concepto__in=closure_concepts))
     )
 
-    # La boveda no puede quedar en negativo en silencio: si el efectivo de este
-    # cierre ya se uso (pagos, depositos), se corta aca con un mensaje claro.
-    delta = Decimal("0.00")
-    boveda = None
-    for movimiento in empujes:
-        boveda = movimiento.caja_central
-        if movimiento.tipo == "INGRESO_CAJA":
-            delta -= movimiento.monto
-        else:
-            delta += movimiento.monto
-    if boveda is not None and delta < 0 and boveda.saldo_actual + delta < 0:
+    cierre_ref = getattr(caja, "cierre", None)
+    if not empujes and cierre_ref is not None and cierre_ref.saldo_fisico != 0:
+        # Nada que anular pero el cierre declaro plata: revertir "en el aire"
+        # dejaria la caja pendiente y la revalidacion metaria el efectivo de
+        # nuevo, duplicandolo. Mejor frenar y que lo mire una persona.
         raise ValidationError(
             {
                 "caja": (
-                    "Ese efectivo ya se uso: revertir la validacion dejaria la boveda "
-                    f"{boveda.nombre} con saldo negativo. Revisa los movimientos de la "
-                    "boveda antes de revertir esta caja."
+                    "No se encontro en la boveda el ingreso de este cierre, asi que no hay "
+                    "nada para revertir de forma segura. Revisa el libro de la boveda antes "
+                    "de tocar esta caja."
                 )
             }
         )
+
+    # Mes cerrado: lo que manda es el mes donde VIVE cada empuje (puede no ser
+    # el de la fecha operativa, porque el push re-fecha si el mes ya cerro).
+    # Sin empujes, rige la fecha operativa para no meter una caja pendiente
+    # dentro de una foto mensual congelada.
+    fechas_a_chequear = [movimiento.fecha for movimiento in empujes] or [caja.fecha_operativa]
+    for fecha in fechas_a_chequear:
+        if _treasury_month_is_closed_for_empresa(fecha, caja.sucursal.empresa_id):
+            raise ValidationError(
+                {
+                    "caja": (
+                        "El mes de tesoreria donde quedo la plata de esa validacion ya esta "
+                        "cerrado: es una foto congelada. No se puede revertir."
+                    )
+                }
+            )
+
+    # La boveda no puede quedar en negativo en silencio: si el efectivo de este
+    # cierre ya se uso (pagos, depositos), se corta aca con un mensaje claro.
+    # El saldo se chequea con la fila de la boveda BLOQUEADA: dos reversiones
+    # concurrentes contra la misma boveda se serializan aca (en SQLite el lock
+    # no existe y esto no se puede probar; en Postgres si).
+    deltas_por_boveda: dict[int, Decimal] = {}
+    for movimiento in empujes:
+        paso = -movimiento.monto if movimiento.tipo == "INGRESO_CAJA" else movimiento.monto
+        deltas_por_boveda[movimiento.caja_central_id] = (
+            deltas_por_boveda.get(movimiento.caja_central_id, Decimal("0.00")) + paso
+        )
+    CajaCentral = apps.get_model("treasury", "CajaCentral")
+    for boveda_id, delta in deltas_por_boveda.items():
+        if delta >= 0:
+            continue
+        boveda = CajaCentral.objects.select_for_update(of=("self",)).get(pk=boveda_id)
+        if boveda.saldo_actual + delta < 0:
+            raise ValidationError(
+                {
+                    "caja": (
+                        "Ese efectivo ya se uso: revertir la validacion dejaria la boveda "
+                        f"{boveda.nombre} con saldo negativo. Revisa los movimientos de la "
+                        "boveda antes de revertir esta caja."
+                    )
+                }
+            )
 
     now = timezone.now()
     for movimiento in empujes:
@@ -2885,7 +2923,6 @@ def revert_box_cash_validation(*, caja: Caja, motivo: str, actor=None) -> Caja:
         movimiento.full_clean()
         movimiento.save(update_fields=["estado", "motivo_anulacion", "anulado_por", "anulado_en"])
 
-    cierre = getattr(caja, "cierre", None)
     caja.validacion_estado = Caja.ValidacionEstado.PENDIENTE
     caja.validada_por = None
     caja.validada_en = None
@@ -2895,7 +2932,7 @@ def revert_box_cash_validation(*, caja: Caja, motivo: str, actor=None) -> Caja:
         caja=caja,
         accion=CajaValidacion.Accion.REVERSION,
         motivo=motivo,
-        efectivo_esperado=cierre.saldo_fisico if cierre is not None else Decimal("0.00"),
+        efectivo_esperado=cierre_ref.saldo_fisico if cierre_ref is not None else Decimal("0.00"),
         usuario=actor,
     )
     resync_operational_control_for_caja(caja)
