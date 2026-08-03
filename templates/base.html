@@ -35,10 +35,10 @@
     <main class="layout {% if not request.user.is_authenticated %}layout--auth{% endif %}">
       {% if request.user.is_authenticated %}
         <aside class="sidebar">
-          {# Se quitaron los links a #acciones, #movimientos y #cierre: eran anclas
+          {% comment %} Se quitaron los links a #acciones, #movimientos y #cierre: eran anclas
              que no existen en ninguna pagina que use este layout (landing, login,
              primer ingreso y cambio de password obligatorio), asi que no hacian
-             nada al clickearlas. #}
+             nada al clickearlas. {% endcomment %}
           <nav class="nav-card" aria-label="Navegacion principal">
             <a class="nav-card__item" href="{% url 'cashops:dashboard' %}">Ir al sistema</a>
           </nav>
@@ -62,10 +62,10 @@
       </section>
     </main>
 
-    {# Se elimino la barra inferior movil: 3 de sus 4 links apuntaban a anclas
+    {% comment %} Se elimino la barra inferior movil: 3 de sus 4 links apuntaban a anclas
        inexistentes y este layout solo lo usan la landing, el login, el primer
        ingreso y el cambio de password obligatorio. Las pantallas de operacion
-       tienen su propia navegacion en cashops/layout.html y treasury/layout.html. #}
+       tienen su propia navegacion en cashops/layout.html y treasury/layout.html. {% endcomment %}
 
     {% block scripts %}{% endblock %}
   </body>

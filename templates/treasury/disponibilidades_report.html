@@ -210,10 +210,10 @@
             </p>
         </div>
         <div class="stack" style="gap:8px;">
-            {# Cada empresa cierra su mes por separado: un boton por empresa, y
+            {% comment %} Cada empresa cierra su mes por separado: un boton por empresa, y
                las que ya cerraron quedan deshabilitadas. Antes habia un solo
                boton global y ninguna empresa podia cerrar hasta que la otra
-               tuviera todas sus cajas validadas. #}
+               tuviera todas sus cajas validadas. {% endcomment %}
             {% for empresa in empresas_para_cierre %}
                 {% if empresa.cerrada %}
                     <button class="button-secondary" disabled>{{ empresa.nombre }}: mes cerrado</button>

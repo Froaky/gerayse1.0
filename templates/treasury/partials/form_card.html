@@ -15,13 +15,17 @@
     </ul>
   {% endif %}
 
-  {# hx-sync descarta el segundo envio mientras el primero viaja (doble click) y
-     hx-disabled-elt apaga el boton para que se vea que esta procesando. Ojo: los
-     forms de tesoreria todavia NO llevan token de alta, asi que esto es la unica
-     defensa que tienen contra el alta duplicada. #}
-  {# form_method="get" se usa para pasos de seleccion que no escriben nada (ej.
+  {% comment %} hx-sync descarta el segundo envio mientras el primero viaja (doble click) y
+     hx-disabled-elt apaga el boton para que se vea que esta procesando. Es la
+     primera barrera contra el alta duplicada; la de verdad es el token_alta que
+     viaja en hidden_fields (ver AltaIdempotenteMixin en treasury/forms.py).
+     OJO: el comentario corto de Django solo tapa UNA linea. Si cruza a la
+     siguiente, deja de ser comentario y se imprime en pantalla; por eso este
+     bloque usa comment/endcomment. Lo cubre un test en core/tests.py.
+  {% endcomment %}
+  {% comment %} form_method="get" se usa para pasos de seleccion que no escriben nada (ej.
      elegir proveedor antes de ver sus facturas): sin csrf ni hx-post, para que el
-     resultado quede en la URL y sea compartible/recargable. #}
+     resultado quede en la URL y sea compartible/recargable. {% endcomment %}
   {% if form_method == "get" %}
   <form method="get" action="{{ form_action }}" class="stack mt-16">
   {% else %}
@@ -43,8 +47,7 @@
         {% endfor %}
       </div>
     {% endfor %}
-    <div class="row mt-8">
-      <span class="muted">Formulario reusable para alta y edicion.</span>
+    <div class="row mt-8" style="justify-content:flex-end;">
       <button class="button" type="submit">{{ submit_label|default:"Guardar" }}</button>
     </div>
   </form>

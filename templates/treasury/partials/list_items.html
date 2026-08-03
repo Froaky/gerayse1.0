@@ -1,9 +1,9 @@
 <div class="list mt-16">
   {% for item in items %}
     {% if item.action_href %}
-      {# Item con accion propia: no puede ser un <a> entero porque tendria un
+      {% comment %} Item con accion propia: no puede ser un <a> entero porque tendria un
          <a> anidado. Se deja como rama aparte para que todas las otras listas
-         de tesoreria sigan renderizando exactamente igual que antes. #}
+         de tesoreria sigan renderizando exactamente igual que antes. {% endcomment %}
       <div class="list-item">
         <div class="row">
           <div>
