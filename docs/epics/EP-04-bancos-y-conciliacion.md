@@ -15,6 +15,8 @@ Llevar al sistema lo que hoy se controla en el lado `MAPOGO - BANCO` y en los ci
 - carga inicial auditada de saldo bancario por cuenta
 - cuenta bancaria asociada a una empresa duena, no solo a una sucursal puntual
 
+- reparto de una transferencia entre varias facturas, incluso de proveedores distintos
+
 ## No incluye todavia
 
 - integracion bancaria real en linea
@@ -34,6 +36,8 @@ Llevar al sistema lo que hoy se controla en el lado `MAPOGO - BANCO` y en los ci
 - hasta nueva decision de negocio, la conciliacion bancaria se opera de forma manual asistida por el sistema y no por matching automatico
 - una cuenta bancaria pertenece a una empresa; puede ademas estar asociada a una sucursal puntual cuando la cuenta es exclusiva de un solo local, pero no lo exige
 - cuando una empresa opera varias sucursales sobre una unica cuenta bancaria, el ingreso de esa cuenta (acreditaciones y creditos) se lee como fondo comun de la empresa, no como reparto por sucursal
+- una transferencia puede pagar varias facturas, incluso de proveedores distintos: la suma de los pagos vinculados no puede superar el importe del movimiento bancario
+- un movimiento bancario sigue siendo un solo hecho del extracto aunque pague varias deudas; pagar N facturas no genera N debitos
 
 ## User Stories
 
@@ -96,6 +100,32 @@ Para auditar que un egreso de tesoreria realmente impacto en la cuenta correcta
 - [x] Cheque/ECHEQ con estado bancario
 - [x] Trazabilidad bidireccional
 - [x] La vinculacion no redefine por si sola el estado de deuda
+
+### [ ] US-4.10 Una transferencia repartida entre varias facturas
+
+Como administracion
+Quiero aplicar una sola transferencia a varias facturas, incluso de proveedores distintos
+Para registrar el pago semanal de cuenta corriente sin cargar un debito por cada factura
+
+Contexto: el pago semanal de CTA CTE sale como una transferencia sola que cubre
+6 facturas de proveedores distintos. Hoy una transferencia paga UNA factura por
+su importe exacto, asi que ese caso obliga a cargar debitos que no existen en el
+extracto.
+
+Criterios:
+- desde una transferencia ya cargada se pueden elegir varias facturas impagas y asignarle a cada una su importe
+- se pueden elegir facturas de proveedores distintos en la misma operacion
+- el listado para elegir muestra todas las facturas impagas del alcance, sin filtrar por el importe de la transferencia
+- el listado se puede filtrar por proveedor, porque la lista completa es larga
+- la suma asignada no puede superar el importe de la transferencia, y en pantalla se ve cuanto queda por asignar mientras se carga
+- el importe asignado a una factura no puede superar su saldo pendiente
+- si la suma asignada es menor al importe de la transferencia, queda visible que parte de la transferencia todavia no esta asignada a ninguna deuda
+- cada factura recibe su propio pago por el importe asignado, y cada pago queda trazable a la misma transferencia
+- la transferencia no genera un debito nuevo por cada factura: sigue siendo un solo movimiento del extracto
+- desde la transferencia se ve que facturas pago y por cuanto; desde cada factura se llega a la transferencia
+- anular uno de los pagos devuelve el saldo a esa factura y libera ese importe de la transferencia, sin tocar los otros pagos ni el movimiento bancario
+- el reparto respeta empresa activa: no se paga una factura de una empresa con una transferencia de la cuenta de otra
+- una transferencia ya repartida no acepta un pago nuevo que haga pasar su importe total
 
 ### [x] US-4.6 Conciliacion simple tarjeta vs banco
 
