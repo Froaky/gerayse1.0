@@ -1746,3 +1746,52 @@ Archivos: `treasury/services.py`, `treasury/views.py`, `treasury/forms.py`,
 - Modulo de avisos (propuesta comercial ya enviada): el punto de insercion esta comentado en `reject_box_cash`.
 - `token_alta` para las altas de treasury (PagoProveedor, MovimientoBancario, boveda): sigue abierto, y con las features nuevas de treasury hay MAS flujos de alta que cuando se anoto.
 - 22 movimientos de caja duplicados en produccion sin anular (se hacen por UI) y 2 deudas a revisar a mano (OSSOLA 443, LA CANADA 30).
+
+### Revision adversarial de la tanda: 7 hallazgos confirmados, 6 cerrados 2026-08-02
+
+Antes de mandar la tanda a staging se corrio una revision multi-agente sobre el diff
+(buscadores por dimension: plata, estados, permisos, Postgres; cada hallazgo verificado
+por un segundo agente intentando refutarlo). Confirmados 7. Cerrados en el mismo dia 6:
+
+1. **ALTA / plata — revertir una validacion anterior al 14/07/2026 no anulaba nada y
+   revalidar DUPLICABA la plata en la boveda.** `caja_cierre` nacio en treasury/0025 sin
+   backfill: los empujes viejos solo se identifican por concepto. `revert_box_cash_validation`
+   ahora usa el matcher doble de `_reverse_central_cash_closure_for_box`
+   (`Q(caja_cierre=caja) | Q(concepto__in=[...])`) y ademas CORTA con error si no encuentra
+   empuje y el cierre declaro plata (revertir "en el aire" era lo que armaba el doble push).
+   Test: `test_revert_matches_legacy_push_by_concept`, `test_revert_blocks_when_push_is_missing`.
+2. **media / plata — el guard de mes cerrado del revert miraba `fecha_operativa`, pero el
+   empuje puede vivir en OTRO mes** (el push re-fecha si el mes figura cerrado, y su chequeo
+   es global). Ahora el guard sigue el mes donde vive CADA empuje (por empresa); sin empujes,
+   rige la fecha operativa. Test: `test_month_guard_follows_the_push_month_not_the_operative_date`.
+3. **media / Postgres — el guard "la boveda no queda en negativo" era check-then-act sin
+   lock**: dos reversiones concurrentes contra la misma boveda pasaban las dos (write skew,
+   invisible en SQLite). Ahora el saldo se chequea con la fila de `CajaCentral` bloqueada
+   (`select_for_update(of=("self",))`), delta agrupado por boveda.
+4. **media / estados — la reapertura por rechazo corria una carrera con `open_box`** que
+   terminaba en IntegrityError crudo (500) para el validador. `reject_box_cash` ahora toma
+   el mismo lock de `Turno` que `open_box` antes del chequeo de slot, y `box_reject_view`
+   ademas captura IntegrityError con el mismo texto humano del guard.
+5. **media / permisos — `box_validation_undo_view` y `box_declared_cash_edit_view` eran las
+   unicas vistas del archivo sin `@login_required` / `@require_http_methods`.** Sesion vencida
+   daba 403 con mensaje falso en vez de redirigir al login. Decoradores agregados; test de
+   acceso anonimo (`test_new_money_views_redirect_anonymous_to_login`).
+6. **media / permisos — corregir el declarado no aislaba por duenio**: un no-admin con
+   `cashops_closed_fix` podia corregir el declarado de cajas AJENAS por URL directa (los
+   flujos hermanos del mismo permiso lo niegan). Ahora pasa por `_get_box_for_request` como
+   todos. Test: `test_declared_edit_isolated_to_own_boxes_for_non_admin`.
+
+**Pendiente (confirmado, NO arreglado en esta tanda):**
+
+7. **media / plata — carrera entre revertir una validacion y `close_treasury_month`**: ninguno
+   toma un lock que el otro respete; en Postgres READ COMMITTED el mes puede congelar plata
+   que la reversion concurrente acaba de anular (y la revalidacion posterior la cuenta dos
+   veces). El fix correcto es lockear el cierre mensual por empresa en treasury y que los
+   guards nuevos lean ese lock: slice propio de treasury, junto con la migracion de los
+   llamadores globales de `treasury_month_is_closed` ya anotada en pendientes. Mientras
+   tanto el riesgo real es bajo (dos acciones de administracion en el mismo segundo).
+
+Trampa que dejo la revision para el proximo agente: el re-fechado del push
+(`_push_box_closure_to_central_cash`) sigue decidiendo con el chequeo GLOBAL de mes
+cerrado — si otra empresa cerro el mes, el efectivo se atribuye al mes siguiente de la
+cadena PROPIA aunque este abierta. Es parte del mismo slice pendiente por empresa.
