@@ -1,3 +1,4 @@
+import uuid
 from decimal import Decimal
 
 from django import forms
@@ -22,6 +23,26 @@ from .models import (
     SaldoInicialCuentaBancaria,
 )
 from cashops.models import Empresa, RubroOperativo, Sucursal
+
+
+class AltaIdempotenteMixin:
+    """Token de alta oculto, unico por render de formulario (mismo contrato que
+    cashops.forms.AltaIdempotenteForm): si vuelve el mismo token (doble click,
+    reintento tras un timeout, volver atras y reenviar), el servicio devuelve
+    lo ya creado en lugar de mover plata de nuevo. El campo se agrega dinamico
+    para servir igual en Form y en ModelForm; el partial de treasury ya
+    renderiza form.hidden_fields."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["token_alta"] = forms.UUIDField(required=False, widget=forms.HiddenInput())
+        # En un form ligado el valor sale de los datos enviados, asi que el
+        # token sobrevive a un render con errores de validacion.
+        if not self.is_bound:
+            self.fields["token_alta"].initial = uuid.uuid4()
+
+    def creation_token(self):
+        return self.cleaned_data.get("token_alta")
 
 
 class TreasuryStyledFormMixin:
@@ -462,7 +483,7 @@ def open_payables_queryset(empresa_ids=None):
     return queryset
 
 
-class PaymentBaseForm(TreasuryStyledFormMixin, forms.Form):
+class PaymentBaseForm(AltaIdempotenteMixin, TreasuryStyledFormMixin, forms.Form):
     cuenta_por_pagar = PayableChoiceField(queryset=CuentaPorPagar.objects.none(), label="Cuenta por pagar")
     cuenta_bancaria = forms.ModelChoiceField(queryset=CuentaBancaria.objects.none(), label="Cuenta bancaria")
     fecha_pago = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
@@ -541,7 +562,7 @@ class PaymentAnnulForm(TreasuryStyledFormMixin, forms.Form):
         self._apply_input_classes()
 
 
-class BankMovementForm(TreasuryStyledFormMixin, forms.ModelForm):
+class BankMovementForm(AltaIdempotenteMixin, TreasuryStyledFormMixin, forms.ModelForm):
     class Meta:
         model = MovimientoBancario
         fields = [
@@ -817,7 +838,7 @@ class BovedaEmpresaFieldMixin:
             campo.widget.attrs["data-unica-empresa"] = "1"
 
 
-class CentralCashMovementForm(BovedaEmpresaFieldMixin, TreasuryStyledFormMixin, forms.ModelForm):
+class CentralCashMovementForm(AltaIdempotenteMixin, BovedaEmpresaFieldMixin, TreasuryStyledFormMixin, forms.ModelForm):
     empresa = forms.ModelChoiceField(
         queryset=Empresa.objects.none(),
         label="Empresa",
@@ -849,7 +870,7 @@ class CentralCashMovementForm(BovedaEmpresaFieldMixin, TreasuryStyledFormMixin, 
         self._apply_input_classes()
 
 
-class CargaInicialCajaCentralForm(BovedaEmpresaFieldMixin, TreasuryStyledFormMixin, forms.Form):
+class CargaInicialCajaCentralForm(AltaIdempotenteMixin, BovedaEmpresaFieldMixin, TreasuryStyledFormMixin, forms.Form):
     empresa = forms.ModelChoiceField(
         queryset=Empresa.objects.none(),
         label="Empresa",
@@ -887,7 +908,7 @@ class CargaInicialCajaCentralForm(BovedaEmpresaFieldMixin, TreasuryStyledFormMix
         self._apply_input_classes()
 
 
-class EgresoTesoreriaForm(BovedaEmpresaFieldMixin, TreasuryStyledFormMixin, forms.Form):
+class EgresoTesoreriaForm(AltaIdempotenteMixin, BovedaEmpresaFieldMixin, TreasuryStyledFormMixin, forms.Form):
     FUENTE_CAJA = "CAJA_CENTRAL"
     FUENTE_BANCO = "BANCO"
     FUENTE_CHOICES = [
@@ -1059,7 +1080,7 @@ class DisponibilidadesFilterForm(TreasuryStyledFormMixin, forms.Form):
         self._apply_input_classes()
 
 
-class CashPaymentForm(TreasuryStyledFormMixin, forms.Form):
+class CashPaymentForm(AltaIdempotenteMixin, TreasuryStyledFormMixin, forms.Form):
     cuenta_por_pagar = PayableChoiceField(queryset=CuentaPorPagar.objects.none(), label="Cuenta por pagar")
     fecha_pago = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
     monto = forms.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0.01"), widget=forms.NumberInput(attrs={"step": "0.01", "placeholder": "0.00"}))
@@ -1090,7 +1111,7 @@ class SupplierPickerForm(TreasuryStyledFormMixin, forms.Form):
         self._apply_input_classes()
 
 
-class SupplierPaymentBatchForm(TreasuryStyledFormMixin, forms.Form):
+class SupplierPaymentBatchForm(AltaIdempotenteMixin, TreasuryStyledFormMixin, forms.Form):
     """Paso 2 del pago por proveedor: una linea por factura impaga (tildar +
     importe editable, precargado con el saldo) mas los datos comunes del pago.
 

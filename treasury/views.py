@@ -1420,6 +1420,7 @@ def _register_payment_view(request, form_class, service_func, title: str, subtit
             "fecha_pago": form.cleaned_data["fecha_pago"],
             "monto": form.cleaned_data["monto"],
             "observaciones": form.cleaned_data.get("observaciones", ""),
+            "token_alta": form.creation_token(),
             "actor": request.user,
         }
         # El pago en efectivo sale de la boveda de una empresa. Normalmente la
@@ -1551,6 +1552,7 @@ def pagos_proveedor_create(request):
                 fecha_pago=form.cleaned_data["fecha_pago"],
                 referencia=form.cleaned_data.get("referencia", ""),
                 observaciones=form.cleaned_data.get("observaciones", ""),
+                token_alta=form.creation_token(),
                 actor=request.user,
             )
         except (ValidationError, IntegrityError) as error:
@@ -2688,6 +2690,7 @@ def central_cash_create(request):
                     concepto=form.cleaned_data["concepto"],
                     fecha=form.cleaned_data["fecha"],
                     observaciones=form.cleaned_data["observaciones"],
+                    token_alta=form.creation_token(),
                     actor=request.user
                 )
                 messages.success(request, "Movimiento registrado correctamente.")
@@ -2719,6 +2722,7 @@ def carga_inicial_caja_central(request):
                     monto=form.cleaned_data["monto"],
                     motivo=form.cleaned_data["motivo"],
                     observaciones=form.cleaned_data["observaciones"],
+                    token_alta=form.creation_token(),
                     actor=request.user,
                 )
                 messages.success(request, "Carga inicial de caja fuerte registrada y auditada.")
@@ -2812,6 +2816,7 @@ def egreso_tesoreria_create(request):
                     rubro=form.cleaned_data.get("rubro"),
                     sucursal=form.cleaned_data.get("sucursal"),
                     periodo=form.cleaned_data.get("periodo"),
+                    token_alta=form.creation_token(),
                     actor=request.user,
                 )
                 messages.success(request, "Egreso administrativo de tesoreria registrado.")

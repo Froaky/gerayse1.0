@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Count, DateField, Q, Sum
 from django.db.models.functions import TruncMonth
 from django.utils import timezone
@@ -40,6 +40,30 @@ def _save_instance(instance):
     instance.full_clean()
     instance.save()
     return instance
+
+
+def _existing_by_creation_token(manager, token_alta):
+    """Idempotencia de alta (mismo patron que cashops): si vuelve el mismo
+    token (doble click, reintento tras un timeout, volver atras y reenviar),
+    se devuelve lo ya creado en lugar de mover plata de nuevo."""
+    if not token_alta:
+        return None
+    return manager.filter(token_alta=token_alta).first()
+
+
+def _guardar_alta_idempotente(instance, manager, token_alta):
+    """Guarda una alta con full_clean dentro de un savepoint. Si la carrera del
+    doble submit choca la constraint del token (sale como ValidationError o
+    IntegrityError segun quien llegue primero a la base), devuelve lo ya
+    creado; cualquier otro error se propaga igual que antes."""
+    try:
+        with transaction.atomic():
+            return _save_instance(instance)
+    except (IntegrityError, ValidationError):
+        existing = _existing_by_creation_token(manager, token_alta)
+        if existing is None:
+            raise
+        return existing
 
 
 def _first_day_of_month(value: date) -> date:
@@ -676,9 +700,15 @@ def register_payment(
     observaciones: str = "",
     empresa=None,
     bank_movement: MovimientoBancario = None,
+    token_alta=None,
     actor=None,
 ) -> PagoTesoreria:
     _require_actor(actor)
+    # Reenvio del mismo formulario: el pago ya existe, se devuelve tal cual
+    # ANTES de tomar ningun lock ni mover plata de nuevo.
+    existing = _existing_by_creation_token(PagoTesoreria.objects, token_alta)
+    if existing is not None:
+        return existing
     locked_payable = CuentaPorPagar.objects.select_for_update().get(pk=payable.pk)
     if bank_account:
         bank_account = CuentaBancaria.objects.get(pk=bank_account.pk)
@@ -702,9 +732,22 @@ def register_payment(
         monto=monto,
         referencia=referencia,
         observaciones=observaciones,
+        token_alta=token_alta,
         creado_por=actor,
     )
-    payment.save(skip_domain_guard=True)
+    # Savepoint para la carrera: dos POST simultaneos con el mismo token pasan
+    # ambos el chequeo de arriba; la constraint parcial corta al segundo y se
+    # le devuelve el pago del primero. El save de PagoTesoreria pasa por
+    # full_clean, asi que el duplicado puede salir como ValidationError
+    # (validate_unique) o como IntegrityError segun quien llegue a la base.
+    try:
+        with transaction.atomic():
+            payment.save(skip_domain_guard=True)
+    except (IntegrityError, ValidationError):
+        existing = _existing_by_creation_token(PagoTesoreria.objects, token_alta)
+        if existing is None:
+            raise
+        return existing
 
     # Todo pago tiene que mover la disponibilidad de donde salio la plata: el
     # efectivo baja la caja fuerte, y transferencia/cheque/ECHEQ bajan el banco.
@@ -745,6 +788,7 @@ def register_supplier_payment_batch(
     fecha_pago,
     referencia: str = "",
     observaciones: str = "",
+    token_alta=None,
     actor=None,
 ) -> list[PagoTesoreria]:
     """Paga VARIAS facturas de UN mismo proveedor en una sola operacion.
@@ -760,6 +804,13 @@ def register_supplier_payment_batch(
     haria explotar el segundo pago.
     """
     _require_actor(actor)
+    # Reenvio del mismo lote: el token viaja en el PRIMER pago (la constraint
+    # es un token -> un registro). Se devuelve ese pago solo — la lista
+    # original no se puede reconstruir — pero alcanza para que el reenvio no
+    # pague el lote de nuevo.
+    existing = _existing_by_creation_token(PagoTesoreria.objects, token_alta)
+    if existing is not None:
+        return [existing]
     lineas = [(payable, monto) for payable, monto in lineas if monto and monto > 0]
     if not lineas:
         raise ValidationError({"__all__": "Elegí al menos una factura con importe a pagar."})
@@ -788,6 +839,7 @@ def register_supplier_payment_batch(
                 monto=monto,
                 referencia=linea_referencia,
                 observaciones=observaciones,
+                token_alta=token_alta if indice == 1 else None,
                 actor=actor,
             )
         )
@@ -803,6 +855,7 @@ def register_transfer_payment(
     referencia: str = "",
     observaciones: str = "",
     bank_movement: MovimientoBancario = None,
+    token_alta=None,
     actor=None,
 ) -> PagoTesoreria:
     return register_payment(
@@ -814,6 +867,7 @@ def register_transfer_payment(
         referencia=referencia,
         observaciones=observaciones,
         bank_movement=bank_movement,
+        token_alta=token_alta,
         actor=actor,
     )
 
@@ -874,6 +928,7 @@ def register_cheque_payment(
     referencia: str,
     fecha_diferida=None,
     observaciones: str = "",
+    token_alta=None,
     actor=None,
 ) -> PagoTesoreria:
     return register_payment(
@@ -885,6 +940,7 @@ def register_cheque_payment(
         referencia=referencia,
         fecha_diferida=fecha_diferida,
         observaciones=observaciones,
+        token_alta=token_alta,
         actor=actor,
     )
 
@@ -898,6 +954,7 @@ def register_echeq_payment(
     referencia: str,
     fecha_diferida=None,
     observaciones: str = "",
+    token_alta=None,
     actor=None,
 ) -> PagoTesoreria:
     return register_payment(
@@ -909,6 +966,7 @@ def register_echeq_payment(
         referencia=referencia,
         fecha_diferida=fecha_diferida,
         observaciones=observaciones,
+        token_alta=token_alta,
         actor=actor,
     )
 
@@ -920,6 +978,7 @@ def register_cash_payment(
     monto: Decimal,
     observaciones: str = "",
     empresa=None,
+    token_alta=None,
     actor=None,
 ) -> PagoTesoreria:
     return register_payment(
@@ -930,6 +989,7 @@ def register_cash_payment(
         monto=monto,
         observaciones=observaciones,
         empresa=empresa,
+        token_alta=token_alta,
         actor=actor,
     )
 
@@ -1251,9 +1311,13 @@ def create_bank_movement(
     origen: str = MovimientoBancario.Origen.MANUAL,
     pago_tesoreria: PagoTesoreria = None,
     generado_por_pago: bool = False,
+    token_alta=None,
     actor=None,
 ) -> MovimientoBancario:
     _require_actor(actor)
+    existing = _existing_by_creation_token(MovimientoBancario.objects, token_alta)
+    if existing is not None:
+        return existing
     movement = MovimientoBancario(
         cuenta_bancaria=cuenta_bancaria,
         tipo=tipo,
@@ -1271,9 +1335,10 @@ def create_bank_movement(
         origen=origen,
         pago_tesoreria=pago_tesoreria,
         generado_por_pago=generado_por_pago,
+        token_alta=token_alta,
         creado_por=actor,
     )
-    return _save_instance(movement)
+    return _guardar_alta_idempotente(movement, MovimientoBancario.objects, token_alta)
 
 
 def update_bank_movement(
@@ -1292,6 +1357,9 @@ def update_bank_movement(
     periodo_pago: date = None,
     referencia: str = "",
     observaciones: str = "",
+    # La vista de edicion comparte el form de alta y pasa **cleaned_data: el
+    # token del render se acepta y se ignora, editar no es crear.
+    token_alta=None,
     actor=None,
 ) -> MovimientoBancario:
     _require_actor(actor)
@@ -2652,9 +2720,13 @@ def register_central_cash_movement(
     movimiento_bancario: MovimientoBancario = None,
     observaciones: str = "",
     sucursal_origen=None,
+    token_alta=None,
     actor=None,
 ) -> MovimientoCajaCentral:
     _require_actor(actor)
+    existing = _existing_by_creation_token(MovimientoCajaCentral.objects, token_alta)
+    if existing is not None:
+        return existing
     caja = get_boveda(empresa)
     movement = MovimientoCajaCentral(
         caja_central=caja,
@@ -2666,9 +2738,10 @@ def register_central_cash_movement(
         movimiento_bancario=movimiento_bancario,
         observaciones=observaciones,
         sucursal_origen=sucursal_origen,
+        token_alta=token_alta,
         creado_por=actor,
     )
-    return _save_instance(movement)
+    return _guardar_alta_idempotente(movement, MovimientoCajaCentral.objects, token_alta)
 
 
 def register_carga_inicial_caja_central(
@@ -2678,6 +2751,7 @@ def register_carga_inicial_caja_central(
     monto: Decimal,
     motivo: str,
     observaciones: str = "",
+    token_alta=None,
     actor=None,
 ) -> MovimientoCajaCentral:
     _require_actor(actor)
@@ -2693,6 +2767,7 @@ def register_carga_inicial_caja_central(
         concepto=f"Carga inicial: {motivo}",
         fecha=fecha,
         observaciones=observaciones,
+        token_alta=token_alta,
         actor=actor,
     )
 
@@ -2709,9 +2784,17 @@ def register_egreso_tesoreria(
     rubro=None,
     sucursal=None,
     periodo=None,
+    token_alta=None,
     actor=None,
 ) -> MovimientoCajaCentral | MovimientoBancario:
     _require_actor(actor)
+    # El egreso puede terminar en la boveda O en el banco segun la fuente: el
+    # reenvio se busca en los dos lados.
+    existing = _existing_by_creation_token(
+        MovimientoCajaCentral.objects, token_alta
+    ) or _existing_by_creation_token(MovimientoBancario.objects, token_alta)
+    if existing is not None:
+        return existing
     concepto = (concepto or "").strip()
     if not concepto:
         raise ValidationError({"concepto": "El concepto es obligatorio para el egreso administrativo."})
@@ -2755,9 +2838,10 @@ def register_egreso_tesoreria(
             rubro_operativo=rubro,
             sucursal_gasto=sucursal,
             periodo_pago=periodo,
+            token_alta=token_alta,
             creado_por=actor,
         )
-        return _save_instance(movement)
+        return _guardar_alta_idempotente(movement, MovimientoBancario.objects, token_alta)
 
     caja = get_boveda(empresa)
     movement = MovimientoCajaCentral(
@@ -2770,9 +2854,10 @@ def register_egreso_tesoreria(
         rubro_operativo=rubro,
         sucursal_gasto=sucursal,
         periodo_pago=periodo,
+        token_alta=token_alta,
         creado_por=actor,
     )
-    return _save_instance(movement)
+    return _guardar_alta_idempotente(movement, MovimientoCajaCentral.objects, token_alta)
 
 
 def build_disponibilidades_snapshot(year: int, month: int, sucursal=None, empresa_ids=None) -> dict:

@@ -828,6 +828,14 @@ class PagoTesoreria(models.Model):
     anulado_en = models.DateTimeField(null=True, blank=True)
     motivo_anulacion = models.CharField(max_length=255, blank=True)
 
+    # Token del envio que creo el pago, unico por render de formulario: si
+    # vuelve el mismo token (doble click, reintento tras un timeout), el
+    # servicio devuelve el pago ya creado en lugar de pagar dos veces. Nulo en
+    # los pagos historicos y en los generados por otros procesos.
+    token_alta = models.UUIDField(
+        null=True, blank=True, editable=False, verbose_name="Token de alta",
+    )
+
     class Meta:
         ordering = ["-fecha_pago", "-id"]
         constraints = [
@@ -841,6 +849,12 @@ class PagoTesoreria(models.Model):
                 condition=~Q(referencia=""),
                 name="unique_payment_reference_per_bank_method",
                 violation_error_message="Ya existe un pago con esa referencia para esa cuenta bancaria y medio de pago.",
+            ),
+            models.UniqueConstraint(
+                fields=["token_alta"],
+                condition=Q(token_alta__isnull=False),
+                name="unique_payment_creation_token",
+                violation_error_message="Este pago ya fue registrado.",
             ),
         ]
         indexes = [
@@ -986,6 +1000,13 @@ class MovimientoBancario(models.Model):
         DEBITO = "DEBITO", "Debito"
         CREDITO = "CREDITO", "Credito"
 
+    # Token del envio que creo el movimiento (idempotencia de alta): mismo
+    # contrato que PagoTesoreria.token_alta. Nulo en lo historico y en lo
+    # generado por pagos u otros procesos.
+    token_alta = models.UUIDField(
+        null=True, blank=True, editable=False, verbose_name="Token de alta",
+    )
+
     class Clase(models.TextChoices):
         ACREDITACION = "ACREDITACION", "Ingreso por acreditación"
         OTRO_INGRESO = "OTRO_INGRESO", "Otro ingreso"
@@ -1093,6 +1114,12 @@ class MovimientoBancario(models.Model):
                 check=Q(monto__gt=0),
                 name="bank_movement_amount_positive",
                 violation_error_message="El monto del movimiento bancario debe ser mayor que cero.",
+            ),
+            models.UniqueConstraint(
+                fields=["token_alta"],
+                condition=Q(token_alta__isnull=False),
+                name="unique_bank_movement_creation_token",
+                violation_error_message="Este movimiento bancario ya fue registrado.",
             ),
         ]
         indexes = [
@@ -1466,6 +1493,12 @@ class MovimientoCajaCentral(models.Model):
     tipo = models.CharField(max_length=40, choices=Tipo.choices)
     monto = models.DecimalField(max_digits=14, decimal_places=2)
     concepto = models.CharField(max_length=160)
+    # Token del envio que creo el movimiento (idempotencia de alta): mismo
+    # contrato que PagoTesoreria.token_alta. Nulo en lo historico y en lo
+    # generado por pagos, cierres de caja u otros procesos.
+    token_alta = models.UUIDField(
+        null=True, blank=True, editable=False, verbose_name="Token de alta",
+    )
     
     # Optional links
     pago_tesoreria = models.ForeignKey(
@@ -1560,6 +1593,12 @@ class MovimientoCajaCentral(models.Model):
                 check=Q(monto__gt=0),
                 name="central_cash_movement_positive",
                 violation_error_message="El monto del movimiento de caja central debe ser mayor que cero.",
+            ),
+            models.UniqueConstraint(
+                fields=["token_alta"],
+                condition=Q(token_alta__isnull=False),
+                name="unique_central_cash_creation_token",
+                violation_error_message="Este movimiento de caja fuerte ya fue registrado.",
             ),
         ]
         # Con una sola boveda por empresa todos los movimientos cuelgan de dos
