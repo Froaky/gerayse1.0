@@ -159,6 +159,76 @@ class PagarDeudaDesdeTransferenciaTests(TestCase):
                 bank_movement=credito, payable=self.deuda, actor=self.admin
             )
 
+    def _empresa_ajena_con_factura(self):
+        """Otra empresa, con su propia sucursal y su propia factura impaga."""
+        otra_empresa = Empresa.objects.create(nombre="Empresa Ajena SA")
+        otra_sucursal = Sucursal.objects.create(
+            codigo="AJE", nombre="Suc Ajena", razon_social="Ajena", empresa=otra_empresa
+        )
+        factura_ajena = CuentaPorPagar.objects.create(
+            proveedor=self.proveedor,
+            categoria=self.categoria,
+            concepto="Factura de la otra empresa",
+            fecha_emision=self.hoy,
+            fecha_vencimiento=self.hoy,
+            periodo_referencia=self.hoy.replace(day=1),
+            importe_total=Decimal("200.00"),
+            saldo_pendiente=Decimal("200.00"),
+            sucursal=otra_sucursal,
+            creado_por=self.admin,
+        )
+        return otra_empresa, factura_ajena
+
+    def test_no_se_paga_una_factura_de_otra_empresa_con_esta_cuenta(self):
+        """ARMADI y MAPOGO son empresas distintas.
+
+        La plata de la cuenta de una no puede pagar la factura de la otra: seria
+        que una empresa le pague las deudas a la otra sin que quede registrado
+        como tal.
+        """
+        _otra, factura_ajena = self._empresa_ajena_con_factura()
+        movimiento = self._transferencia("500.00")
+
+        with self.assertRaises(ValidationError) as capturado:
+            pay_debt_from_bank_movement(
+                bank_movement=movimiento,
+                payable=factura_ajena,
+                monto=Decimal("200.00"),
+                actor=self.admin,
+            )
+
+        self.assertIn("otra empresa", " ".join(capturado.exception.messages))
+        self.assertEqual(movimiento.pagos.count(), 0)
+        factura_ajena.refresh_from_db()
+        self.assertEqual(factura_ajena.saldo_pendiente, Decimal("200.00"))
+
+    def test_una_factura_legacy_sin_sucursal_sigue_siendo_pagable(self):
+        """No romper lo historico: si no se sabe de que empresa es, no se bloquea."""
+        legacy = CuentaPorPagar.objects.create(
+            proveedor=self.proveedor,
+            categoria=self.categoria,
+            concepto="Factura vieja sin sucursal",
+            fecha_emision=self.hoy,
+            fecha_vencimiento=self.hoy,
+            periodo_referencia=self.hoy.replace(day=1),
+            importe_total=Decimal("150.00"),
+            saldo_pendiente=Decimal("150.00"),
+            sucursal=None,
+            creado_por=self.admin,
+        )
+        movimiento = self._transferencia("500.00")
+
+        pago = pay_debt_from_bank_movement(
+            bank_movement=movimiento,
+            payable=legacy,
+            monto=Decimal("150.00"),
+            actor=self.admin,
+        )
+
+        self.assertEqual(pago.monto, Decimal("150.00"))
+        legacy.refresh_from_db()
+        self.assertEqual(legacy.saldo_pendiente, Decimal("0.00"))
+
 
 class PagarDeudaDesdeTransferenciaVistaTests(PagarDeudaDesdeTransferenciaTests):
     def setUp(self):

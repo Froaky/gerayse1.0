@@ -918,6 +918,21 @@ def pay_debt_from_bank_movement(
     if payable.estado == CuentaPorPagar.Estado.ANULADA:
         raise ValidationError({"cuenta_por_pagar": "La deuda esta anulada."})
 
+    # ARMADI y MAPOGO son empresas distintas: la plata de la cuenta de una no
+    # puede pagar la factura de la otra. Se compara solo cuando los dos lados
+    # tienen empresa conocida; las cuentas y las deudas legacy (sin empresa o sin
+    # sucursal) siguen pasando, para no bloquear lo historico.
+    empresa_de_la_cuenta = getattr(bank_movement.cuenta_bancaria, "empresa_id", None)
+    empresa_de_la_deuda = payable.sucursal.empresa_id if payable.sucursal_id else None
+    if empresa_de_la_cuenta and empresa_de_la_deuda and empresa_de_la_cuenta != empresa_de_la_deuda:
+        raise ValidationError(
+            {
+                "cuenta_por_pagar": (
+                    "Esa factura es de otra empresa: no se puede pagar con esta cuenta bancaria."
+                )
+            }
+        )
+
     sin_asignar = importe_sin_asignar_del_movimiento(bank_movement)
     if sin_asignar <= 0:
         raise ValidationError({"__all__": "Esta transferencia ya esta asignada por completo."})

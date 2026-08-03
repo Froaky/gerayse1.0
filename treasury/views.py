@@ -2229,6 +2229,15 @@ def bank_movements_pay_debt(request, pk):
         return redirect(detalle_url)
 
     candidatas = open_payables_queryset(empresa_ids).select_related("proveedor", "categoria")
+    # Que no se ofrezcan facturas de la otra empresa: la cuenta bancaria manda.
+    # En vista consolidada, `empresa_ids` trae las dos y sin este corte se podria
+    # pagar una factura de ARMADI con una transferencia de MAPOGO. El servicio lo
+    # rechaza igual; aca se evita que aparezca la opcion.
+    empresa_de_la_cuenta = movement.cuenta_bancaria.empresa_id
+    if empresa_de_la_cuenta:
+        candidatas = candidatas.filter(
+            Q(sucursal__empresa_id=empresa_de_la_cuenta) | Q(sucursal__isnull=True)
+        )
     proveedores = Proveedor.objects.filter(
         pk__in=candidatas.values_list("proveedor_id", flat=True)
     ).order_by("razon_social")
