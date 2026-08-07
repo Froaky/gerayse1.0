@@ -184,7 +184,14 @@ class ShellsTests(TestCase):
         self.assertIn(
             "data-theme-toggle", html, f"{donde}: falta el boton para cambiar de tema."
         )
-        self.assertIn("js/theme.js", html, f"{donde}: falta el runtime del tema.")
+        # Con el manifest de estaticos activo la URL sale versionada
+        # (js/theme.2d21fbbcb530.js), asi que buscar el nombre literal daria un
+        # falso negativo. Se matchea el nombre con hash opcional.
+        self.assertRegex(
+            html,
+            r"js/theme(\.[0-9a-f]{8,})?\.js",
+            f"{donde}: falta el runtime del tema.",
+        )
 
     def test_shell_publica(self):
         self._assert_shell_con_tema(self.client.get(reverse("home")), "landing (base.html)")

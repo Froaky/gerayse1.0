@@ -2077,3 +2077,39 @@ cadena PROPIA aunque este abierta. Es parte del mismo slice pendiente por empres
   en cada tema, y que no vuelvan colores literales a las tres hojas. Suite
   completa 577 OK, 4 skipped. `makemigrations --check`: sin cambios (no toca
   modelos).
+
+## Estaticos versionados: `STATICFILES_STORAGE` era configuracion muerta
+
+- `config/settings.py` declaraba
+  `STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'`.
+  Ese setting fue REMOVIDO en Django 5.1 y el proyecto corre 5.2.6: Django lo
+  ignoraba en silencio y caia al storage por defecto. O sea que WhiteNoise no
+  comprimia ni versionaba nada, aunque la linea dijera que si. Se descubrio
+  mirando produccion: los estaticos salian como `/static/css/gerayse.css`, sin
+  hash. Ahora se usa `STORAGES`, que es la forma que Django 5 lee.
+- El manifest se activa SOLO al servir de verdad. Con manifest, `{% static %}`
+  exige que el archivo este en `staticfiles.json`, asi que sin `collectstatic`
+  previo toda pagina revienta en runtime. En DEBUG, runserver y tests se usa el
+  storage plano, porque nadie corre collectstatic para lanzar el server o el
+  suite. Mismo criterio que ya usaban `WHITENOISE_USE_FINDERS/AUTOREFRESH`.
+- Riesgo de deploy descartado mirando el start command de Railway: es
+  `migrate && collectstatic && <bootstrap> && gunicorn`. Al estar encadenado con
+  `&&`, si collectstatic fallara gunicorn no arranca, el deploy se marca fallido
+  y se sigue sirviendo la version anterior. Nunca queda gunicorn sirviendo sin
+  manifest.
+- Que cambia para el usuario: poco. Antes Railway mandaba
+  `Cache-Control: max-age=60` con ETag, asi que el navegador revalidaba cada
+  minuto con un 304. Ahora los nombres van versionados
+  (`gerayse.ccf27ab2932a.css`), que habilita cache inmutable, y se sirven los
+  `.gz` precomprimidos. El motivo real del cambio no es la performance sino que
+  la configuracion mentia.
+- Se corrigio de paso un test fragil PROPIO: `core/tests_theme.py` afirmaba que
+  el HTML contenia el literal `js/theme.js`, que con hasheo pasa a ser
+  `js/theme.2d21fbbcb530.js`. Ahora matchea el nombre con hash opcional. Sin
+  esto, activar el manifest rompia 3 tests que no tenian nada roto.
+- Verificado: `collectstatic` con manifest forzado da 129 copiados / 387
+  post-procesados, exit 0 (o sea que no hay ninguna referencia `{% static %}`
+  rota). Suite completa 577 OK con los settings reales Y 577 OK con el manifest
+  activo durante los tests. Render con `DEBUG=False` real: la landing y el login
+  dan 200 y sirven las URLs versionadas.
+- Archivos: `config/settings.py`, `core/tests_theme.py`.

@@ -136,7 +136,30 @@ USE_THOUSAND_SEPARATOR = True
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [BASE_DIR / 'static']
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
+# Antes esto era `STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifest...'`.
+# Ese setting fue REMOVIDO en Django 5.1 y el proyecto corre 5.2: Django lo ignoraba
+# en silencio y caia al storage por defecto, o sea que WhiteNoise no comprimia ni
+# versionaba nada aunque la linea dijera que si. La forma que Django 5 lee es STORAGES.
+#
+# El manifest solo se usa al servir de verdad. Con manifest, `{% static %}` exige que
+# el archivo este en staticfiles.json, asi que sin `collectstatic` previo TODA pagina
+# revienta en runtime. En dev y en tests eso seria una trampa (nadie corre collectstatic
+# para lanzar el runserver o el suite), asi que ahi se usa el storage plano. Es el mismo
+# criterio que ya venian usando WHITENOISE_USE_FINDERS/AUTOREFRESH abajo.
+_SIRVE_ESTATICOS_VERSIONADOS = not (DEBUG or RUNNING_DEV_SERVER or RUNNING_TESTS)
+
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {
+        "BACKEND": (
+            "whitenoise.storage.CompressedManifestStaticFilesStorage"
+            if _SIRVE_ESTATICOS_VERSIONADOS
+            else "django.contrib.staticfiles.storage.StaticFilesStorage"
+        )
+    },
+}
+
 WHITENOISE_USE_FINDERS = DEBUG or RUNNING_DEV_SERVER
 WHITENOISE_AUTOREFRESH = DEBUG or RUNNING_DEV_SERVER
 
