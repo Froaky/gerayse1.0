@@ -1983,3 +1983,97 @@ cadena PROPIA aunque este abierta. Es parte del mismo slice pendiente por empres
   `test_el_paso_uno_ofrece_solo_proveedores_con_facturas_alcanzables`: fijaba
   justamente el comportamiento que ella pidio cambiar. Suite completa 564 OK, 4
   skipped.
+
+## Modo claro / modo oscuro (preferencia por computadora)
+
+- Antes habia UN solo tema (oscuro) definido TRES veces: el `:root` de
+  `static/css/gerayse.css` (lo cargan landing, login, primer ingreso y cambio de
+  password obligatorio) y sendos `:root` inline, byte-identicos entre si, en
+  `templates/cashops/layout.html` y `templates/treasury/layout.html` (22
+  templates cada uno). Ahora la paleta vive SOLO en
+  `templates/partials/theme_tokens.html`, que incluyen las tres shells. Los
+  nombres historicos de gerayse.css (`--paper`, `--ink`, `--surface`,
+  `--danger-bg`, `--accent-strong`, `--ok`, `--warning`) quedaron como alias
+  `var()` de los canonicos, asi que esa hoja no se toco componente por
+  componente.
+- La preferencia se guarda en `localStorage` (clave `gerayse-theme`): queda atada
+  al NAVEGADOR de esa computadora, no al usuario. Es lo pedido: la misma persona
+  puede querer claro en el mostrador y oscuro en administracion. No hay campo en
+  el modelo ni migracion. Si nunca eligio, manda `prefers-color-scheme` del
+  sistema operativo, y se lo sigue en vivo hasta el primer click.
+- `templates/partials/theme_boot.html` es un `<script>` inline y BLOQUEANTE al
+  principio del `<head>`, antes de cualquier estilo. Tiene que quedar ahi: si el
+  atributo `data-theme` se pusiera mas tarde, el navegador ya pinto el primer
+  frame con el tema equivocado y se ve un flash blanco al entrar. Hay un test que
+  fija ese orden.
+- Tokens NUEVOS, todos con valor en los dos temas: `--on-accent` (tinta sobre el
+  relleno de marca), `--on-danger`, `--field-bg`, `--selection-bg`,
+  `--selection-ink`, `--button-shadow`, `--shell-glow`, `--text-soft`.
+  `--on-accent` SE INVIERTE entre temas y no es un error: en oscuro el relleno es
+  verde vivo y la tinta casi negra; en claro el relleno es verde ingles profundo
+  y la tinta es papel. `--nb-light` es su alias historico y el nombre miente
+  (nunca significo "claro", significaba "tinta sobre verde").
+- Los tres colores de estado del tema CLARO estan ordenados por luminancia a
+  proposito (ok 0.136 > warn 0.101 > danger 0.082). Un primer armado los tenia en
+  luminancia casi identica (ok #146c43 vs danger #b3261e, 1.01:1 entre si): con
+  daltonismo rojo-verde se pierde el tono y exito y peligro quedan indistinguibles,
+  que en pantallas que pintan importes por signo es riesgo operativo, no estetica.
+  Quedaron #15764a / #7d5006 / #9e1c15, con ok-vs-danger en 1.41:1.
+- El tema OSCURO no se toco: los alias resuelven exactamente a los mismos hex de
+  antes (verificado en el navegador). Lo unico que cambio en oscuro es que
+  `-webkit-font-smoothing: antialiased` quedo acotado a
+  `:root[data-theme="dark"] body` (adelgaza el trazo y deja anemica la tinta
+  oscura sobre papel).
+- Colores literales que SI rompian en claro y se tokenizaron: `.input/.select/
+  .textarea { background: #0e1315 }` en los dos layouts y en gerayse.css (dejaba
+  todos los campos negros con tinta oscura encima, era el peor), `color: #08130d`
+  y `color: #fff` de los botones, `::selection`, el `style="color:#dd9598"` inline
+  de "Reiniciar datos" (paso a `.nav-menu__item--danger`), y los `rgba(184,90,96,X)`
+  de las zonas de peligro de `list_page.html` y `reset_confirm.html`.
+- Bugs que YA estaban rotos en oscuro y se arreglaron de paso porque eran del
+  mismo renglon: `disponibilidades_report.html` tenia una `.card` con
+  `background: rgba(255,255,255,0.7)` inline (tarjeta casi blanca con texto
+  off-white encima, sobre el shell grafito) y un `color: rgba(255,255,255,0.85)
+  !important`; la barra de distribucion usaba dos verdes a un paso
+  (`--accent` y `--forest-deep`), ahora efectivo vs banco se separan por tono
+  (`--info`). Ademas `treasury/layout.html` nunca tuvo la regla de geometria de
+  `.nav-divider` aunque usa la clase dos veces: sus separadores eran spans
+  invisibles y ahora se ven.
+- Botones destructivos: `style="background:var(--danger)"` sobre `.button` no
+  alcanza, porque `.button` fija la tinta para el verde. Se paso a
+  `class="button button-danger"` en `reset_confirm.html` (x2), `list_page.html` y
+  `disponibilidades_report.html`.
+- PENDIENTE CONOCIDO (no se toco, es preexistente): `.button-danger` en OSCURO es
+  blanco sobre `#e2635c` = 3.40:1, por debajo del 4.5:1 de AA. Se arregla con un
+  solo token (`--on-danger` oscuro a una tinta oscura tipo `#2a1615` da 6.9:1),
+  pero cambia el aspecto del tema oscuro actual, asi que va en su propio slice. En
+  el tema claro ese mismo boton da 7.98:1. Misma familia: en oscuro `--success` y
+  `--warn` tienen luminancia casi identica (1.01:1).
+- PENDIENTE CONOCIDO: los dos layouts siguen con ~300 lineas de CSS de componentes
+  duplicadas. NO se unificaron en este slice porque no son duplicados exactos: hay
+  37 diferencias reales y varias son decisiones de diseño, no valores (`.card h2`
+  22.5px en cashops vs 16.8px en treasury; `label` normal vs chico-mayusculas;
+  `.messages` toast flotante que se autodestruye a los 5s en cashops vs banner
+  inline en treasury; `.action-grid` minmax 220px vs 140px). Ojo al unificar: en
+  los dos archivos el `@media (max-width:640px)` esta ANTES del bloque
+  "Prolijidad", que lo pisa, asi que HOY el padding mobile de `.shell` y `.card`
+  no se aplica; ordenar "prolijo" lo activaria y cambiaria el mobile de las dos
+  apps sin que nadie lo pida.
+- PENDIENTE CONOCIDO: `treasury/reconciliation_page.html` esta escrita con
+  utilidades de Bootstrap (`btn btn-primary`, `progress`, `bg-dark text-white`,
+  `text-success`, `card-header bg-white`) y Bootstrap no se carga en ningun lado;
+  `disponibilidades_report.html` tiene restos de Bulma (`has-text-success`).
+  Hoy son no-ops, o sea que esa pantalla ya se ve plana. No entra en este slice
+  porque arreglarlo es reescribir markup, no tematizar.
+- Archivos: `templates/partials/theme_tokens.html`, `theme_boot.html`,
+  `theme_toggle.html` y `static/js/theme.js` (nuevos); `templates/base.html`,
+  `cashops/layout.html`, `treasury/layout.html`, `cashops/list_page.html`,
+  `cashops/reset_confirm.html`, `treasury/disponibilidades_report.html`,
+  `static/css/gerayse.css` (modificados).
+- Tests: `core/tests_theme.py`, 7 nuevos. Fijan que las tres shells traigan el
+  tema, que el arranque vaya antes de los estilos, que los dos temas definan
+  EXACTAMENTE el mismo set de tokens (agregar un color a uno solo no rompe nada
+  visible en el momento y aparece meses despues), que `--on-accent` sea distinto
+  en cada tema, y que no vuelvan colores literales a las tres hojas. Suite
+  completa 577 OK, 4 skipped. `makemigrations --check`: sin cambios (no toca
+  modelos).

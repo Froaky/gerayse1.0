@@ -1,56 +1,21 @@
-{% load l10n %}<!doctype html>
+{% load l10n static %}<!doctype html>
 <html lang="es">
   <head>
     <meta charset="utf-8">
+    {% include "partials/theme_boot.html" %}
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Tesorería | Gerayse{% endblock %}</title>
+    <meta name="theme-color" content="#f4f1e9" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0f1315" media="(prefers-color-scheme: dark)">
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500;600&display=swap">
+    {% comment %} La paleta (los dos temas) vive en un solo lugar para las tres shells:
+       templates/partials/theme_tokens.html. Antes cada layout tenia su propia
+       copia del :root y habia que mantener tres paletas en paralelo. {% endcomment %}
+    {% include "partials/theme_tokens.html" %}
     <style>
-      :root {
-        color-scheme: dark;
-        /* Gerayse · Grafito — reskin oscuro (verde señal) */
-        --nb-light:  #08130d;   /* texto OSCURO sobre verde */
-        --nb-sage:   #6f9a85;
-        --nb-teal:   #22c47e;
-        --nb-navy:   #22c47e;
-        --bg:         #0f1315;   /* grafito casi negro */
-        --panel:      #171c1f;   /* fichas / paneles */
-        --panel-soft: #1e2427;   /* inset / inputs / chips */
-        --text:       #e9efec;   /* off-white */
-        --muted:      #8b968f;
-        --line:       #262d30;   /* hairline */
-        --line-strong:#333c40;
-        --forest:     #22c47e;   /* verde señal (marca/primario) */
-        --forest-deep:#1aa568;
-        --accent:     #22c47e;   /* interactivo */
-        --accent-hi:  #46d492;
-        --accent-2:   #2fd08a;
-        --accent-soft:#12251c;
-        --ring:       rgba(34, 196, 126, 0.35);
-        --brass:      #22c47e;
-        --brass-ink:  #46d492;
-        --brass-soft: #12251c;
-        --brass-line: #1f7a52;
-        --card-shadow:       0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.28);
-        --card-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.40), 0 12px 26px rgba(0, 0, 0, 0.40);
-        --danger:     #e2635c;
-        --success:    #22c47e;
-        --warn:       #d9a441;
-        --warning:    #d9a441;
-        --ok-bg:   #12251c;  --ok-line:   #1f5a3f;
-        --warn-bg: #2a2312;  --warn-line: #5c4a20;
-        --dn-bg:   #2a1615;  --dn-line:   #5c2f2c;
-        --info:    #4aa8d8;  --info-bg:   #12222a;  --info-line: #24505f;
-        --mut-bg:  #20272a;
-        --shadow:     none;
-        --pop:        0 18px 44px rgba(0, 0, 0, 0.55), 0 4px 10px rgba(0, 0, 0, 0.40);
-        --font-sans:  "Public Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
-        --font-serif: "Fraunces", Georgia, "Times New Roman", serif;
-        --font-mono:  "Spline Sans Mono", ui-monospace, Consolas, monospace;
-      }
       * { box-sizing: border-box; }
       body {
         margin: 0;
@@ -58,7 +23,6 @@
         font-size: 15px;
         color: var(--text);
         background: var(--bg);
-        -webkit-font-smoothing: antialiased;
       }
       a { color: inherit; text-decoration: none; }
       button,
@@ -75,7 +39,7 @@
       .shell { max-width: 1360px; margin: 0 auto; padding: 24px 20px 28px; min-height: 100vh; }
       .topbar { display: grid; gap: 14px; margin-bottom: 24px; }
       .brand { display: flex; flex-direction: column; gap: 2px; }
-      .brand strong { font-size: 1.05rem; letter-spacing: 0.04em; text-transform: uppercase; color: #e8f2fb; }
+      .brand strong { font-size: 1.05rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text); }
       .brand span { color: var(--muted); font-size: 0.88rem; letter-spacing: 0.02em; }
       .nav {
         display: grid;
@@ -153,7 +117,7 @@
         text-decoration: none;
         transition: border-color 0.12s, background 0.12s;
       }
-      .action-card:hover { border-color: var(--accent); background: rgba(74,133,149,0.08); }
+      .action-card:hover { border-color: var(--accent); background: var(--panel-soft); }
       .action-card small { color: var(--muted); font-weight: 400; font-size: 0.82rem; }
       .list-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
       .stack { display: grid; gap: 12px; }
@@ -184,8 +148,8 @@
         background: var(--panel-soft);
         animation: slideIn 0.2s ease-out;
       }
-      .message.success { border-color: rgba(74, 154, 110, 0.35); background: rgba(74, 154, 110, 0.08); }
-      .message.error { border-color: rgba(184, 90, 96, 0.35); background: rgba(184, 90, 96, 0.08); }
+      .message.success { border-color: var(--ok-line); background: var(--ok-bg); }
+      .message.error { border-color: var(--dn-line); background: var(--dn-bg); }
       .list { display: grid; gap: 6px; }
       .list-item {
         padding: 12px 14px;
@@ -222,7 +186,7 @@
         min-height: 22px;
         padding: 2px 8px;
         border-radius: 3px;
-        background: rgba(74, 133, 149, 0.18);
+        background: var(--accent-soft);
         color: var(--accent-hi);
         font-size: 0.78rem;
         font-weight: 700;
@@ -230,11 +194,11 @@
         text-transform: uppercase;
         flex-shrink: 0;
       }
-      .badge-success { background: rgba(74, 154, 110, 0.18); color: #7dd4a0; }
-      .badge-warning { background: rgba(155, 191, 180, 0.2); color: var(--accent-2); }
-      .badge-danger { background: rgba(184, 90, 96, 0.18); color: #dd9598; }
-      .badge-info { background: rgba(74, 133, 149, 0.18); color: var(--accent-hi); }
-      .badge-muted { background: rgba(122, 168, 180, 0.12); color: var(--muted); }
+      .badge-success { background: var(--ok-bg); color: var(--success); }
+      .badge-warning { background: var(--warn-bg); color: var(--warn); }
+      .badge-danger { background: var(--dn-bg); color: var(--danger); }
+      .badge-info { background: var(--accent-soft); color: var(--accent-hi); }
+      .badge-muted { background: var(--mut-bg); color: var(--muted); }
       .footer-space { height: 32px; }
       /* nav dropdown */
       .nav-menu { position: relative; }
@@ -250,7 +214,7 @@
         border: 1px solid var(--line);
         border-top: 2px solid var(--accent);
         border-radius: 0 0 4px 4px;
-        box-shadow: 0 20px 48px rgba(0,0,0,0.6);
+        box-shadow: var(--pop);
         padding: 4px 0;
         display: grid;
         gap: 0;
@@ -273,15 +237,15 @@
         transition: background 0.1s, border-left-color 0.1s, color 0.1s;
       }
       .nav-menu__item:hover {
-        background: rgba(74,133,149,0.12);
+        background: var(--accent-soft);
         border-left-color: var(--accent);
-        color: var(--nb-light);
+        color: var(--accent-hi);
       }
       .nav-menu__item--active {
         font-weight: 600;
         border-left-color: var(--accent-hi);
         color: var(--accent-hi);
-        background: rgba(74,133,149,0.1);
+        background: var(--accent-soft);
       }
       .nav-menu__separator {
         height: 1px;
@@ -333,18 +297,18 @@
       .hero h1::after, .card h1::after { content: ""; display: block; width: 46px; height: 3px; margin-top: 12px; background: var(--brass); border-radius: 2px; }
       .summary { border-left: 3px solid var(--forest); box-shadow: var(--card-shadow); }
       .action-card:hover, .list-item:hover { box-shadow: var(--card-shadow-hover); }
-      .button, .button-primary { box-shadow: 0 1px 2px rgba(31, 42, 32, 0.16); }
+      .button, .button-primary { box-shadow: var(--button-shadow); }
       .badge::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: currentColor; margin-right: 6px; vertical-align: middle; opacity: 0.85; }
       .summary strong, .balance strong { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; color: var(--text); }
       .summary:hover { border-color: var(--accent); }
       .chip { color: var(--text); background: var(--panel); }
       .chip:hover { border-color: var(--forest); background: var(--accent-soft); color: var(--accent-hi); }
-      .button, .button-primary { background: var(--forest); color: #08130d; border-color: transparent; }
+      .button, .button-primary { background: var(--forest); color: var(--on-accent); border-color: transparent; }
       .button:hover, .button-primary:hover { background: var(--forest-deep); }
       .button-secondary { background: var(--panel); color: var(--text); border-color: var(--line-strong); }
       .button-secondary:hover { border-color: var(--accent); background: var(--panel-soft); }
-      .button-danger { background: var(--danger); color: #fff; border-color: transparent; }
-      .input, .select, .textarea { background: #0e1315; border-color: var(--line-strong); color: var(--text); }
+      .button-danger { background: var(--danger); color: var(--on-danger); border-color: transparent; }
+      .input, .select, .textarea { background: var(--field-bg); border-color: var(--line-strong); color: var(--text); }
       .input:focus, .select:focus, .textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); outline: none; }
       .action-card { border-left-color: var(--forest); }
       .action-card:hover { border-color: var(--accent); background: var(--panel-soft); }
@@ -367,7 +331,7 @@
       .nav-menu__item--active { color: var(--accent-hi); background: var(--accent-soft); border-left-color: var(--forest); }
       .nav-menu__item--apply { color: var(--accent-hi); }
       label { color: var(--muted); }
-      ::selection { background: var(--accent-soft); color: var(--text); }
+      ::selection { background: var(--selection-bg); color: var(--selection-ink); }
       :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       @media (prefers-reduced-motion: reduce) { * { transition-duration: 0.001ms !important; animation-duration: 0.001ms !important; scroll-behavior: auto !important; } }
 
@@ -456,6 +420,7 @@
                 <span class="chip">{{ empresa_activa.nombre }}</span>
               {% endif %}
               <a class="chip" href="{% url 'users:account_settings' %}">{{ request.user }}</a>
+              {% include "partials/theme_toggle.html" %}
               <form method="post" action="{% url 'users:logout' %}">
                 {% csrf_token %}
                 <button class="chip chip-button" type="submit">Salir</button>
@@ -465,7 +430,7 @@
         </nav>
       </header>
       {% if empresas_disponibles and not empresas_activas %}
-        <div class="message" style="border-color:rgba(184,90,96,0.4);background:rgba(184,90,96,0.1);margin-bottom:12px;">
+        <div class="message" style="border-color:var(--dn-line);background:var(--dn-bg);color:var(--danger);margin-bottom:12px;">
           Seleccioná una o más empresas para ver los datos correspondientes.
         </div>
       {% endif %}
@@ -480,5 +445,6 @@
       <div class="footer-space"></div>
     </div>
     {% include "partials/htmx_error_toast.html" %}
+    <script src="{% static 'js/theme.js' %}" defer></script>
   </body>
 </html>

@@ -1,0 +1,29 @@
+{% comment %}
+Arranque del tema (claro/oscuro). Va lo mas arriba posible del <head>, ANTES de
+cualquier hoja de estilos.
+
+Por que inline y bloqueante: si el atributo data-theme se pusiera desde un
+script externo o al final del body, el navegador ya habria pintado el primer
+frame con el tema equivocado y el usuario veria un flash blanco al entrar en
+oscuro (o al reves). Son ~10 lineas: el costo de inlinearlas es menor que el
+del round-trip de un archivo aparte.
+
+Precedencia:
+  1. lo que el usuario eligio en ESTA computadora (localStorage);
+  2. si nunca eligio, la preferencia del sistema operativo;
+  3. si el navegador no soporta matchMedia, oscuro (el tema historico).
+
+localStorage puede tirar excepcion en modo privado o con cookies bloqueadas por
+politica; en ese caso el sistema sigue funcionando, solo que sin recordar.
+{% endcomment %}
+<script>
+  (function () {
+    var KEY = "gerayse-theme";
+    var stored = null;
+    try { stored = window.localStorage.getItem(KEY); } catch (e) { /* storage no disponible */ }
+    var theme = (stored === "light" || stored === "dark")
+      ? stored
+      : (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+    document.documentElement.setAttribute("data-theme", theme);
+  })();
+</script>

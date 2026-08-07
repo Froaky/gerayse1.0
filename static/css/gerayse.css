@@ -6,67 +6,19 @@
    Solo capa de presentacion: mismos nombres de clase que antes.
    ============================================================ */
 
+/* Los colores, sombras y familias tipograficas NO viven mas aca: los define
+   templates/partials/theme_tokens.html, que se incluye en las tres shells
+   (base, cashops, treasury) y trae los dos temas. Este archivo solo conserva
+   los tokens de geometria, que no participan del cambio de tema.
+
+   Los nombres historicos de esta hoja (--paper, --ink, --surface, --danger-bg,
+   --accent-strong, ...) siguen funcionando: el partial los declara como alias
+   de los canonicos. */
 :root {
-  color-scheme: dark;
-
-  /* Grafito (fondo) e tinta clara */
-  --paper:         #0f1315;   /* canvas: grafito casi negro */
-  --paper-2:       #0b0e10;   /* mas hondo para pozos/insets */
-  --surface:       #171c1f;   /* paneles / fichas */
-  --surface-2:     #1e2427;   /* superficie inset */
-  --ink:           #e9efec;   /* texto principal (off-white) */
-  --ink-soft:      #c4ccc7;
-  --muted:         #8b968f;   /* texto secundario */
-  --line:          #262d30;   /* hairline sobre grafito */
-  --line-strong:   #333c40;
-
-  /* Verde señal (acento unico, tipo terminal) */
-  --forest:        #22c47e;   /* marca / primario / keylines */
-  --forest-deep:   #1aa568;   /* hover primario */
-  --accent:        #22c47e;   /* interactivo: links, foco, activo */
-  --accent-strong: #46d492;
-  --accent-soft:   #12251c;   /* relleno verde oscuro (activo/seleccion) */
-  --ring:          rgba(34, 196, 126, 0.35);
-
-  /* Acento secundario = mismo verde señal (paleta mono-acento) */
-  --brass:         #22c47e;
-  --brass-ink:     #46d492;
-  --brass-soft:    #12251c;
-  --brass-line:    #1f7a52;
-
-  /* Estado (sobre grafito: tinte oscuro + texto vivo) */
-  --ok:      #22c47e;  --ok-bg:     #12251c;  --ok-line:     #1f5a3f;
-  --warn:    #d9a441;  --warn-bg:   #2a2312;  --warn-line:   #5c4a20;
-  --danger:  #e2635c;  --danger-bg: #2a1615;  --danger-line: #5c2f2c;
-  --info:    #4aa8d8;  --info-bg:   #12222a;  --info-line:   #24505f;
-
-  /* Alias legacy: para que var() existentes sigan resolviendo */
-  --bg:            var(--paper);
-  --bg-deep:       var(--paper-2);
-  --surface-strong:var(--surface);
-  --accent-hi:     var(--accent);
-  --warning:       var(--warn);
-  --success:       var(--ok);
-  --nb-light:      #08130d;   /* texto OSCURO sobre verde (marca/boton) */
-  --nb-sage:       #6f9a85;
-  --nb-teal:       var(--accent);
-  --nb-navy:       var(--forest);
-
-  /* Sombras (mas fuertes en oscuro) */
-  --pop:    0 18px 44px rgba(0, 0, 0, 0.55), 0 4px 10px rgba(0, 0, 0, 0.40);
-  --shadow: none;
-  /* Relieve sutil de fichas */
-  --card-shadow:       0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.28);
-  --card-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.40), 0 12px 26px rgba(0, 0, 0, 0.40);
-
   --radius-lg: 5px;
   --radius-md: 4px;
   --radius-sm: 3px;
   --max-width: 1180px;
-
-  --font-sans:  "Public Sans", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-serif: "Fraunces", Georgia, "Times New Roman", serif;
-  --font-mono:  "Spline Sans Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
 }
 
 * {
@@ -85,7 +37,6 @@ body {
   font-family: var(--font-sans);
   font-size: 15px;
   line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
@@ -99,8 +50,8 @@ h1, h2, h3, p {
 }
 
 ::selection {
-  background: var(--accent-soft);
-  color: var(--ink);
+  background: var(--selection-bg);
+  color: var(--selection-ink);
 }
 
 /* Foco visible y consistente (accesibilidad) */
@@ -132,9 +83,11 @@ h1, h2, h3, p {
   pointer-events: none;
 }
 
-/* Vignette de papel muy sutil, sin gradientes de color */
+/* Vignette de papel muy sutil, sin gradientes de color.
+   El glow se tokeniza porque un verde al 7% que sobre grafito apenas se
+   insinua, sobre papel claro se lee como una mancha. */
 .app-shell__bg {
-  background: radial-gradient(120% 80% at 50% -8%, rgba(34, 196, 126, 0.07), transparent 60%);
+  background: radial-gradient(120% 80% at 50% -8%, var(--shell-glow), transparent 60%);
 }
 
 /* Grain retirado: papel plano y limpio */
@@ -171,7 +124,7 @@ h1, h2, h3, p {
   place-items: center;
   border-radius: var(--radius-sm);
   background: var(--forest);
-  color: var(--nb-light);
+  color: var(--on-accent);
   font-family: var(--font-serif);
   font-weight: 600;
   font-size: 1.2rem;
@@ -659,7 +612,7 @@ h1, h2, h3, p {
   padding: 0 14px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
-  background: #0e1315;
+  background: var(--field-bg);
   color: var(--ink);
   font: inherit;
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -777,9 +730,9 @@ button:disabled,
 }
 
 .button--primary {
-  color: var(--nb-light);
+  color: var(--on-accent);
   background: var(--forest);
-  box-shadow: 0 1px 2px rgba(31, 42, 32, 0.16);
+  box-shadow: var(--button-shadow);
 }
 
 .button--primary:hover {

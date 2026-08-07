@@ -1,0 +1,246 @@
+{% comment %}
+Paleta de Gerayse: los DOS temas, en un solo lugar.
+
+Se incluye en las tres shells del sistema (templates/base.html,
+templates/cashops/layout.html, templates/treasury/layout.html). Antes cada una
+tenia su propia copia del :root y habia que mantener tres paletas en paralelo.
+
+Va inline y no como archivo estatico a proposito: el resto del CSS de los
+layouts tambien es inline, asi que un <link> agregaria un round-trip bloqueante
+antes del primer pintado a cambio de cachear ~3 KB. No compensa.
+
+VOCABULARIO
+  Los nombres canonicos son los de los layouts (--bg, --panel, --text, ...).
+  gerayse.css usa nombres historicos (--paper, --surface, --ink, --danger-bg,
+  ...); estan declarados abajo como alias, asi que esa hoja sigue funcionando
+  sin tocarla.
+
+TOKENS QUE NO SE INVIERTEN MECANICAMENTE
+  --on-accent  es la tinta que va ENCIMA del relleno de marca (--forest).
+               En oscuro el relleno es verde vivo, asi que la tinta es casi
+               negra. En claro el relleno es verde ingles profundo, asi que la
+               tinta es papel. Se invierte, pero por consecuencia, no por
+               simetria. (--nb-light es su alias historico; el nombre miente:
+               nunca significo "claro", significaba "tinta sobre verde".)
+  --on-danger  misma idea sobre el relleno rojo.
+  --selection-bg / --selection-ink  ::selection necesita su propio par: usar
+               --accent-soft + --text daba tinta oscura sobre relleno oscuro.
+{% endcomment %}
+<style>
+  /* ============================================================
+     TEMA OSCURO  ·  "Gerayse · Libro" — grafito + verde señal
+     Es el tema historico: estos valores son exactamente los que
+     ya estaban, no se retoco ninguno.
+     ============================================================ */
+  :root,
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+
+    /* Superficies */
+    --bg:          #0f1315;   /* grafito casi negro */
+    --bg-deep:     #0b0e10;   /* pozo mas hondo que el canvas */
+    --panel:       #171c1f;   /* fichas / paneles */
+    --panel-soft:  #1e2427;   /* inset / chips / hover */
+    --field-bg:    #0e1315;   /* fondo de inputs: mas hondo que el panel */
+
+    /* Tinta */
+    --text:        #e9efec;
+    --text-soft:   #c4ccc7;
+    --muted:       #8b968f;
+
+    /* Reglas */
+    --line:        #262d30;
+    --line-strong: #333c40;
+
+    /* Verde señal */
+    --forest:      #22c47e;   /* relleno de marca / primario / keylines */
+    --forest-deep: #1aa568;   /* hover del relleno primario */
+    --accent:      #22c47e;   /* interactivo: foco, bordes activos */
+    --accent-hi:   #46d492;   /* tinta verde sobre relleno verde */
+    --accent-2:    #2fd08a;
+    --accent-soft: #12251c;   /* relleno verde tenue (activo/seleccion) */
+    --ring:        rgba(34, 196, 126, 0.35);
+    --on-accent:   #08130d;   /* tinta SOBRE el verde */
+
+    /* Acento secundario (hoy colapsado al mismo verde) */
+    --brass:       #22c47e;
+    --brass-ink:   #46d492;
+    --brass-soft:  #12251c;
+    --brass-line:  #1f7a52;
+
+    /* Estados: relleno tenue oscuro + tinta viva */
+    --success: #22c47e;  --ok-bg:   #12251c;  --ok-line:   #1f5a3f;
+    --warn:    #d9a441;  --warn-bg: #2a2312;  --warn-line: #5c4a20;
+    --danger:  #e2635c;  --dn-bg:   #2a1615;  --dn-line:   #5c2f2c;
+    --info:    #4aa8d8;  --info-bg: #12222a;  --info-line: #24505f;
+    --mut-bg:  #20272a;
+    --on-danger: #fff;   /* tinta SOBRE el rojo */
+
+    /* Seleccion de texto */
+    --selection-bg:  #12251c;
+    --selection-ink: #e9efec;
+
+    /* Sombras: sobre grafito hacen falta fuertes para despegar */
+    --shadow: none;
+    --pop:               0 18px 44px rgba(0, 0, 0, 0.55), 0 4px 10px rgba(0, 0, 0, 0.40);
+    --card-shadow:       0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.28);
+    --card-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.40), 0 12px 26px rgba(0, 0, 0, 0.40);
+    --button-shadow:     0 1px 2px rgba(31, 42, 32, 0.16);
+
+    /* Vignette del shell (solo base.html) */
+    --shell-glow: rgba(34, 196, 126, 0.07);
+  }
+
+  /* ============================================================
+     TEMA CLARO  ·  papel de contaduria
+     Canvas manila calido, fichas casi blancas, tinta verde-negra.
+     El verde deja de ser verde terminal y vuelve a ser verde ingles:
+     como sobre papel el relleno tiene que ser oscuro para leerse,
+     la tinta que va encima pasa a ser papel (ver --on-accent).
+     La estructura la cargan las reglas de 1px, no las sombras.
+     ============================================================ */
+  :root[data-theme="light"] {
+    color-scheme: light;
+
+    /* Superficies */
+    --bg:          #efeadd;   /* manila calido */
+    --bg-deep:     #e4ddcb;
+    --panel:       #fdfbf7;   /* papel casi blanco */
+    --panel-soft:  #f5f1e6;
+    --field-bg:    #ffffff;   /* el campo editable es el punto mas blanco */
+
+    /* Tinta */
+    --text:        #14201a;   /* verde-negro, no negro puro */
+    --text-soft:   #33443b;
+    --muted:       #5b6a61;
+
+    /* Reglas */
+    --line:        #d8cfba;   /* hairline calido, no gris frio */
+    --line-strong: #928368;
+
+    /* Verde ingles */
+    --forest:      #1a6b47;
+    --forest-deep: #12563a;
+    --accent:      #1a6b47;
+    --accent-hi:   #12583a;   /* tinta verde sobre lavado verde palido */
+    --accent-2:    #1a6b47;
+    --accent-soft: #dcede3;   /* lavado verde palido */
+    --ring:        rgba(26, 107, 71, 0.45);
+    --on-accent:   #f7f4ec;   /* papel SOBRE el verde profundo */
+
+    /* Acento secundario */
+    --brass:       #1a6b47;
+    --brass-ink:   #12583a;
+    --brass-soft:  #dcede3;
+    --brass-line:  #a8cab8;
+
+    /* Estados: relleno lavado + tinta oscura saturada.
+       Los tres estan ORDENADOS POR LUMINANCIA a proposito (ok 0.136 >
+       warn 0.101 > danger 0.082). El tono es el canal que se pierde con
+       daltonismo rojo-verde, asi que si exito y peligro tienen la misma
+       luminancia se vuelven el mismo color para ~8% de los usuarios. En un
+       sistema que pinta importes segun el signo eso no es un detalle: un
+       primer armado de esta paleta tenia ok y danger a 1.01:1 entre si. */
+    --success: #15764a;  --ok-bg:   #dcede3;  --ok-line:   #a9cdb6;
+    --warn:    #7d5006;  --warn-bg: #faeed3;  --warn-line: #e0c48a;
+    --danger:  #9e1c15;  --dn-bg:   #fae4e1;  --dn-line:   #e8b3ae;
+    --info:    #0f6b93;  --info-bg: #dfedf5;  --info-line: #a8cade;
+    --mut-bg:  #eae5d8;
+    --on-danger: #ffffff;
+
+    /* Seleccion de texto */
+    --selection-bg:  #cfe6da;
+    --selection-ink: #14201a;
+
+    /* Sombras: sobre papel, casi nada. El negro puro ensucia; se usa
+       un marron-verdoso muy diluido para que la sombra siga siendo calida. */
+    --shadow: none;
+    --pop:               0 16px 40px rgba(45, 38, 24, 0.12), 0 3px 8px rgba(45, 38, 24, 0.08);
+    --card-shadow:       0 1px 2px rgba(45, 38, 24, 0.06), 0 2px 6px rgba(45, 38, 24, 0.05);
+    --card-shadow-hover: 0 2px 4px rgba(45, 38, 24, 0.08), 0 10px 24px rgba(45, 38, 24, 0.10);
+    --button-shadow:     0 1px 2px rgba(45, 38, 24, 0.14);
+
+    --shell-glow: rgba(26, 107, 71, 0.05);
+  }
+
+  /* ============================================================
+     Tipografia y alias historicos.
+     Van en un :root aparte, sin tema: los alias apuntan a los
+     canonicos con var(), asi que siguen al tema solos.
+     ============================================================ */
+  :root {
+    --font-sans:  "Public Sans", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-serif: "Fraunces", Georgia, "Times New Roman", serif;
+    --font-mono:  "Spline Sans Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+    /* Nombres que usa static/css/gerayse.css */
+    --paper:          var(--bg);
+    --paper-2:        var(--bg-deep);
+    --surface:        var(--panel);
+    --surface-2:      var(--panel-soft);
+    --surface-strong: var(--panel);
+    --ink:            var(--text);
+    --ink-soft:       var(--text-soft);
+    --accent-strong:  var(--accent-hi);
+    --ok:             var(--success);
+    --danger-bg:      var(--dn-bg);
+    --danger-line:    var(--dn-line);
+    --warning:        var(--warn);
+
+    /* Nombres de la paleta anterior a la actual. Se conservan porque
+       todavia hay reglas que los consumen (ojo: --nb-navy resuelve a
+       verde, no a azul marino). */
+    --nb-light: var(--on-accent);
+    --nb-sage:  #6f9a85;
+    --nb-teal:  var(--accent);
+    --nb-navy:  var(--forest);
+  }
+
+  /* antialiased adelgaza el trazo: sirve para tinta clara sobre fondo oscuro y
+     deja el texto anemico cuando es tinta oscura sobre papel. */
+  :root[data-theme="dark"] body { -webkit-font-smoothing: antialiased; }
+
+  /* ============================================================
+     Boton de tema (partials/theme_toggle.html)
+     ============================================================ */
+  .theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 36px;
+    padding: 7px 12px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: var(--panel);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: border-color 0.12s, background 0.12s, color 0.12s;
+  }
+
+  .theme-toggle:hover {
+    border-color: var(--forest);
+    background: var(--accent-soft);
+    color: var(--accent-hi);
+  }
+
+  .theme-toggle__icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+  }
+
+  /* Se muestra el icono del tema al que se va a cambiar, no el actual:
+     en oscuro ofrece el sol, en claro ofrece la luna. */
+  .theme-toggle__icon--sun { display: none; }
+  :root[data-theme="dark"] .theme-toggle__icon--sun  { display: block; }
+  :root[data-theme="dark"] .theme-toggle__icon--moon { display: none; }
+
+  /* En pantallas chicas el boton se queda solo con el icono. */
+  @media (max-width: 640px) {
+    .theme-toggle__label { display: none; }
+    .theme-toggle { padding: 7px 9px; }
+  }
+</style>

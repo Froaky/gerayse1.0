@@ -3,12 +3,16 @@
 <html lang="es">
   <head>
     <meta charset="utf-8">
+    {% include "partials/theme_boot.html" %}
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Gerayse{% endblock %}</title>
-    <meta name="theme-color" content="#0f1315">
+    <meta name="theme-color" content="#f4f1e9" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0f1315" media="(prefers-color-scheme: dark)">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500;600&display=swap">
+    {% comment %} La paleta va ANTES de gerayse.css: define los tokens que la hoja consume. {% endcomment %}
+    {% include "partials/theme_tokens.html" %}
     <link rel="stylesheet" href="{% static 'css/gerayse.css' %}">
     {% block extra_head %}{% endblock %}
   </head>
@@ -29,6 +33,7 @@
         {% block topbar_status %}
           <span class="pill pill--muted">Operacion diaria</span>
         {% endblock %}
+        {% include "partials/theme_toggle.html" %}
       </div>
     </header>
 
@@ -67,6 +72,7 @@
        ingreso y el cambio de password obligatorio. Las pantallas de operacion
        tienen su propia navegacion en cashops/layout.html y treasury/layout.html. {% endcomment %}
 
+    <script src="{% static 'js/theme.js' %}" defer></script>
     {% block scripts %}{% endblock %}
   </body>
 </html>

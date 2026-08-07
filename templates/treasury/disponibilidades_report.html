@@ -17,8 +17,11 @@
     /* --transition y --success no existen en ningun layout: se usan las variables
        reales del tema para que la barra se vea. */
     .bar-segment { height: 100%; }
+    /* Efectivo y banco se separan por TONO, no por luminosidad: --accent y
+       --forest-deep son dos verdes a un paso de distancia y en el tema claro
+       quedan practicamente iguales. --info es el unico color frio de la paleta. */
     .bar-cash { background: var(--accent); }
-    .bar-bank { background: var(--forest-deep); }
+    .bar-bank { background: var(--info); }
     
     .report-header {
         display: flex;
@@ -33,8 +36,11 @@
         background: var(--accent-soft) !important;
         border-left: 2px solid var(--accent) !important;
     }
+    /* Antes: rgba(255,255,255,0.85) !important. Era texto blanco fijo, pensado
+       para el relleno verde oscuro del tema oscuro. Con --accent-soft claro
+       desaparecia. El token sigue al tema. */
     .total-card-highlight .muted, .total-card-highlight .has-text-primary {
-        color: rgba(255,255,255,0.85) !important;
+        color: var(--muted);
     }
     
     .data-row {
@@ -50,7 +56,11 @@
 </style>
 
 <section class="hero">
-    <div class="card" style="background: rgba(255,255,255,0.7); backdrop-filter: blur(10px);">
+    {% comment %} Tenia background rgba(255,255,255,0.7) + blur inline: una tarjeta casi
+       blanca sobre el shell grafito, con el titulo en var(--text) off-white
+       encima. Era ilegible ya en el tema oscuro. .card sola resuelve el fondo
+       en los dos temas. {% endcomment %}
+    <div class="card">
         <div class="row">
             <div>
                 <h1>{{ title }}</h1>
@@ -65,7 +75,7 @@
                 </div>
                 <button type="submit" class="button">Filtrar</button>
                 {% if reset_url %}
-                    <a href="{{ reset_url }}" class="button-secondary" style="border-color:rgba(184,90,96,0.45); color:var(--danger);">Reiniciar datos</a>
+                    <a href="{{ reset_url }}" class="button-secondary" style="border-color:var(--dn-line); color:var(--danger);">Reiniciar datos</a>
                 {% endif %}
             </form>
         </div>
@@ -223,7 +233,7 @@
                         <input type="hidden" name="year" value="{{ snapshot.year|unlocalize }}">
                         <input type="hidden" name="month" value="{{ snapshot.month|unlocalize }}">
                         <input type="hidden" name="empresa" value="{{ empresa.pk|unlocalize }}">
-                        <button type="submit" class="button" style="background: var(--danger);"
+                        <button type="submit" class="button button-danger"
                                 onclick="return confirm('Vas a cerrar {{ empresa.nombre }} para {{ snapshot.month|unlocalize }}/{{ snapshot.year|unlocalize }}. Los saldos de esa empresa quedan congelados y pasan a ser el saldo inicial del mes siguiente. Seguis?')">
                             Cerrar {{ empresa.nombre }} - {{ snapshot.month|unlocalize }}/{{ snapshot.year|unlocalize }}
                         </button>
