@@ -1,8 +1,68 @@
 # Context
 
-Last updated: 2026-07-08
+Last updated: 2026-08-13
 
 ## Current Session
+
+### EP-04 US-4.11 Corregir tipo de pago de un egreso ya pagado 2026-08-13
+
+- Pedido de la usuaria de tesoreria: "cuando voy a pagar la deuda y pongo pagado con
+  transferencia, no la puedo editar; puse tipo financiero egreso por transferencia y era
+  egreso por cheque". El boton Editar del detalle del movimiento desaparece apenas queda
+  vinculado a un pago (`_bank_movement_can_be_manually_changed`) y la unica salida era
+  anular los pagos y rehacer la carga.
+- DECISION DE DOMINIO: el `medio_pago` del `PagoTesoreria` es la fuente de verdad y la
+  `clase` del `MovimientoBancario` se deriva de el. Se extrajo la tabla a
+  `services.CLASE_POR_MEDIO_DE_PAGO`, que ahora usan `_infer_bank_movement_class` (alta y
+  vinculacion) y la correccion nueva, para que no puedan desincronizarse.
+- Servicio nuevo `correct_bank_payment_method(bank_movement, medio_pago, referencia, actor)`:
+  toca SOLO tipificacion (clase del movimiento + `medio_pago` de todos sus pagos vigentes +
+  referencia del instrumento). Monto, fecha, cuenta, deudas pagadas, saldos y vinculos
+  quedan intactos, asi que ninguna lectura financiera/economica se mueve. Toma
+  `select_for_update` del movimiento igual que la vinculacion. Reglas: cheque/ECHEQ exigen
+  referencia y un unico beneficiario (una transferencia repartida entre proveedores
+  distintos NO se puede tipificar como cheque); volver a transferencia limpia
+  `fecha_diferida`; la referencia se sufija por linea (`CH-1001 (1/3)`) por la unicidad
+  (cuenta, medio, referencia); si la persona no cambia la referencia, cada pago conserva la
+  propia; el cambio de clase se anota en `observaciones` ademas de `actualizado_por`.
+- FIX DE INVARIANTE (habilitante, y bug por si mismo): en `PagoTesoreria.clean()` las
+  guardas "deuda anulada" y "deuda ya cancelada" aplicaban a CUALQUIER guardado, no solo al
+  alta. Como el caso normal es que el pago deje la deuda PAGADA, todo pago total quedaba
+  congelado: no se podia corregir nada ni terminar de vincularlo. Ahora aplican solo con
+  `self._state.adding`; el control de sobrepago (que ya excluia el propio pago) se mantiene
+  siempre. Efecto colateral querido: "Vincular a pago" ya funciona sobre deudas canceladas
+  (la limitacion documentada en `tests_bank_impact`). Una deuda con pagos vigentes no se
+  puede anular (`annul_payable`), asi que la rama ANULADA no puede darse en un update.
+- FIX APARTE (bug vivo en produccion): `treasury/urls.py` declaraba `pagos/<int:pk>/` y
+  `views.pagos_detail` espera `payment_id` -> TypeError 500 en TODO detalle de pago desde
+  que existe el archivo (y ahi redirigen el alta de pago y la anulacion). Ahora la URL usa
+  `<int:payment_id>`; hay test de regresion.
+- UI: accion "Corregir tipo de pago" en el detalle del movimiento (cuando es un debito
+  vigente con pagos vinculados) y en el detalle del pago (cuando tiene movimiento). Vista
+  `bank_movements_correct_method` scopeada por empresa activa (URL directa a otra empresa =>
+  404) y registrada en `TREASURY_WRITE_VIEW_NAMES`. Sin template nuevo: usa `_render_form`.
+- Files touched: `treasury/models.py`, `treasury/services.py`, `treasury/forms.py`,
+  `treasury/views.py`, `treasury/urls.py`, `treasury/tests_correccion_tipo_de_pago.py`
+  (nuevo, 16 tests), `docs/epics/EP-04-bancos-y-conciliacion.md`, `docs/epics/README.md`,
+  `context.md`. Sin migraciones (solo cambia logica de `clean()`).
+- FIX EXTRA en la misma entrega (bug preexistente de US-4.10, encontrado al implementar
+  esto): `pay_debts_from_bank_movement` copiaba `bank_movement.referencia` tal cual a cada
+  pago. Como `PagoTesoreria` tiene unicidad por (cuenta, medio, referencia), repartir una
+  transferencia CON referencia entre 2+ facturas chocaba la constraint en el segundo pago y,
+  al ser todo o nada, no repartia nada: el reparto solo funcionaba con transferencias sin
+  referencia. Ahora la referencia se sufija por linea con `_referencia_de_linea`, numerando
+  desde los pagos que la transferencia ya tenia (asi "asignar el resto" mas tarde no repite
+  indice). `pay_debt_from_bank_movement` acepta `referencia=None` (usa la del movimiento) o
+  la ya sufijada que le pasa el reparto. `_referencia_de_linea` quedo como helper unico y lo
+  usa tambien `register_supplier_payment_batch`, que tenia la formula inline duplicada; el
+  recorte a 80 pasa a hacerse sobre la base y no sobre el resultado, para que una referencia
+  al limite no pierda el sufijo y vuelva a chocar. 3 tests nuevos en `tests_pago_desde_banco`
+  (los 2 de regresion verificados: fallan sin el fix).
+- Validacion: `py -3.14 manage.py test` => 602 tests OK (4 skips); `makemigrations --check
+  --dry-run` => sin drift; `compileall cashops treasury users core` => OK.
+- Gap conocido que sigue abierto: no hay edicion de un pago sin movimiento bancario
+  vinculado (efectivo, o transferencia cuya deuda no tenia imputacion completa y no genero
+  debito). Para esos la unica salida sigue siendo anular y recargar.
 
 ### EP-04/EP-10 Runtime Slices 2026-07-08 (US-4.9, US-10.13, US-10.14)
 

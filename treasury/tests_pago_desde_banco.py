@@ -77,7 +77,7 @@ class PagarDeudaDesdeTransferenciaTests(TestCase):
             creado_por=self.admin,
         )
 
-    def _transferencia(self, monto="1000.00"):
+    def _transferencia(self, monto="1000.00", referencia=""):
         return create_bank_movement(
             cuenta_bancaria=self.cuenta,
             tipo=MovimientoBancario.Tipo.DEBITO,
@@ -87,7 +87,22 @@ class PagarDeudaDesdeTransferenciaTests(TestCase):
             rubro_operativo=self.rubro,
             sucursal_gasto=self.sucursal,
             periodo_pago=self.hoy.replace(day=1),
+            referencia=referencia,
             actor=self.admin,
+        )
+
+    def _otra_factura(self, concepto: str, importe: str):
+        return CuentaPorPagar.objects.create(
+            proveedor=self.proveedor,
+            categoria=self.categoria,
+            concepto=concepto,
+            fecha_emision=self.hoy,
+            fecha_vencimiento=self.hoy,
+            periodo_referencia=self.hoy.replace(day=1),
+            importe_total=Decimal(importe),
+            saldo_pendiente=Decimal(importe),
+            sucursal=self.sucursal,
+            creado_por=self.admin,
         )
 
     def test_paga_la_deuda_y_no_crea_un_segundo_debito(self):
@@ -144,6 +159,75 @@ class PagarDeudaDesdeTransferenciaTests(TestCase):
             pay_debt_from_bank_movement(
                 bank_movement=movimiento, payable=self.deuda, actor=self.admin
             )
+
+    def test_reparte_una_transferencia_con_referencia_cargada(self):
+        """Regresion: PagoTesoreria tiene unicidad por (cuenta, medio, referencia)
+        y el reparto copiaba la referencia del movimiento tal cual en cada pago.
+        Con una transferencia CON referencia, el segundo pago chocaba la constraint
+        y, al ser todo o nada, no se repartia nada: el reparto solo funcionaba con
+        transferencias sin referencia."""
+        movimiento = self._transferencia("1000.00", referencia="TRF-77")
+        otra = self._otra_factura("Factura 002", "600.00")
+
+        pagos = pay_debts_from_bank_movement(
+            bank_movement=movimiento,
+            asignaciones=[
+                (self.deuda, Decimal("400.00")),
+                (otra, Decimal("600.00")),
+            ],
+            actor=self.admin,
+        )
+
+        self.assertEqual(len(pagos), 2)
+        self.assertEqual(
+            [pago.referencia for pago in movimiento.pagos.order_by("pk")],
+            ["TRF-77 (1/2)", "TRF-77 (2/2)"],
+        )
+        self.deuda.refresh_from_db()
+        otra.refresh_from_db()
+        self.assertEqual(self.deuda.saldo_pendiente, Decimal("600.00"))
+        self.assertEqual(otra.saldo_pendiente, Decimal("0.00"))
+
+    def test_asignar_el_resto_despues_no_repite_la_referencia(self):
+        """La misma transferencia se puede seguir repartiendo mas tarde: la
+        numeracion arranca donde quedo, asi que no se repite el indice."""
+        movimiento = self._transferencia("1000.00", referencia="TRF-88")
+        otra = self._otra_factura("Factura 003", "300.00")
+
+        pay_debts_from_bank_movement(
+            bank_movement=movimiento,
+            asignaciones=[(self.deuda, Decimal("700.00"))],
+            actor=self.admin,
+        )
+        movimiento.refresh_from_db()
+        pay_debts_from_bank_movement(
+            bank_movement=movimiento,
+            asignaciones=[(otra, Decimal("300.00"))],
+            actor=self.admin,
+        )
+
+        referencias = list(movimiento.pagos.order_by("pk").values_list("referencia", flat=True))
+        self.assertEqual(referencias, ["TRF-88", "TRF-88 (2/2)"])
+        self.assertEqual(len(set(referencias)), 2)
+
+    def test_una_transferencia_sin_referencia_no_gana_sufijo(self):
+        """Sin referencia no hay nada que desambiguar: los pagos quedan sin
+        referencia, como antes."""
+        movimiento = self._transferencia("1000.00")
+        otra = self._otra_factura("Factura 004", "500.00")
+
+        pay_debts_from_bank_movement(
+            bank_movement=movimiento,
+            asignaciones=[
+                (self.deuda, Decimal("500.00")),
+                (otra, Decimal("500.00")),
+            ],
+            actor=self.admin,
+        )
+
+        self.assertEqual(
+            set(movimiento.pagos.values_list("referencia", flat=True)), {""}
+        )
 
     def test_un_credito_no_puede_pagar_una_deuda(self):
         credito = create_bank_movement(

@@ -21,6 +21,7 @@ from .forms import (
     BankMovementFilterForm,
     BankMovementForm,
     BankMovementImputationForm,
+    BankPaymentMethodCorrectionForm,
     BankReconciliationFilterForm,
     CardAccreditationFilterForm,
     CardAccreditationForm,
@@ -94,6 +95,7 @@ from .services import (
     annul_bank_movement,
     close_treasury_month,
     complete_bank_movement_imputation,
+    correct_bank_payment_method,
     create_bank_account,
     create_bank_movement,
     create_payable_category,
@@ -162,6 +164,7 @@ TREASURY_WRITE_VIEW_NAMES = {
     "bank_movements_delete_confirm",
     "bank_movements_link",
     "bank_movements_imputation",
+    "bank_movements_correct_method",
     "pos_batches_create",
     "card_accreditations_register",
     "central_cash_create",
@@ -324,6 +327,20 @@ def _bank_movement_can_be_manually_changed(movement: MovimientoBancario) -> bool
     if movement.pagos.filter(estado=PagoTesoreria.Estado.REGISTRADO).exists():
         return False
     return not hasattr(movement, "acreditacion_tarjeta")
+
+
+def _bank_movement_can_correct_payment_method(movement: MovimientoBancario, *, tiene_pagos=None) -> bool:
+    """US-4.11: un egreso vigente que paga facturas no se puede editar (editar
+    moveria monto, fecha y cuenta) pero SI se puede re-tipificar: cargaron
+    transferencia y era cheque. `tiene_pagos` evita repetir la consulta cuando el
+    llamador ya tiene la lista de pagos vinculados."""
+    if movement.estado != MovimientoBancario.Estado.REGISTRADO:
+        return False
+    if movement.tipo != MovimientoBancario.Tipo.DEBITO:
+        return False
+    if tiene_pagos is None:
+        tiene_pagos = movement.pagos.filter(estado=PagoTesoreria.Estado.REGISTRADO).exists()
+    return bool(tiene_pagos)
 
 
 def _bank_account_item(bank_account: CuentaBancaria) -> dict:
@@ -1700,6 +1717,15 @@ def pagos_detail(request, payment_id: int):
     
     fields.append({"label": "Observaciones", "value": payment.observaciones or "Sin observaciones"})
     actions = [_action(reverse("treasury:cuentas_por_pagar_detail", args=[payment.cuenta_por_pagar_id]), "Ver deuda")]
+    if payment.estado == PagoTesoreria.Estado.REGISTRADO and payment.movimiento_bancario_id:
+        # US-4.11: la correccion vive en el movimiento bancario porque el
+        # instrumento es uno solo aunque pague varias facturas.
+        actions.append(
+            _action(
+                reverse("treasury:bank_movements_correct_method", args=[payment.movimiento_bancario_id]),
+                "Corregir tipo de pago",
+            )
+        )
     if payment.estado == PagoTesoreria.Estado.REGISTRADO:
         actions.append(_action(reverse("treasury:pagos_annul", args=[payment.pk]), "Anular", "primary"))
     return render(
@@ -2050,6 +2076,71 @@ def bank_movements_imputation(request, pk):
 
 @login_required
 @require_http_methods(["GET", "POST"])
+def bank_movements_correct_method(request, pk):
+    """US-4.11: corregir el tipo financiero de un egreso que ya paga facturas.
+
+    Es la salida al caso "me confundi de instrumento": antes habia que anular los
+    pagos y volver a cargar todo, porque el boton Editar desaparece apenas el
+    movimiento queda vinculado a un pago.
+    """
+    _require_treasury_admin(request)
+    empresa_ids = _get_empresa_ids(request)
+    movement_qs = MovimientoBancario.objects.select_related("cuenta_bancaria", "proveedor")
+    if empresa_ids is not None:
+        movement_qs = movement_qs.filter(
+            bank_account_empresa_scope_query(empresa_ids, prefix="cuenta_bancaria__")
+        )
+    movement = get_object_or_404(movement_qs, pk=pk)
+    detalle_url = reverse("treasury:bank_movements_detail", args=[movement.pk])
+    pagos = list(movement.pagos.filter(estado=PagoTesoreria.Estado.REGISTRADO).order_by("pk"))
+    if not _bank_movement_can_correct_payment_method(movement, tiene_pagos=bool(pagos)):
+        messages.error(
+            request,
+            "Solo se puede corregir el tipo de pago de un egreso vigente que paga facturas.",
+        )
+        return redirect(detalle_url)
+
+    form = BankPaymentMethodCorrectionForm(
+        request.POST or None,
+        initial={"medio_pago": pagos[0].medio_pago, "referencia": movement.referencia},
+    )
+    if request.method == "POST" and form.is_valid():
+        try:
+            correct_bank_payment_method(
+                bank_movement=movement,
+                medio_pago=form.cleaned_data["medio_pago"],
+                referencia=form.cleaned_data["referencia"],
+                actor=request.user,
+            )
+        except ValidationError as error:
+            _handle_operation_error(form, error, "No se pudo corregir el tipo de pago.")
+        else:
+            messages.success(
+                request,
+                "Tipo de pago corregido. El movimiento y las facturas que paga quedan con el mismo medio.",
+            )
+            return redirect(detalle_url)
+    facturas = "la factura que paga" if len(pagos) == 1 else f"las {len(pagos)} facturas que paga"
+    return _render_form(
+        request,
+        {
+            "title": "Corregir tipo de pago",
+            "subtitle": (
+                f"{movement.concepto} - {_money(movement.monto)}. Cambia el tipo financiero del "
+                f"movimiento y el medio de pago de {facturas}. No cambia el importe, la fecha, la "
+                "cuenta bancaria ni que facturas quedaron pagadas."
+            ),
+            "form": form,
+            "submit_label": "Guardar correccion",
+            "back_url": detalle_url,
+            "form_action": reverse("treasury:bank_movements_correct_method", args=[movement.pk]),
+        },
+        status=400 if request.method == "POST" and not form.is_valid() else 200,
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
 def bank_movements_delete_confirm(request, pk):
     _require_treasury_admin(request)
     movement = get_object_or_404(MovimientoBancario, pk=pk)
@@ -2140,6 +2231,17 @@ def bank_movements_detail(request, pk):
         .select_related("cuenta_por_pagar", "cuenta_por_pagar__proveedor")
         .order_by("pk")
     )
+    if _bank_movement_can_correct_payment_method(movement, tiene_pagos=bool(pagos_vinculados)):
+        # US-4.11: reemplaza a "Editar" cuando el egreso ya paga facturas. Editar
+        # de verdad esta bloqueado porque moveria monto, fecha y cuenta; esto solo
+        # corrige con que instrumento se pago.
+        actions.append(
+            _action(
+                reverse("treasury:bank_movements_correct_method", args=[movement.pk]),
+                "Corregir tipo de pago",
+                "secondary",
+            )
+        )
     sin_asignar = importe_sin_asignar_del_movimiento(movement)
     if (
         movement.estado == MovimientoBancario.Estado.REGISTRADO

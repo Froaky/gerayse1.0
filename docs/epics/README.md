@@ -12,7 +12,7 @@ Estado actual:
 - `EP-01`: caja operativa, movimientos y cierres. Implementada.
 - `EP-02`: alertas y semaforos operativos. Implementada.
 - `EP-03`: tesoreria central base. Implementada.
-- `EP-04`: bancos y conciliacion. Implementada hasta `US-4.9`: la cuenta bancaria tiene empresa propietaria con backfill auditado y aislamiento por empresa activa. Cerrada 2026-07-08.
+- `EP-04`: bancos y conciliacion. Implementada hasta `US-4.11`: cuenta bancaria con empresa propietaria y aislamiento por empresa activa (`US-4.9`), una transferencia repartida entre varias facturas (`US-4.10`) y correccion del tipo financiero de un egreso ya pagado sin anular los pagos (`US-4.11`). Cerrada 2026-08-13.
 - `EP-05`: flujo de disponibilidades. Implementada.
 - `EP-06`: control de gestion y alertas. Implementada.
 - `EP-07`: impuestos, planes y autorizaciones. Implementada.

@@ -22,6 +22,7 @@ from .models import (
     Proveedor,
     SaldoInicialCuentaBancaria,
 )
+from .services import CLASE_POR_MEDIO_DE_PAGO
 from cashops.models import Empresa, RubroOperativo, Sucursal
 
 
@@ -688,6 +689,44 @@ class BankMovementImputationForm(TreasuryStyledFormMixin, forms.ModelForm):
         if periodo:
             return periodo.replace(day=1)
         return periodo
+
+
+class BankPaymentMethodCorrectionForm(TreasuryStyledFormMixin, forms.Form):
+    """US-4.11: corregir con que instrumento se pago una deuda ya registrada.
+
+    Las opciones se muestran con el texto del tipo financiero del movimiento
+    ("Egreso por cheque"), que es lo que la persona lee en la pantalla de donde
+    viene, pero el valor que viaja es el medio de pago del PagoTesoreria, que es
+    la fuente de verdad de la que se deriva la clase (services.CLASE_POR_MEDIO_DE_PAGO).
+    """
+
+    MEDIOS_CON_REFERENCIA = {PagoTesoreria.MedioPago.CHEQUE, PagoTesoreria.MedioPago.ECHEQ}
+
+    medio_pago = forms.ChoiceField(label="Tipo financiero", choices=())
+    referencia = forms.CharField(
+        label="Referencia",
+        max_length=80,
+        required=False,
+        help_text="Nro de cheque, ECHEQ u operacion. Obligatoria para cheque y ECHEQ.",
+        widget=forms.TextInput(attrs={"placeholder": "Nro de cheque / operacion"}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["medio_pago"].choices = [
+            (medio, MovimientoBancario.Clase(clase).label)
+            for medio, clase in CLASE_POR_MEDIO_DE_PAGO.items()
+        ]
+        self._apply_input_classes()
+
+    def clean(self):
+        cleaned_data = super().clean()
+        medio_pago = cleaned_data.get("medio_pago")
+        referencia = (cleaned_data.get("referencia") or "").strip()
+        cleaned_data["referencia"] = referencia
+        if medio_pago in self.MEDIOS_CON_REFERENCIA and not referencia:
+            self.add_error("referencia", "La referencia es obligatoria para cheque y ECHEQ.")
+        return cleaned_data
 
 
 class BankMovementAnnulForm(TreasuryStyledFormMixin, forms.Form):

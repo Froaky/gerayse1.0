@@ -37,6 +37,8 @@ Llevar al sistema lo que hoy se controla en el lado `MAPOGO - BANCO` y en los ci
 - cuando una empresa opera varias sucursales sobre una unica cuenta bancaria, el ingreso de esa cuenta (acreditaciones y creditos) se lee como fondo comun de la empresa, no como reparto por sucursal
 - una transferencia puede pagar varias facturas, incluso de proveedores distintos: la suma de los pagos vinculados no puede superar el importe del movimiento bancario
 - un movimiento bancario sigue siendo un solo hecho del extracto aunque pague varias deudas; pagar N facturas no genera N debitos
+- el medio de pago del pago de tesoreria es la fuente de verdad del tipo financiero del debito vinculado: la clase del movimiento se deriva de el y no se puede cargar distinto de un lado y del otro
+- equivocarse de instrumento (cargar transferencia cuando fue cheque) es un error de tipificacion, no de plata: se corrige sobre el egreso ya registrado, sin anular pagos ni volver a cargar la deuda
 
 ## User Stories
 
@@ -182,6 +184,42 @@ Criterios:
 - anular uno de los pagos devuelve el saldo a esa factura y libera ese importe de la transferencia, sin tocar los otros pagos ni el movimiento bancario
 - el reparto respeta empresa activa: no se paga una factura de una empresa con una transferencia de la cuenta de otra
 - una transferencia ya repartida no acepta un pago nuevo que haga pasar su importe total
+- una transferencia con referencia cargada se puede repartir igual: la referencia del instrumento se sufija por linea (`TRF-77 (1/2)`) porque un pago no puede repetir referencia para la misma cuenta y medio de pago. Corregido 2026-08-13; antes el reparto de una transferencia con referencia fallaba entero y solo funcionaba sin referencia
+
+### [x] US-4.11 Corregir con que se pago una deuda ya registrada
+
+Como administracion
+Quiero corregir el tipo financiero de un egreso que ya pague
+Para no tener que anular los pagos y cargar todo de nuevo cuando me equivoco de instrumento
+
+Contexto: lo reporto la usuaria de tesoreria. Cargo el egreso como "egreso por
+transferencia" y era "egreso por cheque". El boton Editar del detalle del
+movimiento desaparece apenas queda vinculado a un pago -y esta bien que
+desaparezca, porque editar de verdad cambia monto, fecha y cuenta-, asi que la
+unica salida era borrar todo y empezar de cero.
+
+Criterios:
+- desde el detalle de un egreso bancario vigente que paga facturas hay una accion para corregir el tipo financiero
+- las opciones son las tres que tienen reflejo bancario: cheque, ECHEQ y transferencia a terceros
+- la correccion cambia a la vez el tipo financiero del movimiento y el medio de pago de todas las facturas que paga, para que no queden diciendo cosas distintas
+- se puede corregir la referencia del instrumento (nro de cheque u operacion); cheque y ECHEQ la exigen
+- si el egreso paga varias facturas, la misma referencia se sufija por linea (`CH-1001 (1/3)`), igual que en el pago por proveedor
+- si la persona no toca la referencia, cada pago conserva la propia (puede tener una distinta si se cargo a mano y despues se vinculo)
+- la correccion NO cambia importe, fecha, cuenta bancaria, deudas pagadas ni saldos: ninguna lectura financiera o economica se mueve
+- una transferencia que paga facturas de proveedores distintos no se puede tipificar como cheque ni ECHEQ, porque esos instrumentos tienen un unico beneficiario
+- volver de cheque a transferencia limpia la fecha diferida, que la transferencia no admite
+- el movimiento deja registrado en observaciones que la tipificacion se corrigio, ademas de usuario y fecha de actualizacion
+- respeta empresa activa: el acceso directo por URL a un egreso de otra empresa devuelve 404
+- un egreso eliminado, un credito o un movimiento sin pagos no entran por esta pantalla
+
+Nota tecnica: para que esto fuera posible se corrigio una invariante de
+`PagoTesoreria.clean()`. Las guardas "la deuda esta anulada" y "la deuda ya esta
+cancelada" aplicaban a cualquier guardado y no solo al alta, asi que un pago que
+dejaba la deuda PAGADA -el caso normal- quedaba congelado para siempre. Ahora
+aplican solo al alta de un pago nuevo; el control de sobrepago, que ya excluia el
+propio pago del total, se mantiene siempre. Efecto colateral querido: "Vincular a
+pago" tambien funciona sobre deudas ya canceladas (era una limitacion documentada
+en `tests_bank_impact`).
 
 ## Dependencias
 

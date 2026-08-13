@@ -39,7 +39,7 @@ urlpatterns = [
     path("pagos/echeq/nuevo/", views.pagos_echeq_create, name="pagos_echeq_create"),
     path("pagos/efectivo/nuevo/", views.pagos_efectivo_create, name="pagos_efectivo_create"),
     path("pagos/proveedor/nuevo/", views.pagos_proveedor_create, name="pagos_proveedor_create"),
-    path("pagos/<int:pk>/", views.pagos_detail, name="pagos_detail"),
+    path("pagos/<int:payment_id>/", views.pagos_detail, name="pagos_detail"),
     path("pagos/<int:payment_id>/annul/", views.pagos_annul, name="pagos_annul"),
     # --- Bank Movements & Conciliation (EP-04) ---
     # EP-04: Bancos y Conciliación
@@ -56,6 +56,11 @@ urlpatterns = [
         name="bank_movements_pay_debt",
     ),
     path("bancos/<int:pk>/imputar/", views.bank_movements_imputation, name="bank_movements_imputation"),
+    path(
+        "bancos/<int:pk>/corregir-tipo-de-pago/",
+        views.bank_movements_correct_method,
+        name="bank_movements_correct_method",
+    ),
     path("lotes-pos/", views.pos_batches_list, name="pos_batches_list"),
     path("lotes-pos/nuevo/", views.pos_batches_create, name="pos_batches_create"),
     path("acreditaciones/", views.card_accreditations_list, name="card_accreditations_list"),

@@ -911,9 +911,16 @@ class PagoTesoreria(models.Model):
         ):
             errors["cuenta_bancaria"] = "La cuenta bancaria está inactiva."
         if self.cuenta_por_pagar_id and self.estado == self.Estado.REGISTRADO:
-            if self.cuenta_por_pagar.estado == CuentaPorPagar.Estado.ANULADA:
+            # Deuda anulada o ya cancelada bloquean el ALTA de un pago nuevo.
+            # Sobre un pago que YA existe no pueden aplicar: la deuda quedo PAGADA
+            # justamente por el, asi que la guarda vieja lo congelaba para siempre
+            # (no se podia corregir el medio de pago ni terminar de vincularlo a su
+            # movimiento bancario, ver US-4.11). El control que vale siempre es el
+            # de sobrepago de abajo, que ya excluye este pago del total registrado.
+            estado_deuda = self.cuenta_por_pagar.estado
+            if self._state.adding and estado_deuda == CuentaPorPagar.Estado.ANULADA:
                 errors["cuenta_por_pagar"] = "La cuenta por pagar esta anulada."
-            elif self.cuenta_por_pagar.estado == CuentaPorPagar.Estado.PAGADA:
+            elif self._state.adding and estado_deuda == CuentaPorPagar.Estado.PAGADA:
                 errors["cuenta_por_pagar"] = "La cuenta por pagar ya esta cancelada."
             elif self.monto is not None:
                 total_registrado = (

@@ -708,6 +708,21 @@ def _empresa_de_la_deuda(payable: CuentaPorPagar, empresa=None) -> int:
     return empresa_id
 
 
+def _referencia_de_linea(referencia: str, indice: int, total: int) -> str:
+    """Referencia de UNA linea cuando un mismo instrumento paga varias facturas.
+
+    `PagoTesoreria` tiene unicidad por (cuenta, medio de pago, referencia), asi
+    que repetir el numero de cheque u operacion tal cual en cada factura hace
+    explotar la segunda. Se sufija "REF (2/3)". El recorte a 80 se hace sobre la
+    base y no sobre el resultado: si no, una referencia al limite perderia el
+    sufijo y volveria a chocar.
+    """
+    if not referencia or total <= 1:
+        return referencia
+    sufijo = f" ({indice}/{total})"
+    return f"{referencia[: 80 - len(sufijo)]}{sufijo}"
+
+
 @transaction.atomic
 def register_payment(
     *,
@@ -848,9 +863,7 @@ def register_supplier_payment_batch(
     # Orden estable por pk: evita deadlocks entre lotes concurrentes que compartan
     # deudas, porque register_payment toma select_for_update por deuda.
     for indice, (payable, monto) in enumerate(sorted(lineas, key=lambda item: item[0].pk), start=1):
-        linea_referencia = referencia
-        if referencia and total > 1:
-            linea_referencia = f"{referencia} ({indice}/{total})"[:80]
+        linea_referencia = _referencia_de_linea(referencia, indice, total)
         pagos.append(
             register_payment(
                 payable=payable,
@@ -899,6 +912,7 @@ def pay_debt_from_bank_movement(
     payable: CuentaPorPagar,
     monto: Decimal = None,
     observaciones: str = "",
+    referencia: str = None,
     actor=None,
 ) -> PagoTesoreria:
     """Paga una deuda desde una transferencia que ya esta en el extracto.
@@ -909,6 +923,10 @@ def pay_debt_from_bank_movement(
     US-4.10: `monto` permite usar solo una parte de la transferencia, para
     repartirla entre varias facturas. Si no se pasa, se usa todo lo que le queda
     sin asignar (el comportamiento de antes, cuando pagaba una sola factura).
+
+    `referencia` la pasa el reparto de varias facturas, ya sufijada por linea. Sin
+    ella se usa la del movimiento tal cual, que es lo correcto para una factura
+    sola.
     """
     _require_actor(actor)
     if bank_movement.estado != MovimientoBancario.Estado.REGISTRADO:
@@ -962,7 +980,7 @@ def pay_debt_from_bank_movement(
         bank_account=bank_movement.cuenta_bancaria,
         fecha_pago=bank_movement.fecha,
         monto=monto,
-        referencia=bank_movement.referencia or "",
+        referencia=(bank_movement.referencia or "") if referencia is None else referencia,
         observaciones=observaciones,
         bank_movement=bank_movement,
         actor=actor,
@@ -1012,9 +1030,21 @@ def pay_debts_from_bank_movement(
             }
         )
 
+    # La referencia del movimiento viaja a cada pago, y PagoTesoreria tiene
+    # unicidad por (cuenta, medio de pago, referencia): repartir una transferencia
+    # CON referencia entre dos o mas facturas chocaba la constraint en el segundo
+    # pago y, al ser todo o nada, hacia fallar el reparto entero. El reparto solo
+    # funcionaba con transferencias sin referencia.
+    # Se sufija por linea igual que register_supplier_payment_batch, numerando
+    # desde los pagos que la transferencia ya tenia de un reparto anterior: asi
+    # los indices no se repiten nunca para un mismo movimiento.
+    referencia_base = (bloqueado.referencia or "").strip()
+    ya_repartidas = bloqueado.pagos.filter(estado=PagoTesoreria.Estado.REGISTRADO).count()
+    total_lineas = ya_repartidas + len(asignaciones)
+
     vistas = set()
     pagos = []
-    for payable, monto in asignaciones:
+    for orden, (payable, monto) in enumerate(asignaciones, start=ya_repartidas + 1):
         if payable.pk in vistas:
             raise ValidationError({"__all__": "Elegiste dos veces la misma factura."})
         vistas.add(payable.pk)
@@ -1024,6 +1054,7 @@ def pay_debts_from_bank_movement(
                 payable=payable,
                 monto=monto,
                 observaciones=observaciones,
+                referencia=_referencia_de_linea(referencia_base, orden, total_lineas),
                 actor=actor,
             )
         )
@@ -1254,14 +1285,26 @@ def annul_payment(*, payment: PagoTesoreria, motivo: str, actor=None) -> PagoTes
 
 # --- Bank Movements & Conciliation (EP-04) ---
 
+# Traduccion medio de pago -> tipo financiero del debito bancario. El medio de
+# pago del PagoTesoreria es la fuente de verdad; la clase del movimiento se
+# deriva de el. Una sola tabla para los dos usos (alta/vinculacion y correccion
+# posterior), asi no se pueden desincronizar.
+CLASE_POR_MEDIO_DE_PAGO = {
+    PagoTesoreria.MedioPago.CHEQUE: MovimientoBancario.Clase.CHEQUE,
+    PagoTesoreria.MedioPago.ECHEQ: MovimientoBancario.Clase.ECHEQ,
+    PagoTesoreria.MedioPago.TRANSFERENCIA: MovimientoBancario.Clase.TRANSFERENCIA_TERCEROS,
+}
+
+
 def _infer_bank_movement_class(*, tipo: str, origen: str, payment: PagoTesoreria | None = None) -> str:
     if origen == MovimientoBancario.Origen.ACREDITACION_TARJETA:
         return MovimientoBancario.Clase.ACREDITACION
     if origen == MovimientoBancario.Origen.PAGO_TESORERIA and payment is not None:
-        return {
-            PagoTesoreria.MedioPago.CHEQUE: MovimientoBancario.Clase.CHEQUE,
-            PagoTesoreria.MedioPago.ECHEQ: MovimientoBancario.Clase.ECHEQ,
-        }.get(payment.medio_pago, MovimientoBancario.Clase.TRANSFERENCIA_TERCEROS)
+        # El pago en efectivo no tiene reflejo bancario, asi que no esta en la
+        # tabla; si alguna vez llegara, cae en transferencia como hasta ahora.
+        return CLASE_POR_MEDIO_DE_PAGO.get(
+            payment.medio_pago, MovimientoBancario.Clase.TRANSFERENCIA_TERCEROS
+        )
     return (
         MovimientoBancario.Clase.OTRO_INGRESO
         if tipo == MovimientoBancario.Tipo.CREDITO
@@ -1907,6 +1950,110 @@ def link_payment_to_bank_movement(
     payment.save(skip_domain_guard=True)
 
     return bank_movement
+
+
+@transaction.atomic
+def correct_bank_payment_method(
+    *,
+    bank_movement: MovimientoBancario,
+    medio_pago: str,
+    referencia: str = "",
+    actor=None,
+) -> MovimientoBancario:
+    """US-4.11: corrige COMO se pago una deuda, sobre un egreso ya registrado.
+
+    Caso real: cargaron el egreso como transferencia y era un cheque. Hasta ahora
+    la unica salida era anular los pagos y rehacer todo, porque el detalle del
+    movimiento esconde "Editar" apenas queda vinculado a un pago (con razon:
+    editar de verdad cambia monto, fecha y cuenta, y eso si moveria la plata).
+
+    Esto toca SOLO la tipificacion: el medio de pago de los pagos vigentes, el
+    tipo financiero del movimiento -que se deriva del medio, ver
+    CLASE_POR_MEDIO_DE_PAGO- y la referencia del instrumento. Monto, fecha,
+    cuenta bancaria, deudas pagadas y vinculos quedan intactos, asi que ningun
+    saldo, deuda ni lectura economica se mueve.
+    """
+    _require_actor(actor)
+    if medio_pago not in CLASE_POR_MEDIO_DE_PAGO:
+        raise ValidationError(
+            {"medio_pago": "Ese medio de pago no corresponde a un egreso bancario."}
+        )
+    if bank_movement.estado != MovimientoBancario.Estado.REGISTRADO:
+        raise ValidationError({"__all__": "No se puede corregir un movimiento bancario eliminado."})
+    if bank_movement.tipo != MovimientoBancario.Tipo.DEBITO:
+        raise ValidationError({"__all__": "Solo un egreso bancario tiene medio de pago."})
+
+    # Mismo lock que la vinculacion: los pagos vigentes del movimiento son la
+    # lista que se va a reescribir, y no puede cambiar debajo.
+    movement = MovimientoBancario.objects.select_for_update(of=("self",)).get(pk=bank_movement.pk)
+    pagos = list(
+        movement.pagos.filter(estado=PagoTesoreria.Estado.REGISTRADO)
+        .select_related("cuenta_por_pagar", "cuenta_por_pagar__proveedor")
+        .order_by("pk")
+    )
+    if not pagos:
+        raise ValidationError(
+            {"__all__": "Este movimiento no paga ninguna factura: corregilo desde Editar."}
+        )
+
+    referencia = (referencia or "").strip()
+    if (
+        medio_pago in {PagoTesoreria.MedioPago.CHEQUE, PagoTesoreria.MedioPago.ECHEQ}
+        and not referencia
+    ):
+        raise ValidationError({"referencia": "La referencia es obligatoria para cheque y ECHEQ."})
+
+    nueva_clase = CLASE_POR_MEDIO_DE_PAGO[medio_pago]
+    proveedor = movement.proveedor
+    if (
+        nueva_clase in {MovimientoBancario.Clase.CHEQUE, MovimientoBancario.Clase.ECHEQ}
+        and proveedor is None
+    ):
+        # Un cheque tiene un unico beneficiario. Si el movimiento no lo tiene
+        # cargado se deduce de las facturas que paga; si paga a proveedores
+        # distintos, esa tipificacion no existe en la realidad.
+        proveedores = {pago.cuenta_por_pagar.proveedor_id for pago in pagos}
+        if len(proveedores) > 1:
+            raise ValidationError(
+                {
+                    "medio_pago": (
+                        "Este egreso paga facturas de varios proveedores y un cheque tiene un "
+                        "solo beneficiario. Anula los pagos que no correspondan antes de "
+                        "tipificarlo asi."
+                    )
+                }
+            )
+        proveedor = pagos[0].cuenta_por_pagar.proveedor
+
+    clase_anterior = movement.clase
+    etiqueta_anterior = movement.get_clase_display()
+    # Se compara ANTES de pisar el campo: si la persona no toco la referencia, la
+    # de cada pago se respeta (puede ser propia, de cuando el pago se cargo a mano
+    # y despues se vinculo) en lugar de pisarla con la del movimiento.
+    referencia_cambio = referencia != (movement.referencia or "").strip()
+
+    movement.clase = nueva_clase
+    movement.proveedor = proveedor
+    movement.referencia = referencia
+    if nueva_clase != clase_anterior:
+        nota = f"Tipo financiero corregido: {etiqueta_anterior} -> {movement.get_clase_display()}."
+        movement.observaciones = f"{movement.observaciones} {nota}".strip()[:255]
+    movement.actualizado_por = actor
+    _save_instance(movement)
+
+    total = len(pagos)
+    for indice, pago in enumerate(pagos, start=1):
+        if referencia_cambio or not (pago.referencia or "").strip():
+            pago.referencia = _referencia_de_linea(referencia, indice, total)
+        pago.medio_pago = medio_pago
+        if medio_pago == PagoTesoreria.MedioPago.TRANSFERENCIA:
+            # Invariante del modelo: la transferencia no admite fecha diferida.
+            # Al volver de cheque a transferencia, el diferimiento deja de existir.
+            pago.fecha_diferida = None
+        pago.actualizado_por = actor
+        pago.save(skip_domain_guard=True)
+
+    return movement
 
 
 def build_bank_reconciliation_snapshot(
