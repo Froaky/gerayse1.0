@@ -2468,6 +2468,12 @@ def bank_movements_pay_debt(request, pk):
             "payable": factura,
             "sugerido": min(factura.saldo_pendiente, sin_asignar),
             "elegida": str(factura.pk) in ya_elegidas,
+            # El sugerido se topea con lo que queda sin asignar de la
+            # transferencia. Cuando eso es menos que el saldo, tildar la linea
+            # tal cual viene deja la factura pagada a medias sin que nada lo
+            # diga: paso en produccion con una factura de $33.000 precargada en
+            # $21.750. Se avisa cuanto quedaria debiendo.
+            "queda_debiendo": max(factura.saldo_pendiente - sin_asignar, Decimal("0.00")),
         }
         for factura in candidatas.order_by(
             "proveedor__razon_social", "sucursal__codigo", "fecha_emision", "pk"
@@ -3110,6 +3116,19 @@ def egreso_tesoreria_create(request):
         "title": "Egreso administrativo de tesoreria",
         "subtitle": "Pagos y gastos que salen directamente de tesorería (no de una caja operativa de sucursal). Si el origen es caja fuerte, reduce el libro de efectivo central. Si es banco, impacta el libro bancario.",
         "form": form,
+        # El egreso administrativo NO cancela ninguna deuda: no existe circuito
+        # entre esta pantalla y cuentas por pagar. Si el gasto ya esta cargado
+        # como deuda, la lectura economica lo cuenta dos veces (la deuda suma
+        # cuando se carga, y este egreso vuelve a sumar) y ademas la factura
+        # sigue figurando impaga.
+        "aviso": (
+            "Usá esta pantalla solo para gastos que NO estén cargados como deuda "
+            "(alquileres, sueldos, impuestos). Si la factura ya la cargaron los "
+            "chicos, pagala desde Pagos: si hacés el egreso, el gasto queda "
+            "contado dos veces y la factura sigue figurando impaga."
+        ),
+        "aviso_url": reverse("treasury:pagos_proveedor_create"),
+        "aviso_url_label": "Ir a pagar por proveedor",
         "back_url": reverse("treasury:central_cash_list"),
     })
 

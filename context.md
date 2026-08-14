@@ -2294,3 +2294,30 @@ cadena PROPIA aunque este abierta. Es parte del mismo slice pendiente por empres
 - Tests: suite completa 649 OK (4 skips). Sin migraciones. `compileall` OK.
 - Pendiente: falta el aviso de doble conteo en el egreso administrativo y el
   aviso de pago parcial cuando el importe sugerido es menor al saldo.
+
+## 2026-08-14 - Aviso de pago parcial y de doble conteo (US-3.17)
+
+- Dos avisos chicos que cierran el lote del dia.
+- Pago parcial: el importe sugerido de cada linea es `min(saldo, sin_asignar)`.
+  Cuando la transferencia no alcanza, tildar la linea tal cual viene deja la
+  factura pagada a medias. Paso en produccion con una factura de $33.000
+  precargada en $21.750. Ahora la linea dice cuanto quedaria debiendo.
+- Egreso administrativo: la pantalla ahora aclara que NO cancela ninguna deuda y
+  que si el gasto ya esta cargado como deuda se cuenta dos veces (la deuda suma
+  al cargarse y el egreso vuelve a sumar), con link a "Pagar por proveedor".
+- Es aviso y no bloqueo porque el egreso administrativo se usa de verdad: la
+  usuaria lo emplea para alquileres, sueldos e impuestos, que no van como deuda.
+  Confirmado por ella: "los egresos de tesoreria sin deuda registrada si los uso
+  para los casos que decis vos".
+- Se decidio NO cruzar automaticamente el egreso contra las deudas abiertas. Se
+  midio en produccion: de 149 egresos administrativos, solo 7 tienen una deuda
+  del mismo importe a +-5 dias, y ese cruce es ruido (las facturas de un
+  proveedor son todas de $120.000 redondos, asi que un egreso "coincide" con
+  hasta 7 deudas). Un aviso con ese nivel de falsos positivos se ignora.
+- Se agrego soporte de `aviso` al form_card de treasury, igual que ya se hizo en
+  el de cashops.
+- Archivos: `treasury/views.py`, `templates/treasury/pay_debts_split.html`,
+  `templates/treasury/partials/form_card.html`,
+  `treasury/tests_pago_duplicado.py` (+3 tests, 17 en total),
+  `docs/epics/EP-03-tesoreria-central.md`.
+- Tests: suite completa 652 OK (4 skips). Sin migraciones. `compileall` OK.

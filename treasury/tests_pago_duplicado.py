@@ -257,3 +257,57 @@ class RepartirTransferenciaTests(PagoDuplicadoFixture):
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(PagoTesoreria.objects.count(), 2)
+
+
+class AvisoDePagoParcialTests(PagoDuplicadoFixture):
+    """US-3.17: el importe sugerido se topea con lo que queda sin asignar de la
+    transferencia. Cuando eso es menos que el saldo, tildar la linea tal cual
+    viene deja la factura pagada a medias. En produccion aparecio una factura de
+    $33.000 precargada en $21.750, sin que nada lo dijera."""
+
+    def _pantalla(self, monto_transferencia):
+        movimiento = create_bank_movement(
+            cuenta_bancaria=self.cuenta,
+            tipo=MovimientoBancario.Tipo.DEBITO,
+            fecha=self.hoy,
+            monto=Decimal(monto_transferencia),
+            concepto="Pago semanal cuenta corriente",
+            clase=MovimientoBancario.Clase.TRANSFERENCIA_TERCEROS,
+            proveedor=self.proveedor,
+            rubro_operativo=self.rubro,
+            sucursal_gasto=self.suc_a,
+            periodo_pago=self.hoy.replace(day=1),
+            actor=self.admin,
+        )
+        return self.client.get(
+            reverse("treasury:bank_movements_pay_debt", args=[movimiento.pk])
+        )
+
+    def test_avisa_cuando_la_transferencia_no_alcanza(self):
+        self._factura(importe="33000.00")
+
+        response = self._pantalla("21750.00")
+
+        fila = response.context["facturas"][0]
+        self.assertEqual(fila["sugerido"], Decimal("21750.00"))
+        self.assertEqual(fila["queda_debiendo"], Decimal("11250.00"))
+        self.assertContains(response, "Pago parcial")
+
+    def test_no_avisa_cuando_alcanza_para_toda_la_factura(self):
+        self._factura(importe="33000.00")
+
+        response = self._pantalla("50000.00")
+
+        fila = response.context["facturas"][0]
+        self.assertEqual(fila["sugerido"], Decimal("33000.00"))
+        self.assertEqual(fila["queda_debiendo"], Decimal("0.00"))
+        self.assertNotContains(response, "Pago parcial")
+
+    def test_el_egreso_administrativo_avisa_del_doble_conteo(self):
+        """No hay circuito entre el egreso administrativo y cuentas por pagar:
+        si el gasto ya esta cargado como deuda, se cuenta dos veces."""
+        response = self.client.get(reverse("treasury:egreso_tesoreria_create"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "contado dos veces")
+        self.assertContains(response, reverse("treasury:pagos_proveedor_create"))

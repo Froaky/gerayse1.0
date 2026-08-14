@@ -15,6 +15,17 @@
     </ul>
   {% endif %}
 
+  {% comment %} Aviso, no error: el formulario se puede enviar igual. Va adentro de
+     la tarjeta porque con HTMX se reemplaza solo esto. {% endcomment %}
+  {% if aviso %}
+    <div class="panel panel--warning mt-16">
+      {{ aviso }}
+      {% if aviso_url %}
+        <a href="{{ aviso_url }}">{{ aviso_url_label }}</a>
+      {% endif %}
+    </div>
+  {% endif %}
+
   {% comment %} hx-sync descarta el segundo envio mientras el primero viaja (doble click) y
      hx-disabled-elt apaga el boton para que se vea que esta procesando. Es la
      primera barrera contra el alta duplicada; la de verdad es el token_alta que

@@ -261,6 +261,26 @@ Criterios:
   para siempre
 - al volver con el aviso, las facturas ya tildadas siguen tildadas
 
+### [x] US-3.17 Avisar el pago parcial y el doble conteo del egreso
+
+Como tesorera
+Quiero que me avise cuando la transferencia no alcanza para toda la factura, y
+cuando un egreso administrativo va a contar el gasto dos veces
+Para no dejar facturas pagadas a medias sin querer ni inflar la economica
+
+Contexto real: en produccion aparecio una factura de $33.000 con el importe
+precargado en $21.750, porque el sugerido se topea con lo que queda sin asignar
+de la transferencia. Nada lo decia.
+
+Criterios:
+- la linea avisa cuanto quedaria debiendo si se paga con el sugerido
+- no avisa cuando la transferencia alcanza para el saldo completo
+- la pantalla de egreso administrativo aclara que no cancela ninguna deuda, y
+  que si el gasto ya esta cargado como deuda queda contado dos veces
+- el aviso del egreso linkea a "Pagar por proveedor", que es el camino correcto
+- es un aviso, no un bloqueo: el egreso administrativo se usa de verdad para
+  alquileres, sueldos e impuestos, que no se cargan como deuda
+
 ## Orden tecnico sugerido
 
 1. proveedores
