@@ -472,7 +472,7 @@ def open_payables_queryset(empresa_ids=None):
         CuentaPorPagar.objects.filter(
             estado__in=[CuentaPorPagar.Estado.PENDIENTE, CuentaPorPagar.Estado.PARCIAL]
         )
-        .select_related("proveedor", "categoria")
+        .select_related("proveedor", "categoria", "sucursal", "caja_origen")
         .order_by("fecha_vencimiento", "proveedor__razon_social")
     )
     if empresa_ids is not None:

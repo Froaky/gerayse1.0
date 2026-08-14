@@ -538,6 +538,31 @@ class CuentaPorPagar(models.Model):
     def total_pagado(self) -> Decimal:
         return self.importe_total - (self.saldo_pendiente or Decimal("0.00"))
 
+    @property
+    def sucursal_label(self) -> str:
+        """Sucursal a la que se imputa la deuda, con codigo y nombre.
+
+        Va el codigo ademas del nombre porque tesoreria anota la cuenta
+        corriente semanal por codigo de sucursal en su planilla, y es asi como
+        busca la factura al momento de pagar.
+        """
+        if not self.sucursal_id:
+            return "Sin sucursal"
+        return f"{self.sucursal.codigo} - {self.sucursal.nombre}"
+
+    @property
+    def origen_label(self) -> str:
+        """De que caja operativa nacio la deuda, o si se cargo directo.
+
+        Es el unico dato que separa dos facturas del mismo proveedor, misma
+        sucursal y mismo importe: en produccion hay 33 facturas de un proveedor
+        por el mismo monto repartidas en 5 sucursales, y sin esto las lineas de
+        la pantalla de pago son identicas entre si.
+        """
+        if not self.caja_origen_id:
+            return "Carga directa"
+        return f"Caja #{self.caja_origen_id} del {self.caja_origen.fecha_operativa:%d/%m/%Y}"
+
     def clean(self) -> None:
         self.concepto = (self.concepto or "").strip()
         self.referencia_comprobante = (self.referencia_comprobante or "").strip()

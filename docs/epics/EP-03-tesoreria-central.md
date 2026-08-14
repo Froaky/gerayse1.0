@@ -175,6 +175,36 @@ Criterios:
 - timestamps
 - visibilidad desde detalle de deuda y pago
 
+### [x] US-3.13 Sucursal y caja de origen visibles en la deuda
+
+Como tesorera
+Quiero ver de que sucursal y de que caja salio cada factura
+Para elegir la correcta cuando el proveedor tiene varias por el mismo importe
+
+Contexto real: en produccion hay 233 deudas abiertas donde el mismo proveedor
+tiene varias facturas del mismo importe en sucursales distintas. El peor caso es
+un proveedor con 33 facturas de $27.500 en 5 sucursales. Ninguna de las cuatro
+pantallas de deuda mostraba la sucursal, asi que las lineas eran identicas entre
+si. De ahi salieron 10 pagos dobles hechos dentro de un mismo lote.
+
+Criterios:
+- la sucursal se muestra en el listado de cuentas por pagar, en el detalle de la
+  deuda, en "pagar por proveedor" y al repartir una transferencia
+- la sucursal se muestra con codigo y nombre, porque tesoreria lleva la cuenta
+  corriente semanal por codigo de sucursal en su planilla
+- las deudas nacidas en una caja muestran la caja y su fecha operativa; dos
+  facturas del mismo proveedor, sucursal e importe solo se separan por ahi
+- las deudas legacy sin sucursal siguen funcionando y muestran "Sin sucursal"
+- agregar el dato no puede costar una consulta por fila: el listado trae mas de
+  mil deudas abiertas
+
+Nota tecnica: las etiquetas viven en dos propiedades derivadas de
+`CuentaPorPagar` (`sucursal_label` y `origen_label`), no en cada template, para
+que las cuatro pantallas digan lo mismo. Es el mismo patron que ya usaban
+`estado_visible` y `urgency_label`. El costo de lectura se cubre con
+`select_related("sucursal", "caja_origen")` en los cuatro querysets y con un test
+que compara la cantidad de consultas con 1 y con 7 deudas.
+
 ## Orden tecnico sugerido
 
 1. proveedores

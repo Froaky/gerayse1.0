@@ -2173,3 +2173,51 @@ cadena PROPIA aunque este abierta. Es parte del mismo slice pendiente por empres
   activo durante los tests. Render con `DEBUG=False` real: la landing y el login
   dan 200 y sirven las URLs versionadas.
 - Archivos: `config/settings.py`, `core/tests_theme.py`.
+
+## 2026-08-14 - Sucursal y caja de origen visibles en la deuda (US-3.13)
+
+- Pedido de tesoreria, con dato de produccion detras: hay 233 deudas abiertas
+  donde el mismo proveedor tiene varias facturas por el MISMO importe en
+  sucursales distintas (peor caso: 33 facturas de $27.500 de un proveedor en 5
+  sucursales). Ninguna de las cuatro pantallas de deuda mostraba la sucursal, o
+  sea que las lineas eran literalmente iguales y no habia con que elegir.
+- Consecuencia real medida en produccion: 19 facturas cargadas por duplicado y
+  10 de ellas pagadas dos veces ($2.013.126,48), las diez dentro de un mismo
+  lote de "pagar por proveedor", tildando las dos copias en la misma operacion.
+- Regla de dominio nueva: la sucursal se muestra con CODIGO y nombre. Tesoreria
+  lleva la cuenta corriente semanal en una planilla por proveedor / sucursal /
+  fecha, anotada por codigo de sucursal, y es asi como busca la factura.
+- Las etiquetas son dos propiedades derivadas de `CuentaPorPagar`
+  (`sucursal_label`, `origen_label`), no logica repetida en cada template. Mismo
+  patron que `estado_visible` / `urgency_label`, que ya existian.
+- `origen_label` es el unico dato que separa dos facturas del mismo proveedor,
+  misma sucursal y mismo importe: la caja de la que nacieron y su fecha
+  operativa. Las deudas cargadas directo desde tesoreria dicen "Carga directa".
+- Las deudas legacy sin sucursal existen y se pagan: muestran "Sin sucursal" en
+  vez de romper.
+- Costo de lectura: las propiedades leen `sucursal` y `caja_origen`, asi que sin
+  `select_related` el listado hacia una consulta por fila y en produccion trae
+  1.292 deudas abiertas. Se agrego a los cuatro querysets. El test lo cuida
+  comparando consultas con 1 y con 7 deudas; sin el fix da 23 contra 11.
+- Decision de alcance tomada con la usuaria: NO se pide numero de comprobante en
+  ningun lado. Sus palabras: "no usamos tanto los numeros de comprobantes xq son
+  muy minuciosos y algunos proveedores repiten a veces si usan remiteros". O sea
+  que el comprobante no sirve ni como identificador unico. Por eso la deteccion
+  de duplicados que viene despues va por proveedor + sucursal + fecha de factura
+  + importe, y no por comprobante.
+- Por lo mismo se descarto integrar la API de Fudo: el unico objetivo era traer
+  el numero de comprobante automaticamente. La API existe, es OpenAPI 3, cubre
+  ventas y compras y no tiene costo extra (va con el plan), pero traeria un dato
+  que no se usa y que ademas se repite entre proveedores.
+- Archivos: `treasury/models.py`, `treasury/views.py`, `treasury/forms.py`,
+  `templates/treasury/pay_debts_split.html`,
+  `templates/treasury/supplier_payment_batch.html`,
+  `treasury/tests_sucursal_en_deuda.py` (nuevo, 10 tests),
+  `docs/epics/EP-03-tesoreria-central.md`.
+- Tests: suite completa 612 OK (4 skips). `makemigrations --check --dry-run` sin
+  cambios (son propiedades, no campos). `compileall` OK.
+- Pendiente: los codigos de sucursal de la planilla de tesoreria (EC1, EC2, PP,
+  EB, EB2, VIVRE) pueden no coincidir con `Sucursal.codigo` en base. Se muestra
+  codigo Y nombre para que igual se entienda, pero conviene alinearlos.
+- Proximo slice: filtros de proveedor + sucursal + rango de fechas con subtotal
+  en la pantalla de pago. Es cuenta corriente semanal, no factura suelta.

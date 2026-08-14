@@ -386,11 +386,11 @@ def _payable_item(payable: CuentaPorPagar) -> dict:
     return {
         "href": reverse("treasury:cuentas_por_pagar_detail", args=[payable.pk]),
         "title": payable.proveedor.razon_social,
-        "subtitle": f"{payable.concepto} - Rubro {payable.categoria.rubro_label}",
+        "subtitle": f"{payable.sucursal_label} - {payable.concepto} - Rubro {payable.categoria.rubro_label}",
         "badge": badge,
         "badge_class": badge_class,
         "meta": (
-            f"Periodo {payable.periodo_referencia:%m/%Y} - "
+            f"{payable.origen_label} - Periodo {payable.periodo_referencia:%m/%Y} - "
             f"Vence {payable.fecha_vencimiento:%d/%m/%Y} - Pendiente {_money(payable.saldo_pendiente)}"
         ),
     }
@@ -1067,9 +1067,9 @@ def bank_initial_balances_create(request):
 def cuentas_por_pagar_list(request):
     _require_treasury_admin(request)
     form = PayableFilterForm(request.GET or None)
-    queryset = CuentaPorPagar.objects.select_related("proveedor", "categoria", "categoria__rubro_operativo").order_by(
-        "fecha_vencimiento", "proveedor__razon_social"
-    )
+    queryset = CuentaPorPagar.objects.select_related(
+        "proveedor", "categoria", "categoria__rubro_operativo", "sucursal", "caja_origen"
+    ).order_by("fecha_vencimiento", "proveedor__razon_social")
     empresa_ids = _get_empresa_ids(request)
     if empresa_ids is not None:
         if not empresa_ids:
@@ -1128,6 +1128,8 @@ def cuentas_por_pagar_detail(request, payable_id: int):
             "categoria__rubro_operativo",
             "creado_por",
             "anulada_por",
+            "sucursal",
+            "caja_origen",
         ),
         pk=payable_id,
     )
@@ -1135,6 +1137,8 @@ def cuentas_por_pagar_detail(request, payable_id: int):
     badge, badge_class = _payable_badge(payable)
     fields = [
         {"label": "Proveedor", "value": payable.proveedor.razon_social},
+        {"label": "Sucursal", "value": payable.sucursal_label},
+        {"label": "Origen", "value": payable.origen_label},
         {"label": "Categoria", "value": payable.categoria.nombre},
         {"label": "Rubro operativo", "value": payable.categoria.rubro_label},
         {"label": "Concepto", "value": payable.concepto},
@@ -2330,7 +2334,9 @@ def bank_movements_pay_debt(request, pk):
         messages.error(request, "Esta transferencia ya esta asignada por completo.")
         return redirect(detalle_url)
 
-    candidatas = open_payables_queryset(empresa_ids).select_related("proveedor", "categoria")
+    candidatas = open_payables_queryset(empresa_ids).select_related(
+        "proveedor", "categoria", "sucursal", "caja_origen"
+    )
     # Que no se ofrezcan facturas de la otra empresa: la cuenta bancaria manda.
     # En vista consolidada, `empresa_ids` trae las dos y sin este corte se podria
     # pagar una factura de ARMADI con una transferencia de MAPOGO. El servicio lo

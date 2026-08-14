@@ -75,7 +75,8 @@
             <div class="row">
               <div>
                 <strong>{{ fila.payable.proveedor.razon_social }}</strong>
-                <div class="muted mt-8">{{ fila.payable.concepto }}</div>
+                <span class="badge-muted">{{ fila.payable.sucursal_label }}</span>
+                <div class="muted mt-8">{{ fila.payable.concepto }} · {{ fila.payable.origen_label }}</div>
                 <div class="muted mt-8">
                   Vence {{ fila.payable.fecha_vencimiento|date:"d/m/Y" }} ·
                   Total {{ fila.payable.importe_total|money }} ·
