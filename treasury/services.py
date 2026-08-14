@@ -723,6 +723,97 @@ def _referencia_de_linea(referencia: str, indice: int, total: int) -> str:
     return f"{referencia[: 80 - len(sufijo)]}{sufijo}"
 
 
+def deudas_posiblemente_duplicadas(
+    *,
+    proveedor,
+    sucursal,
+    fecha_emision,
+    importe,
+    referencia_comprobante="",
+    excluir_pk=None,
+    limite: int = 5,
+):
+    """Deudas vivas que parecen la misma factura que se esta por cargar.
+
+    La clave la definio tesoreria: mismo proveedor, misma sucursal, misma fecha
+    de factura y mismo importe. NO entra el numero de comprobante a proposito.
+    Dos motivos, los dos del negocio: el 82% de las deudas abiertas no lo tiene
+    cargado, y ademas algunos proveedores repiten numeracion cuando usan
+    remiteros, asi que ni siquiera identifica.
+
+    Es solo lectura y devuelve un aviso, nunca bloquea: dos facturas reales
+    pueden coincidir en las cuatro cosas y hay que poder cargarlas igual.
+    """
+    if not (proveedor and fecha_emision and importe):
+        return CuentaPorPagar.objects.none()
+    queryset = (
+        CuentaPorPagar.objects.filter(
+            proveedor=proveedor,
+            fecha_emision=fecha_emision,
+            importe_total=importe,
+        )
+        .exclude(estado=CuentaPorPagar.Estado.ANULADA)
+        .select_related("sucursal", "caja_origen", "creado_por")
+    )
+    # Una deuda sin sucursal solo se parece a otra sin sucursal: si no, las dos
+    # legacy sin imputar se marcarian contra cualquier sucursal.
+    if sucursal is None:
+        queryset = queryset.filter(sucursal__isnull=True)
+    else:
+        queryset = queryset.filter(sucursal=sucursal)
+    if excluir_pk:
+        queryset = queryset.exclude(pk=excluir_pk)
+    # Si la que se esta cargando trae comprobante, las que tengan otro numero
+    # cargado son otra factura y no hay que preguntar por ellas. Las que no
+    # tienen numero siguen entrando: son las que se duplican en la practica.
+    referencia = (referencia_comprobante or "").strip()
+    if referencia:
+        queryset = queryset.filter(
+            Q(referencia_comprobante="") | Q(referencia_comprobante=referencia)
+        )
+    return queryset.order_by("-creado_en")[:limite]
+
+
+def lineas_que_parecen_la_misma_factura(payables):
+    """Agrupa, entre las facturas elegidas para UN pago, las que parecen la misma.
+
+    Misma clave que el aviso de carga: proveedor + sucursal + fecha de factura +
+    importe. Devuelve solo los grupos con mas de una.
+
+    Existe por un caso concreto: los 10 pagos dobles de produccion se hicieron
+    todos dentro de un mismo lote, tildando las dos copias en la misma
+    operacion; las referencias quedaron como "sistema (6/26)" y "sistema (8/26)".
+    La pantalla tenia la informacion para avisar y no avisaba.
+    """
+    grupos: dict[tuple, list] = {}
+    for payable in payables:
+        clave = (
+            payable.proveedor_id,
+            payable.sucursal_id,
+            payable.fecha_emision,
+            payable.importe_total,
+        )
+        grupos.setdefault(clave, []).append(payable)
+    return [
+        lineas
+        for lineas in grupos.values()
+        if len(lineas) > 1 and not _comprobantes_las_distinguen(lineas)
+    ]
+
+
+def _comprobantes_las_distinguen(payables) -> bool:
+    """True si los numeros de comprobante prueban que son facturas distintas.
+
+    El comprobante no se usa para DETECTAR el duplicado (el 82% de las deudas
+    abiertas no lo tiene, y hay proveedores que repiten numeracion con
+    remiteros), pero cuando esta cargado en todas y ademas es distinto, no hay
+    nada que preguntar: dentro de un mismo proveedor el numero es unico por
+    constraint, asi que son dos facturas de verdad.
+    """
+    referencias = [(payable.referencia_comprobante or "").strip() for payable in payables]
+    return all(referencias) and len(set(referencias)) == len(referencias)
+
+
 @transaction.atomic
 def register_payment(
     *,

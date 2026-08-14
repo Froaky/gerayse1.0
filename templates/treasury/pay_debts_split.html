@@ -108,7 +108,7 @@
               </div>
               <div class="stack" style="gap:6px; min-width:220px;">
                 <label class="field" style="display:flex; align-items:center; gap:8px;">
-                  <input type="checkbox" class="checkbox" name="payable_id" value="{{ fila.payable.pk|unlocalize }}">
+                  <input type="checkbox" class="checkbox" name="payable_id" value="{{ fila.payable.pk|unlocalize }}"{% if fila.elegida %} checked{% endif %}>
                   <span>Pagar esta factura</span>
                 </label>
                 <label class="field">
@@ -130,6 +130,14 @@
           </p>
         {% endfor %}
       </div>
+      {% if pedir_confirmacion_duplicado %}
+        <div class="panel panel--warning mt-16">
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+            <input type="checkbox" class="checkbox" name="confirmar_duplicado" value="1">
+            <span>Son facturas distintas, pagar las dos igual</span>
+          </label>
+        </div>
+      {% endif %}
       {% if facturas %}
         <div class="row mt-16">
           <span class="muted">

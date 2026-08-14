@@ -455,6 +455,9 @@ class GastoComoDeudaForm(AltaIdempotenteForm):
         label="Observacion",
         widget=forms.TextInput(attrs={"placeholder": "Detalle opcional"}),
     )
+    # Se prende solo cuando la vista ya mostro el aviso de posible duplicado.
+    # El segundo envio es el "guardar de todos modos" que pidio tesoreria.
+    confirmar_duplicado = forms.BooleanField(required=False, widget=forms.HiddenInput)
 
     def __init__(self, *args, sucursales=None, **kwargs):
         super().__init__(*args, **kwargs)

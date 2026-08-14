@@ -205,6 +205,21 @@ def _safe_next_url(request, default_url: str) -> str:
     return default_url
 
 
+def _texto_aviso_duplicado(deudas) -> str:
+    """Aviso de posible duplicado, con los datos que sirven para reconocerlo.
+
+    Va la caja de origen porque es lo unico que separa dos facturas del mismo
+    proveedor, sucursal, fecha e importe.
+    """
+    detalle = "; ".join(f"#{deuda.pk} {deuda.concepto} ({deuda.origen_label})" for deuda in deudas)
+    cuantas = "una deuda igual" if len(deudas) == 1 else f"{len(deudas)} deudas iguales"
+    return (
+        f"Ojo: ya hay {cuantas} de este proveedor, con la misma sucursal, la misma fecha "
+        f"de factura y el mismo importe: {detalle}. Si igual corresponde cargarla, "
+        "guarda de nuevo y se registra."
+    )
+
+
 def _render_form(request, full_template: str, partial_template: str, context: dict, status: int = 200):
     template = partial_template if _is_htmx(request) else full_template
     return render(request, template, context, status=status)
@@ -1534,31 +1549,57 @@ def register_box_expense_debt_view(request, box_id: int):
         initial={"fecha_factura": box.fecha_operativa},
         sucursales=sucursales_deuda,
     )
+    aviso_duplicado = ""
     if request.method == "POST" and form.is_valid():
-        try:
-            register_box_expense_debt(
-                caja=box,
+        from treasury.services import deudas_posiblemente_duplicadas
+
+        # La deuda se imputa a la sucursal elegida o, si no hay selector, a la
+        # de la caja. El aviso tiene que mirar esa, no el campo del formulario.
+        sucursal_destino = form.cleaned_data.get("sucursal") or box.sucursal
+        posibles = list(
+            deudas_posiblemente_duplicadas(
                 proveedor=form.cleaned_data["proveedor"],
-                rubro=form.cleaned_data["rubro"],
-                monto=form.cleaned_data["monto"],
-                concepto=form.cleaned_data["concepto"],
-                fecha_factura=form.cleaned_data["fecha_factura"],
-                sucursal=form.cleaned_data.get("sucursal"),
-                referencia_comprobante=form.cleaned_data["referencia_comprobante"],
-                observacion=form.cleaned_data["observacion"],
-                permitir_caja_cerrada=puede_caja_cerrada,
-                actor=request.user,
-                token_alta=form.creation_token(),
+                sucursal=sucursal_destino,
+                fecha_emision=form.cleaned_data["fecha_factura"],
+                importe=form.cleaned_data["monto"],
+                referencia_comprobante=form.cleaned_data.get("referencia_comprobante", ""),
             )
-        except (ValidationError, IntegrityError) as error:
-            _handle_operation_error(form, error, "No se pudo registrar el gasto como deuda.")
+        )
+        if posibles and not form.cleaned_data.get("confirmar_duplicado"):
+            aviso_duplicado = _texto_aviso_duplicado(posibles)
+            # Se vuelve a ligar el formulario con el flag puesto: el proximo
+            # envio es el "guardar de todos modos" y entra sin volver a avisar.
+            # Se conserva el mismo token_alta, asi que el doble click sigue
+            # cubierto.
+            datos = request.POST.copy()
+            datos["confirmar_duplicado"] = "1"
+            form = GastoComoDeudaForm(datos, sucursales=sucursales_deuda)
+            form.is_valid()
         else:
-            messages.success(
-                request,
-                "Gasto registrado como deuda pendiente. No salió efectivo de la caja; tesorería lo paga después.",
-            )
-            url = f"{reverse('cashops:dashboard')}?scope=box&box={box.pk}"
-            return _hx_redirect(url) if _is_htmx(request) else redirect(url)
+            try:
+                register_box_expense_debt(
+                    caja=box,
+                    proveedor=form.cleaned_data["proveedor"],
+                    rubro=form.cleaned_data["rubro"],
+                    monto=form.cleaned_data["monto"],
+                    concepto=form.cleaned_data["concepto"],
+                    fecha_factura=form.cleaned_data["fecha_factura"],
+                    sucursal=form.cleaned_data.get("sucursal"),
+                    referencia_comprobante=form.cleaned_data["referencia_comprobante"],
+                    observacion=form.cleaned_data["observacion"],
+                    permitir_caja_cerrada=puede_caja_cerrada,
+                    actor=request.user,
+                    token_alta=form.creation_token(),
+                )
+            except (ValidationError, IntegrityError) as error:
+                _handle_operation_error(form, error, "No se pudo registrar el gasto como deuda.")
+            else:
+                messages.success(
+                    request,
+                    "Gasto registrado como deuda pendiente. No salió efectivo de la caja; tesorería lo paga después.",
+                )
+                url = f"{reverse('cashops:dashboard')}?scope=box&box={box.pk}"
+                return _hx_redirect(url) if _is_htmx(request) else redirect(url)
 
     if box.estado != Caja.Estado.ABIERTA:
         subtitle = (
@@ -1576,7 +1617,10 @@ def register_box_expense_debt_view(request, box_id: int):
             "title": "Gasto como deuda",
             "subtitle": subtitle,
             "form": form,
-            "submit_label": "Registrar gasto como deuda",
+            "aviso": aviso_duplicado,
+            "submit_label": (
+                "Guardar de todos modos" if aviso_duplicado else "Registrar gasto como deuda"
+            ),
             "back_url": f"{reverse('cashops:dashboard')}?scope=box&box={box.pk}",
             "form_action": reverse("cashops:box_expense_debt", args=[box.pk]),
         },

@@ -15,6 +15,13 @@
     </ul>
   {% endif %}
 
+  {% comment %} Aviso, no error: el formulario es valido y se puede guardar igual.
+     Va adentro de la tarjeta porque con HTMX se reemplaza solo esto, asi que un
+     mensaje de Django de afuera no se veria. {% endcomment %}
+  {% if aviso %}
+    <div class="panel panel--warning mt-16">{{ aviso }}</div>
+  {% endif %}
+
   {% comment %} hx-sync descarta el segundo envio mientras el primero viaja (doble click) y
      hx-disabled-elt apaga el boton para que se vea que esta procesando. La
      garantia real contra el duplicado es el token oculto + el servicio. {% endcomment %}

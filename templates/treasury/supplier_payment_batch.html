@@ -19,6 +19,18 @@
       </ul>
     {% endif %}
 
+    {% comment %} El tilde de "son distintas" aparece solo cuando hay dos lineas que
+       parecen la misma factura. Mostrarlo siempre invitaria a tildarlo de rutina,
+       que es justo lo que hay que evitar. {% endcomment %}
+    {% if form.duplicados_detectados %}
+      <div class="panel panel--warning mt-12">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+          {{ form.confirmar_duplicado }}
+          <span>{{ form.confirmar_duplicado.label }}</span>
+        </label>
+      </div>
+    {% endif %}
+
     <form method="post" action="{{ form_action }}" hx-post="{{ form_action }}" hx-target="#form-card" hx-swap="outerHTML" hx-sync="this:drop" hx-disabled-elt="find button" class="stack mt-16">
       {% csrf_token %}
 

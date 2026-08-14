@@ -1188,10 +1188,20 @@ class SupplierPaymentBatchForm(AltaIdempotenteMixin, TreasuryStyledFormMixin, fo
         max_length=255,
         widget=forms.Textarea(attrs={"placeholder": "Observaciones del pago"}),
     )
+    # Solo se muestra cuando el lote trae dos lineas que parecen la misma
+    # factura. Se tilda a mano para cobrarlas las dos.
+    confirmar_duplicado = forms.BooleanField(
+        required=False,
+        label="Son facturas distintas, pagar las dos igual",
+        widget=forms.CheckboxInput(attrs={"class": "checkbox"}),
+    )
 
     def __init__(self, *args, proveedor=None, empresa_ids=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.proveedor = proveedor
+        # Lo llena clean(); el template muestra el tilde de confirmacion solo si
+        # hay algo que confirmar.
+        self.duplicados_detectados = []
         self.payables = list(
             open_payables_queryset(empresa_ids).filter(proveedor=proveedor)
         ) if proveedor else []
@@ -1259,6 +1269,22 @@ class SupplierPaymentBatchForm(AltaIdempotenteMixin, TreasuryStyledFormMixin, fo
         seleccionadas = [p for p in self.payables if cleaned_data.get(f"pagar_{p.pk}")]
         if not seleccionadas:
             raise forms.ValidationError("Tildá al menos una factura para pagar.")
+
+        # Los 10 pagos dobles de produccion salieron asi: dos lineas iguales
+        # tildadas en el mismo lote. Se corta salvo que se confirme aparte.
+        from .services import lineas_que_parecen_la_misma_factura
+
+        self.duplicados_detectados = lineas_que_parecen_la_misma_factura(seleccionadas)
+        if self.duplicados_detectados and not cleaned_data.get("confirmar_duplicado"):
+            detalle = "; ".join(
+                " y ".join(f"#{p.pk} {p.concepto}" for p in lineas)
+                for lineas in self.duplicados_detectados
+            )
+            raise forms.ValidationError(
+                f"Estas tildando facturas que parecen la misma: {detalle}. Misma sucursal, "
+                "misma fecha de factura y mismo importe. Dejá una sola tildada, o marcá "
+                "«Son facturas distintas» si de verdad son dos."
+            )
 
         for payable in seleccionadas:
             campo = f"monto_{payable.pk}"

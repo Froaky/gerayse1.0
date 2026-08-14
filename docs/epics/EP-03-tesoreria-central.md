@@ -227,6 +227,40 @@ Criterios:
 - un lapso invertido avisa y no filtra, en vez de devolver cero facturas
 - una fecha invalida en la URL no rompe la pantalla
 
+### [x] US-3.15 Aviso de posible duplicado al cargar la deuda
+
+Como cajero
+Quiero que el sistema me avise si esa factura ya parece estar cargada
+Para no cargarla dos veces sin darme cuenta
+
+Criterios:
+- se compara proveedor + sucursal + fecha de factura + importe
+- avisa y DEJA GUARDAR IGUAL: el segundo envio es "Guardar de todos modos".
+  Dos facturas reales pueden coincidir en las cuatro cosas
+- el aviso nombra la caja de origen de la que ya existe, que es lo unico que
+  permite reconocerla
+- si las dos tienen numero de comprobante cargado y es distinto, no avisa: ahi
+  no hay duda, dentro de un proveedor el numero es unico por constraint
+- mira la sucursal a la que se va a imputar la deuda, no la de la caja
+- una deuda sin sucursal solo se compara contra otras sin sucursal
+
+### [x] US-3.16 No pagar dos veces la misma factura en un lote
+
+Como tesorera
+Quiero que no me deje tildar dos lineas que son la misma factura
+Para no pagarle dos veces al proveedor
+
+Contexto real: los 10 pagos dobles de produccion ($2.013.126,48) salieron todos
+dentro de un mismo lote, con referencias como "sistema (6/26)" y
+"sistema (8/26)". La pantalla tenia la informacion para avisar y no avisaba.
+
+Criterios:
+- aplica en "pagar por proveedor" y al repartir una transferencia
+- misma clave que el aviso de carga, y la misma excepcion por comprobante
+- corta el envio y pide un tilde aparte ("Son facturas distintas"), no bloquea
+  para siempre
+- al volver con el aviso, las facturas ya tildadas siguen tildadas
+
 ## Orden tecnico sugerido
 
 1. proveedores

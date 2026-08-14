@@ -2252,3 +2252,45 @@ cadena PROPIA aunque este abierta. Es parte del mismo slice pendiente por empres
 - Pendiente: la pantalla "pagar por proveedor" (paso 2) todavia no tiene filtro
   de sucursal ni de fechas ni subtotal. Es el mismo tratamiento y conviene
   hacerlo, pero se dejo fuera de este slice.
+
+## 2026-08-14 - Aviso de duplicado al cargar y corte al pagar (US-3.15 y US-3.16)
+
+- Los dos slices que atacan la causa de los 19 duplicados y los 10 pagos dobles.
+- La clave de deteccion la definio tesoreria: proveedor + sucursal + fecha de
+  factura + importe. Vive en un solo lugar (`treasury/services.py`) y la usan
+  las tres pantallas: carga en caja, pago por proveedor y reparto de
+  transferencia.
+- Al CARGAR: avisa y deja guardar igual. El segundo envio es "Guardar de todos
+  modos". Textual de la usuaria: "que largue el aviso y un cartel 'continua de
+  todos modos o guardar de todos modos' pero deje continuar la carga". Dos
+  facturas reales pueden coincidir en las cuatro cosas.
+- Al PAGAR: corta el envio y pide un tilde aparte. Tambien textual: "si
+  realmente esta duplicado el pago que te deje elegir solo uno". Mas duro que en
+  la carga a proposito: pagar dos veces cuesta plata, cargar dos veces no.
+- Excepcion que aparecio corriendo la suite: un test existente cargaba tres
+  facturas del mismo proveedor, sucursal, fecha e importe, distinguidas solo por
+  comprobante (F-0001/2/3), y la regla las marcaba como duplicadas. Es un falso
+  positivo real: si TODAS tienen comprobante cargado y es DISTINTO, son facturas
+  distintas y no hay nada que preguntar. Dentro de un proveedor el numero es
+  unico por el constraint `unique_payable_reference_by_supplier`. Esa excepcion
+  ahora es parte de la regla, en `_comprobantes_las_distinguen`.
+- Ojo con la sutileza: el comprobante NO se usa para detectar (el 82% no lo
+  tiene y hay proveedores que repiten numeracion con remiteros), pero cuando
+  esta y difiere, DESCARTA. Son dos usos distintos del mismo dato.
+- El aviso va dentro de la tarjeta del formulario, no como mensaje de Django:
+  con HTMX se reemplaza solo `#form-card`, asi que un mensaje de afuera no se
+  veria. Se agrego un bloque `aviso` a `cashops/partials/form_card.html`.
+- Al volver con el aviso en la pantalla de reparto, las facturas ya tildadas
+  siguen tildadas. Sin eso habria que marcar todo de nuevo para poder confirmar
+  y nadie lo haria.
+- Archivos: `treasury/services.py`, `treasury/forms.py`, `treasury/views.py`,
+  `cashops/forms.py`, `cashops/views.py`,
+  `templates/cashops/partials/form_card.html`,
+  `templates/treasury/supplier_payment_batch.html`,
+  `templates/treasury/pay_debts_split.html`,
+  `cashops/tests_aviso_duplicado.py` (nuevo, 14 tests),
+  `treasury/tests_pago_duplicado.py` (nuevo, 14 tests),
+  `docs/epics/EP-03-tesoreria-central.md`.
+- Tests: suite completa 649 OK (4 skips). Sin migraciones. `compileall` OK.
+- Pendiente: falta el aviso de doble conteo en el egreso administrativo y el
+  aviso de pago parcial cuando el importe sugerido es menor al saldo.

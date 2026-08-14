@@ -107,6 +107,7 @@ from .services import (
     formato_money,
     importe_asignado_del_movimiento,
     importe_sin_asignar_del_movimiento,
+    lineas_que_parecen_la_misma_factura,
     pay_debt_from_bank_movement,
     pay_debts_from_bank_movement,
     is_central_cash_movement_annullable,
@@ -2399,6 +2400,7 @@ def bank_movements_pay_debt(request, pk):
         if valor
     }
 
+    pedir_confirmacion_duplicado = False
     if request.method == "POST":
         asignaciones = []
         errores = []
@@ -2421,6 +2423,21 @@ def bank_movements_pay_debt(request, pk):
 
         if not asignaciones and not errores:
             errores.append("Elegi al menos una factura.")
+
+        # Mismo corte que en el pago por proveedor: los 10 pagos dobles de
+        # produccion salieron de tildar las dos copias en la misma operacion.
+        duplicados = lineas_que_parecen_la_misma_factura([f for f, _ in asignaciones])
+        if duplicados and request.POST.get("confirmar_duplicado") != "1":
+            detalle = "; ".join(
+                " y ".join(f"#{p.pk} {p.concepto}" for p in lineas) for lineas in duplicados
+            )
+            errores.append(
+                f"Estas marcando facturas que parecen la misma: {detalle}. Misma sucursal, "
+                "misma fecha de factura y mismo importe. Desmarca una, o tilda «Son facturas "
+                "distintas» y volve a enviar."
+            )
+            pedir_confirmacion_duplicado = True
+
         if not errores:
             try:
                 pagos = pay_debts_from_bank_movement(
@@ -2443,10 +2460,14 @@ def bank_movements_pay_debt(request, pk):
         for mensaje in errores:
             messages.error(request, mensaje)
 
+    # Si el envio vuelve con error, las tildadas siguen tildadas: si no, para
+    # confirmar un duplicado habria que marcar todo de nuevo.
+    ya_elegidas = set(request.POST.getlist("payable_id")) if request.method == "POST" else set()
     facturas = [
         {
             "payable": factura,
             "sugerido": min(factura.saldo_pendiente, sin_asignar),
+            "elegida": str(factura.pk) in ya_elegidas,
         }
         for factura in candidatas.order_by(
             "proveedor__razon_social", "sucursal__codigo", "fecha_emision", "pk"
@@ -2463,6 +2484,7 @@ def bank_movements_pay_debt(request, pk):
             "ya_asignado": importe_asignado_del_movimiento(movement),
             "facturas": facturas,
             "total_filtrado": total_filtrado,
+            "pedir_confirmacion_duplicado": pedir_confirmacion_duplicado,
             "proveedores": proveedores,
             "proveedor_elegido": proveedor_elegido,
             "sucursales": sucursales,
