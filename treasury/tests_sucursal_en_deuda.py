@@ -1,4 +1,8 @@
-"""US-4.12: que la sucursal y la caja de origen se vean en las pantallas de deuda.
+"""US-3.13 y US-3.14: encontrar la factura correcta al pagar.
+
+US-3.13 pone sucursal y caja de origen en las cuatro pantallas de deuda.
+US-3.14 agrega a la pantalla de reparto los filtros con los que tesoreria
+realmente trabaja: proveedor, sucursal y lapso de fechas, con el subtotal.
 
 Caso real de produccion: hay 233 deudas abiertas donde el mismo proveedor tiene
 varias facturas por el mismo importe en sucursales distintas. El peor caso es un
@@ -80,19 +84,37 @@ class SucursalEnDeudaFixture(TestCase):
             estado=Caja.Estado.CERRADA,
         )
 
-    def _factura(self, sucursal=None, importe="27500.00", caja=None, concepto="huevos"):
+    def _factura(
+        self, sucursal=None, importe="27500.00", caja=None, concepto="huevos", fecha=None
+    ):
+        fecha = fecha or self.hoy
         return CuentaPorPagar.objects.create(
             proveedor=self.proveedor,
             categoria=self.categoria,
             concepto=concepto,
-            fecha_emision=self.hoy,
-            fecha_vencimiento=self.hoy,
-            periodo_referencia=self.hoy.replace(day=1),
+            fecha_emision=fecha,
+            fecha_vencimiento=fecha,
+            periodo_referencia=fecha.replace(day=1),
             importe_total=Decimal(importe),
             saldo_pendiente=Decimal(importe),
             sucursal=sucursal,
             caja_origen=caja,
             creado_por=self.admin,
+        )
+
+    def _transferencia(self, monto="500000.00"):
+        return create_bank_movement(
+            cuenta_bancaria=self.cuenta,
+            tipo=MovimientoBancario.Tipo.DEBITO,
+            fecha=self.hoy,
+            monto=Decimal(monto),
+            concepto="Pago semanal cuenta corriente",
+            clase=MovimientoBancario.Clase.TRANSFERENCIA_TERCEROS,
+            proveedor=self.proveedor,
+            rubro_operativo=self.rubro,
+            sucursal_gasto=self.suc_a,
+            periodo_pago=self.hoy.replace(day=1),
+            actor=self.admin,
         )
 
     def _dos_facturas_iguales_de_distinta_sucursal(self):
@@ -186,19 +208,7 @@ class SucursalEnLasPantallasTests(SucursalEnDeudaFixture):
 
     def test_repartir_transferencia_distingue_las_dos_facturas(self):
         self._dos_facturas_iguales_de_distinta_sucursal()
-        movimiento = create_bank_movement(
-            cuenta_bancaria=self.cuenta,
-            tipo=MovimientoBancario.Tipo.DEBITO,
-            fecha=self.hoy,
-            monto=Decimal("55000.00"),
-            concepto="Pago semanal cuenta corriente",
-            clase=MovimientoBancario.Clase.TRANSFERENCIA_TERCEROS,
-            proveedor=self.proveedor,
-            rubro_operativo=self.rubro,
-            sucursal_gasto=self.suc_a,
-            periodo_pago=self.hoy.replace(day=1),
-            actor=self.admin,
-        )
+        movimiento = self._transferencia("55000.00")
 
         response = self.client.get(
             reverse("treasury:bank_movements_pay_debt", args=[movimiento.pk])
@@ -225,3 +235,137 @@ class SucursalEnLasPantallasTests(SucursalEnDeudaFixture):
             self.client.get(url)
 
         self.assertEqual(len(con_siete), len(con_una))
+
+
+class FiltrosDeCuentaCorrienteTests(SucursalEnDeudaFixture):
+    """US-3.14: tesoreria paga la cuenta corriente de una semana de un proveedor
+    en una sucursal, y controla el subtotal contra su planilla. La pantalla
+    tenia un solo filtro por proveedor y listaba las 1.292 deudas abiertas."""
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(self.admin)
+        sesion = self.client.session
+        sesion["empresa_ids"] = [self.empresa.pk]
+        sesion.save()
+        self.movimiento = self._transferencia("900000.00")
+        self.url = reverse("treasury:bank_movements_pay_debt", args=[self.movimiento.pk])
+        self.lunes = self.hoy - timezone.timedelta(days=7)
+        self.miercoles = self.hoy - timezone.timedelta(days=5)
+        self.viejo = self.hoy - timezone.timedelta(days=40)
+        # Una semana de cuenta corriente en dos sucursales, mas una factura
+        # vieja que no deberia entrar cuando se filtra por lapso.
+        self.a_lunes = self._factura(
+            sucursal=self.suc_a, importe="10000.00", fecha=self.lunes, concepto="lunes A"
+        )
+        self.a_miercoles = self._factura(
+            sucursal=self.suc_a, importe="20000.00", fecha=self.miercoles, concepto="miercoles A"
+        )
+        self.b_lunes = self._factura(
+            sucursal=self.suc_b, importe="30000.00", fecha=self.lunes, concepto="lunes B"
+        )
+        self.a_vieja = self._factura(
+            sucursal=self.suc_a, importe="99000.00", fecha=self.viejo, concepto="vieja A"
+        )
+
+    def _conceptos(self, response):
+        html = response.content.decode()
+        return {
+            factura.concepto
+            for factura in (self.a_lunes, self.a_miercoles, self.b_lunes, self.a_vieja)
+            if factura.concepto in html
+        }
+
+    def test_sin_filtro_lista_todas(self):
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            self._conceptos(response), {"lunes A", "miercoles A", "lunes B", "vieja A"}
+        )
+
+    def test_filtra_por_sucursal(self):
+        response = self.client.get(self.url, {"sucursal": self.suc_b.pk})
+
+        self.assertEqual(self._conceptos(response), {"lunes B"})
+
+    def test_filtra_por_lapso_de_fechas_de_factura(self):
+        response = self.client.get(
+            self.url,
+            {"desde": self.lunes.isoformat(), "hasta": self.miercoles.isoformat()},
+        )
+
+        # La vieja queda afuera; las tres de la semana entran.
+        self.assertEqual(self._conceptos(response), {"lunes A", "miercoles A", "lunes B"})
+
+    def test_combina_sucursal_y_lapso(self):
+        response = self.client.get(
+            self.url,
+            {
+                "sucursal": self.suc_a.pk,
+                "desde": self.lunes.isoformat(),
+                "hasta": self.miercoles.isoformat(),
+            },
+        )
+
+        self.assertEqual(self._conceptos(response), {"lunes A", "miercoles A"})
+
+    def test_muestra_el_subtotal_de_lo_filtrado(self):
+        """Es el numero que se compara contra la fila de la planilla."""
+        response = self.client.get(
+            self.url,
+            {
+                "sucursal": self.suc_a.pk,
+                "desde": self.lunes.isoformat(),
+                "hasta": self.miercoles.isoformat(),
+            },
+        )
+
+        self.assertEqual(response.context["total_filtrado"], Decimal("30000.00"))
+        self.assertContains(response, "2 facturas")
+
+    def test_un_lapso_invertido_avisa_y_no_filtra(self):
+        response = self.client.get(
+            self.url,
+            {"desde": self.hoy.isoformat(), "hasta": self.viejo.isoformat()},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        mensajes = [str(m) for m in response.context["messages"]]
+        self.assertIn("El desde no puede ser posterior al hasta.", mensajes)
+        # Sin filtro aplicado se siguen viendo todas, no cero.
+        self.assertEqual(
+            self._conceptos(response), {"lunes A", "miercoles A", "lunes B", "vieja A"}
+        )
+
+    def test_una_fecha_basura_no_rompe_la_pantalla(self):
+        response = self.client.get(self.url, {"desde": "no-es-fecha"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            self._conceptos(response), {"lunes A", "miercoles A", "lunes B", "vieja A"}
+        )
+
+    def test_el_form_conserva_los_filtros_al_enviar(self):
+        response = self.client.get(
+            self.url, {"sucursal": self.suc_b.pk, "desde": self.lunes.isoformat()}
+        )
+
+        # Si el POST perdiera los filtros, un error de validacion devolveria la
+        # pantalla entera y habria que filtrar de nuevo.
+        self.assertContains(response, f"sucursal={self.suc_b.pk}")
+        self.assertContains(response, f"desde={self.lunes.isoformat()}")
+
+    def test_se_puede_pagar_con_el_filtro_puesto(self):
+        response = self.client.post(
+            f"{self.url}?sucursal={self.suc_a.pk}",
+            {
+                "payable_id": [str(self.a_lunes.pk)],
+                f"monto_{self.a_lunes.pk}": "10000.00",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.a_lunes.refresh_from_db()
+        self.assertEqual(self.a_lunes.saldo_pendiente, Decimal("0.00"))
+        self.assertEqual(self.a_lunes.estado, CuentaPorPagar.Estado.PAGADA)

@@ -34,9 +34,9 @@
   </section>
 
   <section class="card mt-16">
-    <form method="get" class="row">
-      <div class="field" style="flex:1;">
-        <label for="filtro-proveedor">Filtrar por proveedor</label>
+    <form method="get" class="summary-grid">
+      <div class="field">
+        <label for="filtro-proveedor">Proveedor</label>
         <select class="input select" id="filtro-proveedor" name="proveedor">
           <option value="">Todos los proveedores</option>
           {% for proveedor in proveedores %}
@@ -44,30 +44,53 @@
           {% endfor %}
         </select>
       </div>
-      <div class="list-actions">
-        <button class="button" type="submit">Filtrar</button>
-        {% if proveedor_elegido %}
-          <a class="button-secondary" href="{% url 'treasury:bank_movements_pay_debt' movement.pk %}">Ver todas</a>
-        {% endif %}
+      <div class="field">
+        <label for="filtro-sucursal">Sucursal</label>
+        <select class="input select" id="filtro-sucursal" name="sucursal">
+          <option value="">Todas las sucursales</option>
+          {% for sucursal in sucursales %}
+            <option value="{{ sucursal.pk|unlocalize }}" {% if sucursal_elegida.pk == sucursal.pk %}selected{% endif %}>{{ sucursal.codigo }} - {{ sucursal.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="filtro-desde">Facturas desde</label>
+        <input class="input" type="date" id="filtro-desde" name="desde" value="{{ desde|date:'Y-m-d' }}">
+      </div>
+      <div class="field">
+        <label for="filtro-hasta">Hasta</label>
+        <input class="input" type="date" id="filtro-hasta" name="hasta" value="{{ hasta|date:'Y-m-d' }}">
+      </div>
+      <div class="row" style="grid-column: 1 / -1;">
+        <span class="muted">La fecha es la de la factura, la misma que anotas en la planilla.</span>
+        <div class="list-actions">
+          <button class="button" type="submit">Filtrar</button>
+          {% if hay_filtro %}
+            <a class="button-secondary" href="{% url 'treasury:bank_movements_pay_debt' movement.pk %}">Ver todas</a>
+          {% endif %}
+        </div>
       </div>
     </form>
   </section>
 
-  <form method="post" action="{% url 'treasury:bank_movements_pay_debt' movement.pk %}?{% if proveedor_elegido %}proveedor={{ proveedor_elegido.pk|unlocalize }}{% endif %}">
+  <form method="post" action="{% url 'treasury:bank_movements_pay_debt' movement.pk %}?{{ filtros_qs }}">
     {% csrf_token %}
     <section class="card mt-16">
       <div class="row">
         <div>
           <h2>Facturas impagas</h2>
           <p class="muted">
-            {% if proveedor_elegido %}
-              Solo las de {{ proveedor_elegido.razon_social }}.
+            {% if hay_filtro %}
+              Solo las que entran en el filtro.
             {% else %}
               De todos los proveedores. Podes mezclar facturas de proveedores distintos en el mismo reparto.
             {% endif %}
           </p>
         </div>
-        <span class="badge">{{ facturas|length }}</span>
+        <div class="stack" style="text-align:right; gap:2px;">
+          <strong data-total-filtrado>{{ total_filtrado|money }}</strong>
+          <small class="muted">{{ facturas|length }} factura{{ facturas|length|pluralize:"s" }} · pendiente total</small>
+        </div>
       </div>
       <div class="list mt-16">
         {% for fila in facturas %}
@@ -99,8 +122,8 @@
           </div>
         {% empty %}
           <p class="muted">
-            {% if proveedor_elegido %}
-              {{ proveedor_elegido.razon_social }} no tiene facturas impagas.
+            {% if hay_filtro %}
+              No hay facturas impagas con ese filtro. Probá ampliar el lapso de fechas o sacar la sucursal.
             {% else %}
               No hay facturas impagas para asignar.
             {% endif %}

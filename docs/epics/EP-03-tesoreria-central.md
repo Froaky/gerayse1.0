@@ -205,6 +205,28 @@ que las cuatro pantallas digan lo mismo. Es el mismo patron que ya usaban
 `select_related("sucursal", "caja_origen")` en los cuatro querysets y con un test
 que compara la cantidad de consultas con 1 y con 7 deudas.
 
+### [x] US-3.14 Filtrar la cuenta corriente por proveedor, sucursal y lapso
+
+Como tesorera
+Quiero filtrar las facturas impagas por proveedor, sucursal y rango de fechas y
+ver el subtotal de lo filtrado
+Para pagar la cuenta corriente de la semana y cuadrarla contra mi planilla
+
+Contexto real: tesoreria no paga facturas sueltas. Recibe una planilla con una
+fila por proveedor / sucursal / fecha y un total, y paga la cuenta corriente de
+una semana. La pantalla de reparto tenia un unico filtro por proveedor y listaba
+las 1.292 deudas abiertas en una sola pagina.
+
+Criterios:
+- filtros de proveedor, sucursal y lapso de fechas, combinables entre si
+- el lapso corre sobre la fecha de factura, que es la que anota tesoreria
+- se muestra el subtotal pendiente y la cantidad de lo filtrado
+- los combos ofrecen el universo permitido, no el ya filtrado: elegir proveedor
+  no puede hacer desaparecer sucursales del selector
+- el POST conserva los filtros, para no tener que rearmarlos si hay un error
+- un lapso invertido avisa y no filtra, en vez de devolver cero facturas
+- una fecha invalida en la URL no rompe la pantalla
+
 ## Orden tecnico sugerido
 
 1. proveedores

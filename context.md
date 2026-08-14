@@ -2221,3 +2221,34 @@ cadena PROPIA aunque este abierta. Es parte del mismo slice pendiente por empres
   codigo Y nombre para que igual se entienda, pero conviene alinearlos.
 - Proximo slice: filtros de proveedor + sucursal + rango de fechas con subtotal
   en la pantalla de pago. Es cuenta corriente semanal, no factura suelta.
+
+## 2026-08-14 - Filtros de cuenta corriente al repartir una transferencia (US-3.14)
+
+- Segundo slice del mismo pedido. Regla de negocio que faltaba entender:
+  tesoreria NO paga facturas sueltas. Recibe una planilla con una fila por
+  proveedor / sucursal / fecha y un total, y paga la cuenta corriente de UNA
+  SEMANA. La pantalla de reparto tenia un solo filtro por proveedor y listaba
+  las 1.292 deudas abiertas en una sola pagina, sin buscador.
+- Ahora hay tres filtros combinables (proveedor, sucursal, lapso de fechas) y el
+  subtotal de lo filtrado, que es el numero que se compara contra la planilla.
+- El lapso corre sobre `fecha_emision`, no sobre el vencimiento: la fecha que
+  anota tesoreria es la de la factura.
+- Detalle que importa: los combos se arman con el universo permitido (despues
+  del corte por empresa, antes de los filtros del usuario). Si se armaran con el
+  queryset ya filtrado, elegir un proveedor haria desaparecer sucursales del
+  selector y el filtro de sucursal se volveria un no-op silencioso.
+- Un lapso invertido (desde > hasta) avisa y NO filtra, en vez de devolver cero
+  facturas sin explicacion. Una fecha invalida en la URL se ignora: se usa
+  `parse_date`, que devuelve None en vez de tirar excepcion.
+- El POST conserva los filtros en el query string. No es un requisito de
+  correctitud (sin filtros el universo es mayor y las facturas elegidas validan
+  igual), pero evita rearmar el filtro si hay un error de validacion.
+- Se corrigio de paso el docstring del test, que decia US-4.12 cuando la US
+  quedo registrada como US-3.13 en EP-03.
+- Archivos: `treasury/views.py`, `templates/treasury/pay_debts_split.html`,
+  `treasury/tests_sucursal_en_deuda.py` (+9 tests, 19 en total),
+  `docs/epics/EP-03-tesoreria-central.md`.
+- Tests: suite completa 621 OK (4 skips). `compileall` OK. Sin migraciones.
+- Pendiente: la pantalla "pagar por proveedor" (paso 2) todavia no tiene filtro
+  de sucursal ni de fechas ni subtotal. Es el mismo tratamiento y conviene
+  hacerlo, pero se dejo fuera de este slice.

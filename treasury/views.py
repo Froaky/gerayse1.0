@@ -10,6 +10,7 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from django.utils.http import urlencode
 from django.views.decorators.http import require_http_methods
 
@@ -2346,16 +2347,57 @@ def bank_movements_pay_debt(request, pk):
         candidatas = candidatas.filter(
             Q(sucursal__empresa_id=empresa_de_la_cuenta) | Q(sucursal__isnull=True)
         )
+    from cashops.models import Sucursal
+
+    # Los combos se arman con el universo permitido (antes de los filtros), asi
+    # que elegir un proveedor no hace desaparecer sucursales del selector.
     proveedores = Proveedor.objects.filter(
         pk__in=candidatas.values_list("proveedor_id", flat=True)
     ).order_by("razon_social")
+    sucursales = Sucursal.objects.filter(
+        pk__in=candidatas.values_list("sucursal_id", flat=True)
+    ).order_by("codigo")
 
+    # Tesoreria no paga facturas sueltas: paga la cuenta corriente de una semana
+    # de un proveedor en una sucursal, y controla el subtotal contra su planilla
+    # (una fila por proveedor / sucursal / fecha). Por eso los tres filtros y el
+    # total de lo filtrado. El lapso corre sobre la fecha de factura, que es la
+    # que anotan.
     filtro_proveedor = (request.GET.get("proveedor") or "").strip()
     proveedor_elegido = None
     if filtro_proveedor.isdigit():
         proveedor_elegido = proveedores.filter(pk=filtro_proveedor).first()
         if proveedor_elegido is not None:
             candidatas = candidatas.filter(proveedor=proveedor_elegido)
+
+    filtro_sucursal = (request.GET.get("sucursal") or "").strip()
+    sucursal_elegida = None
+    if filtro_sucursal.isdigit():
+        sucursal_elegida = sucursales.filter(pk=filtro_sucursal).first()
+        if sucursal_elegida is not None:
+            candidatas = candidatas.filter(sucursal=sucursal_elegida)
+
+    desde = parse_date((request.GET.get("desde") or "").strip())
+    hasta = parse_date((request.GET.get("hasta") or "").strip())
+    if desde and hasta and desde > hasta:
+        messages.error(request, "El desde no puede ser posterior al hasta.")
+        desde = hasta = None
+    if desde:
+        candidatas = candidatas.filter(fecha_emision__gte=desde)
+    if hasta:
+        candidatas = candidatas.filter(fecha_emision__lte=hasta)
+
+    # Lo que se manda en el form y en "Ver todas" para no perder el filtro.
+    filtros_activos = {
+        clave: valor
+        for clave, valor in (
+            ("proveedor", proveedor_elegido.pk if proveedor_elegido else None),
+            ("sucursal", sucursal_elegida.pk if sucursal_elegida else None),
+            ("desde", desde.isoformat() if desde else None),
+            ("hasta", hasta.isoformat() if hasta else None),
+        )
+        if valor
+    }
 
     if request.method == "POST":
         asignaciones = []
@@ -2406,8 +2448,12 @@ def bank_movements_pay_debt(request, pk):
             "payable": factura,
             "sugerido": min(factura.saldo_pendiente, sin_asignar),
         }
-        for factura in candidatas.order_by("proveedor__razon_social", "fecha_vencimiento", "pk")
+        for factura in candidatas.order_by(
+            "proveedor__razon_social", "sucursal__codigo", "fecha_emision", "pk"
+        )
     ]
+    # El total de lo filtrado es lo que tesoreria compara contra su planilla.
+    total_filtrado = sum((fila["payable"].saldo_pendiente for fila in facturas), Decimal("0.00"))
     return render(
         request,
         "treasury/pay_debts_split.html",
@@ -2416,8 +2462,15 @@ def bank_movements_pay_debt(request, pk):
             "sin_asignar": sin_asignar,
             "ya_asignado": importe_asignado_del_movimiento(movement),
             "facturas": facturas,
+            "total_filtrado": total_filtrado,
             "proveedores": proveedores,
             "proveedor_elegido": proveedor_elegido,
+            "sucursales": sucursales,
+            "sucursal_elegida": sucursal_elegida,
+            "desde": desde,
+            "hasta": hasta,
+            "hay_filtro": bool(filtros_activos),
+            "filtros_qs": urlencode(filtros_activos),
             "back_url": detalle_url,
             "money": _money,
         },
