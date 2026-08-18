@@ -2321,3 +2321,26 @@ cadena PROPIA aunque este abierta. Es parte del mismo slice pendiente por empres
   `treasury/tests_pago_duplicado.py` (+3 tests, 17 en total),
   `docs/epics/EP-03-tesoreria-central.md`.
 - Tests: suite completa 652 OK (4 skips). Sin migraciones. `compileall` OK.
+
+## 2026-08-14 - Alcance del libro de efectivo central (US-3.18)
+
+- Bug encontrado por la usuaria intentando anular los 7 egresos duplicados de
+  junio: filtraba junio y solo le aparecian los del 26 en adelante.
+- Causa: el listado cortaba en `[:100]` y `MovimientoCajaCentral.Meta.ordering`
+  es `["-fecha", "-id"]`. En un mes con mas de 100 movimientos los primeros dias
+  quedaban INALCANZABLES, porque la pantalla no tiene paginacion y el boton de
+  anular vive en cada fila. No era un problema de datos ni de permisos.
+- Junio tiene 149 egresos administrativos solo de ese tipo, asi que el corte
+  actuaba siempre en ese mes.
+- El aviso de truncamiento que ya existia no servia: comparaba `filtered_count`
+  (que EXCLUYE anulados) contra `len(items)` (que los INCLUYE), o sea dos
+  conjuntos distintos. Ahora compara contra el total del mismo queryset.
+- El filtro por mes ya acota el volumen, asi que se listan todos. Queda un tope
+  de seguridad de 500 y, cuando actua, la pantalla lo dice.
+- Test de regresion: con 121 movimientos en el mes, el del dia 2 tiene que estar
+  con su boton de anular. Con el tope en 100 el test falla, o sea que reproduce
+  exactamente lo que reporto la usuaria.
+- Archivos: `treasury/views.py`,
+  `treasury/tests_libro_efectivo_alcance.py` (nuevo, 2 tests),
+  `docs/epics/EP-03-tesoreria-central.md`.
+- Tests: suite completa 654 OK (4 skips). Sin migraciones. `compileall` OK.

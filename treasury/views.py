@@ -2854,7 +2854,6 @@ def central_cash_movements(request):
     )
     total_ingresos = totals["ingresos"] or Decimal("0.00")
     total_egresos = totals["egresos"] or Decimal("0.00")
-    filtered_count = movements.count()
     # El LISTADO incluye los anulados (con su motivo) aunque los totales de
     # arriba no los cuenten: si se ocultaran, quien anulo no podria ver que anulo.
     movements_listado = _filtrar_imputacion(
@@ -2874,8 +2873,17 @@ def central_cash_movements(request):
     )
     
     puede_anular = can_delete_central_cash_movement(request.user)
+    # El listado cortaba en 100 sin forma de llegar a los que quedaban afuera.
+    # Como el orden es por fecha descendente, en un mes con mas de 100
+    # movimientos los primeros dias quedaban INALCANZABLES: tesoreria filtraba
+    # junio, veia del 26 en adelante y no podia anular un movimiento del 02/06.
+    # El filtro por mes ya acota el volumen, asi que se listan todos; el tope
+    # alto es un freno de seguridad y cuando actua se avisa.
+    TOPE_LISTADO = 500
+    movimientos_del_mes = list(movements_listado.order_by("-fecha", "-id")[:TOPE_LISTADO])
+    total_listado = movements_listado.count()
     items = []
-    for m in movements_listado[:100]:
+    for m in movimientos_del_mes:
         # Simplistic: INGRESO/APORTE/RETIRO_BANCO are positive for cash
         if m.tipo in CENTRAL_CASH_IN_TYPES:
             badge_class = "badge-success"
@@ -2937,8 +2945,11 @@ def central_cash_movements(request):
         subtitle += " Mostrando solo egresos administrativos con sucursal, rubro o periodo pendiente."
     elif imputacion == "imputados":
         subtitle += " Mostrando solo egresos administrativos completos para lectura economica."
-    if filtered_count > len(items):
-        subtitle += f" Mostrando {len(items)} de {filtered_count} movimientos filtrados."
+    if total_listado > len(movimientos_del_mes):
+        subtitle += (
+            f" Atencion: el periodo tiene {total_listado} movimientos y se muestran los "
+            f"{len(movimientos_del_mes)} mas recientes. Filtra por sucursal para ver el resto."
+        )
     return render(request, "treasury/list_page.html", {
         "title": "Libro de Efectivo Central",
         "filter_form": form,

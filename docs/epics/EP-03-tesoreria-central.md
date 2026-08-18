@@ -281,6 +281,24 @@ Criterios:
 - es un aviso, no un bloqueo: el egreso administrativo se usa de verdad para
   alquileres, sueldos e impuestos, que no se cargan como deuda
 
+### [x] US-3.18 Llegar a todos los movimientos del mes en el libro de efectivo
+
+Como tesorera
+Quiero ver todos los movimientos del periodo que filtro
+Para poder anular uno de los primeros dias del mes
+
+Caso real: habia que anular 7 egresos administrativos del 02, 03 y 05 de junio.
+Al filtrar junio solo aparecian los del 26 en adelante. El listado cortaba en
+100 y ordena por fecha descendente, asi que en un mes con mas de 100 movimientos
+los primeros dias eran inalcanzables: no hay paginacion, y el boton de anular
+vive en cada fila del listado.
+
+Criterios:
+- el filtro por mes lista todos los movimientos de ese mes
+- si un tope de seguridad llegara a actuar, la pantalla lo dice
+- el aviso de truncamiento compara conjuntos comparables: el anterior media los
+  no anulados contra una lista que incluye los anulados, asi que podia no avisar
+
 ## Orden tecnico sugerido
 
 1. proveedores
