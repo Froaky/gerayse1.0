@@ -15,7 +15,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from cashops.models import Empresa, RubroOperativo, Sucursal
-from treasury.models import CajaCentral, MovimientoCajaCentral
+from treasury.models import CajaCentral, CuentaBancaria, MovimientoBancario, MovimientoCajaCentral
 from users.models import PermissionModule, UserPermission
 
 User = get_user_model()
@@ -88,4 +88,64 @@ class AlcanceDelLibroDeEfectivoTests(TestCase):
         )
 
         # Con 121 movimientos no corta nada, asi que no debe aparecer el aviso.
+        self.assertNotContains(response, "se muestran los")
+
+
+class AlcanceDeMovimientosBancariosTests(TestCase):
+    """Mismo corte silencioso en el listado de banco, con dos diferencias: el
+    tope era de 50 y esta pantalla NO acota por mes, asi que sin filtros lista
+    todo el historico. El tope se queda; lo que se arregla es que sea usable y
+    que el aviso diga como llegar al resto."""
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser(
+            username="admin-banco", password="test", email="banco@test.com"
+        )
+        self.empresa = Empresa.objects.create(nombre="Empresa BANCO")
+        self.admin.empresas_permitidas.set([self.empresa])
+        self.cuenta = CuentaBancaria.objects.create(
+            nombre="Cuenta BANCO",
+            banco="Banco BANCO",
+            tipo_cuenta=CuentaBancaria.Tipo.CUENTA_CORRIENTE,
+            numero_cuenta="700-1",
+            empresa=self.empresa,
+            creado_por=self.admin,
+        )
+        self.client.force_login(self.admin)
+        sesion = self.client.session
+        sesion["empresa_ids"] = [self.empresa.pk]
+        sesion.save()
+
+    def _credito(self, dia, concepto):
+        return MovimientoBancario.objects.create(
+            cuenta_bancaria=self.cuenta,
+            tipo=MovimientoBancario.Tipo.CREDITO,
+            clase=MovimientoBancario.Clase.OTRO_INGRESO,
+            fecha=date(2026, 6, dia),
+            monto=Decimal("1000.00"),
+            concepto=concepto,
+            creado_por=self.admin,
+        )
+
+    def test_pasa_el_tope_viejo_de_cincuenta(self):
+        buscado = self._credito(1, "MOVIMIENTO NUMERO UNO")
+        for i in range(60):
+            self._credito(20, f"relleno {i}")
+
+        response = self.client.get(reverse("treasury:bank_movements_list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "MOVIMIENTO NUMERO UNO")
+        self.assertContains(
+            response, reverse("treasury:bank_movements_detail", args=[buscado.pk])
+        )
+
+    def test_si_corta_dice_como_llegar_al_resto(self):
+        """El aviso viejo decia cuantos quedaban afuera pero no que hacer."""
+        for i in range(61):
+            self._credito(20, f"relleno {i}")
+
+        response = self.client.get(reverse("treasury:bank_movements_list"))
+
+        # Con 61 movimientos y tope 300 no corta, asi que no debe avisar.
         self.assertNotContains(response, "se muestran los")

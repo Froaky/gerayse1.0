@@ -2344,3 +2344,22 @@ cadena PROPIA aunque este abierta. Es parte del mismo slice pendiente por empres
   `treasury/tests_libro_efectivo_alcance.py` (nuevo, 2 tests),
   `docs/epics/EP-03-tesoreria-central.md`.
 - Tests: suite completa 654 OK (4 skips). Sin migraciones. `compileall` OK.
+
+## 2026-08-14 - Mismo corte silencioso en el listado de banco (US-3.18, parte 2)
+
+- Se reviso si el patron de US-3.18 estaba en otro lado y aparecio en
+  `bank_movements_list`: cortaba en 50 con el mismo orden por fecha descendente.
+- Diferencia importante con el libro de efectivo: esta pantalla NO acota por mes.
+  Sin filtros lista todo el historico (hay movimientos con id > 1300), asi que
+  quitar el tope habria empeorado la cosa. El tope se queda.
+- Lo que se arreglo es que fuera usable: de 50 a 300, orden explicito, y el aviso
+  ahora dice QUE HACER ("filtra por fecha, cuenta o proveedor para llegar al
+  resto") en vez de solo informar cuantos quedaron afuera.
+- Aca el aviso viejo si comparaba conjuntos comparables, a diferencia del libro
+  de efectivo; el problema era el tope de 50 y un mensaje sin salida.
+- Pendiente real: ninguna de las dos pantallas tiene paginacion de verdad. Con
+  los filtros que tienen alcanza para el trabajo diario, pero si aparece un caso
+  que necesite recorrer el historico completo, hay que paginar.
+- Archivos: `treasury/views.py`, `treasury/tests_libro_efectivo_alcance.py`
+  (+2 tests, 4 en total).
+- Tests: suite completa 656 OK (4 skips). Sin migraciones. `compileall` OK.

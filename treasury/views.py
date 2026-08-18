@@ -1880,8 +1880,14 @@ def bank_movements_list(request):
     total_egresos_tesoreria = bank_totals["egresos_tesoreria"] or Decimal("0.00")
     filtered_count = movements.count()
 
+    # A diferencia del libro de efectivo, esta pantalla no acota por mes: sin
+    # filtros lista todo el historico, asi que el tope tiene que quedar. Lo que
+    # no puede quedar es un tope de 50 con un aviso que no dice como llegar al
+    # resto; con eso, buscar un movimiento viejo era imposible.
+    TOPE_LISTADO = 300
+    movimientos_visibles = list(movements.order_by("-fecha", "-id")[:TOPE_LISTADO])
     items = []
-    for m in movements[:50]:
+    for m in movimientos_visibles:
         meta = (
             f"Origen: {m.get_origen_display()} | Ref: {m.referencia or '-'}"
             f" | Rubro: {_bank_movement_rubro_label(m)}"
@@ -1906,8 +1912,12 @@ def bank_movements_list(request):
         })
 
     subtitle = "Egresos e ingresos reales en cuentas bancarias"
-    if filtered_count > len(items):
-        subtitle += f". Mostrando {len(items)} de {filtered_count} movimientos filtrados"
+    if filtered_count > len(movimientos_visibles):
+        subtitle += (
+            f". Atencion: hay {filtered_count} movimientos y se muestran los "
+            f"{len(movimientos_visibles)} mas recientes. Filtra por fecha, cuenta o "
+            "proveedor para llegar al resto"
+        )
 
     return render(request, "treasury/list_page.html", {
         "title": "Movimientos Bancarios",
