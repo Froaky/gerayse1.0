@@ -1,3 +1,6 @@
+from core.service_notice import service_notice_for
+
+
 def app_context(request):
     from django.conf import settings
 
@@ -55,4 +58,5 @@ def app_context(request):
     ctx["empresas_activas"] = empresas_activas
     ctx["empresas_disponibles"] = empresas
     ctx["selected_empresa_ids_set"] = set(empresa_ids)
+    ctx["service_notice"] = service_notice_for(user)
     return ctx

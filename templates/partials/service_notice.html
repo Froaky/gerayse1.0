@@ -1,0 +1,52 @@
+{% comment %}
+  Aviso de vencimiento del servicio (vence el 9 de cada mes). Solo llega
+  `service_notice` al contexto cuando estamos a 7 dias o menos del vencimiento
+  Y el usuario es administrador (core/context_processors.py ->
+  core/service_notice.py). `nivel` es warning (del 2 al 5) o danger (del 6 al 9).
+
+  Los estilos viven aca y no en las shells porque las shells operativas
+  (cashops, treasury) no cargan gerayse.css y este cartel tiene que verse
+  identico en las tres. Solo tokens de la paleta: funciona en claro y oscuro.
+{% endcomment %}
+{% if service_notice %}
+  <style>
+    .service-notice {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 4px 14px;
+      margin-bottom: 16px;
+      padding: 11px 14px;
+      border: 1px solid var(--line);
+      border-left-width: 4px;
+      border-radius: 6px;
+      font-family: var(--font-sans);
+      font-size: 0.92rem;
+      line-height: 1.45;
+    }
+    .service-notice__label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .service-notice__text { flex: 1 1 320px; }
+    .service-notice--warning {
+      border-color: var(--warn-line);
+      border-left-color: var(--warn);
+      background: var(--warn-bg);
+      color: var(--warn);
+    }
+    .service-notice--danger {
+      border-color: var(--dn-line);
+      border-left-color: var(--danger);
+      background: var(--dn-bg);
+      color: var(--danger);
+    }
+  </style>
+  <div class="service-notice service-notice--{{ service_notice.nivel }}" role="status" data-service-notice>
+    <span class="service-notice__label">Aviso de servicio</span>
+    <span class="service-notice__text">{{ service_notice.texto }}</span>
+  </div>
+{% endif %}

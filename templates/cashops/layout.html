@@ -581,6 +581,7 @@
         .mt-12 { margin-top: 16px; }
         .mt-16 { margin-top: 20px; }
       </style>
+      {% include "partials/service_notice.html" %}
       {% if empresas_disponibles and not empresas_activas %}
         <div class="message" style="border-color:var(--dn-line);background:var(--dn-bg);color:var(--danger);margin-bottom:12px;">
           Selecciona una o mas empresas para ver los datos correspondientes.

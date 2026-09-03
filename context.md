@@ -1,8 +1,39 @@
 # Context
 
-Last updated: 2026-08-13
+Last updated: 2026-09-03
 
 ## Current Session
+
+### Core Aviso de vencimiento del servicio (cartel al administrador) 2026-09-03
+
+- Pedido: el alojamiento vence el 9 de cada mes; mostrarle al administrador de Gerayse un
+  aviso formal todos los meses cuando falten 7 dias, en rojo cuando falten 3, para apurar
+  indirectamente el pago. Primera version usaba una fecha puntual por variable de entorno;
+  Mateo la descarto: es recurrente y no quiere tener que configurar nada.
+- Regla (core/service_notice.py): `proximo_vencimiento(hoy)` = el 9 de este mes si no paso
+  (hoy inclusive), si no el del mes siguiente (clamp al ultimo dia si el mes es mas corto).
+  dias > 7 -> nada; 7..4 -> warning; 3..0 -> danger. Pasado el 9 NO se dice "vencio": no
+  sabemos si regularizaron, asi que desaparece hasta el 2 del mes siguiente.
+- Alcance: presentacion pura (sin modelo, sin migracion, sin dinero). Sin configuracion:
+  `SERVICE_NOTICE_DUE_DAY` (default 9) existe solo para apagarlo (0) o correr el dia.
+- Quien lo ve: solo `User.is_admin_role` (propiedad nueva: superusuario o rol
+  ADMIN/ADMINISTRADOR, la misma regla que ya usaba `_legacy_permission_values`). Cajeros y
+  tesoreria no lo ven, para no alarmar a quien no decide el pago. PENDIENTE antes de
+  prenderlo: verificar en produccion que rol tiene la admin y si Tais cumple la regla.
+- Copy (decision de Mateo): aviso administrativo formal, trato de usted, sin nombres propios.
+  "... vence el 9 de septiembre de 2026. Quedan 6 dias. Para evitar la interrupcion del
+  sistema, regularice el saldo del mes antes de esa fecha." Habla del "servicio de
+  alojamiento", NUNCA de "la base de datos" (hay test). La fecha larga se arma a mano
+  porque la traduccion de Django capitaliza los meses.
+- Ubicacion: partial `templates/partials/service_notice.html` (estilos con tokens adentro
+  del partial porque las shells operativas no cargan gerayse.css), incluido en las tres
+  shells (base, cashops, treasury) arriba de los mensajes.
+- Tests: la fecha de hoy se fija con `mock.patch("core.service_notice.timezone.localdate")`;
+  el cartel es date-dependent y en dev/CI aparece solo del 2 al 9 para superusuarios.
+- Files: `config/settings.py`, `core/service_notice.py` (nuevo), `core/context_processors.py`,
+  `users/models.py` (propiedad), `templates/partials/service_notice.html` (nuevo),
+  `templates/base.html`, `templates/cashops/layout.html`, `templates/treasury/layout.html`,
+  `core/tests_service_notice.py` (nuevo, 19 tests), `PRODUCCION.md`. Sin migraciones.
 
 ### EP-04 US-4.11 Corregir tipo de pago de un egreso ya pagado 2026-08-13
 

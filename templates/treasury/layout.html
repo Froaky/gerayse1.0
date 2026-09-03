@@ -429,6 +429,7 @@
           {% endif %}
         </nav>
       </header>
+      {% include "partials/service_notice.html" %}
       {% if empresas_disponibles and not empresas_activas %}
         <div class="message" style="border-color:var(--dn-line);background:var(--dn-bg);color:var(--danger);margin-bottom:12px;">
           Seleccioná una o más empresas para ver los datos correspondientes.

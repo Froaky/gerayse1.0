@@ -37,6 +37,13 @@ if (
 # empresa). Es una herramienta de testing: NUNCA debe quedar activa en produccion.
 # Por defecto sigue a DEBUG, asi el entorno decide y no depende de borrar codigo a mano.
 ENABLE_DANGER_RESET = env.bool("ENABLE_DANGER_RESET", default=DEBUG)
+
+# Aviso de vencimiento del servicio de alojamiento: cartel que ve solo el administrador
+# (superusuario o rol ADMIN/ADMINISTRADOR). El servicio vence el 9 de cada mes; el cartel
+# sale solo cuando faltan 7 dias y se pone rojo cuando faltan 3. No hay nada que configurar:
+# la variable existe solo para apagarlo (0) o correr el dia si cambia el vencimiento.
+# Ver PRODUCCION.md.
+SERVICE_NOTICE_DUE_DAY = env.int("SERVICE_NOTICE_DUE_DAY", default=9)
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1", "gerayse10-production.up.railway.app"])
 
 INSTALLED_APPS = [

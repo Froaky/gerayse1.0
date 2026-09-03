@@ -131,6 +131,15 @@ class User(AbstractUser):
             return ""
         return self.role.code.strip().upper()
 
+    @property
+    def is_admin_role(self) -> bool:
+        """Administrador del sistema: superusuario o rol ADMIN/ADMINISTRADOR.
+
+        Es la misma regla que aplica ``_legacy_permission_values``; se expone con
+        nombre para que la UI no repita el conjunto de codigos.
+        """
+        return bool(self.is_superuser or self.normalized_role_code in self.ADMIN_ROLE_CODES)
+
     def _legacy_permission_values(self, module: str) -> tuple[bool, bool]:
         if self.is_superuser or self.normalized_role_code in self.ADMIN_ROLE_CODES:
             return True, True
