@@ -9,8 +9,10 @@ import tempfile
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from unittest import mock
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.test import TestCase
 
 from cashops.models import Empresa, RubroOperativo, Sucursal
@@ -305,6 +307,55 @@ class ImportadorTests(TestCase):
         self.assertFalse(MovimientoBancario.objects.exists())
         self.assertFalse(MovimientoCajaCentral.objects.exists())
         self.assertFalse(PagoTesoreria.objects.exists())
+
+    def test_una_fila_se_aplica_entera_o_nada_y_se_puede_reintentar(self):
+        # Caso real del ensayo: se grabo el egreso, se cayo la conexion al
+        # pagar la deuda, y la fila quedaba marcada como importada con el pago
+        # perdido.
+        deuda = self._deuda(self.pare_carrito, self.term, "80000.00", date(2026, 7, 2), self.cat_verdura)
+        efectivo = self._efectivo("EC1", '3/07/2026,VERDURA,"$84.540,00",Efectivo')
+        importador = self._importador(efectivo=efectivo)
+        with mock.patch(
+            "treasury.importacion_planillas.register_egreso_tesoreria",
+            side_effect=ValidationError("se corto la conexion"),
+        ):
+            importador.aplicar()
+        self.assertEqual({op.accion for op in importador.operaciones}, {Accion.ERROR})
+        deuda.refresh_from_db()
+        self.assertEqual(deuda.saldo_pendiente, Decimal("80000.00"))
+        self.assertFalse(PagoTesoreria.objects.exists())
+
+        reintento = self._importador(efectivo=efectivo)
+        self.assertEqual(
+            sorted(op.accion for op in reintento.operaciones), [Accion.EGRESO, Accion.PAGAR_DEUDAS]
+        )
+        reintento.aplicar()
+        deuda.refresh_from_db()
+        self.assertEqual(deuda.estado, CuentaPorPagar.Estado.PAGADA)
+
+    def test_lo_que_pago_el_propio_importador_no_cuenta_como_ya_cargado(self):
+        # Caso real del ensayo: en el reintento, los pagos que habia hecho la
+        # primera corrida se tomaban como "tesoreria ya lo pago" y las filas
+        # que faltaban quedaban sin importar.
+        primera = self._deuda(self.pare_carrito, self.term, "84540.00", date(2026, 7, 2), self.cat_verdura)
+        segunda = self._deuda(self.pare_carrito, self.term, "76973.00", date(2026, 7, 10), self.cat_verdura)
+        fila_a = '3/07/2026,VERDURA,"$84.540,00",Efectivo'
+        fila_b = '14/07/2026,VERDURA,"$76.973,00",Efectivo'
+        self._importador(efectivo=self._efectivo("EC1", fila_a)).aplicar()
+
+        reintento = self._importador(efectivo=self._efectivo("EC1", fila_a, fila_b))
+        self.assertEqual(
+            self._acciones(reintento),
+            [
+                (Accion.PAGAR_DEUDAS, "TERM-01", Decimal("76973.00")),
+                (Accion.YA_IMPORTADA, "", Decimal("84540.00")),
+            ],
+        )
+        reintento.aplicar()
+        primera.refresh_from_db()
+        segunda.refresh_from_db()
+        self.assertEqual(primera.estado, CuentaPorPagar.Estado.PAGADA)
+        self.assertEqual(segunda.estado, CuentaPorPagar.Estado.PAGADA)
 
     def test_correr_dos_veces_no_duplica(self):
         self._deuda(self.las_flores, self.term, "20000.00", date(2026, 7, 30))

@@ -56,6 +56,9 @@ from treasury.services import (
 )
 
 CENTAVO = Decimal("0.01")
+# Marca de todo lo que escribe el importador (observaciones del movimiento o
+# pago). Sirve para no confundir lo importado con lo que tesoreria ya cargo.
+PREFIJO_OBSERVACIONES = "Importado de planilla"
 # Diferencias de redondeo de la planilla (el reparto suma 1 centavo de mas o de
 # menos). Por encima de esto la fila no cuadra y va a revisar.
 TOLERANCIA = Decimal("0.05")
@@ -377,6 +380,11 @@ class Importador:
             estado=PagoTesoreria.Estado.REGISTRADO,
         ).select_related("cuenta_por_pagar")
         for pago in pagos:
+            if pago.observaciones.startswith(PREFIJO_OBSERVACIONES):
+                # Lo pago una corrida anterior del importador: no es algo que
+                # tesoreria ya habia cargado, es la importacion de otra fila.
+                # Contarlo haria que una fila que falta se de por cargada.
+                continue
             deuda = pago.cuenta_por_pagar
             clave = (deuda.proveedor_id, deuda.sucursal_id, primer_dia(pago.fecha_pago))
             self.efectivo_registrado[clave] += pago.monto
@@ -892,20 +900,36 @@ class Importador:
         return operaciones
 
     # --- aplicacion -----------------------------------------------------------
-    def aplicar(self) -> list[Operacion]:
+    def unidades(self) -> list[list[Operacion]]:
+        """Operaciones agrupadas por lo que se aplica todo junto o nada: la
+        fila entera en efectivo, la porcion de cada sucursal en banco. Es la
+        misma unidad con la que `_fila_*_importada` decide si ya se importo;
+        si se aplicara de a una operacion, una fila con el egreso grabado y el
+        pago caido se daria por importada y el pago no se reintentaria nunca."""
+        grupos = defaultdict(list)
         for op in self.operaciones:
-            if op.accion not in ACCIONES_QUE_ESCRIBEN:
-                continue
-            try:
-                with transaction.atomic():
+            if op.accion in ACCIONES_QUE_ESCRIBEN:
+                grupos[_unidad(op)].append(op)
+        return list(grupos.values())
+
+    def aplicar_unidad(self, unidad: list[Operacion]):
+        try:
+            with transaction.atomic():
+                for op in unidad:
                     op.resultado = self._aplicar_operacion(op)
-            except Exception as error:  # noqa: BLE001 - el error se informa en la fila y sigue
+        except Exception as error:  # noqa: BLE001 - el error se informa en la fila y sigue
+            mensaje = _mensaje_de_error(error)
+            for op in unidad:
                 op.accion = Accion.ERROR
-                op.resultado = _mensaje_de_error(error)
+                op.resultado = mensaje
+
+    def aplicar(self) -> list[Operacion]:
+        for unidad in self.unidades():
+            self.aplicar_unidad(unidad)
         return self.operaciones
 
     def _observaciones(self, op: Operacion) -> str:
-        return f"Importado de planilla {op.origen.lower()} {op.planilla}, fila {op.fila}."[:255]
+        return f"{PREFIJO_OBSERVACIONES} {op.origen.lower()} {op.planilla}, fila {op.fila}."[:255]
 
     def _aplicar_operacion(self, op: Operacion) -> str:
         if op.origen == "BANCO":
@@ -1077,6 +1101,12 @@ class Importador:
                         op.resultado,
                     ]
                 )
+
+
+def _unidad(op: Operacion) -> tuple:
+    if op.origen == "BANCO":
+        return (op.clave, op.parte.split(":")[0])
+    return (op.clave, "")
 
 
 def _mensaje_de_error(error) -> str:
