@@ -33,8 +33,21 @@ Last updated: 2026-09-30
 - Hallazgo de datos en prod: la `CuentaBancaria` 1 (ARMADI) tiene `empresa` NULL (el backfill
   de US-4.9 no la resolvio). El importador toma la empresa de las sucursales del reparto;
   conviene completarla en prod editando la cuenta.
-- Ensayo en el environment `staging` de Railway (copia de prod del 2026-09-30).
-- Tests: `treasury/tests_importacion_planillas.py` (14). Sin migraciones.
+- Ensayo en el environment `staging` de Railway (copia de prod del 2026-09-30, 17 hs):
+  569 operaciones, 0 errores. Banco ARMADI ago: 314 debitos $46,22M (29,42M pagan 379
+  deudas, 16,80M gasto sin deuda); 7 e-cheq excluidos ($9,39M); 7 filas a revisar ($9,77M:
+  aportes 6,8M, anticipo IVA, intereses, Castillo, Inbox 05/08, vidrio heladeria sin rubro,
+  Cosalta 29/08 que no cuadra). Efectivo: 368 pagos de deuda $34,34M, 135 egresos $127,21M,
+  $47,54M ya estaban en Gerayse, 7 filas a revisar $13,04M (Manjon, Pablo Levin, compra USD).
+  Boveda 313,73M -> 152,18M. Deuda abierta 394,34M -> 330,58M. Re-simular da todo YA_IMPORTADA.
+- El ensayo destapo dos defectos, corregidos: (1) operaciones de una fila aplicadas de a una
+  -> fila a medias que no se reintentaba; ahora la fila (o porcion de sucursal) es atomica;
+  (2) al reintentar, los pagos del propio importador se tomaban como "ya cargado"; ahora se
+  excluye lo firmado con `PREFIJO_OBSERVACIONES`. OJO: Django toma un error de conexion en la
+  validacion de UniqueConstraint condicional como violacion ("Ya existe una deuda...").
+- Desde afuera de Railway cada consulta tarda ~0,2 s: el comando secuencial va a ~30 s por
+  operacion. Para prod conviene correrlo DENTRO de Railway (latencia interna).
+- Tests: `treasury/tests_importacion_planillas.py` (16). Sin migraciones.
 
 ### Core Aviso de vencimiento del servicio (cartel al administrador) 2026-09-03
 
