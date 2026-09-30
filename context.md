@@ -1,8 +1,40 @@
 # Context
 
-Last updated: 2026-09-03
+Last updated: 2026-09-30
 
 ## Current Session
+
+### Treasury Importacion de planillas de banco y efectivo central 2026-09-30
+
+- Pedido: pasar a Gerayse lo que Tais llevaba en dos planillas de Google: banco ARMADI de
+  agosto (MOVIMIENTOS, pestana `MOV AGO 26`: una fila por transferencia con reparto por
+  sucursal en columnas EC1/EC2/EB/EB2/PP/H) y egresos en efectivo de tesoreria jul-sep (una
+  solapa por sucursal). Decision explicita del usuario de importar (EP-03/EP-04 lo excluian).
+- HALLAZGO QUE MANDA: los cajeros cargan las facturas como deuda. 97,7% de las transferencias
+  a proveedores de agosto tienen deuda abierta del mismo proveedor y sucursal, y parte del
+  efectivo ya esta en Gerayse como EGRESO_PAGO (Tais pago deudas en efectivo el 30-31/07).
+  Importar como gasto duplicaba el resultado y dejaba deudas abiertas.
+- `treasury/importacion_planillas.py` (nuevo): lee los CSV exportados, PLANIFICA sin escribir
+  (informe por fila) y APLICA por los servicios de siempre. Reglas: e-cheq excluido (se
+  registra al debitarse); reparto que no suma el total -> REVISAR; una porcion por sucursal
+  paga deudas del proveedor (una factura exacta si hay, si no las mas recientes anteriores
+  al pago) con `create_bank_movement` + `pay_debts_from_bank_movement` (un debito por
+  sucursal, como hace Tais) o `register_cash_payment`; lo no cubierto entra como egreso con
+  rubro/sucursal/periodo (mes del pago). Efectivo: antes de pagar descuenta lo que Gerayse ya
+  registro en efectivo a ese proveedor/sucursal (mismo mes, anterior o siguiente). Sin reparto
+  en banco se reparte por las deudas; si no hay, REVISAR. `token_alta` = uuid5 de la fila
+  (identidad sin numero de linea) -> correr dos veces no duplica.
+- Mapeos en el modulo: columna->sucursal (EC1=TERM-01, EC2=CENT-02, EB=EB1-03, EB2=EB2-04,
+  PP=PP-OV-06, H=YH-05, VIVRE=VIV-01), rubro de planilla->rubro Gerayse, alias de proveedor
+  y proveedor inferido del concepto en efectivo (VERDURA->PARE CARRITO, POLLO->CRASH POLLO,
+  CAFE->CAFE KENYA, CARNE->BRUNETTI, sueldos VIVRE->MAPOGO SRL SUELDOS).
+- Comando `importar_planillas_tesoreria --banco X.csv --cuenta 1 --efectivo-dir DIR
+  --usuario U --informe plan.csv [--apply]`. Datos reales fuera del repo (`C:\tmp\gerayse-import`).
+- Hallazgo de datos en prod: la `CuentaBancaria` 1 (ARMADI) tiene `empresa` NULL (el backfill
+  de US-4.9 no la resolvio). El importador toma la empresa de las sucursales del reparto;
+  conviene completarla en prod editando la cuenta.
+- Ensayo en el environment `staging` de Railway (copia de prod del 2026-09-30).
+- Tests: `treasury/tests_importacion_planillas.py` (14). Sin migraciones.
 
 ### Core Aviso de vencimiento del servicio (cartel al administrador) 2026-09-03
 

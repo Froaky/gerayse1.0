@@ -299,6 +299,28 @@ Criterios:
 - el aviso de truncamiento compara conjuntos comparables: el anterior media los
   no anulados contra una lista que incluye los anulados, asi que podia no avisar
 
+### [ ] US-3.19 Importar las planillas de banco y efectivo que se llevaban afuera
+
+Como tesorera
+Quiero pasar a Gerayse el banco de agosto y el efectivo de julio a septiembre que
+anote en planillas
+Para no tener que cargar a mano cientos de lineas y que los saldos cierren
+
+Excepcion explicita a "importacion bancaria masiva" (pedido del 2026-09-30). Es
+un comando de una sola vez por lote, no una integracion con el banco.
+
+Criterios:
+- una fila que paga a un proveedor con deuda cargada paga esa deuda; no se carga
+  como gasto (seria contar el mes dos veces y dejar la deuda abierta)
+- lo que tesoreria ya registro en Gerayse no se vuelve a cargar
+- un debito por sucursal, igual que cuando tesoreria reparte una transferencia
+- los e-cheq no se importan: se registran cuando se debitan
+- primero se simula y se revisa el informe fila por fila; recien despues se aplica
+- correrlo dos veces no duplica nada
+
+Estado: ensayado en staging con copia de produccion. Falta el OK de tesoreria
+sobre el informe y las filas a revisar antes de correrlo en produccion.
+
 ## Orden tecnico sugerido
 
 1. proveedores
