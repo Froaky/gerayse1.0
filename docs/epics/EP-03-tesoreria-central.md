@@ -318,6 +318,11 @@ Criterios:
 - primero se simula y se revisa el informe fila por fila; recien despues se aplica
 - correrlo dos veces no duplica nada
 
+- con el extracto del banco, cada linea del extracto queda cargada, ya estaba,
+  excluida (cheques) o a revisar: el banco en Gerayse queda igual al del Macro
+- lo que no tiene desglose (DBCR, comisiones, tasa municipal, sueldos) se reparte
+  con las claves de reparto de tesoreria, a confirmar
+
 Estado: ensayado en staging con copia de produccion. Falta el OK de tesoreria
 sobre el informe y las filas a revisar antes de correrlo en produccion.
 

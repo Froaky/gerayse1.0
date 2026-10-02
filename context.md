@@ -48,6 +48,31 @@ Last updated: 2026-09-30
 - Desde afuera de Railway cada consulta tarda ~0,2 s: el comando secuencial va a ~30 s por
   operacion. Para prod conviene correrlo DENTRO de Railway (latencia interna).
 - Tests: `treasury/tests_importacion_planillas.py` (16). Sin migraciones.
+- 2026-10-02 VERSION FINAL (archivos finales de Tais: extracto Macro de agosto convertido de
+  PDF, desglose de transferencias y libro de efectivo jul-sep con columna RUBRO):
+  - El banco se carga desde el EXTRACTO (`treasury/extracto_macro.py`): 4.232 lineas, la
+    cadena de saldos se verifica (si no cierra, frena). Cada debito se cruza con el desglose
+    por importe y fecha (-3/+10 dias): exacto, varias porciones en una transferencia (Cosalta
+    EB+PP), una fila que el banco partio en varias lineas (Edesa), y aproximado <= max($1, 0,1%)
+    donde manda el banco. Asi Gerayse queda linea por linea igual al banco.
+  - Convenciones de Tais copiadas de jun/jul/sep: cobros PAGO PCT sumados por dia como
+    "Acreditacion" (ACREDITACION, VENTAS EN SUCURSAL); liquidaciones Payway sumadas por dia;
+    Tef Datanet y otros creditos por linea (OTRO_INGRESO).
+  - Cargos sin desglose se reparten con claves de Tais que vienen en la misma planilla:
+    impuestos/TISSH (EC1 32, YO 7, EC2 22, EB 39) para DBCR, IVA percepcion, comisiones,
+    mantenimiento de cuenta, tasa municipal y contracargos Payway; 931 (EC1 27, YO 4, EC2 25,
+    EB 34, EB2 10) para "DB PAGO REMUNERACIONES" (proveedor SUELDOS, PERSONAL; pagados hasta el
+    15 = mes anterior). ARMADI no cargaba DBCR desde julio: con varias sucursales no tenia a
+    cual imputarlos. Las claves son SUPUESTO a confirmar con Tais.
+  - Cheques (causal 85 "CHEQUE P/CAMARA" y 2837 canje) se excluyen: los carga Maria.
+  - Hallazgos: el desglose incluye pagos hechos en EFECTIVO (Gasnor, Edesa YO) que tambien
+    estan en el libro de efectivo; con el extracto como base no se duplican. "ECHEQ MICBEL"
+    del desglose en el banco es una transferencia (va a revisar). Errores de tipeo en el
+    desglose (Salta 224.086,15 vs banco 244.086,15; Inbox).
+  - Efectivo: columnas PROVEEDOR/RUBRO a veces invertidas (se detecta); solapa PP Oveja Negra
+    sin proveedor -> egreso con su rubro o VARIOS ("S/E"), pedido de Tais.
+  - Lectura de .xlsx sin dependencias (`treasury/lectura_xlsx.py`); helpers en
+    `treasury/importacion_texto.py`. Tests nuevos en `treasury/tests_importacion_extracto.py`.
 
 ### Core Aviso de vencimiento del servicio (cartel al administrador) 2026-09-03
 
