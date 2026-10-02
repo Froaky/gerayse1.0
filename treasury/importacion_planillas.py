@@ -467,6 +467,11 @@ def _es_echeq(denominacion: str) -> bool:
     return bool(re.search(r"\bE?CHEQ\b", normalizar(denominacion)))
 
 
+def _cuit_de(concepto: str) -> str | None:
+    match = re.search(r"TRANSF\s+(\d{11})\b", normalizar(concepto))
+    return match.group(1) if match else None
+
+
 class Importador:
     def __init__(
         self,
@@ -1006,6 +1011,15 @@ class Importador:
         filas = [f for f in self.filas_banco if not _es_echeq(f.denominacion)]
         self._filas_echeq = filas_echeq
         cruce = cruzar_debitos(debitos, filas)
+        # Las transferencias "TRANSF <CUIT> FAC" traen el CUIT del que cobra:
+        # lo que ya cruzo dice de quien es cada CUIT, y eso ayuda a revisar las
+        # que no estan en la planilla.
+        self._cuit_proveedor = defaultdict(set)
+        for c in cruce.cruces:
+            cuit = _cuit_de(c.linea.concepto)
+            if cuit:
+                for porcion, _importe in c.asignaciones:
+                    self._cuit_proveedor[cuit].add(porcion.fila.denominacion)
         for c in cruce.cruces:
             eventos.append((c.linea.fecha, 0, "CRUCE", c, claves[c.linea.orden]))
         for linea in cruce.lineas_sin_fila:
@@ -1176,11 +1190,14 @@ class Importador:
             return "DB Pago Remuneraciones"
         if "COMISION" in texto and ("TRANSFERE" in texto or "TRF" in texto):
             return "Comisiones Trf"
+        if "LIQ COMER" in texto:
+            return "Pago Liq Comer Payway"
         return re.sub(r"\s+", " ", linea.concepto).strip().title()[:160]
 
     def _pista_para_linea(self, linea: LineaExtracto) -> str:
         """Ayuda para revisar un debito sin fila: una fila de e-cheq de la
-        planilla con ese importe, o la porcion pendiente mas parecida."""
+        planilla con ese importe, el proveedor de ese CUIT, o (solo para
+        transferencias) la porcion pendiente parecida en importe y fecha."""
         for fila in getattr(self, "_filas_echeq", []):
             importes = [fila.monto, *fila.reparto.values()]
             if linea.monto in importes:
@@ -1188,19 +1205,27 @@ class Importador:
                     f"La planilla lo tiene como e-cheq ({fila.denominacion}) pero el banco lo muestra como "
                     "transferencia: confirmar si lo carga quien carga los e-cheq."
                 )
+        cuit = _cuit_de(linea.concepto)
+        if cuit and getattr(self, "_cuit_proveedor", {}).get(cuit):
+            nombres = ", ".join(sorted(self._cuit_proveedor[cuit]))
+            return f"Transferencia al mismo CUIT que {nombres}: falta en la planilla."
+        if not re.search(r"\bTRF\b|TRANSF", normalizar(linea.concepto)):
+            return ""
         mejor = None
         for porcion in getattr(self, "_porciones_sin_linea", []):
+            if "EFECTIVO" in normalizar(porcion.fila.denominacion):
+                continue
             dias = (linea.fecha - porcion.fila.fecha).days
-            if not -5 <= dias <= 15:
+            if not -3 <= dias <= 10:
                 continue
             diferencia = abs(linea.monto - porcion.monto)
-            if diferencia <= porcion.monto * Decimal("0.2") and (mejor is None or diferencia < mejor[0]):
+            if diferencia <= porcion.monto * Decimal("0.1") and (mejor is None or diferencia < mejor[0]):
                 mejor = (diferencia, porcion)
         if mejor:
             porcion = mejor[1]
             return (
-                f"Parecido a {porcion.fila.denominacion} {porcion.columna} del {porcion.fila.fecha:%d/%m} "
-                f"por {dinero(porcion.monto)} en la planilla."
+                f"Podria ser {porcion.fila.denominacion} {porcion.columna} del {porcion.fila.fecha:%d/%m}, "
+                f"que en la planilla dice {dinero(porcion.monto)}."
             )
         return ""
 
