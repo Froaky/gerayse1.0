@@ -34,6 +34,17 @@ Last updated: 2026-09-03
   `users/models.py` (propiedad), `templates/partials/service_notice.html` (nuevo),
   `templates/base.html`, `templates/cashops/layout.html`, `templates/treasury/layout.html`,
   `core/tests_service_notice.py` (nuevo, 19 tests), `PRODUCCION.md`. Sin migraciones.
+- Interruptor desde /admin/ (2026-10-02): `core.ConfiguracionSistema` (singleton pk=1,
+  `aviso_vencimiento_activo`, default True), editable solo por superusuario; el listado
+  redirige a la fila unica y no se puede borrar ni agregar otra. `service_notice_for` lo
+  consulta solo dentro de la ventana (fuera de ella 0 queries) y leyendo sin crear la fila
+  (`aviso_vencimiento_habilitado`): crearla en el primer request rompia un test de
+  conteo de queries de treasury. `SERVICE_NOTICE_DUE_DAY=0` sigue mandando sobre el
+  interruptor. Migracion `core/0001` (tabla nueva vacia, sin impacto en datos).
+  8 tests nuevos; suite completa 700 OK (4 skips).
+- Hallazgo 2026-10-02: en produccion `SERVICE_NOTICE_DUE_DAY=0` (el aviso estaba apagado
+  por entorno). Pendiente: ponerlo en 9 o borrarlo; el cambio por CLI fue bloqueado por
+  el clasificador de permisos y lo debe hacer Mateo.
 
 ### EP-04 US-4.11 Corregir tipo de pago de un egreso ya pagado 2026-08-13
 

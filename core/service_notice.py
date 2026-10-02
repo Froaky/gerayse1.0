@@ -100,4 +100,11 @@ def service_notice_for(user, *, hoy: date | None = None) -> dict | None:
     """Aviso para este usuario, o ``None`` si no le corresponde verlo."""
     if not getattr(user, "is_authenticated", False) or not getattr(user, "is_admin_role", False):
         return None
-    return build_service_notice(hoy=hoy)
+    aviso = build_service_notice(hoy=hoy)
+    if aviso is None:
+        return None  # fuera de la ventana: ni siquiera se consulta la base
+    from core.models import ConfiguracionSistema
+
+    if not ConfiguracionSistema.aviso_vencimiento_habilitado():
+        return None
+    return aviso

@@ -161,3 +161,77 @@ class QuienVeElAvisoTests(TestCase):
         self.client.force_login(self.admin)
         with _con_fecha(date(2026, 9, 3)), override_settings(SERVICE_NOTICE_DUE_DAY=0):
             self.assertNotIn(MARCA, self._html("cashops:dashboard"))
+
+
+class InterruptorDesdeElAdminTests(TestCase):
+    """El superusuario apaga y prende el aviso desde /admin/ sin tocar variables de entorno."""
+
+    def setUp(self):
+        from core.models import ConfiguracionSistema
+
+        self.Config = ConfiguracionSistema
+        admin_rol = Role.objects.create(code="ADMIN", name="Administrador")
+        self.empresa = Empresa.objects.create(nombre="Empresa Interruptor SA")
+        self.admin = User.objects.create_user(username="admin_sw", password="test", role=admin_rol)
+        self.admin.empresas_permitidas.set([self.empresa])
+        self.root = User.objects.create_superuser(username="root_sw", password="test", email="r@example.com")
+
+    def _ve_el_cartel(self):
+        self.client.force_login(self.admin)
+        with _con_fecha(date(2026, 10, 2)):
+            return MARCA in self.client.get(reverse("cashops:dashboard")).content.decode()
+
+    def test_por_defecto_esta_activo(self):
+        self.assertTrue(self.Config.cargar().aviso_vencimiento_activo)
+        self.assertTrue(self._ve_el_cartel())
+
+    def test_leer_el_interruptor_no_crea_la_fila(self):
+        self.assertTrue(self._ve_el_cartel())
+        self.assertEqual(self.Config.objects.count(), 0)
+
+    def test_destildado_no_lo_ve_ningun_administrador(self):
+        self.Config.objects.update_or_create(pk=1, defaults={"aviso_vencimiento_activo": False})
+        self.assertFalse(self._ve_el_cartel())
+
+    def test_volver_a_tildar_lo_reactiva(self):
+        self.Config.objects.update_or_create(pk=1, defaults={"aviso_vencimiento_activo": False})
+        self.Config.objects.filter(pk=1).update(aviso_vencimiento_activo=True)
+        self.assertTrue(self._ve_el_cartel())
+
+    def test_es_singleton(self):
+        self.Config.objects.create(aviso_vencimiento_activo=False)
+        self.Config.objects.create(aviso_vencimiento_activo=True)
+        self.assertEqual(self.Config.objects.count(), 1)
+
+    def test_fuera_de_la_ventana_no_consulta_la_base_por_la_configuracion(self):
+        self.client.force_login(self.admin)
+        with _con_fecha(date(2026, 10, 15)):
+            self.client.get(reverse("cashops:dashboard"))  # calienta sesion y contexto
+            with self.assertNumQueries(0):
+                from core.service_notice import service_notice_for
+
+                self.assertIsNone(service_notice_for(self.admin))
+
+    def test_el_superusuario_edita_la_configuracion_en_el_admin(self):
+        self.client.force_login(self.root)
+        url = reverse("admin:core_configuracionsistema_changelist")
+        respuesta = self.client.get(url)  # sin fila todavia: la crea y manda a editarla
+        self.assertRedirects(respuesta, reverse("admin:core_configuracionsistema_change", args=[1]))
+        self.assertEqual(self.client.get(respuesta.url).status_code, 200)
+        cambio = reverse("admin:core_configuracionsistema_change", args=[1])
+        self.assertEqual(self.client.post(cambio, {}).status_code, 302)  # sin el campo = destildado
+        self.assertFalse(self.Config.objects.get(pk=1).aviso_vencimiento_activo)
+
+    def test_un_administrador_de_negocio_no_entra_a_la_configuracion(self):
+        staff_no_super = User.objects.create_user(
+            username="staff_sw", password="test", is_staff=True, role=self.admin.role
+        )
+        self.client.force_login(staff_no_super)
+        url = reverse("admin:core_configuracionsistema_changelist")
+        self.assertEqual(self.client.get(url).status_code, 403)
+
+    def test_no_se_puede_borrar_ni_agregar_otra_fila_desde_el_admin(self):
+        self.Config.cargar()
+        self.client.force_login(self.root)
+        self.assertEqual(self.client.get(reverse("admin:core_configuracionsistema_add")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("admin:core_configuracionsistema_delete", args=[1])).status_code, 403)

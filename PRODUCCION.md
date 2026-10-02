@@ -57,3 +57,12 @@ variable `SERVICE_NOTICE_DUE_DAY` (default `9`) existe unicamente para dos casos
 
 Railway reinicia el servicio al cambiar variables; no hace falta deploy. Un dia que el
 mes no tiene (31 en febrero) se corre al ultimo dia del mes.
+
+**Apagarlo desde el sistema (sin tocar Railway).** Un superusuario entra a `/admin/` ->
+"Configuracion del sistema" y destilda "Mostrar aviso de vencimiento del servicio".
+Aplica de inmediato a todos los administradores; volver a tildarlo lo reactiva. Es un
+modelo nuevo (`core.ConfiguracionSistema`, una sola fila) y lleva migracion
+`core/0001`: crea una tabla vacia, no toca datos existentes. Sin fila vale el default
+(activo). Ojo: `SERVICE_NOTICE_DUE_DAY=0` sigue apagandolo por entorno y manda sobre el
+interruptor, asi que para que el interruptor mande hay que dejar la variable en `9` (o
+borrarla).
