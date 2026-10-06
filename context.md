@@ -1,6 +1,6 @@
 # Context
 
-Last updated: 2026-09-30
+Last updated: 2026-10-06
 
 ## Current Session
 
@@ -73,6 +73,28 @@ Last updated: 2026-09-30
     sin proveedor -> egreso con su rubro o VARIOS ("S/E"), pedido de Tais.
   - Lectura de .xlsx sin dependencias (`treasury/lectura_xlsx.py`); helpers en
     `treasury/importacion_texto.py`. Tests nuevos en `treasury/tests_importacion_extracto.py`.
+- 2026-10-06 RESPUESTAS DE TAIS (sobre el ensayo en staging):
+  - Una sola clave para TODOS los impuestos (931, IVA, tasas municipales, etc.): EC1 27,
+    YO 4, EC2 25, EB1 34, EB2 10. Reemplaza la 32/7/22/39: `--reparto-impuestos` pasa a ser
+    igual a `--reparto-sueldos`. Los debitos "AFIP" / "IMP. AFIP" que no estan en el desglose
+    ahora se reparten con esa clave (regla nueva en `CARGOS_SIN_DESGLOSE`; antes REVISAR).
+  - Rubros que faltaban en el desglose (Arreglo fiambrera, Pagar vidrio heladeria) =
+    MANTENIMIENTO: se corrigen en una copia del desglose (datos fuera del repo).
+  - OVEJA NEGRA ARMADI SRL es la panaderia propia: las cafeterias le "compran" para medir
+    rentabilidad, pero ese pago no existe. Sus deudas (378 abiertas) deben quedar pagadas
+    SIN mover caja ni banco y seguir contando como materia prima. No hay mecanismo para eso
+    hoy (pagar en efectivo baja la boveda, anular saca el gasto): pendiente de definir.
+  - Jun/jul: Maria cargaba solo los movimientos del banco (la imputacion factura por factura
+    se desarrollo en septiembre), asi que esos pagos no estan atados a las facturas: facturas
+    abiertas de mas y, en julio, gasto contado dos veces. Tais pide atarlos automaticamente.
+    Pendiente de definir alcance. Maria va a cargar los e-cheq y septiembre.
+  - Visa y embargos fuera del desglose: misma clave de impuestos (reglas nuevas, rubros
+    "TARJETA DE CRÉDITO" y "EMBARGO", supuesto a confirmar). La luz de Ariel (socio) que
+    tesoreria anota en la solapa EC1 como "EDESA ARIEL" va siempre a Yo Helados, rubro
+    ARIEL VARIOS, y nunca paga facturas.
+  - Con las respuestas, el cruce del extracto deja 12 debitos sin explicar ($1,0 M) de los
+    32 ($12,35 M) del ensayo; ninguna fila del desglose queda sin banco salvo las pagadas en
+    efectivo (Gasnor, luz de Ariel), que entran por la planilla de efectivo.
 
 ### Core Aviso de vencimiento del servicio (cartel al administrador) 2026-09-03
 

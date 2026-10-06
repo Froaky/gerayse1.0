@@ -29,6 +29,7 @@ from treasury.importacion_planillas import (
     planilla_de_solapa,
     repartir,
 )
+from treasury.importacion_planillas import _periodo_de_transferencia
 from treasury.lectura_xlsx import leer_xlsx
 from treasury.models import (
     CategoriaCuentaPagar,
@@ -186,6 +187,16 @@ class LecturaTests(SimpleTestCase):
         partes = repartir(Decimal("18.15"), reparto)
         self.assertEqual(sum(i for _c, i in partes), Decimal("18.15"))
 
+    def test_el_sueldo_de_la_primera_quincena_es_del_mes_anterior_y_el_adelanto_no(self):
+        casos = [
+            (date(2026, 8, 4), "SUELDO COMPLETO CARLOS VAZQ", date(2026, 7, 1)),
+            (date(2026, 8, 11), "SUELDO ADELANTO LILIANA", date(2026, 8, 1)),
+            (date(2026, 8, 20), "SUELDO COMPLETO CARLOS VAZQ", date(2026, 8, 1)),
+            (date(2026, 8, 4), "COSALTA", date(2026, 8, 1)),
+        ]
+        for fecha, denominacion, periodo in casos:
+            self.assertEqual(_periodo_de_transferencia(fecha, denominacion), periodo, denominacion)
+
 
 class CruceTests(SimpleTestCase):
     def fila(self, numero, fecha, denominacion, monto, **reparto):
@@ -242,7 +253,15 @@ class ImportarDesdeExtractoTests(TestCase):
         self.term = Sucursal.objects.create(codigo="TERM-01", nombre="Terminal", razon_social="A", empresa=self.empresa)
         self.cent = Sucursal.objects.create(codigo="CENT-02", nombre="Centro", razon_social="A", empresa=self.empresa)
         self.rubro_pan = RubroOperativo.objects.create(nombre="PAN")
-        for nombre in ("VENTAS EN SUCURSAL", "IMPUESTOS RETENIDOS EN BANCO", "COMISIONES BANCO", "PERSONAL"):
+        for nombre in (
+            "VENTAS EN SUCURSAL",
+            "IMPUESTOS RETENIDOS EN BANCO",
+            "COMISIONES BANCO",
+            "PERSONAL",
+            "IMPUESTOS AFIP",
+            "TARJETA DE CRÉDITO",
+            "EMBARGO",
+        ):
             RubroOperativo.objects.create(nombre=nombre)
         self.categoria = CategoriaCuentaPagar.objects.create(
             nombre="Pan", rubro_operativo=self.rubro_pan, creado_por=self.admin
@@ -315,6 +334,30 @@ class ImportarDesdeExtractoTests(TestCase):
         conciliacion = importador.conciliacion_extracto()
         self.assertEqual(conciliacion["sin_explicar_creditos"], Decimal("0.00"))
         self.assertEqual(conciliacion["sin_explicar_debitos"], Decimal("0.00"))
+
+    def test_afip_visa_y_embargos_fuera_del_desglose_van_con_la_clave_de_impuestos(self):
+        self.lineas += [
+            linea(7, date(2026, 8, 18), "AFIP", "-1000.00", referencia="17"),
+            linea(8, date(2026, 8, 7), "DB TARJETA DE CREDITO VISA", "-500.00", referencia="18"),
+            linea(9, date(2026, 8, 13), "camaraonlineembargo", "-200.00", referencia="19"),
+        ]
+        importador = self._importador()
+        cargos = sorted(
+            (op.rubro.nombre, op.accion, op.sucursal.codigo, op.monto)
+            for op in importador.operaciones
+            if op.rubro is not None and op.rubro.nombre in ("IMPUESTOS AFIP", "TARJETA DE CRÉDITO", "EMBARGO")
+        )
+        self.assertEqual(
+            cargos,
+            [
+                ("EMBARGO", Accion.EGRESO, "CENT-02", Decimal("80.00")),
+                ("EMBARGO", Accion.EGRESO, "TERM-01", Decimal("120.00")),
+                ("IMPUESTOS AFIP", Accion.EGRESO, "CENT-02", Decimal("400.00")),
+                ("IMPUESTOS AFIP", Accion.EGRESO, "TERM-01", Decimal("600.00")),
+                ("TARJETA DE CRÉDITO", Accion.EGRESO, "CENT-02", Decimal("200.00")),
+                ("TARJETA DE CRÉDITO", Accion.EGRESO, "TERM-01", Decimal("300.00")),
+            ],
+        )
 
     def test_aplicar_carga_el_banco_como_el_extracto_y_no_duplica(self):
         importador = self._importador()
@@ -437,3 +480,23 @@ class EfectivoFormatoNuevoTests(TestCase):
             MovimientoCajaCentral.objects.filter(tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN, sucursal_gasto=self.pp).count(),
             2,
         )
+
+    def test_la_luz_de_ariel_va_a_yo_helados_aunque_se_anote_en_ec1(self):
+        Sucursal.objects.create(codigo="YH-05", nombre="Yo Helados", razon_social="A", empresa=self.empresa)
+        RubroOperativo.objects.create(nombre="ARIEL VARIOS")
+        ruta = Path(self.tmp.name) / "efectivo.xlsx"
+        crear_xlsx(
+            ruta,
+            {
+                "EC1 TERMINAL": [
+                    ["Fecha", "Proveedor", "Rubro", "Cantidad", "Tipo de pago"],
+                    [date(2026, 8, 3), "EDESA ARIEL", "VARIOS", Decimal("156034"), "Efectivo"],
+                ],
+            },
+        )
+        importador = Importador(actor=self.admin)
+        importador.agregar_efectivo(leer_libro_efectivo(ruta))
+        importador.planificar()
+        (op,) = importador.operaciones
+        self.assertEqual((op.accion, op.sucursal.codigo, op.rubro.nombre), (Accion.EGRESO, "YH-05", "ARIEL VARIOS"))
+        self.assertIsNone(op.proveedor)

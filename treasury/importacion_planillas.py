@@ -95,6 +95,9 @@ COLUMNA_A_SUCURSAL = {
 COLUMNAS_REPARTO_BANCO = ("EC1", "EC2", "EB", "EB2", "PP", "H")
 SUCURSAL_OVEJA_NEGRA = "PP-OV-06"
 PLANILLA_OVEJA_NEGRA = "PP"
+# Gastos personales de Ariel (socio): tesoreria los imputa a Yo Helados.
+SUCURSAL_GASTOS_ARIEL = "YH-05"
+RUBRO_GASTOS_ARIEL = "ARIEL VARIOS"
 
 # Rubro de la planilla de banco -> rubro de Gerayse. Lo que no esta se busca
 # por el mismo nombre.
@@ -181,6 +184,11 @@ CARGOS_SIN_DESGLOSE = (
     (r"COMISION", "impuestos", MovimientoBancario.Clase.COMISION_BANCARIA, "COMISIONES BANCO", None),
     (r"MANTENIMIENTO MENSUAL", "impuestos", MovimientoBancario.Clase.COMISION_BANCARIA, "COMISIONES BANCO", None),
     (r"MUNIC", "impuestos", MovimientoBancario.Clase.IMPUESTO, "IMPUESTOS AFIP", None),
+    # Tesoreria reparte con la misma clave todos los impuestos: 931, IVA, tasas.
+    (r"^(IMP\.? )?AFIP\b", "impuestos", MovimientoBancario.Clase.IMPUESTO, "IMPUESTOS AFIP", None),
+    # La tarjeta Visa y los embargos tambien van con la clave de impuestos.
+    (r"TARJETA DE CREDITO", "impuestos", MovimientoBancario.Clase.OTRO_EGRESO, "TARJETA DE CRÉDITO", None),
+    (r"EMBARGO", "impuestos", MovimientoBancario.Clase.OTRO_EGRESO, "EMBARGO", None),
     (r"LIQ COMER", "impuestos", MovimientoBancario.Clase.OTRO_EGRESO, "CONTRACARGOS Y DEVOLUCIONES PAYWAY", None),
     (r"REMUNERACION", "sueldos", MovimientoBancario.Clase.TRANSFERENCIA_TERCEROS, "PERSONAL", "SUELDOS"),
 )
@@ -210,6 +218,15 @@ def primer_dia(fecha: date) -> date:
 def _mes_anterior(fecha: date) -> date:
     mes = primer_dia(fecha)
     return date(mes.year - 1, 12, 1) if mes.month == 1 else date(mes.year, mes.month - 1, 1)
+
+
+def _periodo_de_transferencia(fecha: date, denominacion: str) -> date:
+    """Mes economico de una fila del desglose. Un sueldo pagado en la primera
+    quincena es del mes anterior, como lo imputa tesoreria; un adelanto no."""
+    texto = normalizar(denominacion)
+    if fecha.day <= DIA_CORTE_SUELDOS and re.search(r"SUELDO", texto) and not re.search(r"ADELANTO", texto):
+        return _mes_anterior(fecha)
+    return primer_dia(fecha)
 
 
 def _meses_vecinos(fecha: date) -> list[date]:
@@ -795,7 +812,7 @@ class Importador:
 
         proveedor = self._proveedor(fila.denominacion)
         rubro = self._rubro_banco(fila.rubro)
-        periodo = primer_dia(fila.fecha)
+        periodo = _periodo_de_transferencia(fila.fecha, fila.denominacion)
         reparto_total = sum(fila.reparto.values(), Decimal("0.00"))
 
         if fila.reparto and abs(reparto_total - fila.monto) > TOLERANCIA:
@@ -1063,7 +1080,7 @@ class Importador:
                 base["referencia"] = f"{linea.referencia}-{codigo}"
             proveedor = self._proveedor(fila.denominacion)
             rubro = self._rubro_banco(fila.rubro)
-            periodo = primer_dia(linea.fecha)
+            periodo = _periodo_de_transferencia(linea.fecha, fila.denominacion)
             if not porcion.columna:
                 if self._fila_banco_importada(clave):
                     operaciones.append(
@@ -1343,6 +1360,12 @@ class Importador:
             if re.search(r"SUELDO|\bSAC\b", texto):
                 codigo = SUCURSAL_OVEJA_NEGRA
                 aviso_sucursal = f"Anotado en la solapa {fila.planilla}, imputado a Oveja Negra."
+        gasto_de_ariel = bool(re.search(r"EDESA ARIEL", texto))
+        if gasto_de_ariel and codigo != SUCURSAL_GASTOS_ARIEL:
+            # La luz de Ariel (socio) tesoreria la imputa siempre a Yo Helados,
+            # aunque la anote en la solapa de EC1.
+            codigo = SUCURSAL_GASTOS_ARIEL
+            aviso_sucursal = f"Anotado en la solapa {fila.planilla}, imputado a Yo Helados (gasto de Ariel)."
         sucursal = self.sucursales.get(codigo or "")
         if sucursal is None:
             return [
@@ -1353,7 +1376,10 @@ class Importador:
         if re.search(r"DEUDA JUN", texto):
             periodo = date(fila.fecha.year, 6, 1)
         rubro = self._rubro_efectivo(fila.concepto, fila.rubro_texto)
-        sin_proveedor = fila.planilla == PLANILLA_OVEJA_NEGRA
+        if gasto_de_ariel:
+            rubro = self._rubro(RUBRO_GASTOS_ARIEL) or rubro
+        # Un gasto personal de Ariel nunca paga una factura de proveedor.
+        sin_proveedor = fila.planilla == PLANILLA_OVEJA_NEGRA or gasto_de_ariel
         if sin_proveedor:
             # Oveja Negra: tesoreria no tiene el proveedor de lo que pago. Va
             # como egreso con su rubro, o VARIOS si no dice nada ("S/E").
