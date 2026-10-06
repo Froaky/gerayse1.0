@@ -38,6 +38,10 @@ if (
 # Por defecto sigue a DEBUG, asi el entorno decide y no depende de borrar codigo a mano.
 ENABLE_DANGER_RESET = env.bool("ENABLE_DANGER_RESET", default=DEBUG)
 
+# Cartel fijo de "entorno de prueba". Railway pasa el nombre del environment en
+# RAILWAY_ENVIRONMENT_NAME: solo se muestra en staging (ni en produccion ni en la demo).
+ENTORNO_DE_PRUEBA = env("RAILWAY_ENVIRONMENT_NAME", default="") == "staging"
+
 # Aviso de vencimiento del servicio de alojamiento: cartel que ve solo el administrador
 # (superusuario o rol ADMIN/ADMINISTRADOR). El servicio vence el 9 de cada mes; el cartel
 # sale solo cuando faltan 7 dias y se pone rojo cuando faltan 3. No hay nada que configurar:

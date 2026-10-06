@@ -5,7 +5,7 @@
     <meta charset="utf-8">
     {% include "partials/theme_boot.html" %}
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}Gerayse{% endblock %}</title>
+    <title>{% if entorno_de_prueba %}[PRUEBA] {% endif %}{% block title %}Gerayse{% endblock %}</title>
     <meta name="theme-color" content="#f4f1e9" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#0f1315" media="(prefers-color-scheme: dark)">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -17,6 +17,7 @@
     {% block extra_head %}{% endblock %}
   </head>
   <body class="app-shell {% block body_class %}{% endblock %}">
+    {% include "partials/staging_banner.html" %}
     <div class="app-shell__bg"></div>
     <div class="app-shell__grain"></div>
 

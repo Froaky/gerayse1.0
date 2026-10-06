@@ -1,0 +1,40 @@
+{% comment %}
+  Cartel de entorno de prueba. `entorno_de_prueba` solo es True en el environment
+  "staging" de Railway (config/settings.py -> core/context_processors.py), para que
+  nadie trabaje en la copia creyendo que es el sistema real. Va en las tres shells
+  (base, cashops, treasury) con estilos propios porque las shells operativas no
+  cargan gerayse.css.
+{% endcomment %}
+{% if entorno_de_prueba %}
+  <style>
+    .staging-banner {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: baseline;
+      gap: 4px 12px;
+      padding: 10px 16px;
+      background: #b42318;
+      color: #ffffff;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      font-size: 0.95rem;
+      line-height: 1.4;
+      text-align: center;
+    }
+    .staging-banner strong {
+      font-size: 0.8rem;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    .staging-banner a {
+      color: #ffffff;
+      font-weight: 700;
+      text-decoration: underline;
+    }
+  </style>
+  <div class="staging-banner" role="alert">
+    <strong>Entorno de prueba</strong>
+    <span>Lo que se cargue aquí no queda en el sistema real. Para trabajar, ingrese en <a href="https://www.gerayse.com.ar">www.gerayse.com.ar</a>.</span>
+  </div>
+{% endif %}

@@ -7,6 +7,7 @@ def app_context(request):
     ctx = {
         "app_name": "Gerayse",
         "enable_danger_reset": settings.ENABLE_DANGER_RESET,
+        "entorno_de_prueba": settings.ENTORNO_DE_PRUEBA,
     }
     if not request.user.is_authenticated:
         return ctx

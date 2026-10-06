@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     {% include "partials/theme_boot.html" %}
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}Gerayse{% endblock %}</title>
+    <title>{% if entorno_de_prueba %}[PRUEBA] {% endif %}{% block title %}Gerayse{% endblock %}</title>
     <meta name="theme-color" content="#f4f1e9" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#0f1315" media="(prefers-color-scheme: dark)">
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
@@ -359,6 +359,7 @@
     </style>
   </head>
   <body>
+    {% include "partials/staging_banner.html" %}
     <div class="shell">
       <header class="topbar">
         <div class="brand">
