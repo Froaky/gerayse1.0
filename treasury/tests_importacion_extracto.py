@@ -150,7 +150,7 @@ class LecturaTests(SimpleTestCase):
                 ],
                 "Table 2": [
                     ["Fecha", "Nro. de Referencia", "Causal", "Concepto", "", "Importe", "Saldo"],
-                    ["03/08/2026", 2, 4098, "PAGO PCT Armadi Srl", 30717862453, Decimal("100.00"), Decimal("1100.00")],
+                    ["03/08/2026", 2, 4098, "PAGO PCT Armadi Srl", 30000000007, Decimal("100.00"), Decimal("1100.00")],
                     ["03/08/2026", 1, 3862, "TRF MO CCDO DIST T", "", Decimal("-50.00"), Decimal("1000.00")],
                 ],
             },
@@ -158,7 +158,7 @@ class LecturaTests(SimpleTestCase):
         lineas = leer_extracto_macro(ruta)
         self.assertEqual([l.referencia for l in lineas], ["1", "2", "3"])
         self.assertEqual(saldo_inicial(lineas), Decimal("1050.00"))
-        self.assertEqual(lineas[1].concepto, "PAGO PCT Armadi Srl 30717862453")
+        self.assertEqual(lineas[1].concepto, "PAGO PCT Armadi Srl 30000000007")
 
     def test_extracto_que_no_cierra_frena(self):
         ruta = Path(self.tmp.name) / "roto.xlsx"
