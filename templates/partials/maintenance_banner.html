@@ -1,0 +1,38 @@
+{% comment %}
+  Aviso de mantenimiento programado (core/mantenimiento.py). Lo ven todos los
+  usuarios, tambien en el ingreso, desde que se configura hasta el final de la
+  ventana; despues desaparece solo. Va en las tres shells con estilos propios.
+{% endcomment %}
+{% if aviso_mantenimiento %}
+  <style>
+    .maintenance-banner {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: baseline;
+      gap: 4px 12px;
+      padding: 10px 16px;
+      background: #b54708;
+      color: #ffffff;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      font-size: 0.95rem;
+      line-height: 1.4;
+      text-align: center;
+    }
+    .maintenance-banner strong {
+      font-size: 0.8rem;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+  </style>
+  <div class="maintenance-banner" role="alert">
+    {% if aviso_mantenimiento.en_curso %}
+      <strong>Sistema en mantenimiento</strong>
+      <span>Hasta las {{ aviso_mantenimiento.hasta|time:"H:i" }} h. Hasta entonces, evite cargar pagos, deudas y movimientos de banco o de caja fuerte.</span>
+    {% else %}
+      <strong>Mantenimiento programado</strong>
+      <span>El {{ aviso_mantenimiento.desde|date:"d/m" }} de {{ aviso_mantenimiento.desde|time:"H:i" }} a {{ aviso_mantenimiento.hasta|time:"H:i" }} h. En ese horario, evite cargar pagos, deudas y movimientos de banco o de caja fuerte.</span>
+    {% endif %}
+  </div>
+{% endif %}

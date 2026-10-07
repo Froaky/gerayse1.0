@@ -1,3 +1,4 @@
+from core.mantenimiento import aviso_de_mantenimiento
 from core.service_notice import service_notice_for
 
 
@@ -8,6 +9,7 @@ def app_context(request):
         "app_name": "Gerayse",
         "enable_danger_reset": settings.ENABLE_DANGER_RESET,
         "entorno_de_prueba": settings.ENTORNO_DE_PRUEBA,
+        "aviso_mantenimiento": aviso_de_mantenimiento(),
     }
     if not request.user.is_authenticated:
         return ctx
