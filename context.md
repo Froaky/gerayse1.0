@@ -95,6 +95,15 @@ Last updated: 2026-10-06
   - Con las respuestas, el cruce del extracto deja 12 debitos sin explicar ($1,0 M) de los
     32 ($12,35 M) del ensayo; ninguna fila del desglose queda sin banco salvo las pagadas en
     efectivo (Gasnor, luz de Ariel), que entran por la planilla de efectivo.
+- 2026-10-07 PRODUCCION: Tais respondio todo (los ultimos 5 debitos tambien) y dio el OK.
+  Ensayo final en staging sobre copia de prod del dia: identico. Carga en prod 21:15-21:37
+  con aviso de mantenimiento (core/mantenimiento.py, variables MANTENIMIENTO_DESDE/HASTA):
+  1.163 operaciones, 0 errores. Banco ARMADI ago = extracto (creditos 91.353.396,63; debitos
+  85.447.063,67 + cheques 8.651.006,77 que carga Maria); 0 debitos sin imputar; 414 pagos por
+  transferencia ($30,56 M) y 557 en efectivo ($68,17 M); resimulacion 0 operaciones.
+  Pendientes: Oveja Negra como proveedor interno, atar pagos de jun/jul a facturas, arqueo de
+  la caja fuerte (da de mas: los sueldos de septiembre en efectivo no estan cargados) y dos
+  INGRESO_CAJA con anio 0026 en prod (ids 1194 y 1412).
 
 ### Core Aviso de vencimiento del servicio (cartel al administrador) 2026-09-03
 
