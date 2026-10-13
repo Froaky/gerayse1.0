@@ -62,6 +62,8 @@ class ReportScope:
     # Empresa con una sola sucursal activa (Mapogo): el general se rotula con ella.
     sucursal_unica: object | None = None
     emitido: datetime | None = None
+    # General de un PDF que ademas trae cada sucursal: solo cambia el nombre del archivo.
+    todas_las_sucursales: bool = False
 
     @property
     def empresa_ids(self) -> list[int]:
@@ -91,6 +93,8 @@ class ReportScope:
     def alcance_slug(self) -> str:
         if self.sucursal is not None:
             return slugify(self.sucursal.codigo) or f"sucursal-{self.sucursal.pk}"
+        if self.todas_las_sucursales:
+            return "general-y-sucursales"
         return "general"
 
     @property

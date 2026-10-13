@@ -1,0 +1,62 @@
+{% extends "treasury/layout.html" %}
+{% load l10n %}
+
+{% block title %}Reportes PDF | Gerayse{% endblock %}
+
+{% block content %}
+<style>
+  .reportes-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
+  .reporte-card { display: grid; gap: 14px; align-content: start; min-width: 0; }
+  .reporte-card form { display: grid; gap: 12px; min-width: 0; }
+  .reporte-card .periodo { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+  .reporte-card .field { min-width: 0; }
+  .reporte-card .input { width: 100%; min-width: 0; box-sizing: border-box; }
+  .reporte-card .acciones { display: flex; justify-content: flex-end; }
+</style>
+
+<section class="hero">
+  <div class="card">
+    <h1>{{ title }}</h1>
+    <p class="muted">{{ subtitle }}</p>
+  </div>
+</section>
+
+{% if not cards %}
+  <div class="card">
+    <p class="muted">No hay empresas seleccionadas. Elegí al menos una empresa arriba para generar reportes.</p>
+  </div>
+{% else %}
+  <div class="reportes-grid">
+    {% for card in cards %}
+      <article class="card reporte-card">
+        <div>
+          <h2>{{ card.reporte.titulo }}</h2>
+          <p class="muted">{{ card.reporte.descripcion }}</p>
+        </div>
+        <form method="get" action="{{ card.action }}">
+          <div class="field">
+            <label for="{{ card.form.alcance.id_for_label }}">{{ card.form.alcance.label }}</label>
+            {{ card.form.alcance }}
+          </div>
+          <div class="periodo">
+            <div class="field">
+              <label for="{{ card.form.mes_desde.id_for_label }}">{{ card.form.mes_desde.label }}</label>
+              {{ card.form.mes_desde }}
+            </div>
+            <div class="field">
+              <label for="{{ card.form.mes_hasta.id_for_label }}">{{ card.form.mes_hasta.label }}</label>
+              {{ card.form.mes_hasta }}
+            </div>
+          </div>
+          {% if not card.reporte.usa_periodo %}
+            <p class="muted">Sin meses, trae toda la deuda abierta a hoy.</p>
+          {% endif %}
+          <div class="acciones">
+            <button type="submit" class="button">Descargar PDF</button>
+          </div>
+        </form>
+      </article>
+    {% endfor %}
+  </div>
+{% endif %}
+{% endblock %}

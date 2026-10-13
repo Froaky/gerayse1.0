@@ -68,6 +68,8 @@ urlpatterns = [
     path("conciliacion/", views.bank_reconciliation, name="bank_reconciliation"),
     # EP-05: Flujo de Disponibilidades
     path("disponibilidades/", views.disponibilidades_report, name="disponibilidades"),
+    path("reportes/", views.reportes_index, name="reportes"),
+    path("reportes/<slug:reporte>/pdf/", views.reporte_pdf, name="reporte_pdf"),
     path("disponibilidades/cerrar/", views.close_month_action, name="close_month"),
     path("efectivo-central/", views.central_cash_movements, name="central_cash_list"),
     path("efectivo-central/nuevo/", views.central_cash_create, name="central_cash_create"),

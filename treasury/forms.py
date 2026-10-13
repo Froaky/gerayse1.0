@@ -22,6 +22,7 @@ from .models import (
     Proveedor,
     SaldoInicialCuentaBancaria,
 )
+from .reportes.alcance import ReportScope, rango_de_meses
 from .services import CLASE_POR_MEDIO_DE_PAGO
 from cashops.models import Empresa, RubroOperativo, Sucursal
 
@@ -337,6 +338,118 @@ class TreasuryDashboardFilterForm(TreasuryStyledFormMixin, forms.Form):
         if fecha_desde and fecha_hasta and fecha_hasta < fecha_desde:
             cleaned_data["fecha_desde"], cleaned_data["fecha_hasta"] = fecha_hasta, fecha_desde
         return cleaned_data
+
+
+class ReportFilterForm(TreasuryStyledFormMixin, forms.Form):
+    """Alcance y periodo de un reporte PDF.
+
+    `alcance` junta empresa y sucursal en un solo valor, agrupado por razon social:
+    "e<empresa>" general, "t<empresa>" general + cada sucursal en un mismo PDF,
+    "s<sucursal>" una sucursal. Asi la sucursal siempre se valida contra la empresa
+    (los snapshots ignoran empresa_ids cuando reciben una sucursal).
+    """
+
+    FUERA_DE_ALCANCE = "fuera_de_alcance"
+
+    alcance = forms.ChoiceField(label="Empresa y alcance")
+    mes_desde = forms.DateField(
+        label="Desde",
+        input_formats=["%Y-%m"],
+        widget=forms.DateInput(attrs={"type": "month"}, format="%Y-%m"),
+    )
+    mes_hasta = forms.DateField(
+        label="Hasta",
+        input_formats=["%Y-%m"],
+        widget=forms.DateInput(attrs={"type": "month"}, format="%Y-%m"),
+    )
+
+    def __init__(self, *args, empresas, usa_periodo=True, hoy=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.hoy = hoy or timezone.localdate()
+        self.usa_periodo = usa_periodo
+        self.empresas = {empresa.pk: empresa for empresa in empresas}
+        self.sucursales_activas = {
+            empresa_pk: list(
+                Sucursal.objects.filter(empresa_id=empresa_pk, activa=True).order_by("nombre")
+            )
+            for empresa_pk in self.empresas
+        }
+        grupos = []
+        for empresa in sorted(self.empresas.values(), key=lambda item: item.nombre):
+            sucursales = self.sucursales_activas[empresa.pk]
+            if len(sucursales) == 1:
+                opciones = [(f"e{empresa.pk}", f"General · {sucursales[0].nombre} (única sucursal)")]
+            else:
+                opciones = [(f"e{empresa.pk}", "General (todas las sucursales)")]
+                if sucursales:
+                    opciones.append((f"t{empresa.pk}", "General y cada sucursal (un solo PDF)"))
+                opciones += [(f"s{sucursal.pk}", f"Sucursal {sucursal.nombre}") for sucursal in sucursales]
+            grupos.append((empresa.nombre, opciones))
+        self.fields["alcance"].choices = grupos[0][1] if len(grupos) == 1 else grupos
+        if usa_periodo:
+            mes_actual = self.hoy.replace(day=1)
+            self.fields["mes_desde"].initial = mes_actual
+            self.fields["mes_hasta"].initial = mes_actual
+        else:
+            self.fields["mes_desde"].required = False
+            self.fields["mes_hasta"].required = False
+            self.fields["mes_desde"].label = "Desde (opcional)"
+            self.fields["mes_hasta"].label = "Hasta (opcional)"
+        self._apply_input_classes()
+
+    def clean_alcance(self):
+        # ChoiceField ya rechaza valores que no estan entre las opciones. Igual se
+        # marca con un codigo propio para que la vista responda 404: una sucursal o
+        # empresa ajena por URL no tiene que caer en silencio al general.
+        valor = self.cleaned_data["alcance"]
+        modo, pk = valor[:1], valor[1:]
+        if modo == "s":
+            for empresa_pk, sucursales in self.sucursales_activas.items():
+                for sucursal in sucursales:
+                    if str(sucursal.pk) == pk:
+                        return {"modo": modo, "empresa": self.empresas[empresa_pk], "sucursal": sucursal}
+        elif modo in {"e", "t"} and pk.isdigit() and int(pk) in self.empresas:
+            return {"modo": modo, "empresa": self.empresas[int(pk)], "sucursal": None}
+        raise forms.ValidationError("El alcance elegido no está disponible.", code=self.FUERA_DE_ALCANCE)
+
+    def clean(self):
+        cleaned_data = super().clean()
+        mes_desde = cleaned_data.get("mes_desde")
+        mes_hasta = cleaned_data.get("mes_hasta")
+        if not self.usa_periodo and bool(mes_desde) != bool(mes_hasta):
+            raise forms.ValidationError("Para filtrar por período completá los dos meses, o dejá los dos vacíos.")
+        if mes_desde and mes_hasta:
+            if mes_hasta < mes_desde:
+                raise forms.ValidationError("El mes hasta no puede ser anterior al mes desde.")
+            if mes_desde > self.hoy.replace(day=1):
+                raise forms.ValidationError("El período no puede empezar en un mes futuro.")
+        return cleaned_data
+
+    def fuera_de_alcance(self) -> bool:
+        return self.has_error("alcance", code=self.FUERA_DE_ALCANCE) or (
+            "alcance" in self.errors and self.data.get(self.add_prefix("alcance")) not in (None, "")
+        )
+
+    def build_scopes(self, *, emitido=None):
+        """Un ReportScope por documento: uno solo, o el general + cada sucursal."""
+        alcance = self.cleaned_data["alcance"]
+        empresa = alcance["empresa"]
+        mes_desde = self.cleaned_data.get("mes_desde")
+        mes_hasta = self.cleaned_data.get("mes_hasta")
+        if self.usa_periodo:
+            date_from, date_to = rango_de_meses(mes_desde, mes_hasta, hoy=self.hoy)
+        else:
+            date_from = mes_desde.replace(day=1) if mes_desde else None
+            date_to = mes_hasta.replace(day=1) if mes_hasta else None
+        sucursales = self.sucursales_activas[empresa.pk]
+        comun = {"empresa": empresa, "date_from": date_from, "date_to": date_to, "emitido": emitido}
+        if alcance["sucursal"] is not None:
+            return [ReportScope(sucursal=alcance["sucursal"], **comun)]
+        unica = sucursales[0] if len(sucursales) == 1 else None
+        general = ReportScope(sucursal_unica=unica, todas_las_sucursales=alcance["modo"] == "t", **comun)
+        if alcance["modo"] == "t":
+            return [general] + [ReportScope(sucursal=sucursal, **comun) for sucursal in sucursales]
+        return [general]
 
 
 class SpecialCommitmentForm(TreasuryStyledFormMixin, forms.ModelForm):

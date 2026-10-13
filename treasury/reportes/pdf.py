@@ -201,6 +201,17 @@ def _cell(text: str, col_width: float, *, bold: bool, numeric: bool):
     return Paragraph(escape(text), _CELL_BOLD_STYLE if bold else _CELL_STYLE)
 
 
+def _label_span_end(cells: list[str], numeric_cols: frozenset[int]) -> int:
+    """Ultima columna que puede ocupar el rotulo de la fila: las vacias que le
+    siguen, sin entrar en una columna numerica. 0 = no se expande."""
+    last = 0
+    for col in range(1, len(cells)):
+        if cells[col] or col in numeric_cols:
+            break
+        last = col
+    return last
+
+
 def _table(block: TableBlock, width: float) -> list:
     flow = [Paragraph(escape(block.title), _SECTION_STYLE)]
     if not block.rows:
@@ -208,15 +219,25 @@ def _table(block: TableBlock, width: float) -> list:
         return flow
     col_widths = [fraction * width for fraction in block.widths]
     data = [list(block.columns)]
+    label_spans = {}
     for index, row in enumerate(block.rows):
         if index in block.group_rows:
             data.append([format_value(row[0])] + [""] * (len(row) - 1))
             continue
         bold = index in block.total_rows
+        cells = [format_value(value) for value in row]
+        widths = list(col_widths)
+        if bold:
+            # El rotulo de un subtotal ocupa las celdas vacias que le siguen, asi
+            # "Subtotal Septiembre 2026" no se parte en una columna angosta.
+            last = _label_span_end(cells, block.numeric_cols)
+            if last:
+                label_spans[index] = last
+                widths[0] = sum(col_widths[: last + 1])
         data.append(
             [
-                _cell(format_value(value), col_widths[col], bold=bold, numeric=col in block.numeric_cols)
-                for col, value in enumerate(row)
+                _cell(text, widths[col], bold=bold, numeric=col in block.numeric_cols)
+                for col, text in enumerate(cells)
             ]
         )
     style = [
@@ -251,6 +272,8 @@ def _table(block: TableBlock, width: float) -> list:
             ("BACKGROUND", (0, row), (-1, row), TOTAL_BG),
             ("FONTNAME", (0, row), (-1, row), BOLD_FONT),
         ]
+        if index in label_spans:
+            style.append(("SPAN", (0, row), (label_spans[index], row)))
     table = LongTable(data, colWidths=col_widths, repeatRows=1)
     table.setStyle(TableStyle(style))
     flow.append(table)

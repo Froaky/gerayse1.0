@@ -7,7 +7,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import IntegrityError
 from django.db.models import Count, Q, Sum
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -54,6 +54,7 @@ from .forms import (
     SupplierPaymentBatchForm,
     SupplierPickerForm,
     open_payables_queryset,
+    ReportFilterForm,
     TreasuryDashboardFilterForm,
     TransferPaymentForm,
 )
@@ -138,6 +139,8 @@ from .services import (
     update_pos_batch,
     update_supplier,
 )
+from .reportes.pdf import render_report_pdf
+from .reportes.registro import REGISTRO as REPORTES_PDF
 
 
 TREASURY_WRITE_VIEW_NAMES = {
@@ -646,6 +649,68 @@ def economic_grupo_detail(request, grupo_id):
             "periodo_qs": periodo_qs,
         },
     )
+
+
+def _report_empresas(request):
+    """Empresas activas que el usuario tiene permitidas y seleccionadas en la sesion."""
+    from cashops.models import Empresa
+
+    return list(
+        Empresa.objects.filter(activa=True, pk__in=_get_empresa_ids(request))
+        .filter(pk__in=request.user.empresas_permitidas.values("pk"))
+        .order_by("nombre")
+    )
+
+
+@login_required
+def reportes_index(request):
+    _require_treasury_admin(request)
+    empresas = _report_empresas(request)
+    cards = []
+    if empresas:
+        for reporte in REPORTES_PDF.values():
+            cards.append(
+                {
+                    "reporte": reporte,
+                    "form": ReportFilterForm(
+                        empresas=empresas, usa_periodo=reporte.usa_periodo, auto_id=f"id_{reporte.slug}_%s"
+                    ),
+                    "action": reverse("treasury:reporte_pdf", args=[reporte.slug]),
+                }
+            )
+    return render(
+        request,
+        "treasury/reportes.html",
+        {
+            "title": "Reportes PDF",
+            "subtitle": "Cada PDF sale para una empresa, con su razón social en el encabezado: por sucursal, general o el general con cada sucursal.",
+            "cards": cards,
+        },
+    )
+
+
+@login_required
+def reporte_pdf(request, reporte):
+    _require_treasury_admin(request)
+    definicion = REPORTES_PDF.get(reporte)
+    if definicion is None:
+        raise Http404("Reporte inexistente.")
+    form = ReportFilterForm(request.GET, empresas=_report_empresas(request), usa_periodo=definicion.usa_periodo)
+    if not form.is_valid():
+        # Una empresa o sucursal ajena por URL no cae en silencio al general.
+        if form.fuera_de_alcance():
+            raise Http404("Alcance no disponible.")
+        errores = []
+        for campo, mensajes in form.errors.items():
+            etiqueta = form.fields[campo].label if campo in form.fields else ""
+            errores += [f"{etiqueta}: {mensaje}" if etiqueta else mensaje for mensaje in mensajes]
+        messages.error(request, f"{definicion.titulo}: " + " ".join(errores))
+        return redirect("treasury:reportes")
+    scopes = form.build_scopes(emitido=timezone.now())
+    pdf = render_report_pdf([definicion.builder(scope) for scope in scopes])
+    response = HttpResponse(pdf, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{definicion.nombre_archivo(scopes[0])}"'
+    return response
 
 
 @login_required

@@ -11,7 +11,7 @@ from django.utils import timezone
 from cashops.models import Empresa, Sucursal
 from treasury.reportes.alcance import ReportScope, nombre_mes, rango_de_meses
 from treasury.reportes.documento import Kpi, NoteBlock, Pct, ReportDocument, TableBlock
-from treasury.reportes.pdf import build_story, format_value, header_lines, render_report_pdf
+from treasury.reportes.pdf import _label_span_end, build_story, format_value, header_lines, render_report_pdf
 
 
 def _pages(pdf: bytes) -> int:
@@ -182,3 +182,14 @@ class RendererTests(SimpleTestCase):
         elapsed = time.perf_counter() - start
         self.assertGreater(_pages(pdf), 20)
         self.assertLess(elapsed, 10, f"2000 filas tardaron {elapsed:.1f}s")
+
+
+class LabelSpanTests(SimpleTestCase):
+    def test_subtotal_label_takes_the_empty_cells_up_to_the_first_number(self):
+        cells = ["Subtotal Septiembre 2026", "", "", "", "", "$ 10,00", "", "$ 10,00"]
+        self.assertEqual(_label_span_end(cells, frozenset({5, 6, 7})), 4)
+
+    def test_label_never_spans_into_a_numeric_column(self):
+        # "Pagado" vacio en el subtotal: es numerica, el rotulo no la ocupa.
+        self.assertEqual(_label_span_end(["Total", "", "$ 5,00"], frozenset({1, 2})), 0)
+        self.assertEqual(_label_span_end(["Total", "$ 5,00"], frozenset({1})), 0)
