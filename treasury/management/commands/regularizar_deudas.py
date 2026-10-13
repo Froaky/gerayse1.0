@@ -11,11 +11,16 @@ efectivo real (con su egreso de la boveda), a la fecha de cada factura:
         --plan plan.csv --informe aplicado.csv --apply
 
 Modo interno: la panaderia propia nunca se paga. Cancela sus deudas abiertas
-con el medio INTERNO, sin mover fondos, y con --apply marca al proveedor. Desde
-ahi sus facturas nuevas nacen saldadas solas (alta automatica):
+con el medio INTERNO, sin mover fondos, y con --apply marca al proveedor (solo
+si cancelo al menos una deuda del plan y ninguna dio error). Desde ahi sus
+facturas nuevas nacen saldadas solas (alta automatica). No lleva filtros, y
+--apply tambien exige el plan revisado. Si la razon social no dice OVEJA NEGRA,
+hay que repetirla con --confirmar:
 
     python manage.py regularizar_deudas --proveedor-interno "OVEJA NEGRA ARMADI SRL" \\
-        --usuario tesoreria --informe interno.csv [--plan interno.csv --apply]
+        --usuario tesoreria --informe interno.csv
+    python manage.py regularizar_deudas --proveedor-interno "OVEJA NEGRA ARMADI SRL" \\
+        --usuario tesoreria --plan interno.csv --informe interno_aplicado.csv --apply
 
 Reversion de un lote (anula sus pagos; el efectivo vuelve a la boveda). Con
 --desmarcar-interno desmarca al proveedor y anula tambien sus cancelaciones
@@ -37,7 +42,14 @@ from cashops.models import Sucursal
 from treasury.importacion_texto import dinero, normalizar, parsear_fecha
 from treasury.models import Proveedor
 from treasury.permissions import ensure_treasury_admin
-from treasury.regularizacion import TOP_PROVEEDORES, Accion, Regularizacion, Reversion, leer_plan
+from treasury.regularizacion import (
+    PATRON_INTERNO,
+    TOP_PROVEEDORES,
+    Accion,
+    Regularizacion,
+    Reversion,
+    leer_plan,
+)
 
 MAX_ERRORES_EN_CONSOLA = 20
 
@@ -70,8 +82,8 @@ class Command(BaseCommand):
             "--plan",
             help=(
                 "CSV revisado por tesoreria (el informe de la simulacion). Con --apply se aplican solo "
-                "sus filas A_REGULARIZAR con el mismo saldo; lo demas se informa. Obligatorio para "
-                "aplicar el modo general."
+                "sus filas A_REGULARIZAR que hoy siguen igual (saldo, importe, proveedor, sucursal, "
+                "empresa y fecha de pago); lo demas se informa. Obligatorio para aplicar."
             ),
         )
         parser.add_argument("--hasta", help="Modo general: facturas con fecha de emision hasta esta fecha.")
@@ -109,8 +121,23 @@ class Command(BaseCommand):
             help="Incluye las facturas que parecen cargadas dos veces.",
         )
         parser.add_argument(
+            "--incluir-posibles-pagos-en-efectivo",
+            action="store_true",
+            help=(
+                "Incluye las facturas con un egreso de la boveda sin factura (EGRESO_ADMIN) de la misma "
+                "sucursal e importe: quedan con aviso para que tesoreria las saque del plan si ya se pagaron."
+            ),
+        )
+        parser.add_argument(
             "--proveedor-interno",
             help="Modo interno: razon social (o id) del proveedor propio. Usa el medio INTERNO, sin plata.",
+        )
+        parser.add_argument(
+            "--confirmar",
+            help=(
+                "Modo interno con --apply: la razon social del proveedor, repetida, cuando no dice "
+                "OVEJA NEGRA (marcarlo cancela sin plata todas sus facturas futuras)."
+            ),
         )
         parser.add_argument("--revertir", help="Lote a revertir: anula sus pagos y reabre las deudas.")
         parser.add_argument("--motivo", help="Motivo de la anulacion al revertir.")
@@ -144,17 +171,15 @@ class Command(BaseCommand):
         proveedor = self._proveedor_interno(options["proveedor_interno"])
         if proveedor is None and not options["hasta"]:
             raise CommandError("Indique --hasta (modo general), --proveedor-interno o --revertir.")
-        if proveedor is not None and (options["hasta"] or options["fecha_pago"]):
-            raise CommandError(
-                "El modo interno no lleva --hasta ni --fecha-pago: toma todas las deudas abiertas del "
-                "proveedor y las cancela a la fecha de cada factura."
-            )
-        if options["apply"] and proveedor is None and not options["plan"]:
-            # El modo general mueve la caja fuerte: se aplica solo lo que
-            # tesoreria reviso, nunca una seleccion recalculada a ciegas.
-            raise CommandError(
-                "Para aplicar el modo general hace falta --plan con el informe revisado por tesoreria."
-            )
+        if proveedor is None and options["confirmar"]:
+            raise CommandError("--confirmar va solo con --proveedor-interno.")
+        if options["apply"] and not options["plan"]:
+            # El modo general mueve la caja fuerte y el interno cancela deudas y
+            # marca al proveedor para siempre: se aplica solo lo que tesoreria
+            # reviso, nunca una seleccion recalculada a ciegas.
+            raise CommandError("Para aplicar hace falta --plan con el informe revisado por tesoreria.")
+        if proveedor is not None and options["apply"]:
+            self._confirmar_proveedor_interno(proveedor, options["confirmar"])
         self._validar_sucursales(options["sucursal"])
         try:
             regularizacion = Regularizacion(
@@ -169,6 +194,7 @@ class Command(BaseCommand):
                 incluir_sin_sucursal=options["incluir_sin_sucursal"],
                 incluir_posibles_pagos=options["incluir_posibles_pagos"],
                 incluir_posibles_duplicadas=options["incluir_posibles_duplicadas"],
+                incluir_posibles_pagos_en_efectivo=options["incluir_posibles_pagos_en_efectivo"],
             )
             aprobadas = leer_plan(options["plan"], regularizacion.medio) if options["plan"] else None
         except ValidationError as error:
@@ -235,6 +261,21 @@ class Command(BaseCommand):
         sugerencia = f" Parecidos: {', '.join(parecidos[:10])}." if parecidos else ""
         raise CommandError(f"No existe el proveedor '{valor}'.{sugerencia}")
 
+    def _confirmar_proveedor_interno(self, proveedor, confirmacion):
+        """Un id mal tipeado marcaria como interno a un proveedor real: todas sus
+        facturas futuras nacerian pagadas sin plata. Si la razon social no es la
+        de la panaderia, se pide repetirla."""
+        nombre = normalizar(proveedor.razon_social)
+        if PATRON_INTERNO.search(nombre):
+            return
+        if confirmacion and normalizar(confirmacion) == nombre:
+            return
+        raise CommandError(
+            f"'{proveedor.razon_social}' (#{proveedor.pk}) no parece el proveedor propio (la razon social no "
+            "dice OVEJA NEGRA). Marcarlo como interno cancela sin plata sus deudas y todas sus facturas "
+            f"futuras. Si es correcto, repita la razon social con --confirmar \"{proveedor.razon_social}\"."
+        )
+
     def _validar_sucursales(self, codigos):
         existentes = {codigo.upper() for codigo in Sucursal.objects.values_list("codigo", flat=True)}
         faltan = [codigo for codigo in codigos if codigo.strip() and codigo.strip().upper() not in existentes]
@@ -252,6 +293,7 @@ class Command(BaseCommand):
                 "fecha_pago",
                 "cargadas_hasta",
                 "proveedor_interno",
+                "confirmar",
             )
             if options[opcion]
         ] + [
@@ -260,7 +302,12 @@ class Command(BaseCommand):
             if options[opcion]
         ] + [
             opcion
-            for opcion in ("incluir_sin_sucursal", "incluir_posibles_pagos", "incluir_posibles_duplicadas")
+            for opcion in (
+                "incluir_sin_sucursal",
+                "incluir_posibles_pagos",
+                "incluir_posibles_duplicadas",
+                "incluir_posibles_pagos_en_efectivo",
+            )
             if options[opcion]
         ]
         if incompatibles:
@@ -325,10 +372,24 @@ class Command(BaseCommand):
         self.stdout.write(titulo)
         quedaria = "saldo despues" if aplicado else "quedaria"
         self.stdout.write(f"  {'empresa':<34} {'saldo hoy':>18} {columna:>18} {quedaria:>18}")
+        negativas = []
         for fila in bovedas:
-            self.stdout.write(
+            linea = (
                 f"  {fila['empresa'][:34]:<34} {dinero(fila['antes']):>18} {dinero(fila['efectivo']):>18} "
                 f"{dinero(fila['despues']):>18}"
+            )
+            if fila["despues"] < 0:
+                negativas.append(fila["empresa"])
+                linea = self.style.ERROR(linea)
+            self.stdout.write(linea)
+        if negativas and not reversion:
+            self.stdout.write(
+                self.style.ERROR(
+                    f"Caja fuerte en negativo: {', '.join(negativas)}. Mientras siga negativa, el sistema no "
+                    "deja revertir la validacion de ninguna caja de esa empresa (solo anular la caja entera). "
+                    "Antes de aplicar, decidir con tesoreria si se registra el prestamo entre empresas (un "
+                    "egreso en la boveda que presta y un aporte en la que recibe) para que ninguna quede negativa."
+                )
             )
 
     def _imprimir_avisos_por_mes(self, regularizacion):
@@ -377,10 +438,35 @@ class Command(BaseCommand):
                 f"{regularizacion.categorias_sin_rubro} deudas a cancelar tienen una categoria sin rubro: "
                 "no cuentan como gasto en la lectura economica."
             )
-        if aplicado and regularizacion.proveedor_marcado:
-            self.stdout.write(f"Proveedor marcado como interno: {regularizacion.proveedor_interno.razon_social}.")
-        elif not aplicado:
-            self.stdout.write("Con --apply el proveedor queda marcado como interno.")
+        nombre = regularizacion.proveedor_interno.razon_social
+        if not aplicado:
+            self.stdout.write(
+                "Con --apply el proveedor queda marcado como interno si se cancela al menos una deuda del plan "
+                "y ninguna da error."
+            )
+            return
+        if regularizacion.proveedor_marcado:
+            self.stdout.write(f"Proveedor marcado como interno: {nombre}.")
+        else:
+            estado = (
+                "Sigue marcado como interno de antes"
+                if regularizacion.ya_era_interno
+                else "Queda SIN marcar como interno"
+            )
+            self.stdout.write(
+                self.style.ERROR(f"No se marco al proveedor {nombre}: {regularizacion.motivo_sin_marcar} {estado}.")
+            )
+        cantidad, total = regularizacion.abiertas_despues
+        if cantidad:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"Siguen abiertas {cantidad} deudas de {nombre} por {dinero(total)}: no se cancelan solas "
+                    "(ver POSIBLE_DUPLICADA, FUERA_DEL_PLAN, DISTINTA_AL_PLAN y errores en el informe; "
+                    "corregirlas y volver a simular)."
+                )
+            )
+        else:
+            self.stdout.write(f"No quedan deudas abiertas de {nombre}.")
 
     def _imprimir_errores(self, proceso):
         errores = proceso.errores()

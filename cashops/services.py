@@ -5,7 +5,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Case, IntegerField, Q, Sum, Value, When
+from django.db.models import Case, IntegerField, Prefetch, Q, Sum, Value, When
 from django.utils import timezone
 
 from .models import (
@@ -304,13 +304,28 @@ def build_box_activity_timeline(caja: Caja, movements) -> list[dict]:
                 }
             )
 
-    for deuda in caja.deudas_originadas.select_related("proveedor").all():
+    from treasury.models import PagoTesoreria
+
+    deudas = caja.deudas_originadas.select_related("proveedor").prefetch_related(
+        Prefetch(
+            "pagos",
+            queryset=PagoTesoreria.objects.filter(estado=PagoTesoreria.Estado.REGISTRADO),
+            to_attr="pagos_vivos",
+        )
+    )
+    for deuda in deudas:
         is_annulled_debt = deuda.estado == deuda.Estado.ANULADA
         if is_annulled_debt:
             debt_detail = f"{deuda.proveedor} - {deuda.concepto}. Anulada: {deuda.motivo_anulacion or 'sin motivo registrado'}."
-        elif deuda.proveedor.es_interno:
+        elif (
+            deuda.estado == deuda.Estado.PAGADA
+            and deuda.pagos_vivos
+            and all(pago.medio_pago == PagoTesoreria.MedioPago.INTERNO for pago in deuda.pagos_vivos)
+        ):
             # US-3.20: la panaderia propia nunca se paga; decir "tesoreria paga
-            # despues" seria falso.
+            # despues" seria falso. Solo si de verdad esta saldada con INTERNO:
+            # una deuda abierta (o pagada con plata) del proveedor interno sigue
+            # siendo algo que tesoreria paga o pago.
             debt_detail = f"{deuda.proveedor} - {deuda.concepto}. {TEXTO_DEUDA_PROVEEDOR_INTERNO}."
         else:
             debt_detail = f"{deuda.proveedor} - {deuda.concepto}. No salio efectivo de la caja; tesoreria paga despues."

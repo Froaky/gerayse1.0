@@ -1187,7 +1187,9 @@ def _register_payment(
             empresa=_empresa_de_la_deuda(locked_payable, empresa),
             tipo=MovimientoCajaCentral.Tipo.EGRESO_PAGO,
             monto=monto,
-            concepto=f"Pago a {locked_payable.proveedor}: {locked_payable.concepto}",
+            # Mismo recorte que el debito del pago bancario: razon social y
+            # concepto admiten 160 cada uno y el movimiento solo 160 en total.
+            concepto=f"Pago a {locked_payable.proveedor}: {locked_payable.concepto}"[:160],
             fecha=fecha_pago,
             pago_tesoreria=payment,
             actor=actor,

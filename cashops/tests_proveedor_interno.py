@@ -221,6 +221,25 @@ class GastoComoDeudaInternoTests(InternoCajaBase):
         self.assertNotContains(response, "Pan del turno. No salio efectivo de la caja; tesoreria paga despues.")
         self.assertContains(response, "Verdura del turno. No salio efectivo de la caja; tesoreria paga despues.")
 
+    def test_la_linea_de_tiempo_solo_dice_interno_si_esta_saldada_con_interno(self):
+        # Cargada antes de marcar al proveedor: sigue abierta, tesoreria la paga
+        # (o la cancela el modo interno del comando).
+        self._deuda(proveedor=self.proveedor, concepto="Verdura de antes")
+        pagada = self._deuda(proveedor=self.proveedor, concepto="Verdura pagada", monto="30.00")
+        register_cash_payment(
+            payable=pagada, fecha_pago=self.fecha_op, monto=Decimal("30.00"), actor=self.admin
+        )
+        set_supplier_internal(supplier=self.proveedor, es_interno=True, actor=self.admin)
+        self.client.force_login(self.cajero)
+
+        response = self.client.get(reverse("cashops:box_detail", args=[self.caja.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Verdura de antes. No salio efectivo de la caja; tesoreria paga despues.")
+        self.assertContains(response, "Verdura pagada. No salio efectivo de la caja; tesoreria paga despues.")
+        self.assertNotContains(response, f"Verdura de antes. {TEXTO_DEUDA_PROVEEDOR_INTERNO}.")
+        self.assertNotContains(response, f"Verdura pagada. {TEXTO_DEUDA_PROVEEDOR_INTERNO}.")
+
     def test_la_pantalla_de_carga_avisa_que_queda_saldada(self):
         self.client.force_login(self.cajero)
         datos = {

@@ -13,6 +13,7 @@ from decimal import Decimal
 from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -37,12 +38,14 @@ from treasury.models import (
 from treasury.regularizacion import (
     MEDIOS_DEL_COMANDO,
     Accion,
+    FilaDelPlan,
     Regularizacion,
     Reversion,
     leer_plan,
     token_de_pago,
 )
 from treasury.services import (
+    annul_central_cash_movement,
     annul_payable,
     annul_payment,
     build_economic_period_snapshot,
@@ -54,11 +57,13 @@ from treasury.services import (
     register_carga_inicial_caja_central,
     register_cash_payment,
     register_central_cash_movement,
+    register_egreso_tesoreria,
     register_payable,
     register_payment,
     register_special_commitment,
     register_transfer_payment,
     set_supplier_internal,
+    update_payable,
 )
 
 User = get_user_model()
@@ -799,14 +804,16 @@ class PlanRevisadoTests(RegularizacionBase):
             [
                 "deuda_id", "empresa", "sucursal", "proveedor", "rubro", "concepto", "comprobante",
                 "fecha_emision", "fecha_vencimiento", "creado_en", "importe_total", "saldo", "medio",
-                "fecha_pago", "accion", "motivo", "gemelos", "posibles_pagos", "aviso", "pago_id",
-                "resultado",
+                "fecha_pago", "accion", "motivo", "gemelos", "posibles_pagos", "posibles_pagos_efectivo",
+                "aviso", "pago_id", "resultado", "empresa_id", "proveedor_id",
             ],
         )
         por_id = {int(fila["deuda_id"]): fila for fila in filas}
         self.assertEqual(por_id[ok.pk]["accion"], Accion.A_REGULARIZAR)
         self.assertEqual(por_id[ok.pk]["saldo"], "1.000,00")
         self.assertEqual(por_id[ok.pk]["empresa"], "ARMADI SRL")
+        self.assertEqual(por_id[ok.pk]["empresa_id"], str(self.armadi.pk))
+        self.assertEqual(por_id[ok.pk]["proveedor_id"], str(self.proveedor.pk))
         self.assertEqual(por_id[ok.pk]["sucursal"], "EC1")
         self.assertEqual(por_id[ok.pk]["medio"], EFECTIVO)
         self.assertEqual(por_id[ok.pk]["fecha_pago"], "10/08/2026")
@@ -860,24 +867,63 @@ class PlanRevisadoTests(RegularizacionBase):
         self.assertEqual(PagoTesoreria.objects.count(), 0)
 
     def test_leer_plan_valida_columnas_medio_y_acepta_excel_ansi(self):
+        cabecera = "deuda_id;accion;saldo;medio;importe_total;sucursal;fecha_pago;empresa_id;proveedor_id"
         with TemporaryDirectory() as carpeta:
             sin_medio = Path(carpeta) / "sin_medio.csv"
             sin_medio.write_text("deuda_id;accion;saldo\n1;A_REGULARIZAR;10,00\n", encoding="utf-8")
-            with self.assertRaises(ValidationError):
+            with self.assertRaisesMessage(ValidationError, "medio"):
                 leer_plan(sin_medio, EFECTIVO)
 
+            # Un plan viejo, solo con el saldo, no ata la boveda ni la fecha: se rechaza.
+            sin_boveda = Path(carpeta) / "sin_boveda.csv"
+            sin_boveda.write_text("deuda_id;accion;saldo;medio\n1;A_REGULARIZAR;10,00;EFECTIVO\n", encoding="utf-8")
+            with self.assertRaisesMessage(ValidationError, "empresa_id, fecha_pago"):
+                leer_plan(sin_boveda, EFECTIVO)
+
             interno = Path(carpeta) / "interno.csv"
-            interno.write_text("deuda_id;accion;saldo;medio\n1;A_REGULARIZAR;10,00;INTERNO\n", encoding="utf-8")
+            interno.write_text(
+                f"{cabecera}\n1;A_REGULARIZAR;10,00;INTERNO;10,00;EC1;10/08/2026;1;1\n", encoding="utf-8"
+            )
             with self.assertRaises(ValidationError):
                 leer_plan(interno, EFECTIVO)
 
+            mala_fecha = Path(carpeta) / "mala_fecha.csv"
+            mala_fecha.write_text(
+                f"{cabecera}\n1;A_REGULARIZAR;10,00;EFECTIVO;10,00;EC1;2026-08-10;1;1\n", encoding="utf-8"
+            )
+            with self.assertRaisesMessage(ValidationError, "fecha_pago invalida"):
+                leer_plan(mala_fecha, EFECTIVO)
+
+            repetida = Path(carpeta) / "repetida.csv"
+            repetida.write_text(
+                f"{cabecera}\n"
+                "1;A_REGULARIZAR;10,00;EFECTIVO;10,00;EC1;10/08/2026;1;1\n"
+                "1;A_REGULARIZAR;10,00;EFECTIVO;10,00;VIV-01;10/08/2026;2;1\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesMessage(ValidationError, "dos veces con datos distintos"):
+                leer_plan(repetida, EFECTIVO)
+
+            # Excel guarda en ANSI, con coma, y saca los ceros de la fecha.
             ansi = Path(carpeta) / "ansi.csv"
             ansi.write_bytes(
-                "deuda_id,proveedor,accion,saldo,medio\n"
-                "7,Panader\xeda,A_REGULARIZAR,\"1.234,56\",EFECTIVO\n"
-                "8,Otra,EXCLUIDA_IMPUESTO,10,EFECTIVO\n".encode("cp1252")
+                "deuda_id,proveedor,accion,saldo,medio,importe_total,sucursal,fecha_pago,empresa_id,proveedor_id\n"
+                "7,Panader\xeda,A_REGULARIZAR,\"1.234,56\",EFECTIVO,\"2.000,00\",ec1,1/8/2026,3,9\n"
+                "8,Otra,EXCLUIDA_IMPUESTO,10,EFECTIVO,10,EC1,10/08/2026,3,9\n".encode("cp1252")
             )
-            self.assertEqual(leer_plan(ansi, EFECTIVO), {7: Decimal("1234.56")})
+            self.assertEqual(
+                leer_plan(ansi, EFECTIVO),
+                {
+                    7: FilaDelPlan(
+                        saldo=Decimal("1234.56"),
+                        importe_total=Decimal("2000.00"),
+                        empresa_id=3,
+                        sucursal="ec1",
+                        proveedor_id=9,
+                        fecha_pago=date(2026, 8, 1),
+                    )
+                },
+            )
 
             with self.assertRaises(ValidationError):
                 leer_plan(Path(carpeta) / "no_existe.csv", EFECTIVO)
@@ -1165,14 +1211,21 @@ class ComandoTests(RegularizacionBase):
         panaderia = self._proveedor("OVEJA NEGRA ARMADI SRL")
         deuda = self._deuda("700.00", proveedor=panaderia)
 
-        salida = self._run(usuario=self.admin.username, proveedor_interno="  Oveja Négra Armadi SRL ")
-        self.assertIn("Modo interno: OVEJA NEGRA ARMADI SRL", salida)
-        self.assertIn("Con --apply el proveedor queda marcado", salida)
-        deuda.refresh_from_db()
-        self.assertEqual(deuda.estado, CuentaPorPagar.Estado.PENDIENTE)
+        with TemporaryDirectory() as carpeta:
+            plan = Path(carpeta) / "interno.csv"
+            salida = self._run(
+                usuario=self.admin.username, proveedor_interno="  Oveja Négra Armadi SRL ", informe=str(plan)
+            )
+            self.assertIn("Modo interno: OVEJA NEGRA ARMADI SRL", salida)
+            self.assertIn("Con --apply el proveedor queda marcado", salida)
+            deuda.refresh_from_db()
+            self.assertEqual(deuda.estado, CuentaPorPagar.Estado.PENDIENTE)
 
-        salida = self._run(usuario=self.admin.username, proveedor_interno=str(panaderia.pk), apply=True)
+            salida = self._run(
+                usuario=self.admin.username, proveedor_interno=str(panaderia.pk), plan=str(plan), apply=True
+            )
         self.assertIn("Proveedor marcado como interno", salida)
+        self.assertIn("No quedan deudas abiertas de OVEJA NEGRA ARMADI SRL", salida)
         deuda.refresh_from_db()
         self.assertEqual(deuda.estado, CuentaPorPagar.Estado.PAGADA)
         self.assertEqual(deuda.pagos.get().medio_pago, INTERNO)
@@ -1256,3 +1309,519 @@ class PantallasTests(RegularizacionBase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Pago en efectivo segun tesoreria, regularizacion REG-2026-09-23")
         self.assertContains(response, LOTE)
+
+
+class PlanAtaBovedaYFechaTests(RegularizacionBase):
+    """El plan revisado ata lo que tesoreria vio: de que boveda sale el efectivo
+    (empresa y sucursal), a quien se le paga y con que fecha, no solo el saldo."""
+
+    def _aprobadas(self, **opciones):
+        with TemporaryDirectory() as carpeta:
+            ruta = Path(carpeta) / "plan.csv"
+            self._plan(**opciones).escribir_informe(ruta)
+            return leer_plan(ruta, EFECTIVO)
+
+    def _aplicar_plan(self, aprobadas, **opciones):
+        regularizacion = self._plan(**opciones)
+        regularizacion.restringir_a_plan(aprobadas)
+        regularizacion.aplicar()
+        return regularizacion
+
+    def _editar(self, deuda, **cambios):
+        datos = {
+            "sucursal": deuda.sucursal,
+            "proveedor": deuda.proveedor,
+            "categoria": deuda.categoria,
+            "concepto": deuda.concepto,
+            "fecha_emision": deuda.fecha_emision,
+            "fecha_vencimiento": deuda.fecha_vencimiento,
+            "importe_total": deuda.importe_total,
+        }
+        datos.update(cambios)
+        return update_payable(payable=deuda, actor=self.admin, **datos)
+
+    def test_cambio_de_sucursal_entre_la_revision_y_el_apply_no_paga_de_otra_boveda(self):
+        deuda = self._deuda("500.00")
+        aprobadas = self._aprobadas()
+        self.assertEqual(aprobadas[deuda.pk].empresa_id, self.armadi.pk)
+        # Mientras tesoreria revisa, alguien corrige la sucursal (mismo importe).
+        self._editar(deuda, sucursal=self.vivre)
+        bovedas = (self._boveda(self.armadi), self._boveda(self.mapogo))
+
+        regularizacion = self._aplicar_plan(aprobadas)
+
+        fila = self._por_deuda(regularizacion)[deuda.pk]
+        self.assertEqual(fila.accion, Accion.DISTINTA_AL_PLAN)
+        self.assertIn(
+            "empresa (boveda de la que sale el efectivo): en el plan ARMADI SRL, hoy MAPOGO SRL", fila.motivo
+        )
+        self.assertIn("sucursal: en el plan EC1, hoy VIV-01", fila.motivo)
+        self.assertIsNone(fila.pago_id)
+        self.assertEqual(PagoTesoreria.objects.count(), 0)
+        self.assertEqual((self._boveda(self.armadi), self._boveda(self.mapogo)), bovedas)
+
+    def test_otra_sucursal_de_la_misma_empresa_tampoco_se_aplica(self):
+        ec2 = Sucursal.objects.create(
+            nombre="Cafe Norte", codigo="EC2", razon_social="ARMADI SRL", empresa=self.armadi
+        )
+        deuda = self._deuda("500.00")
+        aprobadas = self._aprobadas()
+        self._editar(deuda, sucursal=ec2)
+
+        fila = self._por_deuda(self._aplicar_plan(aprobadas))[deuda.pk]
+
+        self.assertEqual(fila.accion, Accion.DISTINTA_AL_PLAN)
+        self.assertNotIn("empresa", fila.motivo)
+        self.assertIn("sucursal: en el plan EC1, hoy EC2", fila.motivo)
+        self.assertEqual(PagoTesoreria.objects.count(), 0)
+
+    def test_fecha_de_pago_distinta_a_la_revisada_no_se_aplica(self):
+        deuda = self._deuda("500.00")
+
+        # Simulo con la fecha de cada factura y aplico con --fecha-pago.
+        regularizacion = self._aplicar_plan(self._aprobadas(), fecha_pago=CORTE)
+        fila = self._por_deuda(regularizacion)[deuda.pk]
+        self.assertEqual(fila.accion, Accion.DISTINTA_AL_PLAN)
+        self.assertIn("fecha de pago: en el plan 10/08/2026, hoy 23/09/2026", fila.motivo)
+        self.assertEqual(PagoTesoreria.objects.count(), 0)
+
+        # Al reves: simulo con --fecha-pago y aplico sin la opcion.
+        regularizacion = self._aplicar_plan(self._aprobadas(fecha_pago=CORTE))
+        fila = self._por_deuda(regularizacion)[deuda.pk]
+        self.assertEqual(fila.accion, Accion.DISTINTA_AL_PLAN)
+        self.assertIn("fecha de pago: en el plan 23/09/2026, hoy 10/08/2026", fila.motivo)
+        self.assertEqual(PagoTesoreria.objects.count(), 0)
+
+        # Con la misma fecha que se reviso, se registra.
+        regularizacion = self._aplicar_plan(self._aprobadas(fecha_pago=CORTE), fecha_pago=CORTE)
+        self.assertEqual(self._por_deuda(regularizacion)[deuda.pk].accion, Accion.APLICADA)
+        self.assertEqual(deuda.pagos.get().fecha_pago, CORTE)
+
+    def test_fecha_de_la_factura_corregida_cambia_la_fecha_de_pago(self):
+        deuda = self._deuda("500.00")
+        aprobadas = self._aprobadas()
+        self._editar(deuda, fecha_emision=date(2026, 9, 20), fecha_vencimiento=date(2026, 10, 5))
+
+        fila = self._por_deuda(self._aplicar_plan(aprobadas))[deuda.pk]
+
+        self.assertEqual(fila.accion, Accion.DISTINTA_AL_PLAN)
+        self.assertIn("fecha de pago: en el plan 10/08/2026, hoy 20/09/2026", fila.motivo)
+        self.assertEqual(PagoTesoreria.objects.count(), 0)
+
+    def test_cambio_de_proveedor_o_de_importe_con_el_mismo_saldo(self):
+        de_proveedor = self._deuda("500.00", concepto="Cambia de proveedor")
+        de_importe = self._deuda("1000.00", concepto="Cambia de importe")
+        aprobadas = self._aprobadas()
+        self._editar(de_proveedor, proveedor=self.verduleria)
+        self._editar(de_importe, importe_total=Decimal("1100.00"))
+        register_cash_payment(payable=de_importe, fecha_pago=AGOSTO, monto=Decimal("100.00"), actor=self.admin)
+
+        filas = self._por_deuda(self._aplicar_plan(aprobadas))
+
+        self.assertEqual(filas[de_proveedor.pk].accion, Accion.DISTINTA_AL_PLAN)
+        self.assertIn(
+            f"proveedor: en el plan #{self.proveedor.pk}, hoy #{self.verduleria.pk}", filas[de_proveedor.pk].motivo
+        )
+        self.assertEqual(filas[de_importe.pk].accion, Accion.DISTINTA_AL_PLAN)
+        self.assertIn("importe: en el plan 1.000,00, hoy 1.100,00", filas[de_importe.pk].motivo)
+        self.assertNotIn("saldo", filas[de_importe.pk].motivo)
+        self.assertFalse(PagoTesoreria.objects.filter(referencia=LOTE).exists())
+
+    def test_cambio_de_sucursal_despues_de_restringir_tampoco_se_paga(self):
+        deuda = self._deuda("500.00")
+        aprobadas = self._aprobadas()
+        regularizacion = self._plan()
+        regularizacion.restringir_a_plan(aprobadas)
+        CuentaPorPagar.objects.filter(pk=deuda.pk).update(sucursal=self.vivre)
+
+        regularizacion.aplicar()
+
+        fila = self._por_deuda(regularizacion)[deuda.pk]
+        self.assertEqual(fila.accion, Accion.ERROR)
+        self.assertIn("otra boveda", fila.resultado)
+        self.assertEqual(PagoTesoreria.objects.count(), 0)
+
+    def test_volver_a_correr_el_mismo_plan_distingue_lo_ya_pagado_por_el_lote(self):
+        aplicada = self._deuda("1000.00", concepto="La paga el lote")
+        otro_camino = self._deuda("200.00", proveedor=self.verduleria, concepto="La pagan por otro lado")
+        de_vivre = self._deuda("300.00", sucursal=self.vivre, concepto="Queda afuera del filtro")
+        aprobadas = self._aprobadas()
+        primera = self._aplicar_plan(aprobadas, sucursales=["EC1"], excluir_proveedores=["verduleria"])
+        self.assertEqual(self._por_deuda(primera)[aplicada.pk].accion, Accion.APLICADA)
+        register_cash_payment(payable=otro_camino, fecha_pago=AGOSTO, monto=Decimal("200.00"), actor=self.admin)
+
+        segunda = self._aplicar_plan(aprobadas, sucursales=["EC1"])
+
+        filas = self._por_deuda(segunda)
+        pago = aplicada.pagos.get()
+        self.assertEqual(filas[aplicada.pk].accion, Accion.YA_PROCESADA)
+        self.assertEqual(filas[aplicada.pk].pago_id, pago.pk)
+        self.assertEqual(filas[aplicada.pk].motivo, f"Ya pagada por este lote: pago #{pago.pk}.")
+        self.assertEqual(filas[otro_camino.pk].accion, Accion.NO_DISPONIBLE)
+        self.assertIn("pagada por otro camino", filas[otro_camino.pk].motivo)
+        self.assertEqual(filas[de_vivre.pk].accion, Accion.NO_DISPONIBLE)
+        self.assertIn("sigue abierta, pero quedo fuera de esta seleccion", filas[de_vivre.pk].motivo)
+        self.assertEqual(aplicada.pagos.count(), 1)
+
+    def test_despues_de_aplicar_las_filas_dicen_aplicada_y_no_sirven_de_plan(self):
+        deuda = self._deuda("1000.00")
+        regularizacion = self._aplicar_plan(self._aprobadas())
+        with TemporaryDirectory() as carpeta:
+            ruta = Path(carpeta) / "aplicado.csv"
+            regularizacion.escribir_informe(ruta)
+            with ruta.open(encoding="utf-8-sig", newline="") as archivo:
+                [fila] = list(csv.DictReader(archivo, delimiter=";"))
+            self.assertEqual(leer_plan(ruta, EFECTIVO), {})
+
+        self.assertEqual(fila["accion"], Accion.APLICADA)
+        self.assertEqual(fila["pago_id"], str(deuda.pagos.get().pk))
+        self.assertEqual(regularizacion.resumen()[Accion.APLICADA], (1, Decimal("1000.00")))
+
+
+class PosiblePagoEnEfectivoTests(RegularizacionBase):
+    """Un egreso de la boveda sin factura (EGRESO_ADMIN) de la misma sucursal e
+    importe pudo ser el pago en efectivo: registrar otro bajaria dos veces la
+    caja fuerte por la misma plata."""
+
+    def _egreso(self, monto, *, fecha, sucursal=None, empresa=None, concepto="S/E"):
+        return register_egreso_tesoreria(
+            empresa=empresa or self.armadi,
+            fuente="CAJA_CENTRAL",
+            fecha=fecha,
+            monto=Decimal(monto),
+            concepto=concepto,
+            rubro=self.rubro,
+            sucursal=sucursal or self.ec1,
+            periodo=fecha.replace(day=1),
+            actor=self.admin,
+        )
+
+    def test_egreso_de_la_misma_sucursal_e_importe_excluye_la_factura(self):
+        deuda = self._deuda("31480.00", emision=date(2026, 8, 8))
+        egreso = self._egreso("31480.00", fecha=date(2026, 8, 12), concepto="PARE CARRITO S/E")
+        boveda = self._boveda(self.armadi)
+
+        regularizacion = self._aplicar()
+
+        fila = self._por_deuda(regularizacion)[deuda.pk]
+        esperado = f"#{egreso.pk} 12/08/2026 31.480,00 PARE CARRITO S/E"
+        self.assertEqual(fila.accion, Accion.POSIBLE_PAGO_EN_EFECTIVO)
+        self.assertIn("anular ese egreso y registrar el pago", fila.motivo)
+        self.assertEqual(fila.posibles_pagos_efectivo, [esperado])
+        self.assertEqual(fila.posibles_pagos, [])
+        self.assertEqual(PagoTesoreria.objects.count(), 0)
+        self.assertEqual(self._boveda(self.armadi), boveda)
+        with TemporaryDirectory() as carpeta:
+            ruta = Path(carpeta) / "plan.csv"
+            regularizacion.escribir_informe(ruta)
+            with ruta.open(encoding="utf-8-sig", newline="") as archivo:
+                [csv_fila] = list(csv.DictReader(archivo, delimiter=";"))
+        self.assertEqual(csv_fila["posibles_pagos_efectivo"], esperado)
+
+    def test_se_incluye_con_la_opcion_y_queda_con_aviso(self):
+        deuda = self._deuda("75000.00")
+        self._egreso("75000.00", fecha=AGOSTO + timedelta(days=3), concepto="Pago Carnes Del Norte")
+
+        fila = self._por_deuda(self._plan(incluir_posibles_pagos_en_efectivo=True))[deuda.pk]
+
+        self.assertEqual(fila.accion, Accion.A_REGULARIZAR)
+        self.assertIn("Posible pago en efectivo ya cargado", fila.aviso)
+
+    def test_cada_egreso_se_asigna_a_una_sola_factura(self):
+        primera = self._deuda("31480.00", emision=date(2026, 8, 8), concepto="Semana 1")
+        segunda = self._deuda("31480.00", emision=date(2026, 8, 15), concepto="Semana 2")
+        egreso = self._egreso("31480.00", fecha=date(2026, 8, 18))
+
+        filas = self._por_deuda(self._plan())
+        self.assertEqual(filas[primera.pk].accion, Accion.POSIBLE_PAGO_EN_EFECTIVO)
+        self.assertTrue(filas[primera.pk].posibles_pagos_efectivo[0].startswith(f"#{egreso.pk} "))
+        self.assertEqual(filas[segunda.pk].accion, Accion.A_REGULARIZAR)
+
+        otro = self._egreso("31480.00", fecha=date(2026, 8, 12))
+        filas = self._por_deuda(self._plan())
+        self.assertTrue(filas[primera.pk].posibles_pagos_efectivo[0].startswith(f"#{otro.pk} "))
+        self.assertTrue(filas[segunda.pk].posibles_pagos_efectivo[0].startswith(f"#{egreso.pk} "))
+
+    def test_tolerancia_de_importe_y_egresos_sin_sucursal(self):
+        redondeada = self._deuda("31478.50", concepto="Pagada redondeando")
+        sin_sucursal = self._deuda("5000.00", proveedor=self.verduleria)
+        self._egreso("31500.00", fecha=AGOSTO + timedelta(days=1))
+        register_central_cash_movement(
+            empresa=self.armadi,
+            tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
+            monto=Decimal("5000.00"),
+            concepto="Pago sin sucursal",
+            fecha=AGOSTO + timedelta(days=2),
+            actor=self.admin,
+        )
+
+        filas = self._por_deuda(self._plan())
+
+        self.assertEqual(filas[redondeada.pk].accion, Accion.POSIBLE_PAGO_EN_EFECTIVO)
+        self.assertEqual(filas[sin_sucursal.pk].accion, Accion.POSIBLE_PAGO_EN_EFECTIVO)
+
+    def test_no_cuentan_fuera_de_ventana_otra_sucursal_otra_empresa_anulados_ni_otro_importe(self):
+        ec2 = Sucursal.objects.create(
+            nombre="Cafe Norte", codigo="EC2", razon_social="ARMADI SRL", empresa=self.armadi
+        )
+        deuda = self._deuda("10000.00")
+        self._egreso("10000.00", fecha=AGOSTO - timedelta(days=6))
+        self._egreso("10000.00", fecha=AGOSTO + timedelta(days=61))
+        self._egreso("10000.00", fecha=AGOSTO, sucursal=ec2)
+        self._egreso("10000.00", fecha=AGOSTO, empresa=self.mapogo, sucursal=self.vivre)
+        self._egreso("9999.99", fecha=AGOSTO)
+        self._egreso("10100.01", fecha=AGOSTO)
+        anulado = self._egreso("10000.00", fecha=AGOSTO + timedelta(days=1))
+        annul_central_cash_movement(movement=anulado, motivo="Cargado dos veces", actor=self.admin)
+
+        fila = self._por_deuda(self._plan())[deuda.pk]
+
+        self.assertEqual(fila.accion, Accion.A_REGULARIZAR)
+        self.assertEqual(fila.posibles_pagos_efectivo, [])
+
+    def test_el_modo_interno_no_lo_mira(self):
+        panaderia = self._proveedor("OVEJA NEGRA ARMADI SRL")
+        deuda = self._deuda("700.00", proveedor=panaderia)
+        self._egreso("700.00", fecha=AGOSTO)
+
+        interno = Regularizacion(actor=self.admin, proveedor_interno=panaderia)
+        interno.planificar()
+
+        self.assertEqual(self._por_deuda(interno)[deuda.pk].accion, Accion.A_REGULARIZAR)
+
+
+class ModoInternoSeguroTests(RegularizacionBase):
+    """El modo interno saca deudas de la deuda viva y marca al proveedor para
+    siempre: exige el plan, no acepta filtros, pide confirmar un nombre que no
+    es el de la panaderia y no marca si no cancelo nada o hubo errores."""
+
+    def setUp(self):
+        super().setUp()
+        self.panaderia = self._proveedor("OVEJA NEGRA ARMADI SRL")
+
+    def _run(self, **opciones):
+        salida = StringIO()
+        call_command("regularizar_deudas", usuario=self.admin.username, stdout=salida, **opciones)
+        return salida.getvalue()
+
+    def _simular(self, carpeta, proveedor, **opciones):
+        plan = Path(carpeta) / "interno.csv"
+        self._run(proveedor_interno=str(proveedor.pk), informe=str(plan), **opciones)
+        return plan
+
+    def test_aplicar_el_modo_interno_exige_el_plan(self):
+        deuda = self._deuda("700.00", proveedor=self.panaderia)
+
+        with self.assertRaisesMessage(CommandError, "--plan"):
+            self._run(proveedor_interno=str(self.panaderia.pk), apply=True)
+
+        deuda.refresh_from_db()
+        self.assertEqual(deuda.estado, CuentaPorPagar.Estado.PENDIENTE)
+        self.panaderia.refresh_from_db()
+        self.assertFalse(self.panaderia.es_interno)
+
+    def test_el_modo_interno_no_acepta_filtros(self):
+        casos = {
+            "--sucursal": {"sucursal": ["EC1"]},
+            "--excluir-proveedor": {"excluir_proveedor": ["x"]},
+            "--incluir-sin-sucursal": {"incluir_sin_sucursal": True},
+            "--incluir-posibles-pagos": {"incluir_posibles_pagos": True},
+            "--incluir-posibles-pagos-en-efectivo": {"incluir_posibles_pagos_en_efectivo": True},
+            "--cargadas-hasta": {"cargadas_hasta": "2026-10-01"},
+            "--fecha-pago": {"fecha_pago": "2026-09-23"},
+        }
+        for opcion, opciones in casos.items():
+            with self.subTest(opcion=opcion):
+                with self.assertRaisesMessage(CommandError, f"no lleva {opcion}"):
+                    self._run(proveedor_interno=str(self.panaderia.pk), **opciones)
+        with self.assertRaisesMessage(ValidationError, "no lleva --sucursal"):
+            Regularizacion(actor=self.admin, proveedor_interno=self.panaderia, sucursales=["EC1"])
+
+    def test_un_plan_que_no_aprueba_ninguna_deuda_no_marca_al_proveedor(self):
+        deuda = self._deuda("700.00", proveedor=self.panaderia)
+        with TemporaryDirectory() as carpeta:
+            plan = self._simular(carpeta, self.panaderia)
+            texto = plan.read_text(encoding="utf-8-sig")
+            plan.write_text(texto.replace(Accion.A_REGULARIZAR, "NO_VA"), encoding="utf-8-sig")
+
+            salida = self._run(proveedor_interno=str(self.panaderia.pk), plan=str(plan), apply=True)
+
+        self.assertIn("(0 deudas aprobadas)", salida)
+        self.assertIn("No se marco al proveedor OVEJA NEGRA ARMADI SRL", salida)
+        self.assertIn("Queda SIN marcar como interno", salida)
+        self.assertIn("Siguen abiertas 1 deudas de OVEJA NEGRA ARMADI SRL por 700,00", salida)
+        self.panaderia.refresh_from_db()
+        self.assertFalse(self.panaderia.es_interno)
+        deuda.refresh_from_db()
+        self.assertEqual(deuda.estado, CuentaPorPagar.Estado.PENDIENTE)
+
+    def test_un_proveedor_que_no_parece_la_panaderia_pide_confirmacion(self):
+        deuda = self._deuda("500.00")
+        with TemporaryDirectory() as carpeta:
+            plan = self._simular(carpeta, self.proveedor)
+
+            with self.assertRaisesMessage(CommandError, '--confirmar "Carnes del Norte SA"'):
+                self._run(proveedor_interno=str(self.proveedor.pk), plan=str(plan), apply=True)
+            deuda.refresh_from_db()
+            self.assertEqual(deuda.estado, CuentaPorPagar.Estado.PENDIENTE)
+            with self.assertRaisesMessage(CommandError, "--confirmar"):
+                self._run(
+                    proveedor_interno=str(self.proveedor.pk), plan=str(plan), apply=True, confirmar="Carnes"
+                )
+
+            salida = self._run(
+                proveedor_interno=str(self.proveedor.pk),
+                plan=str(plan),
+                apply=True,
+                confirmar="carnes del norte sa",
+            )
+
+        self.assertIn("Proveedor marcado como interno: Carnes del Norte SA", salida)
+        deuda.refresh_from_db()
+        self.assertEqual(deuda.estado, CuentaPorPagar.Estado.PAGADA)
+        with self.assertRaisesMessage(CommandError, "--confirmar va solo con --proveedor-interno"):
+            self._run(hasta="2026-09-23", confirmar="x")
+
+    def test_con_una_deuda_en_error_no_se_marca(self):
+        buena = self._deuda("700.00", proveedor=self.panaderia, concepto="Pan")
+        rota = self._deuda("300.00", proveedor=self.panaderia, concepto="Facturas", emision=date(2026, 8, 11))
+        CuentaPorPagar.objects.filter(pk=rota.pk).update(
+            saldo_pendiente=Decimal("200.00"), estado=CuentaPorPagar.Estado.PARCIAL
+        )
+        with TemporaryDirectory() as carpeta:
+            plan = self._simular(carpeta, self.panaderia)
+            salida = self._run(proveedor_interno=str(self.panaderia.pk), plan=str(plan), apply=True)
+
+        buena.refresh_from_db()
+        self.assertEqual(buena.estado, CuentaPorPagar.Estado.PAGADA)
+        self.assertIn("1 deudas quedaron con error", salida)
+        self.assertIn("Siguen abiertas 1 deudas", salida)
+        self.panaderia.refresh_from_db()
+        self.assertFalse(self.panaderia.es_interno)
+
+    def test_si_se_corta_antes_de_marcar_la_re_corrida_con_el_mismo_plan_marca(self):
+        deuda = self._deuda("700.00", proveedor=self.panaderia)
+        with TemporaryDirectory() as carpeta:
+            aprobadas = leer_plan(self._simular(carpeta, self.panaderia), INTERNO)
+        primera = Regularizacion(actor=self.admin, proveedor_interno=self.panaderia)
+        primera.planificar()
+        primera.restringir_a_plan(aprobadas)
+        with mock.patch(
+            "treasury.regularizacion.set_supplier_internal", side_effect=RuntimeError("se corto la conexion")
+        ):
+            with self.assertRaises(RuntimeError):
+                primera.aplicar()
+        deuda.refresh_from_db()
+        self.assertEqual(deuda.estado, CuentaPorPagar.Estado.PAGADA)
+        self.panaderia.refresh_from_db()
+        self.assertFalse(self.panaderia.es_interno)
+
+        segunda = Regularizacion(actor=self.admin, proveedor_interno=self.panaderia)
+        segunda.planificar()
+        segunda.restringir_a_plan(aprobadas)
+        segunda.aplicar()
+
+        self.assertEqual(self._por_deuda(segunda)[deuda.pk].accion, Accion.YA_PROCESADA)
+        self.assertTrue(segunda.proveedor_marcado)
+        self.panaderia.refresh_from_db()
+        self.assertTrue(self.panaderia.es_interno)
+        self.assertEqual(segunda.abiertas_despues, (0, Decimal("0.00")))
+
+    def test_avisa_las_deudas_que_siguen_abiertas(self):
+        self._deuda("700.00", proveedor=self.panaderia, concepto="Pan")
+        self._deuda("700.00", proveedor=self.panaderia, concepto="Pan repetido")
+        self._deuda("100.00", proveedor=self.panaderia, concepto="Medialunas", emision=date(2026, 8, 11))
+        with TemporaryDirectory() as carpeta:
+            plan = self._simular(carpeta, self.panaderia)
+            salida = self._run(proveedor_interno=str(self.panaderia.pk), plan=str(plan), apply=True)
+
+        self.assertIn("Proveedor marcado como interno", salida)
+        self.assertIn("Siguen abiertas 2 deudas de OVEJA NEGRA ARMADI SRL por 1.400,00", salida)
+
+
+class MesCerradoPosteriorTests(RegularizacionBase):
+    """Disponibilidades encadena cada mes desde el ultimo cierre: un pago fechado
+    en un mes abierto ANTERIOR a un mes cerrado no llegaria nunca a los meses
+    siguientes, asi que tambien se excluye."""
+
+    def test_un_cierre_posterior_excluye_el_pago_fechado_antes(self):
+        de_julio = self._deuda("100.00", emision=date(2026, 7, 15))
+        de_vivre = self._deuda("200.00", sucursal=self.vivre, emision=date(2026, 7, 15))
+        CierreMensualTesoreria.objects.create(mes=date(2026, 8, 1), empresa=self.armadi, cerrado=True)
+
+        filas = self._por_deuda(self._plan())
+        self.assertEqual(filas[de_julio.pk].accion, Accion.EXCLUIDA_MES_CERRADO)
+        self.assertIn("Hay un mes cerrado posterior (08/2026)", filas[de_julio.pk].motivo)
+        self.assertIn("--fecha-pago", filas[de_julio.pk].motivo)
+        self.assertEqual(filas[de_vivre.pk].accion, Accion.A_REGULARIZAR)
+
+        # En el primer mes abierto despues del cierre si se puede.
+        filas = self._por_deuda(self._plan(fecha_pago=date(2026, 9, 23)))
+        self.assertEqual(filas[de_julio.pk].accion, Accion.A_REGULARIZAR)
+
+    def test_un_cierre_legacy_global_bloquea_a_todas_las_empresas(self):
+        de_vivre = self._deuda("200.00", sucursal=self.vivre, emision=date(2026, 7, 15))
+        CierreMensualTesoreria.objects.create(mes=date(2026, 8, 1), empresa=None, cerrado=True)
+
+        self.assertEqual(self._por_deuda(self._plan())[de_vivre.pk].accion, Accion.EXCLUIDA_MES_CERRADO)
+
+    def test_un_cierre_posterior_hecho_despues_del_plan_frena_la_aplicacion(self):
+        deuda = self._deuda("500.00")
+        regularizacion = self._plan()
+        CierreMensualTesoreria.objects.create(mes=date(2026, 9, 1), empresa=self.armadi, cerrado=True)
+
+        regularizacion.aplicar()
+
+        fila = self._por_deuda(regularizacion)[deuda.pk]
+        self.assertEqual(fila.accion, Accion.EXCLUIDA_MES_CERRADO)
+        self.assertIn("09/2026", fila.resultado)
+        self.assertEqual(PagoTesoreria.objects.count(), 0)
+
+    def test_la_reversion_no_anula_un_egreso_anterior_a_un_mes_cerrado(self):
+        deuda = self._deuda("500.00")
+        self._aplicar()
+        CierreMensualTesoreria.objects.create(mes=date(2026, 9, 1), empresa=self.armadi, cerrado=True)
+
+        reversion = Reversion(actor=self.admin, lote=LOTE)
+        reversion.planificar()
+        reversion.aplicar()
+
+        self.assertEqual(reversion.filas[0].accion, Accion.EXCLUIDA_MES_CERRADO)
+        self.assertIn("Hay un mes cerrado posterior (09/2026)", reversion.filas[0].motivo)
+        self.assertNotIn("--fecha-pago", reversion.filas[0].motivo)
+        self.assertEqual(deuda.pagos.get().estado, PagoTesoreria.Estado.REGISTRADO)
+
+
+class ConceptoLargoYBovedaNegativaTests(RegularizacionBase):
+    def test_razon_social_y_concepto_largos_no_rompen_el_pago_en_efectivo(self):
+        proveedor = self._proveedor("DISTRIBUIDORA DE ALIMENTOS Y BEBIDAS DEL NORTE ARGENTINO SRL")
+        deuda = self._deuda("500.00", proveedor=proveedor, concepto="F" * 120)
+
+        fila = self._por_deuda(self._aplicar())[deuda.pk]
+
+        self.assertEqual(fila.accion, Accion.APLICADA)
+        egreso = MovimientoCajaCentral.objects.get(pago_tesoreria_id=fila.pago_id)
+        self.assertEqual(len(egreso.concepto), 160)
+        self.assertTrue(egreso.concepto.startswith(f"Pago a {proveedor.razon_social}: FFF"))
+
+    def test_la_pantalla_de_pago_en_efectivo_tambien_recorta(self):
+        proveedor = self._proveedor("P" * 160)
+        deuda = self._deuda("300.00", proveedor=proveedor, concepto="G" * 160)
+
+        pago = register_cash_payment(payable=deuda, fecha_pago=AGOSTO, monto=Decimal("300.00"), actor=self.admin)
+
+        egreso = MovimientoCajaCentral.objects.get(pago_tesoreria=pago)
+        self.assertEqual(len(egreso.concepto), 160)
+        self.assertEqual(egreso.monto, Decimal("300.00"))
+
+    def test_la_consola_avisa_si_una_boveda_quedaria_negativa(self):
+        self._deuda("600000.00", sucursal=self.vivre)
+        salida = StringIO()
+
+        call_command("regularizar_deudas", usuario=self.admin.username, hasta="2026-09-23", stdout=salida)
+
+        texto = salida.getvalue()
+        self.assertIn("-100.000,00", texto)
+        self.assertIn("Caja fuerte en negativo: MAPOGO SRL", texto)
+        self.assertIn("no deja revertir la validacion", texto)
+        self.assertNotIn("Caja fuerte en negativo: ARMADI SRL", texto)

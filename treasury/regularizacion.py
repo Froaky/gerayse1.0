@@ -25,9 +25,11 @@ Flujo en dos pasos, como el importador de planillas: `planificar()` no escribe
 nada y deja una fila por deuda con su accion y su motivo, que sale en el
 informe CSV para revisar; `aplicar()` registra deuda por deuda, cada una en su
 propia transaccion y con la deuda bloqueada. Con el plan revisado
-(`restringir_a_plan`) se aplica solo lo que tesoreria aprobo y con el mismo
-saldo. El token de cada pago sale del lote, el medio y la deuda: correrlo dos
-veces no duplica, y un pago del lote que se anulo no se vuelve a registrar solo.
+(`restringir_a_plan`) se aplica solo lo que tesoreria aprobo y tal como lo
+reviso: mismo saldo e importe, mismo proveedor, misma sucursal y empresa (la
+boveda de la que sale el efectivo) y misma fecha de pago. El token de cada pago
+sale del lote, el medio y la deuda: correrlo dos veces no duplica, y un pago del
+lote que se anulo no se vuelve a registrar solo.
 """
 
 from __future__ import annotations
@@ -48,7 +50,7 @@ from django.db.models import Count, DecimalField, Exists, OuterRef, Q, Subquery,
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
-from treasury.importacion_texto import dinero, normalizar, parsear_monto
+from treasury.importacion_texto import dinero, normalizar, parsear_fecha, parsear_monto
 from treasury.models import (
     CajaCentral,
     CierreMensualTesoreria,
@@ -62,7 +64,6 @@ from treasury.models import (
 from treasury.services import (
     _comprobantes_las_distinguen,
     _empresa_de_la_deuda,
-    _mes_de_tesoreria_cerrado,
     annul_payment,
     register_payment,
     set_supplier_internal,
@@ -87,6 +88,16 @@ CERO = Decimal("0.00")
 # el pago de la factura: la factura pudo pagarse por banco y no en efectivo.
 VENTANA_ANTES = timedelta(days=30)
 VENTANA_DESPUES = timedelta(days=75)
+# Ventana en que un egreso de la boveda sin factura atada (EGRESO_ADMIN, por
+# ejemplo una fila de la planilla de efectivo cuyo proveedor no se reconocio)
+# puede ser el pago en efectivo de la factura: registrar otro pago bajaria dos
+# veces la caja fuerte por la misma plata.
+VENTANA_EFECTIVO_ANTES = timedelta(days=5)
+VENTANA_EFECTIVO_DESPUES = timedelta(days=60)
+# El egreso puede ser algo mayor que el saldo (se redondea al pagar en
+# efectivo): hasta el 1% o $ 100, lo que sea mayor. Nunca menor.
+TOLERANCIA_EFECTIVO_MINIMA = Decimal("100.00")
+CENTAVO = Decimal("0.01")
 TOP_PROVEEDORES = 30
 
 # Exclusiones por texto sobre la razon social normalizada (normalizar(): sin
@@ -124,6 +135,9 @@ class Accion:
     EXCLUIDA_MES_CERRADO = "EXCLUIDA_MES_CERRADO"
     POSIBLE_DUPLICADA = "POSIBLE_DUPLICADA"
     POSIBLE_PAGO_EN_GERAYSE = "POSIBLE_PAGO_EN_GERAYSE"
+    POSIBLE_PAGO_EN_EFECTIVO = "POSIBLE_PAGO_EN_EFECTIVO"
+    # Registrada en esta corrida (con --apply): tenia A_REGULARIZAR.
+    APLICADA = "APLICADA"
     # Con el plan revisado (--plan):
     FUERA_DEL_PLAN = "FUERA_DEL_PLAN"
     DISTINTA_AL_PLAN = "DISTINTA_AL_PLAN"
@@ -161,14 +175,37 @@ COLUMNAS_INFORME = (
     "motivo",
     "gemelos",
     "posibles_pagos",
+    "posibles_pagos_efectivo",
     "aviso",
     "pago_id",
     "resultado",
+    # Al final, para que la revision lea primero lo que importa. Atan el plan
+    # revisado a la boveda y al proveedor que tesoreria vio.
+    "empresa_id",
+    "proveedor_id",
+)
+
+# Lo que el plan revisado tiene que traer para poder compararlo con hoy.
+COLUMNAS_DEL_PLAN = frozenset(
+    {"deuda_id", "accion", "saldo", "medio", "importe_total", "sucursal", "fecha_pago", "empresa_id", "proveedor_id"}
 )
 
 
 def token_de_pago(lote: str, medio: str, deuda_id: int) -> uuid.UUID:
     return uuid.uuid5(NAMESPACE_REGULARIZACION, f"{lote}|{medio}|{deuda_id}")
+
+
+@dataclass(frozen=True)
+class FilaDelPlan:
+    """Lo que tesoreria reviso de una deuda en el CSV. Se aplica solo si hoy
+    sigue igual: el efectivo sale de la boveda de `empresa_id`, a `fecha_pago`."""
+
+    saldo: Decimal
+    importe_total: Decimal
+    empresa_id: int | None
+    sucursal: str
+    proveedor_id: int
+    fecha_pago: date
 
 
 @dataclass
@@ -185,18 +222,22 @@ class Fila:
     aviso: str = ""
     gemelos: list = field(default_factory=list)
     posibles_pagos: list = field(default_factory=list)
+    posibles_pagos_efectivo: list = field(default_factory=list)
     pago_id: int | None = None
     resultado: str = ""
+    # La fila del plan revisado que aprobo esta deuda (con --plan).
+    plan: FilaDelPlan | None = None
 
     def agregar_aviso(self, texto: str):
         self.aviso = f"{self.aviso} {texto}".strip() if self.aviso else texto
 
 
 class _FilaRechazada(Exception):
-    def __init__(self, accion: str, mensaje: str):
+    def __init__(self, accion: str, mensaje: str, pago_id: int | None = None):
         super().__init__(mensaje)
         self.accion = accion
         self.mensaje = mensaje
+        self.pago_id = pago_id
 
 
 def _mensaje_de_error(error) -> str:
@@ -228,17 +269,51 @@ def _empresa_o_none(deuda: CuentaPorPagar) -> int | None:
         return None
 
 
-def _meses_cerrados() -> set:
-    """(empresa_id, mes) de los cierres de tesoreria. empresa_id None es un
+def _ultimos_cierres() -> dict:
+    """{empresa_id: ultimo mes cerrado en tesoreria}. La clave None es un
     cierre legacy global: bloquea a todas las empresas."""
-    return set(
-        CierreMensualTesoreria.objects.filter(cerrado=True).values_list("empresa_id", "mes")
+    ultimos = {}
+    for empresa_id, mes in CierreMensualTesoreria.objects.filter(cerrado=True).values_list("empresa_id", "mes"):
+        if empresa_id not in ultimos or mes > ultimos[empresa_id]:
+            ultimos[empresa_id] = mes
+    return ultimos
+
+
+def _cierre_que_bloquea(cierres: dict, empresa_id, fecha: date) -> date | None:
+    """El cierre (de la empresa o legacy global) del mes de `fecha` o de un mes
+    POSTERIOR; None si no hay.
+
+    No alcanza con mirar el mes del movimiento: Disponibilidades arranca cada
+    mes del saldo guardado en el ultimo cierre anterior y le suma solo los
+    flujos del mes, asi que un movimiento fechado antes de un mes cerrado no
+    llega nunca a los meses siguientes, aunque su propio mes este abierto.
+    """
+    mes = _primer_dia(fecha)
+    posteriores = [c for c in (cierres.get(empresa_id), cierres.get(None)) if c is not None and c >= mes]
+    return max(posteriores) if posteriores else None
+
+
+def _hay_cierre_desde(fecha: date, empresa_id) -> date | None:
+    """Lo mismo que _cierre_que_bloquea, leido de la base (con la deuda bloqueada)."""
+    return (
+        CierreMensualTesoreria.objects.filter(cerrado=True, mes__gte=_primer_dia(fecha))
+        .filter(Q(empresa_id=empresa_id) | Q(empresa__isnull=True))
+        .order_by("-mes")
+        .values_list("mes", flat=True)
+        .first()
     )
 
 
-def _mes_cerrado(cerrados: set, empresa_id, fecha: date) -> bool:
-    mes = _primer_dia(fecha)
-    return (empresa_id, mes) in cerrados or (None, mes) in cerrados
+def _motivo_de_cierre(fecha: date, cierre: date, *, que: str, sugerir_fecha: bool = True) -> str:
+    if cierre == _primer_dia(fecha):
+        return f"El mes {fecha:%m/%Y} esta cerrado en tesoreria para esa empresa: {que} cambiaria la foto del cierre."
+    texto = (
+        f"Hay un mes cerrado posterior ({cierre:%m/%Y}): {que} fechado en {fecha:%m/%Y} no llegaria a los "
+        "saldos de Disponibilidades de los meses siguientes."
+    )
+    if sugerir_fecha:
+        texto += " Use --fecha-pago en un mes abierto posterior al ultimo cierre."
+    return texto
 
 
 def _total_registrado_subquery():
@@ -277,11 +352,13 @@ def _nombres_de_empresa(empresa_ids) -> dict:
 
 
 def leer_plan(ruta, medio: str) -> dict:
-    """Las deudas que tesoreria aprobo en el CSV revisado: {deuda_id: saldo}.
+    """Las deudas que tesoreria aprobo en el CSV revisado: {deuda_id: FilaDelPlan}.
 
     Solo cuentan las filas con accion A_REGULARIZAR. El plan tiene que ser del
     mismo modo (medio) que la corrida: un plan del modo interno no puede
-    terminar registrando efectivo, ni al reves.
+    terminar registrando efectivo, ni al reves. Ademas del saldo se lee lo que
+    decide de donde y cuando sale la plata (empresa, sucursal, fecha de pago) y
+    a quien se le paga (proveedor), para no aplicar algo distinto de lo revisado.
     """
     ruta = Path(ruta)
     if not ruta.exists():
@@ -296,34 +373,55 @@ def leer_plan(ruta, medio: str) -> dict:
     cabecera = texto.splitlines()[0] if texto else ""
     delimitador = ";" if cabecera.count(";") >= cabecera.count(",") else ","
     lector = csv.DictReader(io.StringIO(texto, newline=""), delimiter=delimitador)
-    faltan = {"deuda_id", "accion", "saldo", "medio"} - set(lector.fieldnames or [])
+    faltan = COLUMNAS_DEL_PLAN - set(lector.fieldnames or [])
     if faltan:
         raise ValidationError(
             f"El plan revisado no tiene las columnas {', '.join(sorted(faltan))}: "
             "use el informe que genero la simulacion."
         )
+
+    def entero(fila, numero, columna, *, opcional=False):
+        valor = (fila.get(columna) or "").strip()
+        if not valor and opcional:
+            return None
+        try:
+            return int(valor)
+        except ValueError as error:
+            raise ValidationError(f"Plan revisado, fila {numero}: {columna} invalido.") from error
+
+    def monto(fila, numero, columna):
+        valor = parsear_monto(fila.get(columna))
+        if valor is None:
+            raise ValidationError(f"Plan revisado, fila {numero}: {columna} invalido.")
+        return valor
+
     aprobadas = {}
     for numero, fila in enumerate(lector, start=2):
         if (fila.get("accion") or "").strip() != Accion.A_REGULARIZAR:
             continue
-        try:
-            deuda_id = int((fila.get("deuda_id") or "").strip())
-        except ValueError as error:
-            raise ValidationError(f"Plan revisado, fila {numero}: deuda_id invalido.") from error
-        saldo = parsear_monto(fila.get("saldo"))
-        if saldo is None:
-            raise ValidationError(f"Plan revisado, fila {numero}: saldo invalido.")
+        deuda_id = entero(fila, numero, "deuda_id")
         medio_fila = (fila.get("medio") or "").strip()
         if medio_fila != medio:
             raise ValidationError(
                 f"Plan revisado, fila {numero}: es del medio {medio_fila or '(vacio)'} y esta "
                 f"corrida registra {medio}. Use el plan de este mismo modo."
             )
-        if deuda_id in aprobadas and aprobadas[deuda_id] != saldo:
+        fecha_pago = parsear_fecha(fila.get("fecha_pago"))
+        if fecha_pago is None:
+            raise ValidationError(f"Plan revisado, fila {numero}: fecha_pago invalida.")
+        revisada = FilaDelPlan(
+            saldo=monto(fila, numero, "saldo"),
+            importe_total=monto(fila, numero, "importe_total"),
+            empresa_id=entero(fila, numero, "empresa_id", opcional=True),
+            sucursal=(fila.get("sucursal") or "").strip(),
+            proveedor_id=entero(fila, numero, "proveedor_id"),
+            fecha_pago=fecha_pago,
+        )
+        if deuda_id in aprobadas and aprobadas[deuda_id] != revisada:
             raise ValidationError(
-                f"Plan revisado, fila {numero}: la deuda #{deuda_id} figura dos veces con saldos distintos."
+                f"Plan revisado, fila {numero}: la deuda #{deuda_id} figura dos veces con datos distintos."
             )
-        aprobadas[deuda_id] = saldo
+        aprobadas[deuda_id] = revisada
     return aprobadas
 
 
@@ -376,9 +474,12 @@ def _valores_de_fila(fila: Fila, empresas: dict) -> list:
         fila.motivo,
         " ".join(f"#{pk}" for pk in fila.gemelos),
         " | ".join(fila.posibles_pagos),
+        " | ".join(fila.posibles_pagos_efectivo),
         fila.aviso,
         fila.pago_id or "",
         fila.resultado,
+        fila.empresa_id or "",
+        deuda.proveedor_id if deuda is not None else "",
     ]
 
 
@@ -397,15 +498,34 @@ class Regularizacion(_Informe):
         incluir_sin_sucursal: bool = False,
         incluir_posibles_pagos: bool = False,
         incluir_posibles_duplicadas: bool = False,
+        incluir_posibles_pagos_en_efectivo: bool = False,
     ):
         self.actor = actor
         self.interno = proveedor_interno is not None
         self.proveedor_interno = proveedor_interno
         if self.interno:
-            if hasta is not None or fecha_pago is not None:
+            # Con un filtro, lo que quedara afuera seguiria abierto con el
+            # proveedor ya marcado: el alta automatica solo salda al cargar o
+            # editar, y el modo general excluye al proveedor interno.
+            sobran = [
+                opcion
+                for opcion, valor in (
+                    ("--hasta", hasta),
+                    ("--fecha-pago", fecha_pago),
+                    ("--cargadas-hasta", cargadas_hasta),
+                    ("--sucursal", [c for c in sucursales if c.strip()]),
+                    ("--excluir-proveedor", [p for p in excluir_proveedores if p.strip()]),
+                    ("--incluir-sin-sucursal", incluir_sin_sucursal),
+                    ("--incluir-posibles-pagos", incluir_posibles_pagos),
+                    ("--incluir-posibles-pagos-en-efectivo", incluir_posibles_pagos_en_efectivo),
+                )
+                if valor
+            ]
+            if sobran:
                 raise ValidationError(
-                    "El modo interno no lleva corte ni fecha de pago: toma todas las deudas abiertas "
-                    "del proveedor y las cancela a la fecha de cada factura."
+                    f"El modo interno no lleva {', '.join(sobran)}: toma todas las deudas abiertas del "
+                    "proveedor y las cancela a la fecha de cada factura. Con un filtro, lo que quedara "
+                    "afuera no se cancelaria nunca."
                 )
         elif hasta is None:
             raise ValidationError("Falta la fecha de corte (--hasta).")
@@ -425,11 +545,17 @@ class Regularizacion(_Informe):
         self.incluir_sin_sucursal = incluir_sin_sucursal
         self.incluir_posibles_pagos = incluir_posibles_pagos
         self.incluir_posibles_duplicadas = incluir_posibles_duplicadas
+        self.incluir_posibles_pagos_en_efectivo = incluir_posibles_pagos_en_efectivo
         self.filas: list[Fila] = []
         self.plan_revisado: dict | None = None
         self.boveda_antes: dict = {}
         self.boveda_despues: dict | None = None
         self.proveedor_marcado = False
+        # Modo interno, despues de aplicar: por que no se marco al proveedor
+        # (vacio si se marco) y cuantas deudas suyas siguen abiertas.
+        self.motivo_sin_marcar = ""
+        self.ya_era_interno = False
+        self.abiertas_despues: tuple[int, Decimal] | None = None
         self.categorias_sin_rubro = 0
 
     @property
@@ -484,7 +610,8 @@ class Regularizacion(_Informe):
         tokens = self._pagos_por_token(deudas)
         gemelos = self._gemelos(deudas)
         posibles = {} if self.interno else self._posibles_pagos(deudas)
-        cerrados = _meses_cerrados()
+        posibles_efectivo = {} if self.interno else self._posibles_pagos_en_efectivo(deudas)
+        cierres = _ultimos_cierres()
         limite_carga = timezone.make_aware(
             datetime.combine(self.cargadas_hasta + timedelta(days=1), time.min)
         )
@@ -501,9 +628,10 @@ class Regularizacion(_Informe):
                 fecha_pago=self.fecha_pago or deuda.fecha_emision,
                 gemelos=gemelos.get(deuda.pk, []),
                 posibles_pagos=posibles.get(deuda.pk, []),
+                posibles_pagos_efectivo=posibles_efectivo.get(deuda.pk, []),
             )
             fila.accion, fila.motivo = self._clasificar(
-                deuda, fila, tokens=tokens, cerrados=cerrados, limite_carga=limite_carga
+                deuda, fila, tokens=tokens, cierres=cierres, limite_carga=limite_carga
             )
             if not self.interno and deuda.fecha_vencimiento > self.hasta:
                 fila.agregar_aviso(f"Vence despues del corte ({deuda.fecha_vencimiento:%d/%m/%Y}).")
@@ -522,7 +650,7 @@ class Regularizacion(_Informe):
         self.boveda_antes = {} if self.interno else _saldos_de_boveda(empresas)
         return self.filas
 
-    def _clasificar(self, deuda, fila, *, tokens, cerrados, limite_carga) -> tuple[str, str]:
+    def _clasificar(self, deuda, fila, *, tokens, cierres, limite_carga) -> tuple[str, str]:
         nombre = normalizar(deuda.proveedor.razon_social)
         rubro = normalizar(deuda.categoria.rubro_operativo.nombre) if deuda.categoria.rubro_operativo_id else ""
         if deuda.creado_en >= limite_carga:
@@ -561,18 +689,18 @@ class Regularizacion(_Informe):
             )
         existente = tokens.get(token_de_pago(self.lote, self.medio, deuda.pk))
         if existente is not None:
+            if _es_pago_vivo_de(existente, deuda.pk):
+                fila.pago_id = existente.pk
             return _clasificar_token(existente, deuda.pk)
         if deuda.tiene_sin_movimiento:
             return (
                 Accion.YA_PROCESADA,
                 "Ya tiene una cancelacion sin movimiento de fondos registrada; revisarla a mano.",
             )
-        if not self.interno and _mes_cerrado(cerrados, fila.empresa_id, fila.fecha_pago):
-            return (
-                Accion.EXCLUIDA_MES_CERRADO,
-                f"El mes {fila.fecha_pago:%m/%Y} esta cerrado en tesoreria para esa empresa: "
-                "el pago cambiaria la foto del cierre.",
-            )
+        if not self.interno:
+            cierre = _cierre_que_bloquea(cierres, fila.empresa_id, fila.fecha_pago)
+            if cierre is not None:
+                return Accion.EXCLUIDA_MES_CERRADO, _motivo_de_cierre(fila.fecha_pago, cierre, que="el pago")
         if fila.gemelos:
             if not self.incluir_posibles_duplicadas:
                 return (
@@ -587,15 +715,25 @@ class Regularizacion(_Informe):
                     "Hay debitos del banco del mismo proveedor sin asignar: pudo pagarse por banco.",
                 )
             fila.agregar_aviso("Posible pago por banco, incluida con --incluir-posibles-pagos.")
+        if fila.posibles_pagos_efectivo:
+            if not self.incluir_posibles_pagos_en_efectivo:
+                return (
+                    Accion.POSIBLE_PAGO_EN_EFECTIVO,
+                    "Hay un egreso de la caja fuerte sin factura atada (EGRESO_ADMIN) de la misma sucursal "
+                    "y por el mismo importe: pudo pagarse con el. Si es asi, anular ese egreso y registrar "
+                    "el pago; no sumar otro.",
+                )
+            fila.agregar_aviso(
+                "Posible pago en efectivo ya cargado en la boveda, incluida con "
+                "--incluir-posibles-pagos-en-efectivo."
+            )
         return Accion.A_REGULARIZAR, ""
 
     def _pagos_por_token(self, deudas) -> dict:
-        tokens = [token_de_pago(self.lote, self.medio, deuda.pk) for deuda in deudas]
-        encontrados = {}
-        for inicio in range(0, len(tokens), 500):
-            for pago in PagoTesoreria.objects.filter(token_alta__in=tokens[inicio : inicio + 500]):
-                encontrados[pago.token_alta] = pago
-        return encontrados
+        return {
+            pago.token_alta: pago
+            for pago in _pagos_con_token([token_de_pago(self.lote, self.medio, deuda.pk) for deuda in deudas])
+        }
 
     def _gemelos(self, deudas) -> dict:
         """{deuda_id: [ids de otras deudas no ANULADA con la misma clave]}.
@@ -703,6 +841,74 @@ class Regularizacion(_Informe):
                 resultado[deuda.pk] = encontrados
         return resultado
 
+    def _posibles_pagos_en_efectivo(self, deudas) -> dict:
+        """{deuda_id: ["#id dd/mm/aaaa $ concepto"]}: un egreso de la boveda sin
+        factura atada (EGRESO_ADMIN REGISTRADO) que pudo ser el pago en efectivo
+        de la factura.
+
+        Pasa con la planilla de efectivo: el importador carga como EGRESO_ADMIN
+        las filas cuyo proveedor no reconoce (y siempre las de la panaderia). Si
+        el comando registrara ademas el pago, la caja fuerte bajaria dos veces
+        por la misma plata y el gasto contaria dos veces.
+
+        Se busca en la boveda de la empresa de la deuda un egreso de la misma
+        sucursal (o sin sucursal: es preferible dejar una factura abierta de mas
+        que pagarla dos veces), por el saldo o algo mas (redondeo del efectivo,
+        hasta la tolerancia), entre la emision - 5 y + 60 dias. Cada egreso se
+        asigna a una sola deuda: primero a la factura mas vieja, y entre varios
+        candidatos al de importe mas parecido y fecha mas cercana.
+        """
+        candidatas = []
+        for deuda in deudas:
+            empresa_id = _empresa_o_none(deuda)
+            if empresa_id is None:
+                continue
+            sucursal_id = deuda.sucursal_id or (deuda.caja_origen.sucursal_id if deuda.caja_origen_id else None)
+            candidatas.append((deuda, empresa_id, sucursal_id))
+        if not candidatas:
+            return {}
+        desde = min(deuda.fecha_emision for deuda, _, _ in candidatas) - VENTANA_EFECTIVO_ANTES
+        hasta = max(deuda.fecha_emision for deuda, _, _ in candidatas) + VENTANA_EFECTIVO_DESPUES
+        por_empresa = defaultdict(list)
+        for egreso in (
+            MovimientoCajaCentral.objects.filter(
+                estado=MovimientoCajaCentral.Estado.REGISTRADO,
+                tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
+                caja_central__empresa_id__in={empresa_id for _, empresa_id, _ in candidatas},
+                fecha__gte=desde,
+                fecha__lte=hasta,
+            )
+            .values("pk", "fecha", "monto", "concepto", "sucursal_gasto_id", "caja_central__empresa_id")
+            .order_by("fecha", "pk")
+        ):
+            por_empresa[egreso["caja_central__empresa_id"]].append(egreso)
+        usados = set()
+        resultado = {}
+        for deuda, empresa_id, sucursal_id in sorted(candidatas, key=lambda c: (c[0].fecha_emision, c[0].pk)):
+            saldo = deuda.saldo_pendiente
+            tope = saldo + max(TOLERANCIA_EFECTIVO_MINIMA, (saldo / 100).quantize(CENTAVO))
+            emision = deuda.fecha_emision
+            encontrados = [
+                egreso
+                for egreso in por_empresa.get(empresa_id, [])
+                if egreso["pk"] not in usados
+                and emision - VENTANA_EFECTIVO_ANTES <= egreso["fecha"] <= emision + VENTANA_EFECTIVO_DESPUES
+                and saldo <= egreso["monto"] <= tope
+                and egreso["sucursal_gasto_id"] in (None, sucursal_id)
+            ]
+            if not encontrados:
+                continue
+            elegido = min(
+                encontrados,
+                key=lambda e: (e["monto"] - saldo, abs((e["fecha"] - emision).days), e["fecha"], e["pk"]),
+            )
+            usados.add(elegido["pk"])
+            resultado[deuda.pk] = [
+                f"#{elegido['pk']} {elegido['fecha']:%d/%m/%Y} {dinero(elegido['monto'])} "
+                f"{elegido['concepto'][:40].strip()}"
+            ]
+        return resultado
+
     def _avisos_del_modo_interno(self) -> list[Fila]:
         """Lo que tesoreria tiene que mirar antes de dar por interno al proveedor:
         pagos con plata que ya se le hicieron (la boveda o el banco bajaron por
@@ -764,50 +970,82 @@ class Regularizacion(_Informe):
         return filas
 
     def restringir_a_plan(self, aprobadas: dict):
-        """Aplica solo lo que tesoreria aprobo en el plan revisado y con el mismo
-        saldo. Lo nuevo desde la revision (una factura cargada despues, una que
-        cambio de saldo) se informa y no se toca."""
+        """Aplica solo lo que tesoreria aprobo en el plan revisado, y tal como lo
+        reviso: si cambio el saldo, el importe, el proveedor, la sucursal, la
+        empresa (de que boveda sale el efectivo) o la fecha de pago (otro
+        --fecha-pago, otra fecha de factura), la fila queda DISTINTA_AL_PLAN con
+        el detalle y no se toca. Lo nuevo desde la revision (una factura cargada
+        despues) queda FUERA_DEL_PLAN."""
         self.plan_revisado = aprobadas
+        nombres = _nombres_de_empresa(
+            {f.empresa_id for f in self.filas} | {plan.empresa_id for plan in aprobadas.values()}
+        )
         vistas = set()
         for fila in self.filas:
             if fila.deuda_id is None or fila.accion in (Accion.AVISO_PAGO_REAL, Accion.AVISO_OTRO_PROVEEDOR):
                 continue
             vistas.add(fila.deuda_id)
-            saldo_aprobado = aprobadas.get(fila.deuda_id)
+            plan = aprobadas.get(fila.deuda_id)
             if fila.accion == Accion.A_REGULARIZAR:
-                if saldo_aprobado is None:
+                if plan is None:
                     fila.accion = Accion.FUERA_DEL_PLAN
                     fila.motivo = "No figura como A_REGULARIZAR en el plan revisado."
-                elif saldo_aprobado != fila.saldo:
+                    continue
+                cambios = _cambios_desde_el_plan(fila, plan, nombres)
+                if cambios:
                     fila.accion = Accion.DISTINTA_AL_PLAN
-                    fila.motivo = (
-                        f"El saldo cambio desde la revision: en el plan {dinero(saldo_aprobado)}, "
-                        f"hoy {dinero(fila.saldo)}."
-                    )
-            elif saldo_aprobado is not None:
+                    fila.motivo = f"Cambio desde la revision ({'; '.join(cambios)}): no se aplica."
+                else:
+                    fila.plan = plan
+            elif plan is not None:
                 fila.agregar_aviso(f"El plan revisado la aprobaba; hoy es {fila.accion}: no se aplica.")
-        faltantes = sorted(set(aprobadas) - vistas)
+        self.filas.extend(self._aprobadas_que_no_estan_abiertas(sorted(set(aprobadas) - vistas), aprobadas))
+
+    def _aprobadas_que_no_estan_abiertas(self, faltantes: list, aprobadas: dict) -> list[Fila]:
+        """Las aprobadas que esta corrida no ve abiertas. Se separa lo que ya pago
+        ESTE lote (re-corrida despues de un corte, o corridas por sucursal) de lo
+        pagado por otro camino y de lo que sigue abierto pero quedo afuera del
+        filtro, para que tesoreria no tenga que adivinar."""
         deudas = CuentaPorPagar.objects.select_related(
             "proveedor", "sucursal__empresa", "caja_origen__sucursal__empresa", "categoria__rubro_operativo"
         ).in_bulk(faltantes)
+        del_lote = {
+            pago.cuenta_por_pagar_id: pago
+            for pago in _pagos_con_token([token_de_pago(self.lote, self.medio, deuda_id) for deuda_id in faltantes])
+            if _es_pago_vivo_de(pago, pago.cuenta_por_pagar_id)
+        }
+        filas = []
         for deuda_id in faltantes:
             deuda = deudas.get(deuda_id)
             fila = Fila(
                 deuda_id=deuda_id,
                 accion=Accion.NO_DISPONIBLE,
                 medio=self.medio,
-                saldo=aprobadas[deuda_id],
+                saldo=aprobadas[deuda_id].saldo,
                 motivo="Estaba aprobada en el plan revisado pero ya no existe.",
             )
-            if deuda is not None:
-                fila.deuda = deuda
-                fila.proveedor = deuda.proveedor.razon_social
-                fila.empresa_id = _empresa_o_none(deuda)
+            filas.append(fila)
+            if deuda is None:
+                continue
+            fila.deuda = deuda
+            fila.proveedor = deuda.proveedor.razon_social
+            fila.empresa_id = _empresa_o_none(deuda)
+            pago = del_lote.get(deuda_id)
+            if pago is not None:
+                fila.accion = Accion.YA_PROCESADA
+                fila.pago_id = pago.pk
+                fila.fecha_pago = pago.fecha_pago
+                fila.motivo = f"Ya pagada por este lote: pago #{pago.pk}."
+            elif deuda.estado == CuentaPorPagar.Estado.PAGADA:
+                fila.motivo = "Estaba aprobada en el plan revisado; hoy esta pagada por otro camino (no por este lote)."
+            elif deuda.estado == CuentaPorPagar.Estado.ANULADA:
+                fila.motivo = "Estaba aprobada en el plan revisado; hoy esta anulada."
+            else:
                 fila.motivo = (
-                    f"Estaba aprobada en el plan revisado; hoy esta {deuda.get_estado_display()} "
-                    "o fuera de esta seleccion."
+                    "Estaba aprobada en el plan revisado y sigue abierta, pero quedo fuera de esta seleccion "
+                    "(--sucursal, --hasta o fecha de la factura)."
                 )
-            self.filas.append(fila)
+        return filas
 
     # --- aplicacion ---------------------------------------------------------
     def aplicar(self) -> list[Fila]:
@@ -819,18 +1057,52 @@ class Regularizacion(_Informe):
             except _FilaRechazada as rechazo:
                 fila.accion = rechazo.accion
                 fila.resultado = rechazo.mensaje
+                fila.pago_id = rechazo.pago_id
             except Exception as error:  # noqa: BLE001 - se informa en la fila y la corrida sigue
                 fila.accion = Accion.ERROR
                 fila.resultado = _mensaje_de_error(error)
             else:
+                fila.accion = Accion.APLICADA
                 fila.pago_id = pago.pk
                 fila.resultado = f"Pago #{pago.pk} ({pago.get_medio_pago_display()})"
         if self.interno:
-            set_supplier_internal(supplier=self.proveedor_interno, es_interno=True, actor=self.actor)
-            self.proveedor_marcado = True
+            self._marcar_proveedor_interno()
         else:
             self.boveda_despues = _saldos_de_boveda(self.boveda_antes.keys())
         return self.filas
+
+    def _marcar_proveedor_interno(self):
+        """Marca al proveedor como interno solo si esta corrida (o una anterior
+        del mismo lote) le cancelo al menos una deuda y ninguna dio error.
+
+        Marcarlo cancela sin plata todas sus facturas futuras: con un id mal
+        tipeado o un plan que no aprobo nada, sacaria de la deuda viva a un
+        proveedor real. Despues se cuenta lo que le sigue abierto, que no se
+        cancela solo (el alta automatica salda solo al cargar o editar)."""
+        proveedor = self.proveedor_interno
+        self.ya_era_interno = Proveedor.objects.filter(pk=proveedor.pk, es_interno=True).exists()
+        canceladas = [
+            f
+            for f in self.filas
+            if f.pago_id and f.medio == INTERNO and f.accion in (Accion.APLICADA, Accion.YA_PROCESADA)
+        ]
+        if self.errores():
+            self.motivo_sin_marcar = (
+                f"{len(self.errores())} deudas quedaron con error; corregirlas y volver a correr con el mismo plan."
+            )
+        elif not canceladas:
+            self.motivo_sin_marcar = (
+                "no se cancelo ninguna deuda del proveedor con este lote (el plan no aprobo ninguna o ya no "
+                "estan abiertas)."
+            )
+        else:
+            set_supplier_internal(supplier=proveedor, es_interno=True, actor=self.actor)
+            self.proveedor_marcado = True
+        abiertas = CuentaPorPagar.objects.filter(proveedor=proveedor, estado__in=ESTADOS_ABIERTOS)
+        self.abiertas_despues = (
+            abiertas.count(),
+            abiertas.aggregate(total=Sum("saldo_pendiente"))["total"] or CERO,
+        )
 
     def _aplicar_fila(self, fila: Fila) -> PagoTesoreria:
         token = token_de_pago(self.lote, self.medio, fila.deuda_id)
@@ -839,7 +1111,10 @@ class Regularizacion(_Informe):
             deuda = CuentaPorPagar.objects.select_for_update().get(pk=fila.deuda_id)
             existente = PagoTesoreria.objects.filter(token_alta=token).first()
             if existente is not None:
-                raise _FilaRechazada(*_clasificar_token(existente, deuda.pk))
+                raise _FilaRechazada(
+                    *_clasificar_token(existente, deuda.pk),
+                    pago_id=existente.pk if _es_pago_vivo_de(existente, deuda.pk) else None,
+                )
             if deuda.estado not in ESTADOS_ABIERTOS:
                 raise _FilaRechazada(
                     Accion.ERROR, f"La deuda cambio desde el plan: hoy esta {deuda.get_estado_display()}."
@@ -850,23 +1125,39 @@ class Regularizacion(_Informe):
                 raise _FilaRechazada(
                     Accion.EXCLUIDA_COMPROMISO, "Le cargaron un compromiso especial despues del plan."
                 )
+            # Lo revisado manda: con plan, la empresa y el proveedor son los del
+            # CSV que leyo tesoreria (restringir_a_plan ya verifico que la
+            # planificacion de esta corrida coincide); sin plan, los del plan
+            # de esta misma corrida.
+            esperado = fila.plan or fila
+            proveedor_esperado = fila.plan.proveedor_id if fila.plan else fila.deuda.proveedor_id
             if self.interno:
                 if deuda.proveedor_id != self.proveedor_interno.pk:
                     raise _FilaRechazada(Accion.ERROR, "La deuda cambio de proveedor desde el plan.")
             else:
+                if deuda.proveedor_id != proveedor_esperado:
+                    raise _FilaRechazada(Accion.ERROR, "La deuda cambio de proveedor desde el plan.")
                 if deuda.proveedor.es_interno:
                     raise _FilaRechazada(
                         Accion.EXCLUIDA_INTERNO, "El proveedor paso a ser interno: va por el modo interno."
                     )
-                if _empresa_o_none(deuda) != fila.empresa_id:
+                if _empresa_o_none(deuda) != esperado.empresa_id or deuda.sucursal_id != fila.deuda.sucursal_id:
                     raise _FilaRechazada(
                         Accion.ERROR,
-                        "La deuda cambio de sucursal desde el plan: el efectivo saldria de otra boveda.",
+                        "La deuda cambio de sucursal desde el plan: el efectivo saldria de otra boveda "
+                        "o se imputaria a otra sucursal.",
                     )
-                if _mes_de_tesoreria_cerrado(fila.fecha_pago, fila.empresa_id):
+                if (self.fecha_pago or deuda.fecha_emision) != esperado.fecha_pago:
+                    raise _FilaRechazada(
+                        Accion.ERROR,
+                        "La fecha de la factura cambio desde el plan: el pago quedaria con otra fecha.",
+                    )
+                cierre = _hay_cierre_desde(fila.fecha_pago, fila.empresa_id)
+                if cierre is not None:
                     raise _FilaRechazada(
                         Accion.EXCLUIDA_MES_CERRADO,
-                        f"El mes {fila.fecha_pago:%m/%Y} se cerro en tesoreria despues del plan.",
+                        "Se cerro un mes en tesoreria despues del plan. "
+                        + _motivo_de_cierre(fila.fecha_pago, cierre, que="el pago"),
                     )
             registrado = (
                 PagoTesoreria.objects.filter(
@@ -914,11 +1205,11 @@ class Regularizacion(_Informe):
         if self.interno:
             return []
         aplicado = self.boveda_despues is not None
+        # Antes de aplicar, lo que se registraria; despues, lo que se registro.
+        cuenta = Accion.APLICADA if aplicado else Accion.A_REGULARIZAR
         efectivo = defaultdict(lambda: CERO)
         for fila in self.filas:
-            if fila.accion != Accion.A_REGULARIZAR or not fila.empresa_id:
-                continue
-            if aplicado and not fila.pago_id:
+            if fila.accion != cuenta or not fila.empresa_id:
                 continue
             efectivo[fila.empresa_id] += fila.saldo
         empresas = set(self.boveda_antes) | set(efectivo)
@@ -949,7 +1240,7 @@ class Regularizacion(_Informe):
         alguna de esas facturas pudo pagarse con ella: registrar ademas el
         efectivo bajaria dos veces la disponibilidad.
         """
-        filas = [f for f in self.filas if f.accion == Accion.A_REGULARIZAR and f.empresa_id]
+        filas = [f for f in self.filas if f.accion in (Accion.A_REGULARIZAR, Accion.APLICADA) and f.empresa_id]
         if self.interno or not filas:
             return []
         a_registrar = defaultdict(lambda: CERO)
@@ -1027,11 +1318,49 @@ class Regularizacion(_Informe):
     def top_proveedores(self, cantidad: int = TOP_PROVEEDORES) -> list[tuple[str, int, Decimal]]:
         totales = defaultdict(lambda: [0, CERO])
         for fila in self.filas:
-            if fila.accion == Accion.A_REGULARIZAR:
+            if fila.accion in (Accion.A_REGULARIZAR, Accion.APLICADA):
                 totales[fila.proveedor][0] += 1
                 totales[fila.proveedor][1] += fila.saldo
         ordenados = sorted(totales.items(), key=lambda item: (-item[1][1], item[0]))
         return [(nombre, cantidad_, total) for nombre, (cantidad_, total) in ordenados[:cantidad]]
+
+
+def _pagos_con_token(tokens: list) -> list[PagoTesoreria]:
+    """Los pagos con alguno de esos tokens, de a 500 (limite de parametros)."""
+    pagos = []
+    for inicio in range(0, len(tokens), 500):
+        pagos.extend(PagoTesoreria.objects.filter(token_alta__in=tokens[inicio : inicio + 500]))
+    return pagos
+
+
+def _es_pago_vivo_de(pago: PagoTesoreria, deuda_id: int) -> bool:
+    return pago.cuenta_por_pagar_id == deuda_id and pago.estado == PagoTesoreria.Estado.REGISTRADO
+
+
+def _cambios_desde_el_plan(fila: Fila, plan: FilaDelPlan, nombres: dict) -> list[str]:
+    """Que cambio de una deuda desde que tesoreria la reviso, en palabras."""
+    deuda = fila.deuda
+    cambios = []
+    if plan.saldo != fila.saldo:
+        cambios.append(f"saldo: en el plan {dinero(plan.saldo)}, hoy {dinero(fila.saldo)}")
+    if plan.importe_total != deuda.importe_total:
+        cambios.append(f"importe: en el plan {dinero(plan.importe_total)}, hoy {dinero(deuda.importe_total)}")
+    if plan.proveedor_id != deuda.proveedor_id:
+        cambios.append(f"proveedor: en el plan #{plan.proveedor_id}, hoy #{deuda.proveedor_id} {deuda.proveedor.razon_social}")
+    if plan.empresa_id != fila.empresa_id:
+        cambios.append(
+            f"empresa (boveda de la que sale el efectivo): en el plan {nombres.get(plan.empresa_id, plan.empresa_id or '-')}, "
+            f"hoy {nombres.get(fila.empresa_id, fila.empresa_id or '-')}"
+        )
+    sucursal_hoy = deuda.sucursal.codigo if deuda.sucursal_id else ""
+    if plan.sucursal.upper() != sucursal_hoy.upper():
+        cambios.append(f"sucursal: en el plan {plan.sucursal or '-'}, hoy {sucursal_hoy or '-'}")
+    if plan.fecha_pago != fila.fecha_pago:
+        cambios.append(
+            f"fecha de pago: en el plan {plan.fecha_pago:%d/%m/%Y}, hoy {fila.fecha_pago:%d/%m/%Y} "
+            "(otra fecha de factura, o se corrio con otro --fecha-pago)"
+        )
+    return cambios
 
 
 def _clasificar_token(existente: PagoTesoreria, deuda_id: int) -> tuple[str, str]:
@@ -1095,7 +1424,7 @@ class Reversion(_Informe):
                 pago_tesoreria__in=pagos, estado=MovimientoCajaCentral.Estado.REGISTRADO
             ).select_related("caja_central")
         }
-        cerrados = _meses_cerrados()
+        cierres = _ultimos_cierres()
         self.filas = []
         for pago in pagos:
             deuda = pago.cuenta_por_pagar
@@ -1117,11 +1446,11 @@ class Reversion(_Informe):
             elif pago.estado == PagoTesoreria.Estado.ANULADO:
                 fila.accion = Accion.YA_ANULADO
                 fila.motivo = f"Ya estaba anulado: {pago.motivo_anulacion}"
-            elif egreso is not None and _mes_cerrado(cerrados, egreso.caja_central.empresa_id, egreso.fecha):
+            elif egreso is not None and (
+                cierre := _cierre_que_bloquea(cierres, egreso.caja_central.empresa_id, egreso.fecha)
+            ):
                 fila.accion = Accion.EXCLUIDA_MES_CERRADO
-                fila.motivo = (
-                    f"El mes {egreso.fecha:%m/%Y} esta cerrado en tesoreria: anularlo cambiaria la foto del cierre."
-                )
+                fila.motivo = _motivo_de_cierre(egreso.fecha, cierre, que="anular el egreso", sugerir_fecha=False)
             self.filas.append(fila)
         if self.desmarcar_interno:
             self.filas.extend(self._cancelaciones_automaticas())
@@ -1257,6 +1586,7 @@ __all__ = [
     "MEDIOS_DEL_COMANDO",
     "NAMESPACE_REGULARIZACION",
     "Fila",
+    "FilaDelPlan",
     "Regularizacion",
     "Reversion",
     "leer_plan",
