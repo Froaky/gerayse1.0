@@ -33,12 +33,13 @@ y un `git push` pelado la habría empujado a staging). Empujar siempre con
 
 | Slice | Qué | Estado |
 |---|---|---|
-| S0 | Rama, venv, `reportlab==5.0.0` en requirements | Hecho |
-| S1 | Núcleo: `documento.py`, `alcance.py`, `pdf.py` + `tests_reportes_nucleo.py` | Hecho |
-| S2 | R1 situación económica (builder + tests) | Pendiente |
-| S3 | R2 situación financiera (builder + tests) | Pendiente |
-| S4 | R3 desglose de deudas (lectura nueva en services + builder + tests) | Pendiente |
-| S5 | Formulario, vistas, URLs, página y menú (+ tests de permisos y aislamiento) | Pendiente |
+| S0 | Rama, venv, `reportlab==5.0.0` en requirements | Hecho (6b46117) |
+| S1 | Núcleo: `documento.py`, `alcance.py`, `pdf.py` + `tests_reportes_nucleo.py` | Hecho (6b46117) |
+| fix | Egresos de bóveda sin imputar acotados por empresa (lectura económica) | Hecho (2817ca3) |
+| S2 | R1 situación económica (builder + tests) | Hecho (94df731) |
+| S3 | R2 situación financiera (builder + tests) | Hecho (94df731) |
+| S4 | R3 desglose de deudas (lectura nueva en services + builder + tests) | Hecho (94df731) |
+| S5 | Formulario, vistas, URLs, página y menú (+ tests de permisos y aislamiento) | Hecho (d8e4fc1) |
 | S6 | "General + todas las sucursales" en un PDF; validación en staging | Pendiente |
 | S7 | Pase a main con OK de Mateo; nota en `context.md` | Pendiente |
 
@@ -80,12 +81,74 @@ y un `git push` pelado la habría empujado a staging). Empujar siempre con
   - Los porcentajes se muestran con el redondeo que ya traen los snapshots (2
     decimales); el renderer no re-redondea.
 
+### 2026-10-13 16:04 — S2-S4 en paralelo, S5 en preparación
+
+- S2, S3 y S4 los implementan tres agentes en paralelo (workflow), cada uno en sus
+  archivos: `treasury/reportes/{economica,financiera,deudas}.py`,
+  `treasury/tests_reportes_{economica,financiera,deudas}.py` y, para R3, la lectura
+  `build_open_payables_breakdown` agregada en `treasury/services.py` justo después de
+  `build_financial_period_snapshot`. Después dos revisores por reporte (lente
+  datos/fórmulas y lente tests/aislamiento) y un corrector.
+- S5 hecho en paralelo, sin cablear todavía (cablear antes rompía los imports de los
+  tests de los agentes):
+  - `ReportFilterForm` en `treasury/forms.py`. Desvío respecto del plan: en vez de dos
+    campos (empresa + alcance) hay UN desplegable "Empresa y alcance" agrupado por razón
+    social, con valores `e<empresa>` (general), `t<empresa>` (general + cada sucursal en
+    un PDF) y `s<sucursal>`. Así no hace falta JavaScript y la sucursal siempre se valida
+    contra la empresa. Empresa con una sola sucursal activa: solo "General · Vivre
+    (única sucursal)". Meses con `input type=month`; en R3 son opcionales (los dos o
+    ninguno).
+  - `ReportScope.todas_las_sucursales` (solo cambia el nombre del archivo:
+    `_general-y-sucursales_`).
+  - `treasury/reportes/registro.py` (`REGISTRO`), `templates/treasury/reportes.html`
+    (una tarjeta con su formulario por reporte) y `treasury/tests_reportes_vistas.py`.
+  - Falta aplicar: vistas `reportes_index` / `reporte_pdf` + `_report_empresas` en
+    `treasury/views.py`, las dos rutas en `treasury/urls.py` y "Reportes PDF" en el
+    desplegable "Reportes" de `templates/treasury/layout.html`.
+  - Empresas ofrecidas = activas ∩ seleccionadas en la sesión ∩ `empresas_permitidas`.
+    Alcance ajeno, inactivo o mal formado por URL → 404 (no cae en silencio al general).
+    Formulario incompleto o inválido → vuelve a la página con un mensaje.
+
+### 2026-10-13 16:33 — S2-S5 terminados, fix de bóveda
+
+- Workflow de S2-S4: 12 agentes (implementación, dos revisores por reporte con
+  mutaciones, corrector). Hallazgos confirmados y corregidos:
+  - R1: filas que solo tienen ventas (ventas con tarjeta caen en "Sin rubro") ya no se
+    listan con todo en cero; nota que lo explica. Sin ventas, margen y % salen "—".
+    Nota de objetivos distinta para empresa de una sola sucursal. Aclaración cuando un
+    grupo tiene objetivo solo en algunos rubros.
+  - R2: la deuda pendiente del snapshot NO tiene fecha (es la vigente al emitir) aunque
+    los saldos sean al corte: los textos lo dicen. Por sucursal la "caja fuerte" es el
+    neto imputado a la sucursal, no efectivo: los hints lo dicen.
+  - R3: "Pagado" (= importe − saldo) incluye cancelaciones sin movimiento de fondos;
+    `build_open_payables_breakdown` devuelve `settled_without_funds_total` y el PDF lo
+    aclara en una nota cuando es > 0.
+- FIX encontrado por la revisión (commit aparte 2817ca3): la lectura económica sumaba
+  como "gasto sin imputar" los egresos de bóveda de OTRA empresa (el banco sí cortaba por
+  empresa). Ahora usa el mismo criterio que las cuentas
+  (`bank_account_empresa_scope_query(..., prefix="caja_central__")`): bóveda de la
+  empresa, y las bóvedas viejas sin empresa siguen visibles. Afecta la tarjeta/nota de
+  gasto sin imputar del dashboard y del PDF; nada más.
+- Límite conocido que queda: una deuda sin sucursal suma en el general de TODAS las
+  empresas (criterio heredado de la lectura financiera; en prod hay 0). En el desglose
+  se ve como "Sin sucursal".
+- S5 cableado (vistas, URLs, menú). Renderer: el rótulo de subtotales ocupa las celdas
+  vacías que le siguen.
+- Verificación visual con la base de DEMO (datos ficticios, Café Bruma / Panadería
+  Trigal): copia en `C:/tmp/gerayse-reportes-demo/gerayse_demo.sqlite3` migrada a esta
+  rama; config `reportes-demo` agregada al `.claude/launch.json` del checkout principal
+  (puerto 8011, auto-login de demo). Los 3 reportes, por sucursal, general y "general y
+  cada sucursal" se ven bien.
+- Suite completa: 956 OK (4 skipped) = 843 de base + 113 nuevos. `makemigrations
+  --check`: sin cambios. `compileall` y `check` OK.
+
 ## Decisiones abiertas (preguntar a Mateo, no resolver solo)
 
 1. "El mismo diseño" que pidió Tais: ¿pantallas del dashboard o el PDF de desglose de
    deuda entregado en julio?
-2. Proveedor interno (Oveja Negra): incluirlo en el desglose marcado "(interno)" es la
-   propuesta. `Proveedor.es_interno` ya está en esta rama (vino de staging).
+2. Proveedor interno (Oveja Negra): HECHO como propuesta — se incluye y se marca
+   "(interno)" con una nota. Si Mateo prefiere excluirlo, es un filtro en
+   `build_open_payables_breakdown` (y habría que dejar de conciliar con pending_total).
 3. Publicar el desglose después de que corra la regularización en producción, o avisarle
    a Tais que va a ver la deuda inflada por pagos sin atar.
 4. Banco por sucursal en Armadi: la cuenta es de la empresa, el reporte por sucursal sale
