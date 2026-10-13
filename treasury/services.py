@@ -2678,8 +2678,14 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
         )
         if sucursal.empresa_id:
             # Los pendientes sin sucursal imputada solo pueden venir de cuentas
-            # de la misma empresa; sin este corte, un debito historico de otra
-            # empresa apareceria como gasto sin imputar en todas las vistas.
+            # (y de la boveda) de la misma empresa; sin este corte, un egreso
+            # historico de otra empresa apareceria como gasto sin imputar en
+            # todas las vistas.
+            # Mismo criterio legacy que las cuentas: una boveda vieja sin empresa
+            # sigue visible si no tiene sucursal o su sucursal es de la empresa.
+            pending_central_treasury_expenses = pending_central_treasury_expenses.filter(
+                bank_account_empresa_scope_query([sucursal.empresa_id], prefix="caja_central__")
+            )
             pending_bank_treasury_expenses = pending_bank_treasury_expenses.filter(
                 bank_account_empresa_scope_query([sucursal.empresa_id], prefix="cuenta_bancaria__")
             )
@@ -2690,7 +2696,7 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
         else:
             pending_central_treasury_expenses = pending_central_treasury_expenses.filter(
                 Q(sucursal_gasto__empresa_id__in=empresa_ids) | Q(sucursal_gasto__isnull=True)
-            )
+            ).filter(bank_account_empresa_scope_query(empresa_ids, prefix="caja_central__"))
             pending_bank_treasury_expenses = pending_bank_treasury_expenses.filter(
                 Q(sucursal_gasto__empresa_id__in=empresa_ids) | Q(sucursal_gasto__isnull=True)
             ).filter(
