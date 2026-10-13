@@ -368,10 +368,22 @@ class DesgloseDeudasBuilderTests(DeudasFixtureMixin, TestCase):
         sin_interno = build_desglose_deudas(self._general())
         self.assertNotIn(NOTA_INTERNO, sin_interno.notes)
 
+        # US-3.20: una factura nueva del proveedor interno nace saldada (INTERNO),
+        # asi que no es deuda abierta y no aparece.
         self._deuda("80.00", proveedor=self.panaderia)
         doc = build_desglose_deudas(self._general())
         proveedores = [row[PROVEEDOR] for row in self._filas_de_facturas(doc.table(TABLA))]
-        self.assertIn("Panaderia Propia (interno)", proveedores)
+        self.assertEqual(proveedores, ["Distribuidora Sur"])
+        self.assertNotIn(NOTA_INTERNO, doc.notes)
+
+        # Lo que si queda abierto: facturas cargadas antes de marcar al proveedor como
+        # interno, hasta que corra `regularizar_deudas --proveedor-interno`.
+        vieja = create_supplier(razon_social="Panaderia Vieja", actor=self.admin)
+        self._deuda("60.00", proveedor=vieja)
+        set_supplier_internal(supplier=vieja, es_interno=True, actor=self.admin)
+        doc = build_desglose_deudas(self._general())
+        proveedores = [row[PROVEEDOR] for row in self._filas_de_facturas(doc.table(TABLA))]
+        self.assertIn("Panaderia Vieja (interno)", proveedores)
         self.assertIn("Distribuidora Sur", proveedores)
         self.assertIn(NOTA_INTERNO, doc.notes)
 
