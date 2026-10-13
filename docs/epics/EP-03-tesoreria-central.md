@@ -368,6 +368,11 @@ Criterios:
   a efectivo y la caja fuerte proyectada al cierre de cada mes
 - revertir un lote tambien desata los debitos, que vuelven a quedar sin asignar
   e imputados como estaban
+- primero se decide que se ata al banco y despues, sobre lo que queda para
+  efectivo, se buscan los egresos de la caja fuerte que pudieron ser el pago: una
+  factura atada no se queda con un egreso que pudo ser el pago de otra
+- un mes cerrado posterior saca la factura del efectivo pero no impide atarla al
+  banco, que no mueve fondos
 - las facturas del proveedor interno se cancelan sin movimiento (INTERNO): la
   deuda queda pagada, no lleva cuenta ni movimiento y nunca crea un debito
   bancario ni un egreso de la caja fuerte

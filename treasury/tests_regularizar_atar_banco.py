@@ -27,11 +27,13 @@ from treasury.models import (
     CuentaBancaria,
     CuentaPorPagar,
     MovimientoBancario,
+    MovimientoCajaCentral,
     PagoTesoreria,
 )
 from treasury.regularizacion import (
     NAMESPACE_REGULARIZACION,
     Accion,
+    Regularizacion,
     Reversion,
     leer_ataduras,
     leer_plan,
@@ -47,10 +49,12 @@ from treasury.services import (
     importe_sin_asignar_del_movimiento,
     pay_debt_from_bank_movement,
     register_cash_payment,
+    register_egreso_tesoreria,
 )
 from treasury.tests_regularizar_deudas import AGOSTO, EFECTIVO, LOTE, RegularizacionBase
 
 TRANSFERENCIA = PagoTesoreria.MedioPago.TRANSFERENCIA
+INTERNO = PagoTesoreria.MedioPago.INTERNO
 MANUAL = MovimientoBancario.Origen.MANUAL
 EGRESO_TESORERIA = MovimientoBancario.Origen.EGRESO_TESORERIA
 PAGO_TESORERIA = MovimientoBancario.Origen.PAGO_TESORERIA
@@ -1117,3 +1121,208 @@ class ConsolaAtarTests(AtarBancoBase):
             self._run(usuario=self.admin.username, proveedor_interno=str(panaderia.pk), sin_atar_banco=True)
         with self.assertRaisesMessage(CommandError, "--sin-atar-banco"):
             self._run(usuario=self.admin.username, revertir=LOTE, sin_atar_banco=True)
+
+
+class InteraccionConLaRevisionTests(AtarBancoBase):
+    """La atadura al banco junto con las correcciones de la revision: primero se
+    decide que se ata; el posible pago en efectivo ya cargado y el mes cerrado
+    posterior se aplican a lo que queda para efectivo. Una factura atada no toca
+    la caja fuerte."""
+
+    def _egreso(self, monto, *, fecha, concepto="S/E"):
+        return register_egreso_tesoreria(
+            empresa=self.armadi,
+            fuente="CAJA_CENTRAL",
+            fecha=fecha,
+            monto=Decimal(monto),
+            concepto=concepto,
+            rubro=self.rubro,
+            sucursal=self.ec1,
+            periodo=fecha.replace(day=1),
+            actor=self.admin,
+        )
+
+    def _plan_revisado(self):
+        with TemporaryDirectory() as carpeta:
+            ruta = Path(carpeta) / "plan.csv"
+            self._plan().escribir_informe(ruta)
+            return leer_plan(ruta, EFECTIVO), leer_ataduras(ruta)
+
+    def test_la_factura_con_debito_se_ata_y_el_egreso_de_la_boveda_queda_libre(self):
+        atada = self._deuda("1000.00", emision=_dia(5))
+        debito = self._debito("1000.00", fecha=_dia(20))
+        egreso = self._egreso("1000.00", fecha=_dia(8))
+        boveda = self._boveda(self.armadi)
+
+        regularizacion = self._plan()
+        fila = self._por_deuda(regularizacion)[atada.pk]
+
+        self.assertEqual(fila.accion, Accion.A_ATAR_BANCO)
+        self.assertEqual(fila.debito_id, debito.pk)
+        self.assertEqual(fila.posibles_pagos_efectivo, [])
+
+        regularizacion.aplicar()
+
+        self.assertEqual(atada.pagos.get().movimiento_bancario_id, debito.pk)
+        self.assertEqual(self._boveda(self.armadi), boveda)
+        egreso.refresh_from_db()
+        self.assertEqual(egreso.estado, MovimientoCajaCentral.Estado.REGISTRADO)
+        self.assertIsNone(egreso.pago_tesoreria_id)
+
+    def test_el_egreso_que_no_toma_la_atada_deja_para_revisar_a_la_que_va_a_efectivo(self):
+        # Mismo importe, misma sucursal. La atada es la mas vieja: si compitiera
+        # por el egreso se lo quedaria, y la otra saldria en efectivo aunque ya
+        # se pago con ese egreso (la caja fuerte bajaria dos veces).
+        atada = self._deuda("1000.00", emision=_dia(5))
+        debito = self._debito("1000.00", fecha=_dia(20))
+        sin_debito = self._deuda("1000.00", proveedor=self.verduleria, emision=_dia(8))
+        egreso = self._egreso("1000.00", fecha=_dia(10), concepto="Pago verduleria S/E")
+        boveda = self._boveda(self.armadi)
+
+        regularizacion = self._aplicar()
+        filas = self._por_deuda(regularizacion)
+
+        self.assertEqual(filas[atada.pk].accion, Accion.A_ATAR_BANCO)
+        self.assertEqual(filas[atada.pk].posibles_pagos_efectivo, [])
+        self.assertEqual(atada.pagos.get().movimiento_bancario_id, debito.pk)
+        self.assertEqual(filas[sin_debito.pk].accion, Accion.POSIBLE_PAGO_EN_EFECTIVO)
+        self.assertTrue(filas[sin_debito.pk].posibles_pagos_efectivo[0].startswith(f"#{egreso.pk} "))
+        self.assertEqual(sin_debito.pagos.count(), 0)
+        self.assertEqual(self._boveda(self.armadi), boveda)
+
+    def test_sin_atar_banco_la_factura_con_debito_tampoco_toma_el_egreso(self):
+        con_debito = self._deuda("1000.00", emision=_dia(5))
+        self._debito("1000.00", fecha=_dia(20))
+        sin_debito = self._deuda("1000.00", proveedor=self.verduleria, emision=_dia(8))
+        self._egreso("1000.00", fecha=_dia(10))
+
+        filas = self._por_deuda(self._plan(atar_banco=False))
+
+        # Queda para revisar (posible pago por banco): no va a efectivo, asi que
+        # el egreso le corresponde a la que si iria.
+        self.assertEqual(filas[con_debito.pk].accion, Accion.POSIBLE_PAGO_EN_GERAYSE)
+        self.assertEqual(filas[sin_debito.pk].accion, Accion.POSIBLE_PAGO_EN_EFECTIVO)
+
+    def test_un_mes_cerrado_posterior_no_impide_atar_pero_excluye_el_efectivo(self):
+        atada = self._deuda("1000.00", emision=_dia(5))
+        debito = self._debito("1000.00", fecha=_dia(20))
+        en_efectivo = self._deuda("500.00", proveedor=self.verduleria, emision=_dia(6))
+        # Septiembre cerrado: un pago fechado en agosto no llegaria a los saldos
+        # de Disponibilidades; la atadura no mueve fondos.
+        CierreMensualTesoreria.objects.create(mes=date(2026, 9, 1), empresa=self.armadi, cerrado=True)
+        boveda = self._boveda(self.armadi)
+
+        regularizacion = self._aplicar()
+        filas = self._por_deuda(regularizacion)
+
+        self.assertEqual(filas[atada.pk].accion, Accion.A_ATAR_BANCO)
+        self.assertIn("mes cerrado posterior (09/2026)", filas[atada.pk].aviso)
+        self.assertEqual(atada.pagos.get().movimiento_bancario_id, debito.pk)
+        self.assertEqual(filas[en_efectivo.pk].accion, Accion.EXCLUIDA_MES_CERRADO)
+        self.assertIn("mes cerrado posterior (09/2026)", filas[en_efectivo.pk].motivo)
+        self.assertEqual(en_efectivo.pagos.count(), 0)
+        self.assertEqual(self._boveda(self.armadi), boveda)
+
+    def test_un_mes_cerrado_posterior_sin_debito_que_la_ate_queda_excluida(self):
+        deuda = self._deuda("1000.00", emision=_dia(5))
+        # El debito no alcanza: la factura no se ata y quedaria para efectivo.
+        self._debito("600.00", fecha=_dia(20))
+        CierreMensualTesoreria.objects.create(mes=date(2026, 9, 1), empresa=self.armadi, cerrado=True)
+
+        fila = self._por_deuda(self._plan())[deuda.pk]
+
+        self.assertEqual(fila.accion, Accion.EXCLUIDA_MES_CERRADO)
+        self.assertIn("Use --fecha-pago", fila.motivo)
+
+    def test_el_plan_ata_aunque_un_mes_cerrado_posterior_la_saque_del_efectivo(self):
+        aprobada = self._deuda("1000.00", emision=_dia(5), concepto="Aprobada")
+        debito = self._debito("1000.00", fecha=_dia(20))
+        aprobadas, ataduras = self._plan_revisado()
+        self.assertEqual(ataduras, {aprobada.pk: (Decimal("1000.00"), debito.pk)})
+        # Despues de la revision se carga una factura mas vieja del mismo importe
+        # (hoy el reparto le daria el debito) y se cierra septiembre.
+        vieja = self._deuda("1000.00", emision=_dia(1), concepto="Cargada despues")
+        CierreMensualTesoreria.objects.create(mes=date(2026, 9, 1), empresa=self.armadi, cerrado=True)
+
+        regularizacion = self._plan()
+        self.assertEqual(self._por_deuda(regularizacion)[aprobada.pk].accion, Accion.EXCLUIDA_MES_CERRADO)
+        regularizacion.restringir_a_plan(aprobadas, ataduras)
+        regularizacion.aplicar()
+
+        filas = self._por_deuda(regularizacion)
+        self.assertEqual(filas[aprobada.pk].accion, Accion.A_ATAR_BANCO)
+        self.assertEqual(aprobada.pagos.get().movimiento_bancario_id, debito.pk)
+        self.assertEqual(filas[vieja.pk].accion, Accion.FUERA_DEL_PLAN)
+        self.assertEqual(vieja.pagos.count(), 0)
+
+    def test_el_plan_revisado_aplica_ataduras_y_efectivo_cada_uno_con_sus_verificaciones(self):
+        atada = self._deuda("1000.00", emision=_dia(5))
+        debito = self._debito("1000.00", fecha=_dia(20))
+        en_efectivo = self._deuda("300.00", proveedor=self.verduleria, emision=_dia(6))
+        se_mueve = self._deuda("200.00", proveedor=self.verduleria, emision=_dia(7), concepto="Se mueve")
+        aprobadas, ataduras = self._plan_revisado()
+        self.assertEqual(set(aprobadas), {en_efectivo.pk, se_mueve.pk})
+        self.assertEqual(ataduras, {atada.pk: (Decimal("1000.00"), debito.pk)})
+        # Despues de la revision la factura pasa a otra sucursal (otra boveda).
+        CuentaPorPagar.objects.filter(pk=se_mueve.pk).update(sucursal=self.vivre)
+
+        regularizacion = self._plan()
+        regularizacion.restringir_a_plan(aprobadas, ataduras)
+        regularizacion.aplicar()
+
+        filas = self._por_deuda(regularizacion)
+        self.assertEqual(filas[atada.pk].accion, Accion.A_ATAR_BANCO)
+        self.assertEqual(atada.pagos.get().movimiento_bancario_id, debito.pk)
+        self.assertEqual(filas[en_efectivo.pk].accion, Accion.APLICADA)
+        self.assertEqual(en_efectivo.pagos.get().medio_pago, EFECTIVO)
+        self.assertEqual(filas[se_mueve.pk].accion, Accion.DISTINTA_AL_PLAN)
+        self.assertIn("sucursal: en el plan EC1, hoy VIV-01", filas[se_mueve.pk].motivo)
+        self.assertEqual(se_mueve.pagos.count(), 0)
+
+    def test_volver_a_correr_el_plan_dice_que_la_atadura_ya_la_hizo_el_lote(self):
+        deuda = self._deuda("1000.00")
+        debito = self._debito("1000.00", fecha=_dia(20))
+        aprobadas, ataduras = self._plan_revisado()
+        primera = self._plan()
+        primera.restringir_a_plan(aprobadas, ataduras)
+        primera.aplicar()
+        pago = deuda.pagos.get()
+
+        segunda = self._plan()
+        segunda.restringir_a_plan(aprobadas, ataduras)
+        segunda.aplicar()
+
+        fila = self._por_deuda(segunda)[deuda.pk]
+        self.assertEqual(fila.accion, Accion.YA_PROCESADA)
+        self.assertEqual(fila.pago_id, pago.pk)
+        self.assertEqual(fila.motivo, f"Ya pagada por este lote: pago #{pago.pk} atado al debito #{debito.pk}.")
+        self.assertEqual(deuda.pagos.count(), 1)
+
+    def test_por_mes_despues_de_aplicar_cuenta_el_efectivo_registrado(self):
+        self._deuda("1000.00", emision=_dia(5))
+        self._debito("1000.00", fecha=_dia(20))
+        self._deuda("300.00", proveedor=self.verduleria, emision=_dia(6))
+
+        regularizacion = self._aplicar()
+
+        [agosto] = regularizacion.por_mes()
+        self.assertEqual(agosto["atado_banco"], Decimal("1000.00"))
+        self.assertEqual(agosto["efectivo"], Decimal("300.00"))
+        self.assertEqual(agosto["boveda_hoy"], Decimal("999700.00"))
+        self.assertEqual(agosto["boveda_proyectada"], agosto["boveda_hoy"])
+
+    def test_el_modo_interno_nunca_ata(self):
+        panaderia = self._proveedor("OVEJA NEGRA ARMADI SRL")
+        deuda = self._deuda("700.00", proveedor=panaderia)
+        self._debito("700.00", fecha=_dia(20), proveedor=panaderia)
+
+        interno = Regularizacion(actor=self.admin, proveedor_interno=panaderia)
+        interno.planificar()
+
+        self.assertFalse(interno.atar_banco)
+        fila = self._por_deuda(interno)[deuda.pk]
+        self.assertEqual(fila.accion, Accion.A_REGULARIZAR)
+        self.assertEqual(fila.medio, INTERNO)
+        self.assertIsNone(fila.debito_id)
+        with self.assertRaisesMessage(Exception, "--atar-con-sobrante"):
+            Regularizacion(actor=self.admin, proveedor_interno=panaderia, atar_con_sobrante=True)
