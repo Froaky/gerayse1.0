@@ -50,8 +50,8 @@ Last updated: 2026-10-13
     `treasury/forms.py`, `treasury/admin.py`, `templates/treasury/list_page.html`,
     `templates/treasury/dashboard.html`, migracion 0037,
     `treasury/tests_pago_sin_movimiento.py` (nuevo, 44 tests).
-  - Pendiente (slices siguientes): comando `regularizar_deudas` con modo interno (slice 2),
-    alta automatica de INTERNO para proveedores es_interno (slice 3).
+  - Los slices siguientes (comando `regularizar_deudas`, alta automatica de INTERNO) estan
+    mas abajo.
 - CAMBIO 2026-10-13 (Tais): Maria ya cargo el banco de todos esos meses atando pagos a
   facturas; lo que no se pago por banco se pago en EFECTIVO desde la caja fuerte (por eso
   la boveda da de mas). El modo general del comando registra pagos EFECTIVO reales (con su
@@ -114,9 +114,57 @@ Last updated: 2026-10-13
     revierte pagos cuyo egreso cae en un mes cerrado. Tambien simula salvo `--apply`.
   - Uso: simular en staging con copia de prod, Tais revisa el CSV, aplicar con `--plan`. Correr
     primero el modo interno (Oveja Negra). Antes de un rollback de la 0037, `--revertir` del
-    lote interno con el codigo nuevo.
+    lote interno con `--desmarcar-interno` y el codigo nuevo (ver slice 3).
   - Tests: `treasury/tests_regularizar_deudas.py` (60). `manage.py test treasury cashops core`:
     793 OK (4 skipped).
+- SLICE 3 (alta automatica de INTERNO, atomicidad y anulaciones de caja):
+  - Una factura de un proveedor `es_interno` nace saldada: `register_payable` y
+    `cashops.register_box_expense_debt` llaman a `services._saldar_si_proveedor_interno`, que la
+    cancela con INTERNO por el saldo derivado (importe - pagos REGISTRADO), fecha_pago = fecha de
+    la factura, observaciones "Proveedor interno: se da por pagada sin mover fondos (alta
+    automatica).", sin referencia. Misma transaccion que el alta: si el saldado falla, la deuda
+    no queda creada. No salda si la deuda tiene compromiso especial. En la caja corre con la
+    cajera como actor: usa `_register_payment`, el cuerpo de `register_payment` SIN
+    `_require_actor` (idem `_annul_payment`). Ninguna vista, formulario ni url las nombra (test
+    que barre los fuentes). El reenvio del mismo formulario (token repetido) no vuelve a saldar.
+  - Token del saldado automatico: `token_interno_automatico(deuda, n)` = uuid5 de un namespace
+    PROPIO (distinto del del comando, no pueden chocar) con `"<deuda>|<n>"`, n = cantidad de
+    INTERNO de la deuda (vivos y anulados) contada con la deuda bloqueada. Si el token ya
+    existe, error (nunca se devuelve un pago viejo como si fuera el nuevo).
+  - `register_payable`, `update_payable` y `annul_payable` son atomicos y bloquean la deuda.
+    La cancelacion INTERNO no bloquea editar ni anular: se valida todo (incluido el full_clean
+    de los datos nuevos), se anula ("Edicion de deuda de proveedor interno" / "Anulacion de la
+    deuda: <motivo>") y, al editar, se vuelve a saldar si el proveedor (el mismo o el nuevo) es
+    interno. Cualquier otro pago (plata o REGULARIZACION) sigue bloqueando. Nuevo: no se edita
+    ni se anula de nuevo una deuda ANULADA (antes editarla por URL la revivia).
+  - `annul_box` bloquea las deudas de la caja (`select_for_update(of=("self",))`, orden por pk)
+    y `annul_box_originated_debt` ya lo hacia; los dos anulan la cancelacion INTERNO antes de
+    `_apply_debt_annulment`. Con un pago con plata siguen bloqueando.
+  - Pantallas: el detalle de la deuda ofrece Editar y Anular (no los botones de pago) cuando sus
+    unicos pagos vivos son INTERNO (`services.payable_blocked_by_payments`); las paginas de
+    editar y anular lo explican. La linea de tiempo y el mensaje de alta de la caja dicen
+    "Proveedor interno: se da por pagada sin mover fondos" en lugar de "tesoreria paga despues".
+    El detalle del proveedor muestra "Proveedor interno".
+  - Lo que NO hace: marcar al proveedor no salda sus deudas abiertas viejas (eso es el modo
+    interno del comando, o editarlas). Anular a mano la cancelacion desde el detalle del pago deja
+    la deuda abierta y no se vuelve a saldar sola (es el camino para pagarla de verdad; el
+    mensaje del slice 4 "anule primero esa cancelacion" sigue siendo correcto).
+  - `--revertir LOTE --desmarcar-interno` anula ademas las cancelaciones automaticas vivas de
+    los proveedores del lote (accion A_REVERTIR_AUTOMATICA, se reconocen por el token); las de
+    otros lotes no se tocan. Un pago con la referencia del lote que no creo el comando
+    (NO_ES_DEL_LOTE) ya no lleva a desmarcar a su proveedor. Es el paso previo a un rollback de
+    la 0037 (despues, si quedara algun INTERNO vivo, se ve en Pagos filtrando por ese medio).
+  - Orden operativo: correr el modo interno con `--apply` y despues volver a simularlo: lo que se
+    cargo entre el plan y la marca queda abierto y aparece ahi. Frente al importador de
+    planillas: solo ve deudas abiertas, asi que cualquier importacion de banco o efectivo de esos
+    meses va ANTES del comando; una fila importada despues sobre una factura ya saldada entra como
+    gasto suelto (doble conteo).
+  - Numeros del ensayo en staging: pendientes (todavia no se corrio).
+  - Tests: `treasury/tests_proveedor_interno.py` (36) y `cashops/tests_proveedor_interno.py` (10 +
+    2 solo Postgres). `manage.py test treasury cashops core`: 841 OK (6 skipped); suite completa
+    891 OK (6 skipped); makemigrations --check sin cambios (no se tocaron modelos).
+  - Pendiente: verificacion visual en el navegador (detalle de deuda interna, editar/anular, caja)
+    sobre una base con la 0037 aplicada; los tests de bloqueo en Postgres solo corren alla.
 
 ### Treasury Importacion de planillas de banco y efectivo central 2026-09-30
 

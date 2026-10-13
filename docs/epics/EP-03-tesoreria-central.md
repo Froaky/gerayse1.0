@@ -356,13 +356,23 @@ Criterios:
 - los medios sin movimiento no aparecen en ningun formulario de alta de pagos
 - un pago con plata sobre una deuda ya cancelada sin movimiento se rechaza con
   un mensaje que dice que hay que anular primero esa cancelacion
+- una vez marcado el proveedor interno, sus facturas nuevas (cargadas por
+  tesoreria o por la cajera desde la caja) nacen pagadas sin mover fondos; la
+  caja lo dice en lugar de "tesoreria paga despues"
+- una factura del proveedor interno se puede editar o anular como cualquier
+  deuda sin pagos: su cancelacion se anula y, al editarla, se vuelve a
+  registrar por el importe nuevo; anular la caja o el gasto como deuda tambien
+  la anula. Un pago con plata sigue bloqueando
+- revertir el modo interno desmarcando al proveedor anula tambien las
+  cancelaciones automaticas de sus facturas nuevas
 
 Estado: hechos en la rama `feat/regularizar-deudas` el slice 1 (medios sin
 movimiento y lecturas), el slice 4 reducido (rechazo claro del pago real sobre
-una deuda cancelada sin movimiento) y el slice 2 (comando `regularizar_deudas`
-con modo general en efectivo, modo interno, plan revisado y reversion). Falta
-el alta automatica del proveedor interno (slice 3) y el ensayo en staging.
-REGULARIZACION queda definido en el modelo pero sin uso.
+una deuda cancelada sin movimiento), el slice 2 (comando `regularizar_deudas`
+con modo general en efectivo, modo interno, plan revisado y reversion) y el
+slice 3 (alta automatica del proveedor interno, edicion y anulacion atomicas,
+anulaciones de caja). Falta el ensayo en staging. REGULARIZACION queda
+definido en el modelo pero sin uso.
 
 ## Orden tecnico sugerido
 
