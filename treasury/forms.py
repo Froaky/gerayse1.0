@@ -545,19 +545,35 @@ class ECheqPaymentForm(PaymentBaseForm):
 class PaymentFilterForm(TreasuryStyledFormMixin, forms.Form):
     q = forms.CharField(required=False, label="Buscar", widget=forms.TextInput(attrs={"placeholder": "Proveedor, referencia o concepto"}))
     # US-3.20: sin elegir medio, el listado muestra solo lo que movio plata; las
-    # cancelaciones sin movimiento se ven eligiendo su medio.
-    medio_pago = forms.ChoiceField(
-        required=False,
-        choices=(("", "Todos los medios con movimiento de fondos"),) + tuple(PagoTesoreria.MedioPago.choices),
-    )
+    # cancelaciones sin movimiento se ven eligiendo su medio. Las opciones se
+    # arman en __init__ (ver _medios_ofrecidos).
+    medio_pago = forms.ChoiceField(required=False, choices=())
     cuenta_bancaria = forms.ModelChoiceField(queryset=CuentaBancaria.objects.none(), required=False, empty_label="Todas las cuentas")
     estado = forms.ChoiceField(required=False, choices=(("", "Todos"),) + tuple(PagoTesoreria.Estado.choices))
     sucursal = forms.ModelChoiceField(queryset=Sucursal.objects.all(), required=False, empty_label="Todas las sucursales")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["medio_pago"].choices = [
+            ("", "Todos los medios con movimiento de fondos"),
+            *self._medios_ofrecidos(),
+        ]
         self.fields["cuenta_bancaria"].queryset = CuentaBancaria.objects.order_by("banco", "nombre")
         self._apply_input_classes()
+
+    @staticmethod
+    def _medios_ofrecidos():
+        """REGULARIZACION quedo definido en el modelo pero sin uso: lo que no se
+        pago por banco se registra como pago en efectivo. No se ofrece, para no
+        sugerir un camino que no existe, salvo que haya alguno cargado: asi el
+        filtro nunca esconde un pago del listado."""
+        regularizacion = PagoTesoreria.MedioPago.REGULARIZACION
+        hay_regularizaciones = PagoTesoreria.objects.filter(medio_pago=regularizacion).exists()
+        return [
+            (valor, etiqueta)
+            for valor, etiqueta in PagoTesoreria.MedioPago.choices
+            if valor != regularizacion or hay_regularizaciones
+        ]
 
 
 class PaymentAnnulForm(TreasuryStyledFormMixin, forms.Form):

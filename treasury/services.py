@@ -536,6 +536,46 @@ def _ensure_special_commitment_can_be_paid(payable: CuentaPorPagar) -> None:
         raise ValidationError({"cuenta_por_pagar": "El compromiso especial requiere comprobante o sustento."})
 
 
+_DESCRIPCION_CANCELACION_SIN_MOVIMIENTO = {
+    PagoTesoreria.MedioPago.INTERNO: "proveedor interno",
+    PagoTesoreria.MedioPago.REGULARIZACION: "regularizacion",
+}
+
+
+def _ensure_not_settled_without_funds(payable: CuentaPorPagar) -> None:
+    """US-3.20: una deuda saldada con un medio sin movimiento no admite un pago real.
+
+    Sin esto el pago real igual se rechaza, pero con "ya esta cancelada" o "a la
+    factura le quedan $ 0,00", que no dicen por que ni que hacer: la deuda figura
+    PAGADA aunque no salio plata. La cancelacion no se reemplaza sola (D3 quedo
+    cancelado): hay que anularla a mano y despues registrar el pago.
+    Solo mira deudas PAGADA; con saldo pendiente, el pago real sigue su camino.
+    """
+    if payable.estado != CuentaPorPagar.Estado.PAGADA:
+        return
+    medios = set(
+        PagoTesoreria.objects.filter(
+            cuenta_por_pagar_id=payable.pk, estado=PagoTesoreria.Estado.REGISTRADO
+        )
+        .sin_movimiento_de_fondos()
+        .values_list("medio_pago", flat=True)
+    )
+    if not medios:
+        return
+    detalle = " y ".join(
+        sorted(_DESCRIPCION_CANCELACION_SIN_MOVIMIENTO.get(medio, medio) for medio in medios)
+    )
+    raise ValidationError(
+        {
+            "cuenta_por_pagar": (
+                f"La deuda ya esta cancelada sin movimiento de fondos ({detalle}) y no admite "
+                "un pago real. Si corresponde pagarla, anule primero esa cancelacion desde el "
+                "detalle del pago."
+            )
+        }
+    )
+
+
 def _mark_special_commitment_if_paid(payable: CuentaPorPagar, actor=None) -> None:
     commitment = getattr(payable, "compromiso_especial", None)
     if commitment is None or payable.estado != CuentaPorPagar.Estado.PAGADA:
@@ -855,6 +895,10 @@ def register_payment(
     if locked_payable.estado == CuentaPorPagar.Estado.ANULADA:
         raise ValidationError({"cuenta_por_pagar": "La cuenta por pagar esta anulada."})
     if locked_payable.estado == CuentaPorPagar.Estado.PAGADA:
+        if not sin_movimiento:
+            # Con la deuda bloqueada: cubre tambien a quien llega con la deuda
+            # leida antes de que la cancelaran (pantalla abierta, reparto).
+            _ensure_not_settled_without_funds(locked_payable)
         raise ValidationError({"cuenta_por_pagar": "La cuenta por pagar ya esta cancelada."})
     if sin_movimiento and getattr(locked_payable, "compromiso_especial", None) is not None:
         # Al quedar PAGADA, el compromiso (impuesto, plan, embargo) pasaria a
@@ -1054,6 +1098,9 @@ def pay_debt_from_bank_movement(
         raise ValidationError({"__all__": "Solo un debito puede pagar una deuda."})
     if payable.estado == CuentaPorPagar.Estado.ANULADA:
         raise ValidationError({"cuenta_por_pagar": "La deuda esta anulada."})
+    # US-3.20: antes del control de saldo, que diria "le quedan $ 0,00". Si la
+    # deuda llega leida de antes, lo vuelve a controlar register_payment con lock.
+    _ensure_not_settled_without_funds(payable)
 
     # ARMADI y MAPOGO son empresas distintas: la plata de la cuenta de una no
     # puede pagar la factura de la otra. Se compara solo cuando los dos lados

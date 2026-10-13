@@ -15,14 +15,18 @@ invariantes de deuda (saldo derivado, sobrepago, token, anulacion), pero:
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
+from unittest import mock
 
+from django import forms as django_forms
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
+from cashops import forms as cashops_forms
 from cashops.models import Empresa, RubroOperativo, Sucursal
+from treasury import forms as treasury_forms
 from treasury.admin import ProveedorAdmin
 from treasury.forms import BankPaymentMethodCorrectionForm, PaymentFilterForm, SupplierPaymentBatchForm
 from treasury.importacion_planillas import Importador
@@ -50,12 +54,18 @@ from treasury.services import (
     create_payable_category,
     create_supplier,
     get_boveda,
+    importe_sin_asignar_del_movimiento,
     link_payment_to_bank_movement,
+    pay_debt_from_bank_movement,
+    pay_debts_from_bank_movement,
     register_cash_payment,
     register_central_cash_movement,
+    register_cheque_payment,
+    register_echeq_payment,
     register_payable,
     register_payment,
     register_special_commitment,
+    register_supplier_payment_batch,
     register_transfer_payment,
     set_initial_bank_balance,
 )
@@ -449,11 +459,45 @@ class FormulariosNoOfrecenLosMediosNuevosTests(TestCase):
             self.assertNotIn(medio, dict(BankPaymentMethodCorrectionForm().fields["medio_pago"].choices))
             self.assertNotIn(medio, dict(SupplierPaymentBatchForm.MEDIOS_HABILITADOS))
 
-    def test_el_filtro_de_pagos_si_los_ofrece_para_auditar(self):
+    def test_el_filtro_de_pagos_ofrece_interno_para_auditar_y_no_regularizacion(self):
+        """US-3.20, slice 4: REGULARIZACION quedo sin uso (lo que no se pago por
+        banco se registra en efectivo), asi que el filtro no lo sugiere."""
         choices = dict(PaymentFilterForm().fields["medio_pago"].choices)
-        self.assertIn(REGULARIZACION, choices)
         self.assertIn(INTERNO, choices)
+        self.assertNotIn(REGULARIZACION, choices)
         self.assertEqual(choices[""], "Todos los medios con movimiento de fondos")
+        for medio in (
+            PagoTesoreria.MedioPago.TRANSFERENCIA,
+            PagoTesoreria.MedioPago.CHEQUE,
+            PagoTesoreria.MedioPago.ECHEQ,
+            PagoTesoreria.MedioPago.EFECTIVO,
+        ):
+            self.assertIn(medio, choices)
+
+    def test_ningun_formulario_ofrece_regularizacion(self):
+        """Barre las opciones fijas de todos los formularios de tesoreria y caja,
+        para que uno nuevo con MedioPago.choices no lo vuelva a ofrecer."""
+        revisados = 0
+        for modulo in (treasury_forms, cashops_forms):
+            for nombre, clase in vars(modulo).items():
+                if not (
+                    isinstance(clase, type)
+                    and issubclass(clase, django_forms.BaseForm)
+                    and clase.__module__ == modulo.__name__
+                ):
+                    continue
+                for campo_nombre, campo in clase.base_fields.items():
+                    if isinstance(campo, django_forms.ModelChoiceField) or not hasattr(campo, "choices"):
+                        continue
+                    revisados += 1
+                    valores = {str(valor) for valor, _ in campo.choices}
+                    with self.subTest(formulario=nombre, campo=campo_nombre):
+                        self.assertNotIn(REGULARIZACION, valores)
+        self.assertGreater(revisados, 0)
+        # Los que arman sus opciones al instanciarse.
+        self.assertNotIn(REGULARIZACION, dict(PaymentFilterForm().fields["medio_pago"].choices))
+        self.assertNotIn(REGULARIZACION, dict(BankPaymentMethodCorrectionForm().fields["medio_pago"].choices))
+        self.assertNotIn(REGULARIZACION, dict(SupplierPaymentBatchForm().fields["medio_pago"].choices))
 
 
 class RegresionDeDineroTests(PagoSinMovimientoBase):
@@ -762,3 +806,310 @@ class AdminProveedorInternoTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("es_interno", response.context["adminform"].form.fields)
+
+
+class PagoRealSobreDeudaCanceladaSinMovimientoTests(PagoSinMovimientoBase):
+    """US-3.20, slice 4 reducido: la cancelacion sin movimiento NO se reemplaza
+    sola por el pago real (D3 quedo cancelado). Un pago con plata sobre una deuda
+    ya saldada asi tiene que cortarse con un error que diga por que y que hacer,
+    en todos los caminos, y sin dejar nada a medias."""
+
+    def setUp(self):
+        super().setUp()
+        register_central_cash_movement(
+            empresa=self.empresa,
+            tipo=MovimientoCajaCentral.Tipo.APORTE,
+            monto=Decimal("5000.00"),
+            concepto="Fondo de caja fuerte",
+            fecha=date(2026, 5, 1),
+            actor=self.admin,
+        )
+        self.deuda = self._payable("1000.00", proveedor=self.panaderia, concepto="Pan de mayo")
+        self.cancelacion = self._cancelar(self.deuda, medio=INTERNO, referencia="")
+        self.deuda.refresh_from_db()
+
+    def _foto(self):
+        deuda = CuentaPorPagar.objects.get(pk=self.deuda.pk)
+        return {
+            "pagos": PagoTesoreria.objects.count(),
+            "movimientos_bancarios": MovimientoBancario.objects.count(),
+            "movimientos_boveda": MovimientoCajaCentral.objects.count(),
+            "boveda": get_boveda(self.empresa).saldo_actual,
+            "deuda": (deuda.estado, deuda.saldo_pendiente),
+        }
+
+    def _assert_rechazo_claro(self, error, detalle="proveedor interno"):
+        mensaje = " ".join(error.exception.messages)
+        self.assertIn("ya esta cancelada sin movimiento de fondos", mensaje)
+        self.assertIn(f"({detalle})", mensaje)
+        self.assertIn("no admite un pago real", mensaje)
+        self.assertIn("anule primero esa cancelacion", mensaje)
+        self.assertIn("cuenta_por_pagar", error.exception.message_dict)
+
+    def _pagos_reales(self, payable):
+        return {
+            "transferencia": lambda: register_transfer_payment(
+                payable=payable,
+                bank_account=self.bank_account,
+                fecha_pago=CORTE,
+                monto=Decimal("1000.00"),
+                referencia="TRF-REAL",
+                actor=self.admin,
+            ),
+            "cheque": lambda: register_cheque_payment(
+                payable=payable,
+                bank_account=self.bank_account,
+                fecha_pago=CORTE,
+                monto=Decimal("1000.00"),
+                referencia="CH-1",
+                actor=self.admin,
+            ),
+            "echeq": lambda: register_echeq_payment(
+                payable=payable,
+                bank_account=self.bank_account,
+                fecha_pago=CORTE,
+                monto=Decimal("1000.00"),
+                referencia="ECH-1",
+                actor=self.admin,
+            ),
+            "efectivo": lambda: register_cash_payment(
+                payable=payable,
+                fecha_pago=CORTE,
+                monto=Decimal("1000.00"),
+                actor=self.admin,
+            ),
+        }
+
+    def test_ningun_medio_con_fondos_la_paga_y_el_error_dice_que_hacer(self):
+        antes = self._foto()
+
+        for medio, pagar in self._pagos_reales(self.deuda).items():
+            with self.subTest(medio=medio):
+                with self.assertRaises(ValidationError) as error:
+                    pagar()
+                self._assert_rechazo_claro(error)
+                self.assertEqual(self._foto(), antes)
+
+    def test_una_regularizacion_tambien_se_explica(self):
+        deuda = self._payable("500.00", concepto="Regularizada")
+        self._cancelar(deuda)
+        deuda.refresh_from_db()
+
+        with self.assertRaises(ValidationError) as error:
+            register_transfer_payment(
+                payable=deuda,
+                bank_account=self.bank_account,
+                fecha_pago=CORTE,
+                monto=Decimal("500.00"),
+                actor=self.admin,
+            )
+
+        self._assert_rechazo_claro(error, detalle="regularizacion")
+
+    def test_la_deuda_leida_antes_de_cancelarla_igual_se_rechaza(self):
+        """Pantalla abierta o reparto armado antes de la cancelacion: la deuda en
+        memoria dice PENDIENTE con saldo; el control vale porque se hace con la
+        deuda bloqueada."""
+        vieja = self._payable("800.00", proveedor=self.panaderia, concepto="Pan de junio")
+        self._cancelar(CuentaPorPagar.objects.get(pk=vieja.pk), medio=INTERNO, referencia="")
+        self.assertEqual(vieja.estado, CuentaPorPagar.Estado.PENDIENTE)
+        debito = self._debito("800.00", concepto="Debito real")
+        antes = self._foto()
+
+        with self.assertRaises(ValidationError) as error:
+            register_transfer_payment(
+                payable=vieja,
+                bank_account=self.bank_account,
+                fecha_pago=CORTE,
+                monto=Decimal("800.00"),
+                actor=self.admin,
+            )
+        self._assert_rechazo_claro(error)
+
+        with self.assertRaises(ValidationError) as error:
+            pay_debt_from_bank_movement(bank_movement=debito, payable=vieja, actor=self.admin)
+        self._assert_rechazo_claro(error)
+
+        self.assertEqual(self._foto(), antes)
+        debito.refresh_from_db()
+        self.assertEqual(importe_sin_asignar_del_movimiento(debito), Decimal("800.00"))
+
+    def test_desde_un_debito_explica_en_lugar_de_decir_que_le_quedan_cero(self):
+        debito = self._debito("1000.00", concepto="Debito real")
+
+        with self.assertRaises(ValidationError) as error:
+            pay_debt_from_bank_movement(bank_movement=debito, payable=self.deuda, actor=self.admin)
+
+        self._assert_rechazo_claro(error)
+        self.assertNotIn("le quedan", " ".join(error.exception.messages))
+        debito.refresh_from_db()
+        self.assertEqual(debito.origen, MovimientoBancario.Origen.MANUAL)
+        self.assertFalse(debito.pagos.exists())
+
+    def test_el_reparto_de_una_transferencia_no_paga_ninguna(self):
+        abierta = self._payable("300.00", concepto="Factura abierta")
+        debito = self._debito("1300.00", concepto="Pago semanal")
+
+        with self.assertRaises(ValidationError) as error:
+            pay_debts_from_bank_movement(
+                bank_movement=debito,
+                asignaciones=[(abierta, Decimal("300.00")), (self.deuda, Decimal("1000.00"))],
+                actor=self.admin,
+            )
+
+        self._assert_rechazo_claro(error)
+        abierta.refresh_from_db()
+        self.assertEqual(abierta.estado, CuentaPorPagar.Estado.PENDIENTE)
+        self.assertEqual(debito.pagos.count(), 0)
+        self.assertEqual(PagoTesoreria.objects.count(), 1)
+
+    def test_el_pago_por_proveedor_no_paga_ninguna(self):
+        abierta = self._payable("300.00", proveedor=self.panaderia, concepto="Pan abierto")
+        antes = self._foto()
+
+        with self.assertRaises(ValidationError) as error:
+            register_supplier_payment_batch(
+                proveedor=self.panaderia,
+                lineas=[(abierta, Decimal("300.00")), (self.deuda, Decimal("1000.00"))],
+                medio_pago=PagoTesoreria.MedioPago.EFECTIVO,
+                fecha_pago=CORTE,
+                actor=self.admin,
+            )
+
+        self._assert_rechazo_claro(error)
+        self.assertEqual(self._foto(), antes)
+        abierta.refresh_from_db()
+        self.assertEqual(abierta.estado, CuentaPorPagar.Estado.PENDIENTE)
+
+    def test_saldada_en_parte_con_plata_y_en_parte_sin_movimiento_tambien_se_explica(self):
+        deuda = self._payable("1000.00", proveedor=self.panaderia, concepto="Pan mixto")
+        self._transferir(deuda, "400.00", referencia="TRF-PARTE")
+        self._cancelar(deuda, medio=INTERNO, referencia="")
+        deuda.refresh_from_db()
+        self.assertEqual(deuda.estado, CuentaPorPagar.Estado.PAGADA)
+
+        with self.assertRaises(ValidationError) as error:
+            register_cash_payment(
+                payable=deuda, fecha_pago=CORTE, monto=Decimal("100.00"), actor=self.admin
+            )
+
+        self._assert_rechazo_claro(error)
+
+    def test_una_deuda_pagada_con_plata_sigue_con_el_mensaje_de_siempre(self):
+        deuda = self._payable("200.00", concepto="Pagada por banco")
+        self._transferir(deuda, "200.00", referencia="TRF-TODO")
+        deuda.refresh_from_db()
+
+        with self.assertRaises(ValidationError) as error:
+            register_cash_payment(
+                payable=deuda, fecha_pago=CORTE, monto=Decimal("200.00"), actor=self.admin
+            )
+
+        mensaje = " ".join(error.exception.messages)
+        self.assertIn("ya esta cancelada", mensaje)
+        self.assertNotIn("sin movimiento", mensaje)
+
+    def test_anulando_la_cancelacion_se_puede_pagar_de_verdad(self):
+        """Lo que indica el mensaje funciona: anular y despues pagar."""
+        annul_payment(payment=self.cancelacion, motivo="Se pago por banco", actor=self.admin)
+        self.deuda.refresh_from_db()
+
+        pago = register_transfer_payment(
+            payable=self.deuda,
+            bank_account=self.bank_account,
+            fecha_pago=CORTE,
+            monto=Decimal("1000.00"),
+            referencia="TRF-REAL",
+            actor=self.admin,
+        )
+
+        self.deuda.refresh_from_db()
+        self.assertEqual(self.deuda.estado, CuentaPorPagar.Estado.PAGADA)
+        self.assertTrue(pago.mueve_fondos)
+        breakdown = build_payable_settlement_breakdown(self.deuda)
+        self.assertEqual(breakdown["paid_with_funds"], Decimal("1000.00"))
+        self.assertEqual(breakdown["settled_without_funds"], Decimal("0.00"))
+
+
+class PantallasDePagoSobreDeudaCanceladaTests(PagoSinMovimientoBase):
+    """Las pantallas de pago no ofrecen la deuda saldada sin movimiento, y si el
+    servicio la rechaza (carrera), el mensaje claro llega a la persona."""
+
+    def setUp(self):
+        super().setUp()
+        self.deuda = self._payable("1000.00", proveedor=self.panaderia, concepto="Pan cancelado")
+        self._cancelar(self.deuda, medio=INTERNO, referencia="")
+        self._login()
+
+    def _post_transferencia(self):
+        return self.client.post(
+            reverse("treasury:pagos_transferencia_create"),
+            {
+                "cuenta_por_pagar": self.deuda.pk,
+                "cuenta_bancaria": self.bank_account.pk,
+                "fecha_pago": CORTE.isoformat(),
+                "monto": "1000.00",
+                "referencia": "TRF-PANTALLA",
+            },
+        )
+
+    def test_el_formulario_de_pago_no_la_ofrece_ni_la_acepta(self):
+        response = self.client.get(reverse("treasury:pagos_transferencia_create"))
+        self.assertNotIn(
+            self.deuda.pk,
+            response.context["form"].fields["cuenta_por_pagar"].queryset.values_list("pk", flat=True),
+        )
+
+        response = self._post_transferencia()
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(PagoTesoreria.objects.count(), 1)
+        self.assertEqual(MovimientoBancario.objects.count(), 0)
+
+    def test_si_la_cancelan_con_la_pantalla_abierta_el_error_se_ve(self):
+        """Simula la carrera: el desplegable todavia la ofrece cuando se envia."""
+        with mock.patch(
+            "treasury.forms.open_payables_queryset",
+            side_effect=lambda empresa_ids=None: CuentaPorPagar.objects.all(),
+        ):
+            response = self._post_transferencia()
+
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(
+            response,
+            "ya esta cancelada sin movimiento de fondos (proveedor interno)",
+            status_code=400,
+        )
+        self.assertEqual(PagoTesoreria.objects.count(), 1)
+        self.assertEqual(MovimientoBancario.objects.count(), 0)
+
+    def test_el_reparto_de_un_debito_no_la_ofrece_ni_la_paga(self):
+        debito = self._debito("1000.00", concepto="Debito real")
+        url = reverse("treasury:bank_movements_pay_debt", args=[debito.pk])
+
+        response = self.client.get(url)
+        self.assertNotIn(self.deuda.pk, [fila["payable"].pk for fila in response.context["facturas"]])
+
+        response = self.client.post(
+            url, {"payable_id": [str(self.deuda.pk)], f"monto_{self.deuda.pk}": "1000.00"}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(debito.pagos.count(), 0)
+        self.assertEqual(PagoTesoreria.objects.count(), 1)
+
+    def test_el_listado_de_pagos_no_ofrece_regularizacion_si_no_hay_ninguna(self):
+        response = self.client.get(reverse("treasury:pagos_list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, f'value="{REGULARIZACION}"')
+        self.assertContains(response, f'value="{INTERNO}"')
+
+    def test_si_hubiera_una_regularizacion_el_filtro_la_ofrece_para_no_esconderla(self):
+        self._cancelar(self._payable("100.00", concepto="Regularizada a mano"))
+
+        response = self.client.get(reverse("treasury:pagos_list"))
+        self.assertContains(response, f'value="{REGULARIZACION}"')
+
+        response = self.client.get(reverse("treasury:pagos_list"), {"medio_pago": REGULARIZACION})
+        self.assertContains(response, "Regularizada a mano")
