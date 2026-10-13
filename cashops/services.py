@@ -5,7 +5,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Case, IntegerField, Q, Sum, Value, When
+from django.db.models import Case, IntegerField, Prefetch, Q, Sum, Value, When
 from django.utils import timezone
 
 from .models import (
@@ -44,6 +44,9 @@ MAX_OPERATIONAL_LIMIT_PERCENTAGE = Decimal("100.00")
 OPERATIONAL_CONTROL_BASE_CODE = "EGRESOS_OPERATIVOS_DEL_PERIODO"
 OPERATIONAL_CONTROL_BASE_LABEL = "Egresos operativos del periodo"
 UNCATEGORIZED_OPERATIONAL_CATEGORY_NAME = "Sin clasificar"
+# US-3.20: texto de la caja para un gasto como deuda del proveedor interno (la
+# panaderia propia), que nace saldado sin mover fondos.
+TEXTO_DEUDA_PROVEEDOR_INTERNO = "Proveedor interno: se da por pagada sin mover fondos"
 BRANCH_TRANSFER_DISABLED_REASON = (
     "La transferencia entre sucursales ya no esta habilitada en la operatoria actual. "
     "Mantene solo traspasos entre cajas."
@@ -301,10 +304,29 @@ def build_box_activity_timeline(caja: Caja, movements) -> list[dict]:
                 }
             )
 
-    for deuda in caja.deudas_originadas.select_related("proveedor").all():
+    from treasury.models import PagoTesoreria
+
+    deudas = caja.deudas_originadas.select_related("proveedor").prefetch_related(
+        Prefetch(
+            "pagos",
+            queryset=PagoTesoreria.objects.filter(estado=PagoTesoreria.Estado.REGISTRADO),
+            to_attr="pagos_vivos",
+        )
+    )
+    for deuda in deudas:
         is_annulled_debt = deuda.estado == deuda.Estado.ANULADA
         if is_annulled_debt:
             debt_detail = f"{deuda.proveedor} - {deuda.concepto}. Anulada: {deuda.motivo_anulacion or 'sin motivo registrado'}."
+        elif (
+            deuda.estado == deuda.Estado.PAGADA
+            and deuda.pagos_vivos
+            and all(pago.medio_pago == PagoTesoreria.MedioPago.INTERNO for pago in deuda.pagos_vivos)
+        ):
+            # US-3.20: la panaderia propia nunca se paga; decir "tesoreria paga
+            # despues" seria falso. Solo si de verdad esta saldada con INTERNO:
+            # una deuda abierta (o pagada con plata) del proveedor interno sigue
+            # siendo algo que tesoreria paga o pago.
+            debt_detail = f"{deuda.proveedor} - {deuda.concepto}. {TEXTO_DEUDA_PROVEEDOR_INTERNO}."
         else:
             debt_detail = f"{deuda.proveedor} - {deuda.concepto}. No salio efectivo de la caja; tesoreria paga despues."
         events.append(
@@ -1628,9 +1650,16 @@ def register_box_expense_debt(
     (para quien tenga el permiso CASHOPS_DEBT_CLOSED); no reabre la caja ni
     toca su efectivo. fecha_factura define la fecha de emision y el periodo
     economico; si no se indica, se usa la fecha operativa de la caja.
+
+    US-3.20: si el proveedor es interno (Proveedor.es_interno), la deuda nace
+    saldada con el medio INTERNO: sin pago real y sin mover fondos.
     """
     from treasury.models import CuentaPorPagar
-    from treasury.services import _ensure_payable_category_is_economic, get_or_create_payable_category_for_rubro
+    from treasury.services import (
+        _ensure_payable_category_is_economic,
+        _saldar_si_proveedor_interno,
+        get_or_create_payable_category_for_rubro,
+    )
 
     _require_actor(actor)
     # Antes de resolver categoria y tomar el lock: si el envio ya se grabo,
@@ -1693,6 +1722,12 @@ def register_box_expense_debt(
         if existing is None:
             raise
         return existing
+    # US-3.20: la factura del proveedor interno (la panaderia propia) nace
+    # saldada sin mover fondos. Va aca y no en las ramas del token repetido: la
+    # deuda que se devuelve ahi ya paso por este paso cuando se creo. Corre en la
+    # misma transaccion, con la cajera como actor y sin permiso de tesoreria.
+    if _saldar_si_proveedor_interno(payable, actor=actor) is not None:
+        payable.refresh_from_db()
     return payable
 
 
@@ -2241,15 +2276,27 @@ def annul_box(
     if caja.sucursal.empresa_id:
         Empresa.objects.select_for_update().get(pk=caja.sucursal.empresa_id)
 
+    from treasury.models import CuentaPorPagar
+    from treasury.services import _cancelaciones_internas_a_liberar, _liberar_cancelaciones_internas
+
     # EP-13: la anulacion de la caja debe revertir TODO su impacto, incluidas
     # las deudas que origino. Con pagos registrados no se puede anular:
     # primero hay que resolver la deuda en tesoreria.
-    deudas_activas = [
-        deuda for deuda in caja.deudas_originadas.all()
-        if deuda.estado != deuda.Estado.ANULADA
-    ]
+    # US-3.20: las deudas se leen bloqueadas (si no, un pago que entra en el
+    # medio quedaria vivo sobre una deuda ANULADA), y la cancelacion INTERNO
+    # del proveedor interno no bloquea: se anula junto con la deuda.
+    # of=("self",) y order_by("pk"): sin el orden por defecto (que hace JOIN con
+    # el proveedor) ni bloqueos sobre otras tablas.
+    deudas_activas = list(
+        CuentaPorPagar.objects.select_for_update(of=("self",))
+        .filter(caja_origen=caja)
+        .exclude(estado=CuentaPorPagar.Estado.ANULADA)
+        .order_by("pk")
+    )
+    cancelaciones_internas = {}
     for deuda in deudas_activas:
-        if deuda.pagos.filter(estado="REGISTRADO").exists():
+        pagos_internos = _cancelaciones_internas_a_liberar(deuda)
+        if pagos_internos is None:
             raise ValidationError(
                 {
                     "motivo": (
@@ -2258,14 +2305,17 @@ def annul_box(
                     )
                 }
             )
+        cancelaciones_internas[deuda.pk] = pagos_internos
 
     previous = _snapshot_box_values(caja)
     now = timezone.now()
     _reverse_central_cash_closure_for_box(caja, actor=actor)
     for deuda in deudas_activas:
+        motivo_deuda = f"Anulacion de caja origen #{caja.id}: {motivo}"
+        _liberar_cancelaciones_internas(cancelaciones_internas[deuda.pk], motivo=motivo_deuda, actor=actor)
         _apply_debt_annulment(
             deuda,
-            motivo=f"Anulacion de caja origen #{caja.id}: {motivo}",
+            motivo=motivo_deuda,
             actor=actor,
             now=now,
         )
@@ -2421,8 +2471,13 @@ def annul_box_originated_debt(
     caja. Soft-delete de la CuentaPorPagar (estado ANULADA, saldo 0, motivo +
     quien/cuando). Se bloquea si la deuda ya tiene pagos registrados: primero hay
     que resolver esos pagos en tesoreria. Gateado por el permiso de borrado y por
-    el aislamiento de caja/empresa que aplica la vista."""
-    from treasury.models import CuentaPorPagar, PagoTesoreria
+    el aislamiento de caja/empresa que aplica la vista.
+
+    US-3.20: la cancelacion INTERNO del proveedor interno no bloquea. No movio
+    fondos y la creo el sistema al cargar la deuda, asi que se anula junto con
+    ella (si no, la cajera no podria borrar una carga mal hecha de la panaderia)."""
+    from treasury.models import CuentaPorPagar
+    from treasury.services import _cancelaciones_internas_a_liberar, _liberar_cancelaciones_internas
 
     _require_actor(actor)
     deuda = (
@@ -2444,10 +2499,12 @@ def annul_box_originated_debt(
         raise ValidationError({"motivo": "El motivo de la eliminación es obligatorio."})
     if deuda.estado == CuentaPorPagar.Estado.ANULADA:
         raise ValidationError({"deuda": "La deuda ya fue anulada."})
-    if deuda.pagos.filter(estado=PagoTesoreria.Estado.REGISTRADO).exists():
+    cancelaciones_internas = _cancelaciones_internas_a_liberar(deuda)
+    if cancelaciones_internas is None:
         raise ValidationError(
             {"motivo": "La deuda tiene pagos registrados. Anulá o resolvé esos pagos en tesorería antes de eliminarla."}
         )
+    _liberar_cancelaciones_internas(cancelaciones_internas, motivo=motivo, actor=actor)
     _apply_debt_annulment(deuda, motivo=motivo, actor=actor, now=timezone.now())
     return deuda
 

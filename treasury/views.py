@@ -113,6 +113,7 @@ from .services import (
     lineas_que_parecen_la_misma_factura,
     pay_debt_from_bank_movement,
     pay_debts_from_bank_movement,
+    payable_blocked_by_payments,
     is_central_cash_movement_annullable,
     link_payment_to_bank_movement,
     register_arqueo,
@@ -261,6 +262,19 @@ def _payable_badge(payable: CuentaPorPagar) -> tuple[str, str]:
     if status == CuentaPorPagar.Estado.ANULADA:
         return "Anulada", "badge-muted"
     return "Pendiente", "badge"
+
+
+def _has_internal_settlement(payable: CuentaPorPagar) -> bool:
+    """US-3.20: la deuda tiene viva la cancelacion INTERNO del proveedor interno."""
+    return payable.pagos.filter(
+        estado=PagoTesoreria.Estado.REGISTRADO, medio_pago=PagoTesoreria.MedioPago.INTERNO
+    ).exists()
+
+
+def _settled_internal_only(payable: CuentaPorPagar) -> bool:
+    """US-3.20: sus unicos pagos vivos son la cancelacion INTERNO, que no
+    bloquea editar ni anular (la misma regla que aplican los servicios)."""
+    return _has_internal_settlement(payable) and not payable_blocked_by_payments(payable)
 
 
 def _payment_badge(payment: PagoTesoreria) -> tuple[str, str]:
@@ -771,6 +785,11 @@ def proveedores_detail(request, supplier_id: int):
             }
         )
     fields.append({"label": "Estado", "value": "Activo" if supplier.activo else "Inactivo"})
+    if supplier.es_interno:
+        # US-3.20: lo marca el comando regularizar_deudas; ninguna pantalla lo edita.
+        fields.append(
+            {"label": "Proveedor interno", "value": "Sus facturas se dan por pagadas sin mover fondos"}
+        )
     extra_sections = [
         {"title": "Obligaciones", "items": [_payable_item(payable) for payable in snapshot["payables"][:10]], "empty_label": "No hay obligaciones para este proveedor."},
         {"title": "Pagos", "items": [_payment_item(payment) for payment in snapshot["payments"][:10]], "empty_label": "No hay pagos para este proveedor."},
@@ -1259,7 +1278,16 @@ def cuentas_por_pagar_detail(request, payable_id: int):
     
     fields.append({"label": "Observaciones", "value": payable.observaciones or "Sin observaciones"})
     actions = []
-    if payable.estado in {CuentaPorPagar.Estado.PENDIENTE, CuentaPorPagar.Estado.PARCIAL}:
+    # US-3.20: la cancelacion INTERNO del proveedor interno no bloquea editar ni
+    # anular (los servicios la anulan y, al editar, la vuelven a registrar).
+    blocked_by_payments = payable_blocked_by_payments(payable)
+    is_open = payable.estado in {CuentaPorPagar.Estado.PENDIENTE, CuentaPorPagar.Estado.PARCIAL}
+    settled_internal_only = (
+        payable.estado == CuentaPorPagar.Estado.PAGADA
+        and not blocked_by_payments
+        and _has_internal_settlement(payable)
+    )
+    if is_open:
         actions.extend(
             [
                 _action(reverse("treasury:cuentas_por_pagar_update", args=[payable.pk]), "Editar"),
@@ -1269,8 +1297,11 @@ def cuentas_por_pagar_detail(request, payable_id: int):
                 _action(reverse("treasury:pagos_efectivo_create") + f"?payable={payable.pk}", "Efectivo"),
             ]
         )
-        if not payments.filter(estado=PagoTesoreria.Estado.REGISTRADO).exists():
-            actions.append(_action(reverse("treasury:cuentas_por_pagar_annul", args=[payable.pk]), "Anular"))
+    elif settled_internal_only:
+        # Pagada solo con INTERNO: se edita o se anula, pero no se paga.
+        actions.append(_action(reverse("treasury:cuentas_por_pagar_update", args=[payable.pk]), "Editar"))
+    if (is_open or settled_internal_only) and not blocked_by_payments:
+        actions.append(_action(reverse("treasury:cuentas_por_pagar_annul", args=[payable.pk]), "Anular"))
     extra_sections = [
         {"title": "Pagos registrados", "items": [_payment_item(payment) for payment in payments], "empty_label": "Todavia no hay pagos para esta obligacion."}
     ]
@@ -1323,6 +1354,13 @@ def cuentas_por_pagar_create(request):
 def cuentas_por_pagar_update(request, payable_id: int):
     _require_treasury_admin(request)
     payable = get_object_or_404(CuentaPorPagar, pk=payable_id)
+    if _settled_internal_only(payable):
+        subtitle = (
+            "Deuda de proveedor interno: al guardar, su cancelacion sin movimiento se anula y, "
+            "si el proveedor sigue siendo interno, se vuelve a registrar por el importe nuevo."
+        )
+    else:
+        subtitle = "Solo se permite mientras no tenga pagos registrados."
     form = PayableForm(request.POST or None, instance=payable)
     if request.method == "POST" and form.is_valid():
         try:
@@ -1337,7 +1375,7 @@ def cuentas_por_pagar_update(request, payable_id: int):
         request,
         {
             "title": f"Editar deuda: {payable.concepto}",
-            "subtitle": "Solo se permite mientras no tenga pagos registrados.",
+            "subtitle": subtitle,
             "form": form,
             "submit_label": "Guardar cambios",
             "back_url": reverse("treasury:cuentas_por_pagar_detail", args=[payable.pk]),
@@ -1352,6 +1390,9 @@ def cuentas_por_pagar_update(request, payable_id: int):
 def cuentas_por_pagar_annul(request, payable_id: int):
     _require_treasury_admin(request)
     payable = get_object_or_404(CuentaPorPagar, pk=payable_id)
+    subtitle = "La anulacion no borra historial y deja saldo en cero."
+    if _settled_internal_only(payable):
+        subtitle += " Tambien se anula su cancelacion sin movimiento (proveedor interno)."
     form = PayableAnnulForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         try:
@@ -1365,7 +1406,7 @@ def cuentas_por_pagar_annul(request, payable_id: int):
         request,
         {
             "title": f"Anular deuda: {payable.concepto}",
-            "subtitle": "La anulacion no borra historial y deja saldo en cero.",
+            "subtitle": subtitle,
             "form": form,
             "submit_label": "Confirmar anulacion",
             "back_url": reverse("treasury:cuentas_por_pagar_detail", args=[payable.pk]),

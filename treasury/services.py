@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -452,6 +453,7 @@ def set_initial_bank_balance(
     return _save_instance(balance)
 
 
+@transaction.atomic
 def register_payable(
     *,
     sucursal=None,
@@ -487,9 +489,15 @@ def register_payable(
         observaciones=observaciones,
         creado_por=actor,
     )
-    return _save_instance(payable)
+    _save_instance(payable)
+    # US-3.20: la factura del proveedor interno nace saldada, en la misma
+    # transaccion: si el saldado falla, la deuda tampoco queda creada.
+    if _saldar_si_proveedor_interno(payable, actor=actor) is not None:
+        payable.refresh_from_db()
+    return payable
 
 
+@transaction.atomic
 def update_payable(
     *,
     payable: CuentaPorPagar,
@@ -505,44 +513,209 @@ def update_payable(
     observaciones: str = "",
     actor=None,
 ) -> CuentaPorPagar:
+    """Edita la deuda mientras no tenga pagos.
+
+    US-3.20: la cancelacion INTERNO de un proveedor interno no cuenta como pago
+    que bloquee. Con la deuda bloqueada se valida todo primero; recien despues
+    se anula esa cancelacion, se guarda la deuda y, si el proveedor (el mismo o
+    el nuevo) es interno, se vuelve a saldar por el importe nuevo. Es atomico:
+    si algo falla en el medio, la cancelacion anterior sigue viva.
+    """
     _require_actor(actor)
-    if payable.pagos.filter(estado=PagoTesoreria.Estado.REGISTRADO).exists():
+    locked = CuentaPorPagar.objects.select_for_update().get(pk=payable.pk)
+    if locked.estado == CuentaPorPagar.Estado.ANULADA:
+        raise ValidationError({"__all__": "No se puede editar una deuda anulada."})
+    cancelaciones_internas = _cancelaciones_internas_a_liberar(locked)
+    if cancelaciones_internas is None:
         raise ValidationError({"__all__": "No se puede editar una cuenta por pagar con pagos registrados."})
     if not proveedor.activo:
         raise ValidationError({"proveedor": "El proveedor esta inactivo."})
     if not categoria.activo:
         raise ValidationError({"categoria": "La categoría está inactiva."})
     _ensure_payable_category_is_economic(categoria)
-    payable.sucursal = sucursal
-    payable.proveedor = proveedor
-    payable.categoria = categoria
-    payable.concepto = concepto
-    payable.fecha_emision = fecha_emision
-    payable.fecha_vencimiento = fecha_vencimiento
-    payable.periodo_referencia = _first_day_of_month(periodo_referencia or fecha_emision)
-    payable.importe_total = importe_total
-    payable.saldo_pendiente = importe_total
-    payable.estado = CuentaPorPagar.Estado.PENDIENTE
-    payable.referencia_comprobante = referencia_comprobante
-    payable.observaciones = observaciones
-    payable.actualizado_por = actor
-    return _save_instance(payable)
+    locked.sucursal = sucursal
+    locked.proveedor = proveedor
+    locked.categoria = categoria
+    locked.concepto = concepto
+    locked.fecha_emision = fecha_emision
+    locked.fecha_vencimiento = fecha_vencimiento
+    locked.periodo_referencia = _first_day_of_month(periodo_referencia or fecha_emision)
+    locked.importe_total = importe_total
+    locked.saldo_pendiente = importe_total
+    locked.estado = CuentaPorPagar.Estado.PENDIENTE
+    locked.referencia_comprobante = referencia_comprobante
+    locked.observaciones = observaciones
+    locked.actualizado_por = actor
+    # Los datos nuevos se validan ANTES de tocar la cancelacion interna.
+    locked.full_clean()
+    _liberar_cancelaciones_internas(
+        cancelaciones_internas, motivo="Edicion de deuda de proveedor interno", actor=actor
+    )
+    # El save pisa lo que dejo el recalculo de la anulacion (estado y saldo
+    # viejos) con los datos nuevos, ya validados.
+    _save_instance(locked)
+    if _saldar_si_proveedor_interno(locked, actor=actor) is not None:
+        locked.refresh_from_db()
+    return locked
 
 
+@transaction.atomic
 def annul_payable(*, payable: CuentaPorPagar, motivo: str, actor=None) -> CuentaPorPagar:
+    """Anula la deuda mientras no tenga pagos.
+
+    US-3.20: si solo tiene la cancelacion INTERNO de un proveedor interno, se
+    anula primero esa cancelacion (no movio fondos) y despues la deuda, todo en
+    la misma transaccion y con la deuda bloqueada.
+    """
     _require_actor(actor)
-    if payable.pagos.filter(estado=PagoTesoreria.Estado.REGISTRADO).exists():
+    locked = CuentaPorPagar.objects.select_for_update().get(pk=payable.pk)
+    if locked.estado == CuentaPorPagar.Estado.ANULADA:
+        raise ValidationError({"__all__": "La deuda ya esta anulada."})
+    cancelaciones_internas = _cancelaciones_internas_a_liberar(locked)
+    if cancelaciones_internas is None:
         raise ValidationError({"__all__": "No se puede anular una deuda con pagos registrados."})
     motivo = (motivo or "").strip()
     if not motivo:
         raise ValidationError({"motivo": "El motivo es obligatorio para anular."})
-    payable.estado = CuentaPorPagar.Estado.ANULADA
-    payable.motivo_anulacion = motivo
-    payable.anulada_por = actor
-    payable.anulada_en = timezone.now()
-    payable.saldo_pendiente = Decimal("0.00")
-    payable.actualizado_por = actor
-    return _save_instance(payable)
+    if cancelaciones_internas:
+        _liberar_cancelaciones_internas(
+            cancelaciones_internas, motivo=f"Anulacion de la deuda: {motivo}", actor=actor
+        )
+        locked.refresh_from_db()
+    locked.estado = CuentaPorPagar.Estado.ANULADA
+    locked.motivo_anulacion = motivo
+    locked.anulada_por = actor
+    locked.anulada_en = timezone.now()
+    locked.saldo_pendiente = Decimal("0.00")
+    locked.actualizado_por = actor
+    return _save_instance(locked)
+
+
+# --- US-3.20: proveedor interno (alta automatica de INTERNO) -----------------
+
+# Namespace propio del saldado automatico, distinto del de los lotes del comando
+# regularizar_deudas: los tokens de los dos caminos nunca pueden coincidir.
+NAMESPACE_INTERNO_AUTOMATICO = uuid.UUID("6f0c1a52-9a3e-4b7e-8d55-2c1e0b7f4a91")
+OBSERVACIONES_INTERNO_AUTOMATICO = "Proveedor interno: se da por pagada sin mover fondos (alta automatica)."
+
+
+def token_interno_automatico(payable_id: int, cancelaciones_previas: int) -> uuid.UUID:
+    """Token del saldado automatico numero `cancelaciones_previas` de la deuda.
+
+    Va con un contador porque una deuda interna se vuelve a saldar cada vez que
+    se edita: el token anterior queda en un pago ANULADO y no se puede reusar.
+    """
+    return uuid.uuid5(NAMESPACE_INTERNO_AUTOMATICO, f"{payable_id}|{cancelaciones_previas}")
+
+
+def _saldar_si_proveedor_interno(payable: CuentaPorPagar, *, actor=None) -> PagoTesoreria | None:
+    """US-3.20: si el proveedor es interno, la deuda queda saldada con INTERNO.
+
+    La panaderia propia (Proveedor.es_interno) nunca se paga, pero su factura
+    cuenta como gasto. Se salda por el saldo derivado (importe menos pagos), a
+    la fecha de la factura y sin mover fondos.
+
+    No pasa por `_require_actor` a proposito: la deuda la puede cargar una
+    cajera desde la caja, sin permiso de tesoreria. Es privada y la llaman solo
+    los servicios de alta y edicion de deuda; ninguna vista la expone. Corre
+    dentro de la transaccion del llamador.
+
+    No hace nada (devuelve None) si el proveedor no es interno, si la deuda no
+    esta abierta o si tiene compromiso especial (el compromiso quedaria
+    EJECUTADO sin pagarse).
+    """
+    locked = CuentaPorPagar.objects.select_for_update().get(pk=payable.pk)
+    if not Proveedor.objects.filter(pk=locked.proveedor_id, es_interno=True).exists():
+        return None
+    if locked.estado not in {CuentaPorPagar.Estado.PENDIENTE, CuentaPorPagar.Estado.PARCIAL}:
+        return None
+    if CompromisoEspecial.objects.filter(cuenta_por_pagar_id=locked.pk).exists():
+        return None
+    registrado = (
+        PagoTesoreria.objects.filter(
+            cuenta_por_pagar_id=locked.pk, estado=PagoTesoreria.Estado.REGISTRADO
+        ).aggregate(total=Sum("monto"))["total"]
+        or Decimal("0.00")
+    )
+    monto = locked.importe_total - registrado
+    if monto != locked.saldo_pendiente:
+        raise ValidationError(
+            {
+                "__all__": (
+                    "No se puede dar por pagada la deuda del proveedor interno: su saldo no "
+                    "coincide con el importe menos los pagos registrados."
+                )
+            }
+        )
+    if monto <= 0:
+        return None
+    # El contador sale con la deuda bloqueada, asi que no hay dos saldados con
+    # el mismo numero. Cuenta todos los INTERNO (vivos y anulados, del comando
+    # o automaticos): es creciente y nunca repite un token ya usado.
+    previos = PagoTesoreria.objects.filter(
+        cuenta_por_pagar_id=locked.pk, medio_pago=PagoTesoreria.MedioPago.INTERNO
+    ).count()
+    token = token_interno_automatico(locked.pk, previos)
+    if PagoTesoreria.objects.filter(token_alta=token).exists():
+        # No deberia pasar nunca. Si pasa, se corta: register_payment devolveria
+        # ese pago (quizas anulado) como si fuera el saldado de ahora.
+        raise ValidationError(
+            {"__all__": "No se pudo dar por pagada la deuda del proveedor interno (token repetido)."}
+        )
+    return _register_payment(
+        payable=locked,
+        bank_account=None,
+        medio_pago=PagoTesoreria.MedioPago.INTERNO,
+        fecha_pago=locked.fecha_emision,
+        monto=monto,
+        observaciones=OBSERVACIONES_INTERNO_AUTOMATICO,
+        token_alta=token,
+        actor=actor,
+    )
+
+
+def _cancelaciones_internas_a_liberar(payable: CuentaPorPagar) -> list[PagoTesoreria] | None:
+    """Pagos REGISTRADO de la deuda, si TODOS son INTERNO (lista vacia si no hay).
+
+    Devuelve None si alguno movio fondos o es REGULARIZACION: esos siguen
+    bloqueando editar o anular la deuda, como siempre. INTERNO no bloquea
+    porque el sistema lo crea y lo vuelve a crear solo para el proveedor
+    interno. Leer con la deuda bloqueada.
+    """
+    pagos = list(
+        PagoTesoreria.objects.filter(
+            cuenta_por_pagar_id=payable.pk, estado=PagoTesoreria.Estado.REGISTRADO
+        ).order_by("pk")
+    )
+    if any(pago.medio_pago != PagoTesoreria.MedioPago.INTERNO for pago in pagos):
+        return None
+    return pagos
+
+
+def _liberar_cancelaciones_internas(pagos, *, motivo: str, actor=None) -> None:
+    """Anula las cancelaciones INTERNO de una deuda que se edita o se anula.
+
+    Sin permiso de tesoreria a proposito (`_annul_payment`): tambien lo usa la
+    caja al anular una caja o un gasto como deuda del proveedor interno.
+    """
+    for pago in pagos:
+        _annul_payment(payment=pago, motivo=motivo[:255], actor=actor)
+
+
+def payable_blocked_by_payments(payable: CuentaPorPagar) -> bool:
+    """True si la deuda tiene pagos que impiden editarla o anularla.
+
+    La cancelacion INTERNO del proveedor interno no cuenta (US-3.20): las
+    pantallas usan esto para mostrar Editar y Anular con la misma regla que
+    aplican update_payable y annul_payable.
+    """
+    return (
+        PagoTesoreria.objects.filter(
+            cuenta_por_pagar_id=payable.pk, estado=PagoTesoreria.Estado.REGISTRADO
+        )
+        .exclude(medio_pago=PagoTesoreria.MedioPago.INTERNO)
+        .exists()
+    )
 
 
 def _ensure_special_commitment_can_be_paid(payable: CuentaPorPagar) -> None:
@@ -875,7 +1048,6 @@ def _comprobantes_las_distinguen(payables) -> bool:
     return all(referencias) and len(set(referencias)) == len(referencias)
 
 
-@transaction.atomic
 def register_payment(
     *,
     payable: CuentaPorPagar,
@@ -891,7 +1063,46 @@ def register_payment(
     token_alta=None,
     actor=None,
 ) -> PagoTesoreria:
+    """Punto unico de alta de pagos, con permiso de tesoreria."""
     _require_actor(actor)
+    return _register_payment(
+        payable=payable,
+        bank_account=bank_account,
+        medio_pago=medio_pago,
+        fecha_pago=fecha_pago,
+        monto=monto,
+        referencia=referencia,
+        fecha_diferida=fecha_diferida,
+        observaciones=observaciones,
+        empresa=empresa,
+        bank_movement=bank_movement,
+        token_alta=token_alta,
+        actor=actor,
+    )
+
+
+@transaction.atomic
+def _register_payment(
+    *,
+    payable: CuentaPorPagar,
+    bank_account: CuentaBancaria,
+    medio_pago: str,
+    fecha_pago,
+    monto: Decimal,
+    referencia: str = "",
+    fecha_diferida=None,
+    observaciones: str = "",
+    empresa=None,
+    bank_movement: MovimientoBancario = None,
+    token_alta=None,
+    actor=None,
+) -> PagoTesoreria:
+    """Cuerpo de register_payment SIN el chequeo de permiso de tesoreria.
+
+    Existe solo para el saldado automatico del proveedor interno (US-3.20), que
+    corre tambien desde la caja con la cajera como actor. Ninguna vista lo
+    llama: todo alta que venga de una pantalla pasa por register_payment.
+    """
     # US-3.20: los medios sin movimiento (REGULARIZACION, INTERNO) cancelan la
     # deuda sin sacar plata de ningun lado. Con cuenta, la rama de abajo crearia
     # un debito PAGO_TESORERIA que nunca existio en el banco; con movimiento, lo
@@ -976,7 +1187,9 @@ def register_payment(
             empresa=_empresa_de_la_deuda(locked_payable, empresa),
             tipo=MovimientoCajaCentral.Tipo.EGRESO_PAGO,
             monto=monto,
-            concepto=f"Pago a {locked_payable.proveedor}: {locked_payable.concepto}",
+            # Mismo recorte que el debito del pago bancario: razon social y
+            # concepto admiten 160 cada uno y el movimiento solo 160 en total.
+            concepto=f"Pago a {locked_payable.proveedor}: {locked_payable.concepto}"[:160],
             fecha=fecha_pago,
             pago_tesoreria=payment,
             actor=actor,
@@ -1442,9 +1655,20 @@ def _release_bank_movement_from_annulled_payment(payment: PagoTesoreria, *, moti
     return movement
 
 
-@transaction.atomic
 def annul_payment(*, payment: PagoTesoreria, motivo: str, actor=None) -> PagoTesoreria:
+    """Anulacion de pagos, con permiso de tesoreria."""
     _require_actor(actor)
+    return _annul_payment(payment=payment, motivo=motivo, actor=actor)
+
+
+@transaction.atomic
+def _annul_payment(*, payment: PagoTesoreria, motivo: str, actor=None) -> PagoTesoreria:
+    """Cuerpo de annul_payment SIN el chequeo de permiso de tesoreria.
+
+    Existe solo para liberar la cancelacion INTERNO del proveedor interno al
+    editar o anular su deuda (US-3.20), tambien desde la caja. Ninguna vista lo
+    llama: toda anulacion que venga de una pantalla pasa por annul_payment.
+    """
     locked_payment = PagoTesoreria.objects.select_for_update().select_related("cuenta_por_pagar").get(pk=payment.pk)
     payable = CuentaPorPagar.objects.select_for_update().get(pk=locked_payment.cuenta_por_pagar_id)
     if locked_payment.estado == PagoTesoreria.Estado.ANULADO:

@@ -340,12 +340,20 @@ Criterios:
   de la empresa de la deuda; el resultado economico no cambia
 - antes de aplicar se ve, por empresa, el saldo de la caja fuerte hoy, el
   efectivo a registrar y el saldo que quedaria, para compararlo con el arqueo
-- se simula, tesoreria revisa el informe y se aplica solo lo que aprobo, con
-  el mismo saldo; un lote se puede revertir y el efectivo vuelve a la caja
+- se simula, tesoreria revisa el informe y se aplica solo lo que aprobo, tal
+  como lo reviso: mismo saldo e importe, mismo proveedor, misma sucursal y
+  empresa (de que caja fuerte sale el efectivo) y misma fecha de pago; lo que
+  cambio se informa con el detalle y no se aplica. Un lote se puede revertir y
+  el efectivo vuelve a la caja
 - quedan afuera, con su motivo: ARCA/AFIP/impuestos, sueldos y cargas sociales,
-  tarjetas, deudas con compromiso especial, sin sucursal, meses cerrados, las
-  cargadas despues de la declaracion, las que parecen cargadas dos veces y las
-  que pudieron pagarse con un debito del banco sin asignar
+  tarjetas, deudas con compromiso especial, sin sucursal, meses cerrados (o
+  anteriores a un mes cerrado), las cargadas despues de la declaracion, las que
+  parecen cargadas dos veces, las que pudieron pagarse con un debito del banco
+  sin asignar y las que pudieron pagarse con un egreso de la caja fuerte sin
+  factura de la misma sucursal e importe
+- el proveedor interno se marca solo con el plan revisado, si se cancelo al
+  menos una de sus deudas y ninguna dio error; si el nombre no es el de la
+  panaderia hay que confirmarlo, y se informa lo que le queda abierto
 - las facturas del proveedor interno se cancelan sin movimiento (INTERNO): la
   deuda queda pagada, no lleva cuenta ni movimiento y nunca crea un debito
   bancario ni un egreso de la caja fuerte
@@ -356,12 +364,24 @@ Criterios:
 - los medios sin movimiento no aparecen en ningun formulario de alta de pagos
 - un pago con plata sobre una deuda ya cancelada sin movimiento se rechaza con
   un mensaje que dice que hay que anular primero esa cancelacion
+- una vez marcado el proveedor interno, sus facturas nuevas (cargadas por
+  tesoreria o por la cajera desde la caja) nacen pagadas sin mover fondos; la
+  caja lo dice en lugar de "tesoreria paga despues"
+- una factura del proveedor interno se puede editar o anular como cualquier
+  deuda sin pagos: su cancelacion se anula y, al editarla, se vuelve a
+  registrar por el importe nuevo; anular la caja o el gasto como deuda tambien
+  la anula. Un pago con plata sigue bloqueando
+- revertir el modo interno desmarcando al proveedor anula tambien las
+  cancelaciones automaticas de sus facturas nuevas
 
 Estado: hechos en la rama `feat/regularizar-deudas` el slice 1 (medios sin
 movimiento y lecturas), el slice 4 reducido (rechazo claro del pago real sobre
-una deuda cancelada sin movimiento) y el slice 2 (comando `regularizar_deudas`
-con modo general en efectivo, modo interno, plan revisado y reversion). Falta
-el alta automatica del proveedor interno (slice 3) y el ensayo en staging.
+una deuda cancelada sin movimiento), el slice 2 (comando `regularizar_deudas`
+con modo general en efectivo, modo interno, plan revisado y reversion) y el
+slice 3 (alta automatica del proveedor interno, edicion y anulacion atomicas,
+anulaciones de caja), y las correcciones de la revision del comando (plan
+atado a boveda y fecha, posible pago en efectivo ya cargado, modo interno con
+plan y confirmacion, mes cerrado posterior). Falta el ensayo en staging.
 REGULARIZACION queda definido en el modelo pero sin uso.
 
 ## Orden tecnico sugerido

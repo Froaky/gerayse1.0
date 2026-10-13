@@ -50,8 +50,8 @@ Last updated: 2026-10-13
     `treasury/forms.py`, `treasury/admin.py`, `templates/treasury/list_page.html`,
     `templates/treasury/dashboard.html`, migracion 0037,
     `treasury/tests_pago_sin_movimiento.py` (nuevo, 44 tests).
-  - Pendiente (slices siguientes): comando `regularizar_deudas` con modo interno (slice 2),
-    alta automatica de INTERNO para proveedores es_interno (slice 3).
+  - Los slices siguientes (comando `regularizar_deudas`, alta automatica de INTERNO) estan
+    mas abajo.
 - CAMBIO 2026-10-13 (Tais): Maria ya cargo el banco de todos esos meses atando pagos a
   facturas; lo que no se pago por banco se pago en EFECTIVO desde la caja fuerte (por eso
   la boveda da de mas). El modo general del comando registra pagos EFECTIVO reales (con su
@@ -100,10 +100,11 @@ Last updated: 2026-10-13
     y mes cerrado. Token del lote ANULADO o de otra deuda: ERROR explicito (no se rehace solo;
     se usa otro `--lote`). YA_PROCESADA si el pago del lote sigue vivo o si la deuda ya tiene
     una cancelacion sin movimiento.
-  - `--apply` del modo general EXIGE `--plan` (el informe de la simulacion revisado por
-    tesoreria): aplica solo sus filas A_REGULARIZAR con el mismo saldo; lo demas queda
-    FUERA_DEL_PLAN / DISTINTA_AL_PLAN / NO_DISPONIBLE. El plan acepta CSV guardado por Excel
-    (`;` o `,`, UTF-8 o ANSI) y tiene que ser del mismo medio que la corrida.
+  - `--apply` EXIGE `--plan` (el informe de la simulacion revisado por tesoreria; desde las
+    correcciones de la revision, tambien en el modo interno): aplica solo sus filas
+    A_REGULARIZAR que hoy siguen igual (ver "Correcciones de la revision" mas abajo); lo demas
+    queda FUERA_DEL_PLAN / DISTINTA_AL_PLAN / NO_DISPONIBLE / YA_PROCESADA. El plan acepta CSV
+    guardado por Excel (`;` o `,`, UTF-8 o ANSI) y tiene que ser del mismo medio que la corrida.
   - Consola: resumen por accion, caja fuerte por empresa (saldo hoy, efectivo a registrar y
     saldo que quedaria; despues de aplicar, el saldo real) para comparar con el arqueo, aviso
     por empresa y mes con debitos sin pago atado y EGRESO_ADMIN del mes, y los 30 proveedores
@@ -114,9 +115,110 @@ Last updated: 2026-10-13
     revierte pagos cuyo egreso cae en un mes cerrado. Tambien simula salvo `--apply`.
   - Uso: simular en staging con copia de prod, Tais revisa el CSV, aplicar con `--plan`. Correr
     primero el modo interno (Oveja Negra). Antes de un rollback de la 0037, `--revertir` del
-    lote interno con el codigo nuevo.
+    lote interno con `--desmarcar-interno` y el codigo nuevo (ver slice 3).
   - Tests: `treasury/tests_regularizar_deudas.py` (60). `manage.py test treasury cashops core`:
     793 OK (4 skipped).
+- SLICE 3 (alta automatica de INTERNO, atomicidad y anulaciones de caja):
+  - Una factura de un proveedor `es_interno` nace saldada: `register_payable` y
+    `cashops.register_box_expense_debt` llaman a `services._saldar_si_proveedor_interno`, que la
+    cancela con INTERNO por el saldo derivado (importe - pagos REGISTRADO), fecha_pago = fecha de
+    la factura, observaciones "Proveedor interno: se da por pagada sin mover fondos (alta
+    automatica).", sin referencia. Misma transaccion que el alta: si el saldado falla, la deuda
+    no queda creada. No salda si la deuda tiene compromiso especial. En la caja corre con la
+    cajera como actor: usa `_register_payment`, el cuerpo de `register_payment` SIN
+    `_require_actor` (idem `_annul_payment`). Ninguna vista, formulario ni url las nombra (test
+    que barre los fuentes). El reenvio del mismo formulario (token repetido) no vuelve a saldar.
+  - Token del saldado automatico: `token_interno_automatico(deuda, n)` = uuid5 de un namespace
+    PROPIO (distinto del del comando, no pueden chocar) con `"<deuda>|<n>"`, n = cantidad de
+    INTERNO de la deuda (vivos y anulados) contada con la deuda bloqueada. Si el token ya
+    existe, error (nunca se devuelve un pago viejo como si fuera el nuevo).
+  - `register_payable`, `update_payable` y `annul_payable` son atomicos y bloquean la deuda.
+    La cancelacion INTERNO no bloquea editar ni anular: se valida todo (incluido el full_clean
+    de los datos nuevos), se anula ("Edicion de deuda de proveedor interno" / "Anulacion de la
+    deuda: <motivo>") y, al editar, se vuelve a saldar si el proveedor (el mismo o el nuevo) es
+    interno. Cualquier otro pago (plata o REGULARIZACION) sigue bloqueando. Nuevo: no se edita
+    ni se anula de nuevo una deuda ANULADA (antes editarla por URL la revivia).
+  - `annul_box` bloquea las deudas de la caja (`select_for_update(of=("self",))`, orden por pk)
+    y `annul_box_originated_debt` ya lo hacia; los dos anulan la cancelacion INTERNO antes de
+    `_apply_debt_annulment`. Con un pago con plata siguen bloqueando.
+  - Pantallas: el detalle de la deuda ofrece Editar y Anular (no los botones de pago) cuando sus
+    unicos pagos vivos son INTERNO (`services.payable_blocked_by_payments`); las paginas de
+    editar y anular lo explican. La linea de tiempo y el mensaje de alta de la caja dicen
+    "Proveedor interno: se da por pagada sin mover fondos" en lugar de "tesoreria paga despues".
+    El detalle del proveedor muestra "Proveedor interno".
+  - Lo que NO hace: marcar al proveedor no salda sus deudas abiertas viejas (eso es el modo
+    interno del comando, o editarlas). Anular a mano la cancelacion desde el detalle del pago deja
+    la deuda abierta y no se vuelve a saldar sola (es el camino para pagarla de verdad; el
+    mensaje del slice 4 "anule primero esa cancelacion" sigue siendo correcto).
+  - `--revertir LOTE --desmarcar-interno` anula ademas las cancelaciones automaticas vivas de
+    los proveedores del lote (accion A_REVERTIR_AUTOMATICA, se reconocen por el token); las de
+    otros lotes no se tocan. Un pago con la referencia del lote que no creo el comando
+    (NO_ES_DEL_LOTE) ya no lleva a desmarcar a su proveedor. Es el paso previo a un rollback de
+    la 0037 (despues, si quedara algun INTERNO vivo, se ve en Pagos filtrando por ese medio).
+  - Orden operativo: correr el modo interno con `--apply` y despues volver a simularlo: lo que se
+    cargo entre el plan y la marca queda abierto y aparece ahi. Frente al importador de
+    planillas: solo ve deudas abiertas, asi que cualquier importacion de banco o efectivo de esos
+    meses va ANTES del comando; una fila importada despues sobre una factura ya saldada entra como
+    gasto suelto (doble conteo).
+  - Numeros del ensayo en staging: pendientes (todavia no se corrio).
+  - Tests: `treasury/tests_proveedor_interno.py` (36) y `cashops/tests_proveedor_interno.py` (10 +
+    2 solo Postgres). `manage.py test treasury cashops core`: 841 OK (6 skipped); suite completa
+    891 OK (6 skipped); makemigrations --check sin cambios (no se tocaron modelos).
+  - Pendiente: verificacion visual en el navegador (detalle de deuda interna, editar/anular, caja)
+    sobre una base con la 0037 aplicada; los tests de bloqueo en Postgres solo corren alla.
+- CORRECCIONES DE LA REVISION (comando `regularizar_deudas`, sin cambios de modelo):
+  - El plan revisado ata lo que tesoreria vio, no solo el saldo. El informe suma las columnas
+    `posibles_pagos_efectivo`, `empresa_id` y `proveedor_id` (al final). `leer_plan` exige
+    `importe_total`, `sucursal`, `fecha_pago`, `empresa_id` y `proveedor_id` (un plan viejo, sin
+    ellas, se rechaza: hay que volver a simular) y devuelve `{deuda_id: FilaDelPlan}`.
+    `restringir_a_plan` deja DISTINTA_AL_PLAN, con el detalle de que cambio, si cambio el saldo,
+    el importe, el proveedor, la empresa (de que boveda sale el efectivo), la sucursal o la fecha
+    de pago (otra fecha de factura, o se simulo con un `--fecha-pago` y se aplica con otro). Con la
+    deuda bloqueada, `_aplicar_fila` compara contra lo del plan revisado (proveedor, empresa,
+    sucursal y fecha), no contra lo recalculado en la misma corrida.
+  - POSIBLE_PAGO_EN_EFECTIVO (excluida por defecto, se incluye con
+    `--incluir-posibles-pagos-en-efectivo`, que deja un aviso en la fila): un EGRESO_ADMIN
+    REGISTRADO en la boveda de la empresa de la deuda, de la misma sucursal (o sin sucursal), por
+    el saldo o algo mas (hasta 1% o $ 100), entre emision-5 y emision+60 dias. Cada egreso se
+    asigna a una sola factura (la mas vieja primero; el de importe y fecha mas parecidos) y va a
+    la columna `posibles_pagos_efectivo`. Caso real: la planilla PP de Oveja Negra y las filas sin
+    proveedor reconocido entraron como EGRESO_ADMIN; la revision cruzo la simulacion de staging
+    con el efectivo cargado en prod el 07/10 y encontro 5 deudas por $ 286.650 (PARE CARRITO y
+    GUILLO MANTENIMIENTO). Lo correcto ahi es anular el EGRESO_ADMIN y registrar el pago, no
+    sumar otro.
+  - Modo interno mas seguro: `--apply` exige `--plan`; no acepta `--hasta`, `--fecha-pago`,
+    `--cargadas-hasta`, `--sucursal`, `--excluir-proveedor` ni `--incluir-*` salvo
+    `--incluir-posibles-duplicadas` (lo filtrado quedaria abierto para siempre con el proveedor ya
+    marcado); si la razon social no dice OVEJA NEGRA pide `--confirmar "<razon social>"`. Marca al
+    proveedor solo si esta corrida o una anterior del mismo lote le cancelo al menos una deuda y
+    ninguna dio error; si no, lo dice y no marca. Despues imprime cuantas deudas del proveedor
+    siguen abiertas (duplicadas, fuera del plan, errores), que no se cancelan solas.
+  - Re-corrida con el mismo plan (corte de conexion, corridas por sucursal): una aprobada que ya
+    pago ESTE lote sale YA_PROCESADA "Ya pagada por este lote: pago #N" (y cuenta para marcar al
+    proveedor interno); NO_DISPONIBLE dice si se pago por otro camino, se anulo o sigue abierta
+    pero quedo fuera del filtro. Con `--apply`, las filas registradas pasan a APLICADA (el informe
+    aplicado ya no sirve como plan: no tiene A_REGULARIZAR).
+  - Mes cerrado: se excluye tambien un pago fechado ANTES de un mes cerrado de esa empresa (o de
+    un cierre legacy global), no solo en el mismo mes: Disponibilidades arranca del ultimo cierre
+    y ese pago no llegaria nunca a los meses siguientes. El motivo sugiere `--fecha-pago` en un
+    mes abierto posterior al ultimo cierre. Igual al aplicar y en `--revertir`. Hoy no hay meses
+    cerrados en produccion.
+  - `_register_payment`: el concepto del EGRESO_PAGO se recorta a 160 (igual que el debito del
+    pago bancario); antes una razon social y un concepto largos dejaban el pago en efectivo en
+    ERROR, tambien desde la pantalla.
+  - Consola: las empresas cuya caja fuerte quedaria negativa salen en rojo con la consecuencia
+    (con la boveda negativa no se puede revertir la validacion de ninguna caja de esa empresa).
+    Decidir con Tais, antes del apply en prod, si se registra el prestamo ARMADI -> MAPOGO (egreso
+    en una boveda y aporte en la otra) para que ninguna quede negativa.
+  - Caja (`cashops`): la linea de tiempo dice "Proveedor interno: se da por pagada sin mover
+    fondos" solo si la deuda esta PAGADA y todos sus pagos vivos son INTERNO; una deuda abierta o
+    pagada con plata del proveedor interno sigue diciendo "tesoreria paga despues".
+  - Tests: 28 nuevos en `treasury/tests_regularizar_deudas.py` (88) y 1 en
+    `cashops/tests_proveedor_interno.py`. Suite completa 920 OK (6 skipped); makemigrations
+    --check sin cambios.
+  - Impacto operativo: los CSV simulados antes de esta correccion no sirven como plan (faltan
+    columnas): volver a simular. El modo interno ya no se corre por sucursal (el script de
+    staging `aplicar_paralelo.sh` lo hacia): una sola corrida, con plan.
 
 ### Treasury Importacion de planillas de banco y efectivo central 2026-09-30
 
