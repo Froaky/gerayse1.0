@@ -3275,6 +3275,86 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
     }
 
 
+def build_open_payables_breakdown(*, sucursal=None, empresa_ids=None, periodo_desde=None, periodo_hasta=None) -> dict:
+    """Facturas abiertas (pendientes y parciales) agrupadas por mes de imputacion.
+
+    El alcance es el mismo que `pending_payables` de build_financial_period_snapshot,
+    asi el saldo total concilia con su "pending_total". `periodo_desde` y
+    `periodo_hasta` (opcionales) filtran por mes de `periodo_referencia`.
+    """
+    reference_date = timezone.localdate()
+    payables = CuentaPorPagar.objects.filter(
+        estado__in=[CuentaPorPagar.Estado.PENDIENTE, CuentaPorPagar.Estado.PARCIAL]
+    )
+    if sucursal is not None:
+        payables = payables.filter(sucursal=sucursal)
+    elif empresa_ids is not None:
+        if not empresa_ids:
+            payables = payables.none()
+        else:
+            # Igual que en la lectura financiera: las deudas legacy sin sucursal
+            # siguen siendo deuda viva de la empresa.
+            payables = payables.filter(Q(sucursal__empresa_id__in=empresa_ids) | Q(sucursal__isnull=True))
+    if periodo_desde is not None:
+        payables = payables.filter(periodo_referencia__gte=_first_day_of_month(periodo_desde))
+    if periodo_hasta is not None:
+        payables = payables.filter(periodo_referencia__lt=_first_day_of_next_month(periodo_hasta))
+
+    vencida = Q(fecha_vencimiento__lt=reference_date)
+    totals = payables.aggregate(
+        count=Count("pk"),
+        importe_total=Sum("importe_total"),
+        saldo_total=Sum("saldo_pendiente"),
+        vencido_total=Sum("saldo_pendiente", filter=vencida),
+        vencido_count=Count("pk", filter=vencida),
+    )
+    # US-3.20: parte de lo ya cancelado de estas facturas que no fue plata
+    # (regularizacion, proveedor interno); importe - saldo la incluye.
+    settled_without_funds_total = (
+        PagoTesoreria.objects.filter(cuenta_por_pagar__in=payables, estado=PagoTesoreria.Estado.REGISTRADO)
+        .sin_movimiento_de_fondos()
+        .aggregate(total=Sum("monto"))["total"]
+    )
+    subtotals = {
+        row["periodo_referencia"]: row
+        for row in payables.order_by("periodo_referencia")
+        .values("periodo_referencia")
+        .annotate(count=Count("pk"), importe=Sum("importe_total"), saldo=Sum("saldo_pendiente"))
+    }
+
+    groups = []
+    rows = payables.select_related("proveedor", "sucursal", "categoria").order_by(
+        "periodo_referencia", "proveedor__razon_social", "fecha_vencimiento", "pk"
+    )
+    for payable in rows:
+        if not groups or groups[-1]["periodo"] != payable.periodo_referencia:
+            subtotal = subtotals[payable.periodo_referencia]
+            groups.append(
+                {
+                    "periodo": payable.periodo_referencia,
+                    "payables": [],
+                    "count": subtotal["count"],
+                    "importe_total": subtotal["importe"] or Decimal("0.00"),
+                    "saldo_total": subtotal["saldo"] or Decimal("0.00"),
+                }
+            )
+        groups[-1]["payables"].append(payable)
+
+    return {
+        "reference_date": reference_date,
+        "periodo_desde": periodo_desde,
+        "periodo_hasta": periodo_hasta,
+        "sucursal": sucursal,
+        "groups": groups,
+        "count": totals["count"] or 0,
+        "importe_total": totals["importe_total"] or Decimal("0.00"),
+        "saldo_total": totals["saldo_total"] or Decimal("0.00"),
+        "vencido_total": totals["vencido_total"] or Decimal("0.00"),
+        "vencido_count": totals["vencido_count"] or 0,
+        "settled_without_funds_total": settled_without_funds_total or Decimal("0.00"),
+    }
+
+
 def build_supplier_history_snapshot(*, supplier: Proveedor, date_from=None, date_to=None) -> dict:
     payables = (
         CuentaPorPagar.objects.filter(proveedor=supplier)
