@@ -1061,6 +1061,7 @@ def register_payment(
     empresa=None,
     bank_movement: MovimientoBancario = None,
     token_alta=None,
+    observacion_bancaria: str = "",
     actor=None,
 ) -> PagoTesoreria:
     """Punto unico de alta de pagos, con permiso de tesoreria."""
@@ -1077,6 +1078,7 @@ def register_payment(
         empresa=empresa,
         bank_movement=bank_movement,
         token_alta=token_alta,
+        observacion_bancaria=observacion_bancaria,
         actor=actor,
     )
 
@@ -1095,6 +1097,7 @@ def _register_payment(
     empresa=None,
     bank_movement: MovimientoBancario = None,
     token_alta=None,
+    observacion_bancaria: str = "",
     actor=None,
 ) -> PagoTesoreria:
     """Cuerpo de register_payment SIN el chequeo de permiso de tesoreria.
@@ -1156,6 +1159,7 @@ def _register_payment(
         monto=monto,
         referencia=referencia,
         observaciones=observaciones,
+        observacion_bancaria=observacion_bancaria,
         token_alta=token_alta,
         creado_por=actor,
     )
@@ -1310,6 +1314,9 @@ def pay_debt_from_bank_movement(
     monto: Decimal = None,
     observaciones: str = "",
     referencia: str = None,
+    medio_pago: str = PagoTesoreria.MedioPago.TRANSFERENCIA,
+    token_alta=None,
+    observacion_bancaria: str = "",
     actor=None,
 ) -> PagoTesoreria:
     """Paga una deuda desde una transferencia que ya esta en el extracto.
@@ -1324,8 +1331,18 @@ def pay_debt_from_bank_movement(
     `referencia` la pasa el reparto de varias facturas, ya sufijada por linea. Sin
     ella se usa la del movimiento tal cual, que es lo correcto para una factura
     sola.
+
+    US-3.20: `medio_pago`, `token_alta` y `observacion_bancaria` los usa el
+    comando regularizar_deudas. Un debito que en el extracto es un cheque se ata
+    con medio CHEQUE, asi la vinculacion no lo retipifica como transferencia (la
+    clase del movimiento se deriva del medio, ver CLASE_POR_MEDIO_DE_PAGO). Por
+    defecto, transferencia, como siempre. En `observacion_bancaria` el comando
+    deja la imputacion que tenia el debito antes de atarlo, para poder
+    devolversela si revierte el lote.
     """
     _require_actor(actor)
+    if medio_pago not in CLASE_POR_MEDIO_DE_PAGO:
+        raise ValidationError({"medio_pago": "Ese medio de pago no corresponde a un egreso bancario."})
     if bank_movement.estado != MovimientoBancario.Estado.REGISTRADO:
         raise ValidationError({"__all__": "El movimiento bancario esta anulado."})
     if bank_movement.tipo != MovimientoBancario.Tipo.DEBITO:
@@ -1375,14 +1392,17 @@ def pay_debt_from_bank_movement(
                 )
             }
         )
-    return register_transfer_payment(
+    return register_payment(
         payable=payable,
         bank_account=bank_movement.cuenta_bancaria,
+        medio_pago=medio_pago,
         fecha_pago=bank_movement.fecha,
         monto=monto,
         referencia=(bank_movement.referencia or "") if referencia is None else referencia,
         observaciones=observaciones,
         bank_movement=bank_movement,
+        token_alta=token_alta,
+        observacion_bancaria=observacion_bancaria,
         actor=actor,
     )
 
@@ -2368,6 +2388,104 @@ def link_payment_to_bank_movement(
     payment.save(skip_domain_guard=True)
 
     return bank_movement
+
+
+# US-3.20: los campos de un debito que link_payment_to_bank_movement pisa al
+# atarlo a una factura. Son tambien los que deciden si cuenta como gasto en la
+# lectura economica (origen + rubro/sucursal/periodo).
+CAMPOS_DE_IMPUTACION_BANCARIA = (
+    "origen",
+    "clase",
+    "proveedor_id",
+    "categoria_id",
+    "rubro_operativo_id",
+    "sucursal_gasto_id",
+    "periodo_pago",
+)
+
+
+def bank_movement_imputation(movement: MovimientoBancario) -> dict:
+    """La imputacion actual de un movimiento, para poder devolversela despues."""
+    return {campo: getattr(movement, campo) for campo in CAMPOS_DE_IMPUTACION_BANCARIA}
+
+
+@transaction.atomic
+def restore_bank_movement_imputation(
+    *,
+    movement: MovimientoBancario,
+    imputacion: dict,
+    nota: str = "",
+    actor=None,
+) -> MovimientoBancario:
+    """US-3.20: devuelve a un debito la imputacion que tenia antes de atarlo.
+
+    Al atar un debito a una factura, link_payment_to_bank_movement le pone
+    origen PAGO_TESORERIA (deja de contar como gasto: lo cuenta la factura), la
+    clase del medio y el proveedor, la categoria y el rubro de la factura. Al
+    anular el pago, la liberacion lo deja MANUAL pero con la clase, la categoria y
+    el rubro de la factura. Esto lo vuelve a como estaba, por ejemplo un egreso
+    de tesoreria imputado a otro rubro.
+
+    El origen tiene que ser coherente con los pagos vivos del debito: si tiene
+    pagos atados queda PAGO_TESORERIA, y si no tiene ninguno no puede quedar
+    PAGO_TESORERIA. Al reves, el gasto se contaria dos veces (debito y factura)
+    o ninguna. No toca monto, fecha ni cuenta: el saldo del banco no cambia.
+
+    Excepcion documentada a full_clean: un debito historico sin imputacion
+    completa (junio sin imputar) heredo rubro, sucursal y periodo de la factura
+    al atarlo, y el clean de hoy exige los tres en todo debito vigente. Si lo
+    unico que el clean rechaza es justamente volver a dejar vacios esos campos
+    que estaban vacios, se guarda igual: deshacer es devolver un estado que ya
+    existia (US-10.13 valida lo historico solo al editarlo), y dejarle la
+    imputacion de la factura lo haria contar como gasto junto con la factura
+    reabierta. Cualquier otro error del clean corta.
+    """
+    _require_actor(actor)
+    locked = MovimientoBancario.objects.select_for_update(of=("self",)).get(pk=movement.pk)
+    if locked.estado != MovimientoBancario.Estado.REGISTRADO or locked.tipo != MovimientoBancario.Tipo.DEBITO:
+        raise ValidationError({"__all__": "Solo se restaura la imputacion de un debito vigente."})
+    faltan = [campo for campo in CAMPOS_DE_IMPUTACION_BANCARIA if campo not in imputacion]
+    if faltan:
+        raise ValidationError({"__all__": f"Faltan datos de la imputacion anterior: {', '.join(faltan)}."})
+    origen = imputacion["origen"]
+    if origen not in {
+        MovimientoBancario.Origen.MANUAL,
+        MovimientoBancario.Origen.EGRESO_TESORERIA,
+        MovimientoBancario.Origen.PAGO_TESORERIA,
+    }:
+        raise ValidationError({"origen": "Ese origen no corresponde a un debito atable a facturas."})
+    tiene_pagos = locked.pagos.filter(estado=PagoTesoreria.Estado.REGISTRADO).exists()
+    if tiene_pagos != (origen == MovimientoBancario.Origen.PAGO_TESORERIA):
+        raise ValidationError(
+            {
+                "__all__": (
+                    "El debito tiene pagos atados distintos de los que tenia antes: la imputacion "
+                    "anterior ya no corresponde. Revisela a mano."
+                )
+            }
+        )
+    for campo in CAMPOS_DE_IMPUTACION_BANCARIA:
+        setattr(locked, campo, imputacion[campo])
+    nota = (nota or "").strip()
+    if nota:
+        locked.observaciones = f"{locked.observaciones} {nota}".strip()[:255]
+    locked.actualizado_por = actor
+    try:
+        locked.full_clean()
+    except ValidationError as error:
+        vacios_historicos = {
+            campo
+            for campo, campo_id in (
+                ("rubro_operativo", "rubro_operativo_id"),
+                ("sucursal_gasto", "sucursal_gasto_id"),
+                ("periodo_pago", "periodo_pago"),
+            )
+            if imputacion[campo_id] is None
+        }
+        if not hasattr(error, "error_dict") or not set(error.error_dict) <= vacios_historicos:
+            raise
+    locked.save()
+    return locked
 
 
 @transaction.atomic

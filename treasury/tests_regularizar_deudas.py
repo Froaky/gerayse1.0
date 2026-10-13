@@ -379,16 +379,18 @@ class PlanTests(RegularizacionBase):
         self.assertEqual(filas[abierta.pk].accion, Accion.A_REGULARIZAR)
         self.assertIn("duplicada", filas[abierta.pk].aviso)
 
-    def test_posible_pago_por_banco_en_la_ventana_queda_excluido(self):
+    def test_posible_pago_por_banco_en_la_ventana_queda_excluido_sin_atar_banco(self):
+        # Comportamiento anterior a la atadura (--sin-atar-banco). Con la
+        # atadura, ver tests_regularizar_atar_banco.
         deuda = self._deuda("1000.00")
         debito = self._debito("1000.00", fecha=AGOSTO + timedelta(days=20))
 
-        fila = self._por_deuda(self._plan())[deuda.pk]
+        fila = self._por_deuda(self._plan(atar_banco=False))[deuda.pk]
 
         self.assertEqual(fila.accion, Accion.POSIBLE_PAGO_EN_GERAYSE)
         self.assertTrue(fila.posibles_pagos[0].startswith(f"#{debito.pk} "))
 
-        fila = self._por_deuda(self._plan(incluir_posibles_pagos=True))[deuda.pk]
+        fila = self._por_deuda(self._plan(incluir_posibles_pagos=True, atar_banco=False))[deuda.pk]
         self.assertEqual(fila.accion, Accion.A_REGULARIZAR)
         self.assertIn("banco", fila.aviso)
 
@@ -804,8 +806,9 @@ class PlanRevisadoTests(RegularizacionBase):
             [
                 "deuda_id", "empresa", "sucursal", "proveedor", "rubro", "concepto", "comprobante",
                 "fecha_emision", "fecha_vencimiento", "creado_en", "importe_total", "saldo", "medio",
-                "fecha_pago", "accion", "motivo", "gemelos", "posibles_pagos", "posibles_pagos_efectivo",
-                "aviso", "pago_id", "resultado", "empresa_id", "proveedor_id",
+                "fecha_pago", "debito_id", "importe_debito", "accion", "motivo", "gemelos",
+                "posibles_pagos", "posibles_pagos_efectivo", "aviso", "pago_id", "resultado", "empresa_id",
+                "proveedor_id",
             ],
         )
         por_id = {int(fila["deuda_id"]): fila for fila in filas}
@@ -852,12 +855,14 @@ class PlanRevisadoTests(RegularizacionBase):
         )
 
     def test_lo_aprobado_que_hoy_quedo_excluido_no_se_aplica(self):
+        # Sin atar al banco: el debito nuevo la deja como posible pago. Con la
+        # atadura (por defecto) queda FUERA_DEL_PLAN, ver tests_regularizar_atar_banco.
         deuda = self._deuda("1000.00")
         with TemporaryDirectory() as carpeta:
-            aprobadas = leer_plan(self._informe(self._plan(), carpeta), EFECTIVO)
+            aprobadas = leer_plan(self._informe(self._plan(atar_banco=False), carpeta), EFECTIVO)
         self._debito("1000.00", fecha=AGOSTO)
 
-        regularizacion = self._plan()
+        regularizacion = self._plan(atar_banco=False)
         regularizacion.restringir_a_plan(aprobadas)
         regularizacion.aplicar()
 
