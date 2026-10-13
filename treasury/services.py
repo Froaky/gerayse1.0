@@ -262,6 +262,27 @@ def toggle_supplier(*, supplier: Proveedor, actor=None) -> Proveedor:
     return supplier
 
 
+@transaction.atomic
+def set_supplier_internal(*, supplier: Proveedor, es_interno: bool, actor=None) -> Proveedor:
+    """US-3.20: marca o desmarca un proveedor como interno (la panaderia propia).
+
+    Ninguna pantalla lo edita (en el admin es de solo lectura): lo hace el
+    comando `regularizar_deudas`, que deja informe y lote. Tildarlo a mano haria
+    que sus facturas se den por pagadas sin rastro.
+    """
+    _require_actor(actor)
+    locked = Proveedor.objects.select_for_update().get(pk=supplier.pk)
+    if locked.es_interno == es_interno:
+        return locked
+    locked.es_interno = es_interno
+    locked.actualizado_por = actor
+    # Sin full_clean a proposito, igual que toggle_supplier: solo cambia un
+    # booleano, y un dato legacy invalido en otro campo (un email mal cargado)
+    # no puede dejar al comando con las deudas canceladas y el proveedor sin marcar.
+    locked.save(update_fields=["es_interno", "actualizado_por", "actualizado_en"])
+    return locked
+
+
 def create_payable_category(*, nombre, actor=None, activo=True, rubro_operativo=None) -> CategoriaCuentaPagar:
     _require_actor(actor)
     _validate_payable_category_mapping(activo=activo, rubro_operativo=rubro_operativo)
