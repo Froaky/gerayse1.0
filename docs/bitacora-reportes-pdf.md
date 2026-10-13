@@ -8,35 +8,34 @@ El plan técnico completo está en el PDF "Plan Implementacion Reportes Gerayse"
 (fuente HTML en `C:\tmp\gerayse-presupuesto-reportes\plan-implementacion-reportes.html`
 en la máquina de la oficina). Esta bitácora es lo que hay que leer para retomar.
 
-## ESTADO AL CIERRE (2026-10-13 16:55) — leer esto primero
+## ESTADO AL CIERRE (2026-10-13 17:10) — leer esto primero
 
-**El desarrollo está terminado y probado en la rama; falta validarlo en staging y
-pasarlo a main.** Todo está commiteado y empujado a `origin/feat/reportes-pdf`.
+**El desarrollo está terminado, probado y SUBIDO A STAGING.** Falta validar los
+números en staging, mostrárselo a Tais y pasarlo a main con el OK de Mateo.
+Todo está commiteado y empujado a `origin/feat/reportes-pdf` y a `origin/staging`
+(fast-forward: staging = la rama).
 
 - Hecho: S0 a S5 + revisión adversarial con sus arreglos. Los 3 reportes (situación
   económica, situación financiera, desglose de deudas) se descargan desde
   Tesorería > Reportes > Reportes PDF, por empresa (razón social en el encabezado),
   por sucursal, general, o general + cada sucursal en un solo PDF.
-- Suite completa: **965 OK (4 skipped)** (843 de base + 122 nuevos). Sin migraciones.
+- La rama ya incluye lo último de staging (US-3.20, alta automática del proveedor
+  interno; merge c4c4823). Suite completa sobre ese estado: **1042 OK (6 skipped)**.
+  Sin migraciones.
 - Verificado a ojo con la base de demo (datos ficticios): los 3 PDFs, por sucursal,
   general y "general y cada sucursal".
 
 ### Qué falta, en orden
 
-1. **S6 — Staging.** Confirmar que `origin/staging` sigue en 695a679 (si se movió, hay
-   que mergear/rebasear `feat/reportes-pdf` sobre staging primero) y hacer
-   fast-forward:
-   ```bash
-   git fetch origin
-   git log --oneline -1 origin/staging        # tiene que ser 695a679 o ancestro de la rama
-   git checkout staging && git merge --ff-only origin/feat/reportes-pdf
-   git push origin staging
-   ```
-   Railway instala `reportlab==5.0.0` (Python puro + Pillow); revisar que el deploy de
-   staging quede verde. Después, en staging: bajar los 3 reportes de septiembre 2026
-   para Armadi general, cada sucursal y Mapogo, y comparar contra el dashboard de
-   tesorería con el mismo alcance (los números tienen que ser los mismos: los PDFs
-   leen los mismos snapshots).
+1. **S6 — Validar en staging** (el código YA está en staging). Revisar que el deploy
+   de Railway del environment `staging` haya quedado verde (instala `reportlab==5.0.0`,
+   Python puro + Pillow). En staging: Tesorería > Reportes > Reportes PDF, bajar los 3
+   reportes de septiembre 2026 para Armadi general, cada sucursal y Mapogo, y comparar
+   contra el dashboard de tesorería con el mismo alcance y período (tienen que dar lo
+   mismo: los PDFs leen los mismos snapshots). Si hay que corregir algo: commit en
+   `feat/reportes-pdf` y de nuevo fast-forward de staging
+   (`git push origin feat/reportes-pdf:staging`, que falla solo si staging se movió:
+   en ese caso `git merge origin/staging` en la rama, suite completa, y reintentar).
 2. **Mandarle a Tais PDFs de muestra** y cerrar las decisiones abiertas (abajo).
 3. **S7 — main**, solo con OK de Mateo. Agregar la nota en `context.md` (borrador al
    final de esta bitácora) y correr la suite antes del push.
@@ -92,7 +91,8 @@ La rama sigue a `origin/feat/reportes-pdf` (un `git push` pelado va ahí). Naci�
 | S4 | R3 desglose de deudas (lectura nueva en services + builder + tests) | Hecho (94df731) |
 | S5 | Formulario, vistas, URLs, página y menú (+ tests de permisos y aislamiento) | Hecho (d8e4fc1) |
 | rev | Revisión adversarial de toda la rama y sus 5 arreglos | Hecho (819c031) |
-| S6 | "General + todas las sucursales" en un PDF (hecho en S5); validación en staging | Pendiente: staging |
+| merge | Lo nuevo de staging (US-3.20) integrado; test del interno adaptado | Hecho (c4c4823, 212ba1b) |
+| S6 | Subido a staging (fast-forward) | Hecho; falta validar los números allá |
 | S7 | Pase a main con OK de Mateo; nota en `context.md` | Pendiente |
 
 ## Mapa del código
@@ -218,6 +218,16 @@ La rama sigue a `origin/feat/reportes-pdf` (un `git push` pelado va ahí). Naci�
   no aparecen en los datos reales), duplicación del filtro de alcance de deuda con la
   lectura financiera (a propósito, concilia con un test), detalles de tests.
 - Suite completa: 965 OK (4 skipped). `makemigrations --check` sin cambios.
+
+### 2026-10-13 17:10 — Merge de staging y subida a staging
+
+- `origin/staging` se había movido (4 commits nuevos de US-3.20: alta automática del
+  proveedor interno, plan atado a bóveda). Merge sin conflictos (c4c4823).
+- Un test del desglose falló con razón: ahora una factura NUEVA del proveedor interno
+  nace saldada con INTERNO, así que no es deuda abierta. Se adaptó (212ba1b): cubre que
+  la nueva no aparece y que una factura vieja cargada antes de marcar al proveedor
+  como interno sí aparece, marcada "(interno)", hasta que corre la regularización.
+- Suite completa: 1042 OK (6 skipped). Push de la rama y fast-forward de staging.
 
 ## Borrador de nota para `context.md` (agregar en S7, arriba de "Current Session")
 
