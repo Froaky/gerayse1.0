@@ -22,6 +22,7 @@ from django.core.management.base import CommandError
 
 from cashops.models import RubroOperativo, Sucursal
 from treasury.models import (
+    CategoriaCuentaPagar,
     CierreMensualTesoreria,
     CuentaBancaria,
     CuentaPorPagar,
@@ -173,11 +174,17 @@ class AsignacionTests(AtarBancoBase):
         self.assertIn("reparto por antiguedad entre 7", filas[siete[0].pk].motivo)
 
     def test_antiguedad_solo_con_facturas_enteras_y_el_sobrante_queda_sin_asignar(self):
+        # Un debito ya atado a otra factura (PAGO_TESORERIA) no cuenta como
+        # gasto: puede quedar con sobrante, que sigue disponible para atar.
+        pagada_a_mano = self._deuda("400.00", emision=_dia(1), concepto="Pagada a mano desde el debito")
+        debito = self._debito("1400.00", fecha=_dia(20))
+        pay_debt_from_bank_movement(
+            bank_movement=debito, payable=pagada_a_mano, monto=Decimal("400.00"), actor=self.admin
+        )
         a = self._deuda("300.00", emision=_dia(1))
         b = self._deuda("500.00", emision=_dia(2))
         grande = self._deuda("2000.00", emision=_dia(3))
         c = self._deuda("150.00", emision=_dia(4))
-        debito = self._debito("1000.00", fecha=_dia(20))
 
         regularizacion = self._plan()
         filas = self._por_deuda(regularizacion)
@@ -186,15 +193,15 @@ class AsignacionTests(AtarBancoBase):
             self.assertEqual(filas[atada.pk].accion, Accion.A_ATAR_BANCO)
             self.assertEqual(filas[atada.pk].debito_id, debito.pk)
         self.assertIn("reparto por antiguedad entre 3 factura(s); le quedan 50,00 sin asignar", filas[a.pk].motivo)
-        self.assertIn("50,00 que le sobran", filas[a.pk].aviso)
+        self.assertNotIn("que le sobran", filas[a.pk].aviso)
         self.assertEqual(filas[grande.pk].accion, Accion.POSIBLE_PAGO_EN_GERAYSE)
         self.assertEqual(
             regularizacion.sobrantes_de_debitos(),
             {
                 "debitos": 1,
                 "sobrante": Decimal("50.00"),
-                "debitos_imputados": 1,
-                "sobrante_imputado": Decimal("50.00"),
+                "debitos_de_gasto": 0,
+                "sobrante_de_gasto": Decimal("0.00"),
             },
         )
 
@@ -478,6 +485,266 @@ class AplicacionAtarTests(AtarBancoBase):
         self.assertEqual(fila.accion, Accion.EXCLUIDA_MES_CERRADO)
 
 
+def _gasto_total(snapshot):
+    """Gasto de tesoreria (debitos imputados) mas deuda del periodo."""
+    return snapshot["treasury_expense_total"] + snapshot["debt_period_total"]
+
+
+class DebitoDeGastoTests(AtarBancoBase):
+    """Al atarlo, el debito pasa ENTERO a PAGO_TESORERIA y sale de la lectura
+    economica (como gasto o como pendiente de imputar). Un debito que hoy
+    cuenta solo se ata si sus facturas lo consumen entero y tienen rubro: el
+    gasto total no puede bajar mas que lo atado."""
+
+    def _sin_rubro(self, deuda):
+        legacy, _ = CategoriaCuentaPagar.objects.get_or_create(nombre="Legacy sin rubro", defaults={"activo": True})
+        CuentaPorPagar.objects.filter(pk=deuda.pk).update(categoria=legacy)
+        return legacy
+
+    def test_un_debito_imputado_como_gasto_no_se_ata_si_le_sobra(self):
+        deuda = self._deuda("600.00", emision=_dia(5))
+        debito = self._debito("1000.00", fecha=_dia(20), rubro=self.limpieza)
+        antes = build_economic_period_snapshot(**AGOSTO_COMPLETO)
+
+        regularizacion = self._plan()
+        fila = self._por_deuda(regularizacion)[deuda.pk]
+
+        self.assertEqual(fila.accion, Accion.POSIBLE_PAGO_EN_GERAYSE)
+        self.assertIsNone(fila.debito_id)
+        self.assertIn(f"No se ata al debito #{debito.pk}", fila.aviso)
+        self.assertIn("le sobrarian 400,00 sin asignar", fila.aviso)
+        self.assertEqual(
+            regularizacion.debitos_no_atados,
+            [{"debito_id": debito.pk, "sobrante": Decimal("400.00"), "facturas": 1, "importe": Decimal("600.00")}],
+        )
+
+        regularizacion.aplicar()
+
+        self.assertEqual(PagoTesoreria.objects.count(), 0)
+        debito.refresh_from_db()
+        self.assertEqual(debito.origen, MANUAL)
+        self.assertEqual(self._sin_asignar(debito), Decimal("1000.00"))
+        despues = build_economic_period_snapshot(**AGOSTO_COMPLETO)
+        self.assertEqual(despues["treasury_expense_total"], antes["treasury_expense_total"])
+        self.assertEqual(despues["treasury_expense_total"], Decimal("1000.00"))
+
+    def test_el_gasto_total_no_baja_mas_que_lo_atado(self):
+        # Debito de gasto con sobrante (300 + 500 de 1000): no se ata.
+        self._deuda("300.00", emision=_dia(1))
+        self._deuda("500.00", emision=_dia(2))
+        self._debito("1000.00", fecha=_dia(20), rubro=self.limpieza)
+        # Egreso de tesoreria que la factura consume entero: se ata.
+        exacta = self._deuda("400.00", proveedor=self.verduleria, emision=_dia(3))
+        self._debito(
+            "400.00",
+            fecha=_dia(21),
+            proveedor=self.verduleria,
+            clase=OTRO_EGRESO,
+            origen=EGRESO_TESORERIA,
+            rubro=self.limpieza,
+        )
+        antes = build_economic_period_snapshot(**AGOSTO_COMPLETO)
+        self.assertEqual(_gasto_total(antes), Decimal("2600.00"))
+        banco = self._banco()
+
+        regularizacion = self._aplicar()
+
+        atado = sum(
+            (f.saldo for f in regularizacion.filas if f.accion == Accion.A_ATAR_BANCO and f.pago_id), Decimal("0.00")
+        )
+        self.assertEqual(atado, Decimal("400.00"))
+        self.assertEqual(exacta.pagos.get().estado, PagoTesoreria.Estado.REGISTRADO)
+        despues = build_economic_period_snapshot(**AGOSTO_COMPLETO)
+        # Lo atado deja de contarse dos veces; nada mas.
+        self.assertEqual(_gasto_total(antes) - _gasto_total(despues), atado)
+        self.assertEqual(despues["treasury_expense_total"], Decimal("1000.00"))
+        self.assertEqual(despues["debt_period_total"], Decimal("1200.00"))
+        self.assertEqual(self._banco(), banco)
+
+    def test_un_debito_pendiente_de_imputar_no_se_ata_si_le_sobra(self):
+        deuda = self._deuda("600.00", emision=_dia(5))
+        debito = self._debito("1000.00", fecha=_dia(20))
+        # Junio: cargado suelto, sin rubro, sucursal ni periodo.
+        MovimientoBancario.objects.filter(pk=debito.pk).update(
+            rubro_operativo=None, sucursal_gasto=None, periodo_pago=None
+        )
+        antes = build_economic_period_snapshot(**AGOSTO_COMPLETO)
+        self.assertEqual(antes["treasury_unmapped_expenses_total"], Decimal("1000.00"))
+
+        regularizacion = self._aplicar()
+
+        self.assertEqual(self._por_deuda(regularizacion)[deuda.pk].accion, Accion.POSIBLE_PAGO_EN_GERAYSE)
+        self.assertEqual(PagoTesoreria.objects.count(), 0)
+        despues = build_economic_period_snapshot(**AGOSTO_COMPLETO)
+        # Sigue en la lista de pendientes de imputar, entero.
+        self.assertEqual(despues["treasury_unmapped_expenses_total"], Decimal("1000.00"))
+
+    def test_atar_con_sobrante_lo_acepta_y_lo_avisa(self):
+        deuda = self._deuda("600.00", emision=_dia(5))
+        debito = self._debito("1000.00", fecha=_dia(20), rubro=self.limpieza)
+
+        regularizacion = self._plan(atar_con_sobrante=True)
+        fila = self._por_deuda(regularizacion)[deuda.pk]
+
+        self.assertEqual(fila.accion, Accion.A_ATAR_BANCO)
+        self.assertIn("Con --atar-con-sobrante: los 400,00 que le sobran", fila.aviso)
+        self.assertEqual(
+            regularizacion.sobrantes_de_debitos(),
+            {
+                "debitos": 1,
+                "sobrante": Decimal("400.00"),
+                "debitos_de_gasto": 1,
+                "sobrante_de_gasto": Decimal("400.00"),
+            },
+        )
+        self.assertEqual(regularizacion.debitos_no_atados, [])
+
+        regularizacion.aplicar()
+
+        self.assertEqual(deuda.pagos.get().movimiento_bancario_id, debito.pk)
+        self.assertEqual(self._sin_asignar(debito), Decimal("400.00"))
+        # Es lo que se acepta con la opcion: el sobrante deja de contar.
+        self.assertEqual(build_economic_period_snapshot(**AGOSTO_COMPLETO)["treasury_expense_total"], Decimal("0.00"))
+        with self.assertRaisesMessage(Exception, "--atar-con-sobrante"):
+            self._regularizacion(atar_banco=False, atar_con_sobrante=True)
+
+    def test_si_una_factura_del_debito_falla_al_aplicar_no_se_ata_ninguna(self):
+        primera = self._deuda("600.00", emision=_dia(1))
+        segunda = self._deuda("400.00", emision=_dia(2))
+        debito = self._debito("1000.00", fecha=_dia(20), rubro=self.limpieza)
+        regularizacion = self._plan()
+        filas = self._por_deuda(regularizacion)
+        self.assertEqual({filas[d.pk].accion for d in (primera, segunda)}, {Accion.A_ATAR_BANCO})
+        # Entre el plan y la aplicacion le pagan una parte de la segunda.
+        register_cash_payment(payable=segunda, fecha_pago=AGOSTO, monto=Decimal("50.00"), actor=self.admin)
+        antes = build_economic_period_snapshot(**AGOSTO_COMPLETO)
+
+        regularizacion.aplicar()
+
+        self.assertEqual(filas[segunda.pk].accion, Accion.ERROR)
+        self.assertIn("El saldo cambio", filas[segunda.pk].resultado)
+        self.assertEqual(filas[primera.pk].accion, Accion.ERROR)
+        self.assertIn(f"la factura #{segunda.pk} del mismo debito no se pudo atar", filas[primera.pk].resultado)
+        self.assertIsNone(filas[primera.pk].pago_id)
+        self.assertEqual(primera.pagos.count(), 0)
+        debito.refresh_from_db()
+        self.assertEqual(debito.origen, MANUAL)
+        self.assertEqual(debito.rubro_operativo_id, self.limpieza.pk)
+        self.assertEqual(self._sin_asignar(debito), Decimal("1000.00"))
+        despues = build_economic_period_snapshot(**AGOSTO_COMPLETO)
+        self.assertEqual(despues["treasury_expense_total"], antes["treasury_expense_total"])
+
+    def test_al_aplicar_el_sobrante_se_verifica_con_el_debito_bloqueado(self):
+        deuda = self._deuda("1000.00", emision=_dia(5))
+        debito = self._debito("1000.00", fecha=_dia(20))
+        regularizacion = self._plan()
+        # El debito se corrigio despues del plan (por ejemplo, el importe).
+        MovimientoBancario.objects.filter(pk=debito.pk).update(monto=Decimal("1100.00"))
+
+        regularizacion.aplicar()
+
+        fila = self._por_deuda(regularizacion)[deuda.pk]
+        self.assertEqual(fila.accion, Accion.ERROR)
+        self.assertIn("le quedarian 100,00 sin asignar", fila.resultado)
+        self.assertEqual(PagoTesoreria.objects.count(), 0)
+
+    def test_plan_revisado_sin_una_fila_de_la_combinacion_no_ata_el_debito(self):
+        primera = self._deuda("600.00", emision=_dia(1))
+        segunda = self._deuda("400.00", emision=_dia(2))
+        debito = self._debito("1000.00", fecha=_dia(20))
+        sin_rubro = self._deuda("700.00", proveedor=self.verduleria, emision=_dia(3))
+        otro = self._debito("700.00", fecha=_dia(21), proveedor=self.verduleria)
+        with TemporaryDirectory() as carpeta:
+            ruta = Path(carpeta) / "plan.csv"
+            self._plan().escribir_informe(ruta)
+            filas = [f for f in self._leer_csv(ruta) if int(f["deuda_id"]) != segunda.pk]
+            self._escribir_csv(ruta, filas)
+            aprobadas, ataduras = leer_plan(ruta, EFECTIVO), leer_ataduras(ruta)
+        self.assertEqual(ataduras[primera.pk], (Decimal("600.00"), debito.pk))
+        self.assertEqual(ataduras[sin_rubro.pk], (Decimal("700.00"), otro.pk))
+        # Despues de la revision, la categoria de una factura queda sin rubro.
+        self._sin_rubro(sin_rubro)
+
+        regularizacion = self._plan()
+        regularizacion.restringir_a_plan(aprobadas, ataduras)
+        filas = self._por_deuda(regularizacion)
+
+        self.assertEqual(filas[primera.pk].accion, Accion.ERROR)
+        self.assertIn("le quedarian 400,00 sin asignar", filas[primera.pk].motivo)
+        self.assertEqual(filas[sin_rubro.pk].accion, Accion.ERROR)
+        self.assertIn("no tiene rubro", filas[sin_rubro.pk].motivo)
+        regularizacion.aplicar()
+        self.assertEqual(PagoTesoreria.objects.count(), 0)
+        # Con --atar-con-sobrante el plan sin la fila se acepta (la sin rubro no).
+        regularizacion = self._plan(atar_con_sobrante=True)
+        regularizacion.restringir_a_plan(aprobadas, ataduras)
+        regularizacion.aplicar()
+        filas = self._por_deuda(regularizacion)
+        self.assertEqual(primera.pagos.get().movimiento_bancario_id, debito.pk)
+        self.assertEqual(filas[sin_rubro.pk].accion, Accion.ERROR)
+        self.assertEqual(sin_rubro.pagos.count(), 0)
+
+    def test_categoria_sin_rubro_no_se_ata_a_un_debito_de_gasto(self):
+        deuda = self._deuda("1000.00", emision=_dia(5))
+        self._sin_rubro(deuda)
+        debito = self._debito("1000.00", fecha=_dia(20), rubro=self.limpieza)
+        # Y un debito pendiente de imputar con otra factura sin rubro.
+        pendiente_deuda = self._deuda("500.00", proveedor=self.verduleria, emision=_dia(6))
+        self._sin_rubro(pendiente_deuda)
+        pendiente = self._debito("500.00", fecha=_dia(21), proveedor=self.verduleria)
+        MovimientoBancario.objects.filter(pk=pendiente.pk).update(
+            rubro_operativo=None, sucursal_gasto=None, periodo_pago=None
+        )
+        antes = build_economic_period_snapshot(**AGOSTO_COMPLETO)
+        self.assertEqual(_gasto_total(antes), Decimal("1000.00"))
+
+        regularizacion = self._aplicar()
+        filas = self._por_deuda(regularizacion)
+
+        for sin_rubro, su_debito in ((deuda, debito), (pendiente_deuda, pendiente)):
+            self.assertEqual(filas[sin_rubro.pk].accion, Accion.POSIBLE_PAGO_EN_GERAYSE)
+            self.assertIn(f"el debito #{su_debito.pk} cuenta como gasto", filas[sin_rubro.pk].aviso)
+        self.assertEqual(regularizacion.sin_rubro_sin_atar, 2)
+        self.assertEqual(regularizacion.errores(), [])
+        self.assertEqual(PagoTesoreria.objects.count(), 0)
+        despues = build_economic_period_snapshot(**AGOSTO_COMPLETO)
+        self.assertEqual(_gasto_total(despues), _gasto_total(antes))
+        self.assertEqual(despues["treasury_unmapped_expenses_total"], antes["treasury_unmapped_expenses_total"])
+
+    def test_categoria_sin_rubro_se_ata_a_un_debito_que_ya_no_cuenta_como_gasto(self):
+        con_rubro = self._deuda("600.00", emision=_dia(1), concepto="Pagada a mano desde el debito")
+        debito = self._debito("1600.00", fecha=_dia(20), rubro=self.limpieza)
+        pay_debt_from_bank_movement(bank_movement=debito, payable=con_rubro, monto=Decimal("600.00"), actor=self.admin)
+        deuda = self._deuda("1000.00", emision=_dia(5))
+        self._sin_rubro(deuda)
+        antes = build_economic_period_snapshot(**AGOSTO_COMPLETO)
+
+        regularizacion = self._aplicar()
+
+        self.assertEqual(self._por_deuda(regularizacion)[deuda.pk].accion, Accion.A_ATAR_BANCO)
+        self.assertEqual(deuda.pagos.get().movimiento_bancario_id, debito.pk)
+        # El debito ya no contaba como gasto: la lectura no cambia.
+        self.assertEqual(_gasto_total(build_economic_period_snapshot(**AGOSTO_COMPLETO)), _gasto_total(antes))
+
+    def test_categoria_sin_rubro_al_aplicar_no_se_ata(self):
+        deuda = self._deuda("1000.00", emision=_dia(5))
+        debito = self._debito("1000.00", fecha=_dia(20), rubro=self.limpieza)
+        regularizacion = self._plan()
+        self.assertEqual(self._por_deuda(regularizacion)[deuda.pk].accion, Accion.A_ATAR_BANCO)
+        self._sin_rubro(deuda)
+        antes = build_economic_period_snapshot(**AGOSTO_COMPLETO)
+
+        regularizacion.aplicar()
+
+        fila = self._por_deuda(regularizacion)[deuda.pk]
+        self.assertEqual(fila.accion, Accion.ERROR)
+        self.assertIn("no tiene rubro", fila.resultado)
+        self.assertEqual(PagoTesoreria.objects.count(), 0)
+        debito.refresh_from_db()
+        self.assertEqual(debito.origen, MANUAL)
+        self.assertEqual(_gasto_total(build_economic_period_snapshot(**AGOSTO_COMPLETO)), _gasto_total(antes))
+
+
 class PlanRevisadoAtarTests(AtarBancoBase):
     def test_aplica_exactamente_las_ataduras_del_plan_y_verifica_bajo_lock(self):
         aprobada = self._deuda("1000.00", emision=_dia(1), concepto="Aprobada")
@@ -685,7 +952,7 @@ class ReversionAtarTests(AtarBancoBase):
     def test_si_el_debito_tiene_pagos_nuevos_se_desata_pero_no_se_toca_la_imputacion(self):
         deuda = self._deuda("1000.00", emision=_dia(1))
         debito = self._debito("1500.00", fecha=_dia(20), clase=OTRO_EGRESO, rubro=self.limpieza)
-        self._aplicar()
+        self._aplicar(atar_con_sobrante=True)
         nueva = self._deuda("500.00", proveedor=self.verduleria, emision=_dia(9))
         pay_debt_from_bank_movement(bank_movement=debito, payable=nueva, monto=Decimal("500.00"), actor=self.admin)
 
@@ -762,7 +1029,7 @@ class ConsolaAtarTests(AtarBancoBase):
 
     def test_simular_revisar_aplicar_y_revertir_por_consola(self):
         atada = self._deuda("1000.00", emision=_dia(5))
-        debito = self._debito("1500.00", fecha=_dia(20))
+        debito = self._debito("1000.00", fecha=_dia(20))
         en_efectivo = self._deuda("300.00", proveedor=self.verduleria)
         with TemporaryDirectory() as carpeta:
             plan = Path(carpeta) / "plan.csv"
@@ -774,10 +1041,9 @@ class ConsolaAtarTests(AtarBancoBase):
             self.assertIn("Por empresa y mes del pago", salida)
             self.assertIn("a atar al banco", salida)
             self.assertIn("999.700,00", salida)
-            self.assertIn("dejan de contar como gasto", salida)
             self.assertEqual(filas[atada.pk]["accion"], Accion.A_ATAR_BANCO)
             self.assertEqual(filas[atada.pk]["debito_id"], str(debito.pk))
-            self.assertEqual(filas[atada.pk]["importe_debito"], "1.500,00")
+            self.assertEqual(filas[atada.pk]["importe_debito"], "1.000,00")
             self.assertEqual(filas[atada.pk]["medio"], TRANSFERENCIA)
             self.assertEqual(filas[en_efectivo.pk]["accion"], Accion.A_REGULARIZAR)
 
@@ -802,8 +1068,38 @@ class ConsolaAtarTests(AtarBancoBase):
         self.assertIn("Ataduras al banco anuladas: 1 pagos en 1 debitos; 1 debitos volvieron", salida)
         atada.refresh_from_db()
         self.assertEqual(atada.estado, CuentaPorPagar.Estado.PENDIENTE)
-        self.assertEqual(self._sin_asignar(debito), Decimal("1500.00"))
+        self.assertEqual(self._sin_asignar(debito), Decimal("1000.00"))
         self.assertEqual(self._boveda(self.armadi), Decimal("1000000.00"))
+
+    def test_consola_avisa_los_debitos_de_gasto_que_no_se_atan(self):
+        self._deuda("600.00", emision=_dia(5))
+        self._debito("1000.00", fecha=_dia(20), rubro=self.limpieza)
+        sin_rubro = self._deuda("500.00", proveedor=self.verduleria, emision=_dia(6))
+        legacy = CategoriaCuentaPagar.objects.create(nombre="Legacy sin rubro", activo=True)
+        CuentaPorPagar.objects.filter(pk=sin_rubro.pk).update(categoria=legacy)
+        self._debito("500.00", fecha=_dia(21), proveedor=self.verduleria)
+
+        salida = self._run(usuario=self.admin.username, hasta="2026-09-23")
+
+        self.assertIn(
+            "1 debitos que cuentan como gasto (o estan pendientes de imputar) no se atan: les sobrarian 400,00",
+            salida,
+        )
+        self.assertIn("Sus 1 facturas (600,00) quedan como POSIBLE_PAGO_EN_GERAYSE", salida)
+        self.assertIn("1 facturas con categoria sin rubro no se atan a su debito de gasto", salida)
+        self.assertIn("POSIBLE_PAGO_EN_GERAYSE          2           1.100,00", salida)
+
+        salida = self._run(usuario=self.admin.username, hasta="2026-09-23", atar_con_sobrante=True)
+
+        self.assertIn("Con --atar-con-sobrante: un debito que cuenta como gasto se ata", salida)
+        self.assertIn("1 debitos atados quedan con importe sin asignar: 400,00", salida)
+        self.assertIn("sus 400,00 sobrantes dejan de contar como gasto", salida)
+        # La factura sin rubro tampoco se ata con la opcion.
+        self.assertIn("1 facturas con categoria sin rubro no se atan", salida)
+        self.assertEqual(PagoTesoreria.objects.count(), 0)
+        for opciones in ({"hasta": "2026-09-23", "sin_atar_banco": True}, {"revertir": LOTE}):
+            with self.assertRaisesMessage(CommandError, "--atar-con-sobrante"):
+                self._run(usuario=self.admin.username, atar_con_sobrante=True, **opciones)
 
     def test_sin_atar_banco_por_consola_y_sus_incompatibles(self):
         deuda = self._deuda("1000.00")

@@ -240,16 +240,28 @@ Last updated: 2026-10-13
     observaciones "Atado al debito #N del dd/mm/aaaa por la regularizacion <lote> (corte ..)".
     Las POSIBLE_PAGO que no se atan siguen excluidas; el resto va a efectivo como antes.
   - Aplicacion: primero ataduras, despues efectivo. Con `--plan` se atan EXACTAMENTE sus filas
-    A_ATAR_BANCO (al debito del CSV, aunque hoy el plan elija otro), una transaccion por fila
-    con debito y deuda bloqueados: mismo saldo, mismas exclusiones, mismo proveedor/empresa/
-    sucursal original, ventana y sin asignar suficiente; si no, ERROR y se saltea. Lo aprobado
-    en efectivo que hoy tiene debito para atar queda FUERA_DEL_PLAN.
+    A_ATAR_BANCO (al debito del CSV, aunque hoy el plan elija otro), una transaccion por
+    debito, con debito y deuda bloqueados: mismo saldo, mismas exclusiones, mismo proveedor/
+    empresa/sucursal original, ventana y sin asignar suficiente; si no, ERROR y se saltea. Lo
+    aprobado en efectivo que hoy tiene debito para atar queda FUERA_DEL_PLAN.
   - Servicio: `pay_debt_from_bank_movement` suma `medio_pago`, `token_alta` y
     `observacion_bancaria` (opcionales, sin cambio para pantallas e importador). Efecto
     economico verificado con test: al atar, el debito pasa a origen PAGO_TESORERIA y sale de
     `treasury_expense_total` (la factura ya lo cuenta); banco y saldo bancario sin cambios.
-    OJO: pasa ENTERO, asi que el sobrante de un debito imputado como gasto tambien deja de
-    contar (igual que pagar desde el movimiento en pantalla). La consola y el CSV lo avisan.
+  - Debitos de gasto (revision adversarial del 2026-10-13): el debito pasa ENTERO a
+    PAGO_TESORERIA (`link_payment_to_bank_movement`), asi que un debito MANUAL o
+    EGRESO_TESORERIA, imputado como gasto o pendiente de imputar, sale entero de la lectura
+    economica. Con sobrante, el gasto bajaba mas que lo atado (debito 1000 + factura 600:
+    gasto 1000 -> 600, y el sobrante tampoco quedaba en pendientes de imputar ni se podia
+    volver a imputar); con una factura de categoria sin rubro, el gasto desaparecia. Regla: a
+    un debito de gasto solo se le atan facturas con rubro y que lo consumen ENTERO (exacta,
+    combinacion o antiguedad que llega a cero), todas o ninguna en una transaccion (se
+    verifica en el plan, en `--plan` y bajo lock al aplicar). Si no, sus facturas quedan
+    POSIBLE_PAGO_EN_GERAYSE con el aviso (sobrante o "categoria sin rubro") y la consola los
+    resume. `--atar-con-sobrante` acepta el sobrante (como la pantalla); la factura sin rubro
+    no se ata ni con la opcion. Un debito ya atado a otras facturas (PAGO_TESORERIA) no cuenta
+    como gasto: se le atan facturas con sobrante o sin rubro sin cambiar la lectura. No se
+    toco el servicio. Test: el gasto total no baja mas que lo atado.
   - En `observacion_bancaria` del pago queda la imputacion previa del debito (origen, clase,
     proveedor, categoria, rubro, sucursal, periodo, pagos previos). `--revertir LOTE` anula
     tambien las ataduras (una transaccion por debito) y, si el debito tiene los mismos pagos
@@ -258,9 +270,10 @@ Last updated: 2026-10-13
     volver a dejar vacios rubro/sucursal/periodo de un historico sin imputar). Si tiene pagos
     nuevos, se desata igual y se avisa.
   - Consola: tabla por empresa y mes del pago con atado al banco, efectivo, caja fuerte al
-    cierre del mes hoy y proyectada (resta el efectivo acumulado); sobrante de debitos atados.
-  - Tests: `treasury/tests_regularizar_atar_banco.py` (32). `manage.py test treasury cashops
-    core`: 825 OK (4 skipped). Sin migraciones.
+    cierre del mes hoy y proyectada (resta el efectivo acumulado); sobrante de debitos atados;
+    debitos de gasto que no se atan por sobrante y facturas sin rubro que no se atan.
+  - Tests: `treasury/tests_regularizar_atar_banco.py` (43). `manage.py test treasury cashops
+    core`: 836 OK (4 skipped). Sin migraciones.
 
 ### Treasury Importacion de planillas de banco y efectivo central 2026-09-30
 

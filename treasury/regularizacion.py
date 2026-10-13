@@ -23,6 +23,11 @@ Modos (el comando `regularizar_deudas` es un envoltorio fino de este modulo):
   (lo cuenta la factura): asi no queda el gasto dos veces. El saldo del banco
   no cambia. La asignacion es determinista: primero el importe exacto, despues
   una combinacion exacta chica, despues por antiguedad, nunca parcial.
+  Como el debito pasa ENTERO, uno que hoy cuenta en la lectura economica
+  (imputado como gasto o pendiente de imputar) solo se ata si sus facturas lo
+  consumen entero y todas tienen rubro: si no, el sobrante o la factura sin
+  rubro dejarian de contar como gasto. Esas facturas quedan para revisar
+  (`atar_con_sobrante=True` acepta el sobrante, como la pantalla).
   Se ata antes de buscar el posible pago en efectivo ya cargado
   (POSIBLE_PAGO_EN_EFECTIVO): una factura atada no toca la caja fuerte, asi que
   solo las que quedan para efectivo compiten por los egresos de la boveda.
@@ -140,8 +145,10 @@ MEDIO_POR_CLASE = {
 # Hasta cuantas facturas consecutivas (por fecha) se prueban para sumar
 # exacto lo que le queda sin asignar a un debito.
 MAX_COMBINACION = 6
-# Debitos que hoy cuentan como gasto de tesoreria en la lectura economica si
-# tienen la imputacion completa (ver _mapped_bank_treasury_expenses).
+# Debitos que hoy cuentan en la lectura economica: como gasto de tesoreria si
+# tienen la imputacion completa (_mapped_bank_treasury_expenses) o como
+# pendientes de imputar si no (_pending_bank_treasury_expenses). Al atarlos
+# pasan enteros a PAGO_TESORERIA y salen de las dos.
 ORIGENES_DE_GASTO = (MovimientoBancario.Origen.MANUAL, MovimientoBancario.Origen.EGRESO_TESORERIA)
 PREFIJO_ATADURA = "Atado al debito #"
 PATRON_ATADURA = re.compile(r"^Atado al debito #(\d+) ")
@@ -317,19 +324,34 @@ class _Debito:
     empresa_id: int | None
     sucursal_id: int | None
     clase: str
+    # Cuenta como gasto de tesoreria (imputacion completa).
     imputado: bool
+    # Cuenta en la lectura economica: imputado o pendiente de imputar.
+    de_gasto: bool = False
     restante: Decimal = CERO
     atadas: list = field(default_factory=list)
+    # Facturas que el reparto por antiguedad le daria pero no le ata porque
+    # le sobraria importe (solo debitos de gasto, ver _asignar).
+    rechazadas: list = field(default_factory=list)
+    sobrante_rechazado: Decimal = CERO
 
     def __post_init__(self):
         self.restante = self.sin_asignar
 
-    def admite(self, fila: Fila) -> bool:
+    def alcanza(self, fila: Fila) -> bool:
         """La factura entra en la ventana del debito y en su sucursal."""
         deuda = fila.deuda
         if self.sucursal_id and deuda.sucursal_id != self.sucursal_id:
             return False
         return _en_ventana(deuda.fecha_emision, self.fecha)
+
+    def admite(self, fila: Fila) -> bool:
+        """El debito puede pagar la factura. Uno de gasto no paga facturas con
+        categoria sin rubro: al atarlo dejaria de contar y la factura tampoco
+        cuenta, asi que el gasto desapareceria de la lectura economica."""
+        if self.de_gasto and not fila.deuda.categoria.rubro_operativo_id:
+            return False
+        return self.alcanza(fila)
 
     def descripcion(self) -> str:
         return f"debito #{self.pk} del {self.fecha:%d/%m/%Y} por {dinero(self.monto)}"
@@ -339,15 +361,47 @@ def _en_ventana(fecha_emision: date, fecha_debito: date) -> bool:
     return fecha_emision - VENTANA_ANTES <= fecha_debito <= fecha_emision + VENTANA_DESPUES
 
 
+def _es_de_gasto(origen: str, clase: str) -> bool:
+    """Si el debito hoy entra en la lectura economica, como gasto o como
+    pendiente de imputar (misma regla de origen y clase que
+    _mapped_bank_treasury_expenses y _pending_bank_treasury_expenses)."""
+    return origen in ORIGENES_DE_GASTO and clase != MovimientoBancario.Clase.RETIRO
+
+
 def _cuenta_como_gasto(debito: dict) -> bool:
     """Si el debito hoy entra en la lectura economica como gasto de tesoreria
     (misma regla que _mapped_bank_treasury_expenses)."""
     return (
-        debito["origen"] in ORIGENES_DE_GASTO
-        and debito["clase"] != MovimientoBancario.Clase.RETIRO
+        _es_de_gasto(debito["origen"], debito["clase"])
         and bool(debito["rubro_operativo_id"])
         and bool(debito["sucursal_gasto_id"])
         and bool(debito["periodo_pago"])
+    )
+
+
+def _sobrante_del_grupo(debito: MovimientoBancario, filas) -> Decimal:
+    """Lo que le quedaria sin asignar al debito despues de atarle esas filas."""
+    return importe_sin_asignar_del_movimiento(debito) - sum((fila.saldo for fila in filas), CERO)
+
+
+def _mensaje_de_sobrante(debito: MovimientoBancario, sobrante: Decimal) -> str:
+    if sobrante < 0:
+        return (
+            f"Las facturas del plan suman {dinero(-sobrante)} mas de lo que le queda sin asignar al "
+            f"debito #{debito.pk}: no se paga parcial."
+        )
+    return (
+        f"El debito #{debito.pk} cuenta como gasto (o esta pendiente de imputar) y le quedarian "
+        f"{dinero(sobrante)} sin asignar, que dejarian de contar: se atan todas sus facturas o "
+        "ninguna (--atar-con-sobrante lo acepta)."
+    )
+
+
+def _mensaje_sin_rubro(debito_id: int) -> str:
+    return (
+        f"La categoria de la factura no tiene rubro y el debito #{debito_id} cuenta como gasto (o esta "
+        "pendiente de imputar): al atarla, ese gasto desapareceria de la lectura economica. Asignele "
+        "rubro a la categoria y vuelva a simular."
     )
 
 
@@ -414,6 +468,17 @@ class _FilaRechazada(Exception):
         self.accion = accion
         self.mensaje = mensaje
         self.pago_id = pago_id
+
+
+class _GrupoRechazado(Exception):
+    """No se ata ninguna factura del debito. `fila` es la que fallo (None si
+    fallo el grupo entero, por ejemplo por el sobrante)."""
+
+    def __init__(self, fila, accion: str, mensaje: str):
+        super().__init__(mensaje)
+        self.fila = fila
+        self.accion = accion
+        self.mensaje = mensaje
 
 
 def _mensaje_de_error(error) -> str:
@@ -715,11 +780,20 @@ class Regularizacion(_Informe):
         incluir_posibles_duplicadas: bool = False,
         incluir_posibles_pagos_en_efectivo: bool = False,
         atar_banco: bool = True,
+        atar_con_sobrante: bool = False,
     ):
         self.actor = actor
         self.interno = proveedor_interno is not None
         # El modo interno no paga con plata: no hay nada que atar al banco.
         self.atar_banco = atar_banco and not self.interno
+        if atar_con_sobrante and not self.atar_banco:
+            raise ValidationError(
+                "--atar-con-sobrante va solo con la atadura al banco del modo general."
+            )
+        # Acepta atar un debito de gasto aunque le sobre importe: el sobrante
+        # deja de contar como gasto (lo mismo que pagar desde el movimiento en
+        # la pantalla). Por defecto no.
+        self.atar_con_sobrante = atar_con_sobrante
         self.proveedor_interno = proveedor_interno
         if self.interno:
             # Con un filtro, lo que quedara afuera seguiria abierto con el
@@ -776,9 +850,14 @@ class Regularizacion(_Informe):
         self.ya_era_interno = False
         self.abiertas_despues: tuple[int, Decimal] | None = None
         self.categorias_sin_rubro = 0
+        # Facturas con categoria sin rubro que no se atan a su debito de gasto.
+        self.sin_rubro_sin_atar = 0
         # Lo que el plan sabe de cada debito atado, antes de aplicar: importe sin
         # asignar y si contaba como gasto (para el aviso del sobrante).
         self.debitos_atados: dict[int, dict] = {}
+        # Debitos de gasto que no se atan porque les sobraria importe, con las
+        # facturas que quedan para revisar.
+        self.debitos_no_atados: list[dict] = []
 
     @property
     def observaciones(self) -> str:
@@ -855,7 +934,9 @@ class Regularizacion(_Informe):
         )
         self.filas = []
         self.debitos_atados = {}
+        self.debitos_no_atados = []
         self.categorias_sin_rubro = 0
+        self.sin_rubro_sin_atar = 0
         for deuda in deudas:
             fila = Fila(
                 deuda_id=deuda.pk,
@@ -905,14 +986,23 @@ class Regularizacion(_Informe):
         for fila in self.filas:
             if fila.deuda is None or fila.deuda.categoria.rubro_operativo_id:
                 continue
-            if fila.accion == Accion.A_REGULARIZAR:
+            if fila.accion in (Accion.A_REGULARIZAR, Accion.A_ATAR_BANCO):
+                # Atada, solo a un debito que ya no contaba como gasto (ya
+                # estaba atado a otras facturas): la lectura no cambia.
                 self.categorias_sin_rubro += 1
                 fila.agregar_aviso("Categoria sin rubro: no cuenta como gasto en la lectura economica.")
-            elif fila.accion == Accion.A_ATAR_BANCO:
-                self.categorias_sin_rubro += 1
-                fila.agregar_aviso(
-                    "Categoria sin rubro: la factura no cuenta como gasto y el debito, al atarlo, tampoco."
+            elif fila.accion == Accion.POSIBLE_PAGO_EN_GERAYSE and self.atar_banco:
+                debito = next(
+                    (
+                        d
+                        for d in posibles.get(fila.deuda_id, [])
+                        if d.de_gasto and d.empresa_id and d.clase in CLASES_ATABLES and d.alcanza(fila)
+                    ),
+                    None,
                 )
+                if debito is not None:
+                    self.sin_rubro_sin_atar += 1
+                    fila.agregar_aviso(f"No se ata. {_mensaje_sin_rubro(debito.pk)}")
         if self.interno:
             self.filas.extend(self._avisos_del_modo_interno())
         empresas = {f.empresa_id for f in self.filas if f.accion == Accion.A_REGULARIZAR and f.empresa_id}
@@ -1153,6 +1243,7 @@ class Regularizacion(_Informe):
                     sucursal_id=debito["sucursal_gasto_id"],
                     clase=debito["clase"],
                     imputado=_cuenta_como_gasto(debito),
+                    de_gasto=_es_de_gasto(debito["origen"], debito["clase"]),
                 )
             )
         return debitos
@@ -1257,6 +1348,11 @@ class Regularizacion(_Informe):
         Por (proveedor, empresa), solo debitos de pago a terceros y de empresa
         conocida. Un debito con sucursal imputada solo paga facturas de esa
         sucursal. Ver _asignar para el orden.
+
+        Un debito de gasto (imputado o pendiente de imputar) pasa ENTERO a
+        PAGO_TESORERIA al atarlo: solo se ata si sus facturas lo consumen entero
+        y tienen rubro (salvo atar_con_sobrante). Las facturas que no se atan
+        por eso quedan POSIBLE_PAGO_EN_GERAYSE con el aviso.
         """
         candidatas = [
             fila
@@ -1285,11 +1381,15 @@ class Regularizacion(_Informe):
                 key=lambda f: (f.deuda.fecha_emision, f.deuda_id),
             )
             if facturas:
-                _asignar(debitos_por_grupo[clave], facturas)
+                _asignar(debitos_por_grupo[clave], facturas, con_sobrante=self.atar_con_sobrante)
         for debito in atables:
             if not debito.atadas:
                 continue
-            self.debitos_atados[debito.pk] = {"sin_asignar": debito.sin_asignar, "imputado": debito.imputado}
+            self.debitos_atados[debito.pk] = {
+                "sin_asignar": debito.sin_asignar,
+                "imputado": debito.imputado,
+                "de_gasto": debito.de_gasto,
+            }
             for fila, modo in debito.atadas:
                 self._marcar_atadura(fila, debito.pk, debito.fecha, debito.monto, debito.clase)
                 fila.motivo = _motivo_de_atadura(debito, modo)
@@ -1298,11 +1398,43 @@ class Regularizacion(_Informe):
                         "El debito estaba imputado como gasto: al atarlo deja de contar como gasto "
                         "(lo cuenta la factura)."
                     )
-                if debito.imputado and debito.restante > 0:
+                elif debito.de_gasto:
                     fila.agregar_aviso(
-                        f"Los {dinero(debito.restante)} que le sobran al debito tambien dejan de contar "
-                        "como gasto: revisar si pagan facturas que faltan cargar."
+                        "El debito estaba pendiente de imputar: al atarlo sale de esa lista (el gasto lo "
+                        "cuenta la factura)."
                     )
+                if debito.de_gasto and debito.restante > 0:
+                    # Solo con atar_con_sobrante.
+                    fila.agregar_aviso(
+                        f"Con --atar-con-sobrante: los {dinero(debito.restante)} que le sobran al debito "
+                        "tambien dejan de contar (como gasto o como pendiente de imputar): revisar si "
+                        "pagan facturas que faltan cargar."
+                    )
+        for debito in atables:
+            # Las que el reparto le daba y no se ataron (ni a este ni a otro). Las
+            # que tienen un mes cerrado posterior van a EXCLUIDA_MES_CERRADO
+            # (_excluir_por_cierre_posterior), no quedan para revisar.
+            pendientes = [
+                f
+                for f in debito.rechazadas
+                if f.accion == Accion.POSIBLE_PAGO_EN_GERAYSE and f.cierre_posterior is None
+            ]
+            if not pendientes:
+                continue
+            self.debitos_no_atados.append(
+                {
+                    "debito_id": debito.pk,
+                    "sobrante": debito.sobrante_rechazado,
+                    "facturas": len(pendientes),
+                    "importe": sum((f.saldo for f in pendientes), CERO),
+                }
+            )
+            for fila in pendientes:
+                fila.agregar_aviso(
+                    f"No se ata al {debito.descripcion()}: cuenta como gasto (o esta pendiente de imputar) "
+                    f"y le sobrarian {dinero(debito.sobrante_rechazado)} sin asignar, que dejarian de "
+                    "contar. Revisar si falta cargar una factura (--atar-con-sobrante lo acepta)."
+                )
 
     def _descartar_ataduras_previas_del_lote(self, facturas_por_grupo, debitos_por_grupo):
         """Una factura que este lote ya ato (y despues se anulo) no se vuelve a
@@ -1475,6 +1607,7 @@ class Regularizacion(_Informe):
                                 "periodo_pago": debito.periodo_pago,
                             }
                         ),
+                        "de_gasto": _es_de_gasto(debito.origen, debito.clase),
                     }
                 self._marcar_atadura(fila, debito.pk, debito.fecha, debito.monto, debito.clase)
                 continue
@@ -1500,6 +1633,7 @@ class Regularizacion(_Informe):
                     fila.plan = plan
             elif plan is not None:
                 fila.agregar_aviso(f"El plan revisado la aprobaba; hoy es {fila.accion}: no se aplica.")
+        self._revisar_ataduras_de_gasto(debitos_del_plan)
         faltantes = sorted((set(aprobadas) | set(ataduras)) - vistas)
         self.filas.extend(self._aprobadas_que_no_estan_abiertas(faltantes, aprobadas, ataduras))
 
@@ -1563,16 +1697,45 @@ class Regularizacion(_Informe):
                 )
         return filas
 
+    def _revisar_ataduras_de_gasto(self, debitos: dict):
+        """Con el plan revisado: lo que la simulacion ya puede decir de las
+        ataduras a debitos de gasto (tesoreria pudo sacar una fila de una
+        combinacion o cambiar el debito de una factura). Al aplicar se vuelve a
+        verificar con el debito bloqueado."""
+        por_debito = defaultdict(list)
+        for fila in self.filas:
+            if fila.accion == Accion.A_ATAR_BANCO:
+                por_debito[fila.debito_id].append(fila)
+        for debito_id, filas in por_debito.items():
+            debito = debitos.get(debito_id)
+            if debito is None or not _es_de_gasto(debito.origen, debito.clase):
+                continue
+            quedan = []
+            for fila in filas:
+                if fila.deuda.categoria.rubro_operativo_id:
+                    quedan.append(fila)
+                else:
+                    fila.accion, fila.motivo = Accion.ERROR, _mensaje_sin_rubro(debito.pk)
+            if self.atar_con_sobrante or not quedan:
+                continue
+            sobrante = _sobrante_del_grupo(debito, quedan)
+            if sobrante != 0:
+                for fila in quedan:
+                    fila.accion, fila.motivo = Accion.ERROR, _mensaje_de_sobrante(debito, sobrante)
+
     # --- aplicacion ---------------------------------------------------------
     def aplicar(self) -> list[Fila]:
-        """Primero las ataduras al banco y despues el efectivo, cada fila en su
-        propia transaccion. Una fila que falla se informa y la corrida sigue."""
+        """Primero las ataduras al banco (una transaccion por debito) y despues
+        el efectivo (una por deuda). Lo que falla se informa y la corrida sigue."""
         ataduras = sorted(
             (f for f in self.filas if f.accion == Accion.A_ATAR_BANCO),
             key=lambda f: (f.fecha_pago, f.debito_id, f.deuda.fecha_emision, f.deuda_id),
         )
+        por_debito = defaultdict(list)
         for fila in ataduras:
-            self._aplicar_con_informe(fila, self._atar_fila)
+            por_debito[fila.debito_id].append(fila)
+        for filas in por_debito.values():
+            self._atar_debito(filas)
         for fila in self.filas:
             if fila.accion == Accion.A_REGULARIZAR:
                 self._aplicar_con_informe(fila, self._aplicar_fila)
@@ -1627,13 +1790,17 @@ class Regularizacion(_Informe):
             fila.accion = Accion.ERROR
             fila.resultado = _mensaje_de_error(error)
         else:
-            fila.pago_id = pago.pk
-            fila.resultado = f"Pago #{pago.pk} ({pago.get_medio_pago_display()})"
-            if fila.debito_id:
-                # La atadura sigue A_ATAR_BANCO: el pago y el debito la distinguen.
-                fila.resultado += f" atado al debito #{fila.debito_id}"
-            else:
-                fila.accion = Accion.APLICADA
+            Regularizacion._informar_pago(fila, pago)
+
+    @staticmethod
+    def _informar_pago(fila: Fila, pago: PagoTesoreria):
+        fila.pago_id = pago.pk
+        fila.resultado = f"Pago #{pago.pk} ({pago.get_medio_pago_display()})"
+        if fila.debito_id:
+            # La atadura sigue A_ATAR_BANCO: el pago y el debito la distinguen.
+            fila.resultado += f" atado al debito #{fila.debito_id}"
+        else:
+            fila.accion = Accion.APLICADA
 
     def _verificar_deuda_bloqueada(self, deuda: CuentaPorPagar, fila: Fila, *, efectivo: bool) -> Decimal:
         """Lo que el plan excluyo puede haber cambiado en el medio: se vuelve a
@@ -1744,12 +1911,70 @@ class Regularizacion(_Informe):
                 actor=self.actor,
             )
 
-    def _atar_fila(self, fila: Fila) -> PagoTesoreria:
+    def _atar_debito(self, filas: list[Fila]):
+        """Ata a un debito sus facturas del plan, en una transaccion y con el
+        debito bloqueado.
+
+        Si el debito hoy cuenta en la lectura economica (MANUAL o
+        EGRESO_TESORERIA: imputado como gasto o pendiente de imputar), al atarlo
+        pasa ENTERO a PAGO_TESORERIA y sale de esa lectura; lo que cuenta desde
+        ahi son las facturas. Para que el gasto no baje mas que lo atado:
+        ninguna de sus facturas puede tener categoria sin rubro y, salvo
+        atar_con_sobrante, tienen que consumir todo lo que le queda sin asignar.
+        Se atan todas o ninguna: si una falla, el debito queda como estaba.
+
+        Un debito que ya no cuenta (PAGO_TESORERIA, atado a otras facturas) no
+        cambia la lectura al atarle mas: sus facturas se atan una por una.
+        """
+        debito_id = filas[0].debito_id
+        hechas = []
+        try:
+            with transaction.atomic():
+                debito = (
+                    MovimientoBancario.objects.select_for_update(of=("self",)).filter(pk=debito_id).first()
+                )
+                de_gasto = debito is not None and _es_de_gasto(debito.origen, debito.clase)
+                if not de_gasto or self.atar_con_sobrante:
+                    for fila in filas:
+                        self._aplicar_con_informe(fila, lambda f: self._atar_fila(f, exigir_rubro=de_gasto))
+                    return
+                sobrante = _sobrante_del_grupo(debito, filas)
+                if sobrante != 0:
+                    raise _GrupoRechazado(None, Accion.ERROR, _mensaje_de_sobrante(debito, sobrante))
+                for fila in filas:
+                    try:
+                        hechas.append((fila, self._atar_fila(fila, exigir_rubro=True)))
+                    except _FilaRechazada as rechazo:
+                        raise _GrupoRechazado(fila, rechazo.accion, rechazo.mensaje) from rechazo
+                    except Exception as error:  # noqa: BLE001 - deshace el debito entero y se informa
+                        raise _GrupoRechazado(fila, Accion.ERROR, _mensaje_de_error(error)) from error
+        except _GrupoRechazado as rechazo:
+            for fila in filas:
+                if fila is rechazo.fila:
+                    fila.accion, fila.resultado = rechazo.accion, rechazo.mensaje
+                    continue
+                fila.accion = Accion.ERROR
+                fila.resultado = (
+                    rechazo.mensaje
+                    if rechazo.fila is None
+                    else (
+                        f"No se ata: la factura #{rechazo.fila.deuda_id} del mismo debito no se pudo atar y "
+                        f"el debito #{debito_id} cuenta como gasto (o esta pendiente de imputar): se atan "
+                        "todas sus facturas o ninguna."
+                    )
+                )
+            return
+        for fila, pago in hechas:
+            self._informar_pago(fila, pago)
+
+    def _atar_fila(self, fila: Fila, *, exigir_rubro: bool = False) -> PagoTesoreria:
         """Ata la factura entera a su debito con pay_debt_from_bank_movement.
 
         Debito y deuda se bloquean en ese orden (el mismo que el reparto de una
         transferencia). En el pago queda la imputacion que tenia el debito antes
-        de atarlo, para que la reversion se la devuelva."""
+        de atarlo, para que la reversion se la devuelva. `exigir_rubro`: el
+        debito cuenta como gasto y una factura sin rubro haria desaparecer ese
+        gasto (ver _atar_debito)."""
         token = token_de_atadura(self.lote, fila.deuda_id, fila.debito_id)
         with transaction.atomic():
             debito = (
@@ -1791,6 +2016,8 @@ class Regularizacion(_Informe):
                     Accion.ERROR,
                     f"El debito #{debito.pk} ({debito.fecha:%d/%m/%Y}) esta fuera de la ventana de la factura.",
                 )
+            if exigir_rubro and not deuda.categoria.rubro_operativo_id:
+                raise _FilaRechazada(Accion.ERROR, _mensaje_sin_rubro(debito.pk))
             sin_asignar = importe_sin_asignar_del_movimiento(debito)
             if sin_asignar < monto:
                 raise _FilaRechazada(
@@ -1993,9 +2220,11 @@ class Regularizacion(_Informe):
     def sobrantes_de_debitos(self) -> dict:
         """Debitos que el plan ata y a los que les sobra importe sin asignar.
 
-        Al atar un debito, pasa entero a origen PAGO_TESORERIA: si estaba
-        imputado como gasto, su sobrante tambien deja de contar como gasto (es
-        el mismo comportamiento que pagar una factura desde el movimiento en la
+        Lo normal es un debito que ya estaba atado a otras facturas: no contaba
+        como gasto y su sobrante sigue disponible para atar. Al atar un debito
+        de gasto (imputado o pendiente de imputar), pasa entero a origen
+        PAGO_TESORERIA y su sobrante tambien deja de contar: eso solo pasa con
+        atar_con_sobrante (lo mismo que pagar desde el movimiento en la
         pantalla). Se informa para que tesoreria revise si ese sobrante paga
         facturas que faltan cargar.
         """
@@ -2014,14 +2243,14 @@ class Regularizacion(_Informe):
                 continue
             cantidad += 1
             total += sobrante
-            if info["imputado"]:
+            if info["de_gasto"]:
                 cantidad_gasto += 1
                 total_gasto += sobrante
         return {
             "debitos": cantidad,
             "sobrante": total,
-            "debitos_imputados": cantidad_gasto,
-            "sobrante_imputado": total_gasto,
+            "debitos_de_gasto": cantidad_gasto,
+            "sobrante_de_gasto": total_gasto,
         }
 
     def top_proveedores(self, cantidad: int = TOP_PROVEEDORES) -> list[tuple[str, int, Decimal]]:
@@ -2034,7 +2263,7 @@ class Regularizacion(_Informe):
         return [(nombre, cantidad_, total) for nombre, (cantidad_, total) in ordenados[:cantidad]]
 
 
-def _asignar(debitos: list, facturas: list):
+def _asignar(debitos: list, facturas: list, *, con_sobrante: bool = False):
     """Asignacion determinista de facturas ENTERAS a debitos, por fases:
 
     1. exacta: un debito cuyo sin asignar es igual al saldo de una factura de
@@ -2048,6 +2277,12 @@ def _asignar(debitos: list, facturas: list):
     exacto gana siempre. Nunca se paga parcial una factura: lo que sobra del
     debito queda sin asignar. Debitos por (fecha, id); facturas por (fecha de
     emision, id): la misma base da siempre el mismo plan.
+
+    Un debito de gasto pasa entero a PAGO_TESORERIA al atarlo, asi que no
+    puede quedar con sobrante (dejaria de contar como gasto): las fases 1 y 2
+    lo consumen entero por definicion, y la 3 solo vale si llega a cero. Si no,
+    no se le ata nada y esas facturas quedan libres para los debitos que
+    siguen (`rechazadas`, para el aviso). `con_sobrante` acepta el sobrante.
     """
     debitos = sorted(debitos, key=lambda d: (d.fecha, d.pk))
     atadas = set()
@@ -2073,11 +2308,21 @@ def _asignar(debitos: list, facturas: list):
     for debito in debitos:
         if debito.atadas:
             continue
+        elegidas, restante = [], debito.restante
         for fila in elegibles(debito):
-            if debito.restante <= 0:
+            if restante <= 0:
                 break
-            if fila.saldo <= debito.restante:
-                atar(debito, fila, "antiguedad")
+            if fila.saldo <= restante:
+                elegidas.append(fila)
+                restante -= fila.saldo
+        if not elegidas:
+            continue
+        if restante > 0 and debito.de_gasto and not con_sobrante:
+            debito.rechazadas = elegidas
+            debito.sobrante_rechazado = restante
+            continue
+        for fila in elegidas:
+            atar(debito, fila, "antiguedad")
 
 
 def _combinacion_exacta(candidatas: list, objetivo: Decimal) -> list:

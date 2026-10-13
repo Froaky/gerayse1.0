@@ -359,6 +359,11 @@ Criterios:
   una combinacion exacta chica, despues por antiguedad; nunca parcial): no sale
   plata de la caja fuerte, el banco no cambia y el debito deja de contar como
   gasto porque lo cuenta la factura
+- un debito que cuenta como gasto (o esta pendiente de imputar) solo se ata si
+  sus facturas lo consumen entero y tienen rubro: el gasto del resultado
+  economico nunca baja mas que lo atado. Si le sobraria importe, o la factura
+  tiene una categoria sin rubro, la factura queda para revisar con el aviso
+  (`--atar-con-sobrante` acepta el sobrante, como al pagar desde el movimiento)
 - antes de aplicar se ve, por empresa y mes, cuanto se ata al banco, cuanto va
   a efectivo y la caja fuerte proyectada al cierre de cada mes
 - revertir un lote tambien desata los debitos, que vuelven a quedar sin asignar
