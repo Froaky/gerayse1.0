@@ -51,8 +51,26 @@ Last updated: 2026-10-13
     `templates/treasury/dashboard.html`, migracion 0037,
     `treasury/tests_pago_sin_movimiento.py` (nuevo, 44 tests).
   - Pendiente (slices siguientes): comando `regularizar_deudas` con modo interno (slice 2),
-    alta automatica de INTERNO para proveedores es_interno (slice 3) y REGULARIZACION
-    reemplazable por el pago real (slice 4, obligatorio ANTES de correr el comando).
+    alta automatica de INTERNO para proveedores es_interno (slice 3).
+- CAMBIO 2026-10-13 (Tais): Maria ya cargo el banco de todos esos meses atando pagos a
+  facturas; lo que no se pago por banco se pago en EFECTIVO desde la caja fuerte (por eso
+  la boveda da de mas). El modo general del comando registra pagos EFECTIVO reales (con su
+  EGRESO_PAGO), no REGULARIZACION. REGULARIZACION queda DEFINIDO en el modelo pero SIN USO;
+  el reemplazo automatico de la regularizacion por el pago real (D3) quedo cancelado.
+- SLICE 4 reducido (pago real sobre deuda cancelada sin movimiento):
+  - `services._ensure_not_settled_without_funds`: un pago con fondos sobre una deuda PAGADA
+    con algun pago REGISTRADO sin movimiento se rechaza con "La deuda ya esta cancelada sin
+    movimiento de fondos (proveedor interno) y no admite un pago real. Si corresponde
+    pagarla, anule primero esa cancelacion desde el detalle del pago." Corre en
+    `register_payment` con la deuda bloqueada (cubre transferencia, cheque, ECHEQ,
+    efectivo, pago por proveedor y deudas leidas antes de la cancelacion) y al inicio de
+    `pay_debt_from_bank_movement` (antes decia "le quedan $ 0,00"). El reparto y el pago
+    por proveedor siguen todo o nada. No hay reemplazo automatico: se anula a mano y se paga.
+  - Filtro del listado de pagos: ofrece INTERNO; REGULARIZACION solo si existe alguno
+    cargado (para no esconder nada). Ningun formulario de alta lo ofrece; un test barre las
+    opciones fijas de todos los formularios de `treasury` y `cashops`.
+  - Tests: 15 nuevos en `treasury/tests_pago_sin_movimiento.py` (59 en el modulo).
+    `manage.py test treasury cashops core`: 733 OK (4 skipped); suite completa 783 OK.
 
 ### Treasury Importacion de planillas de banco y efectivo central 2026-09-30
 

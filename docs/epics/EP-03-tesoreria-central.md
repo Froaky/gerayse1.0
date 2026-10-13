@@ -345,13 +345,18 @@ Criterios:
 - el listado de pagos muestra por defecto solo lo que movio plata; las
   cancelaciones se ven filtrando por su medio
 - no aparecen en ningun formulario de alta de pagos
+- un pago con plata sobre una deuda ya cancelada sin movimiento se rechaza con
+  un mensaje que dice que hay que anular primero esa cancelacion
 - excluidos: ARCA/AFIP/impuestos, sueldos y cargas sociales, deudas con
   compromiso especial
 
-Estado: slice 1 (medios sin movimiento y lecturas) hecho en la rama
-`feat/regularizar-deudas`. Faltan el comando de regularizacion, el alta
-automatica del proveedor interno y que la regularizacion se reemplace por el
-pago real cuando este se cargue.
+Estado: slice 1 (medios sin movimiento y lecturas) y slice 4 reducido (rechazo
+claro del pago real sobre una deuda cancelada sin movimiento) hechos en la rama
+`feat/regularizar-deudas`. Faltan el comando de regularizacion y el alta
+automatica del proveedor interno. Por la aclaracion de tesoreria del
+2026-10-13, lo no pagado por banco se registra como pago en efectivo:
+REGULARIZACION queda definido pero sin uso y no se reemplaza solo por el pago
+real.
 
 ## Orden tecnico sugerido
 
