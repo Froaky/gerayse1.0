@@ -46,7 +46,7 @@ TOTAL_BG = colors.HexColor("#e4f1e9")
 GROUP_BG = colors.HexColor("#f0f3f1")
 
 MARGIN_X = 16 * mm
-MARGIN_TOP = 30 * mm
+MARGIN_TOP = 32 * mm
 MARGIN_BOTTOM = 16 * mm
 BODY_FONT = "Helvetica"
 BOLD_FONT = "Helvetica-Bold"
@@ -85,15 +85,47 @@ def format_value(value: Value) -> str:
     return str(value)
 
 
+HEADER_SEP = "   ·   "
+TITLE_FONT = "Times-Bold"
+TITLE_SIZE = 12
+DETAIL_SIZE = 8
+
+
+def _header_bits(doc: ReportDocument) -> tuple[list[str], list[str]]:
+    """(quien, cuando) de la linea de detalle: CUIT y alcance; periodo y emision."""
+    quien = [bit for bit in (f"CUIT {doc.cuit}" if doc.cuit else None, doc.alcance_label) if bit]
+    cuando = [bit for bit in (doc.periodo_label or None, f"Emitido {doc.emitido_label}") if bit]
+    return quien, cuando
+
+
 def header_lines(doc: ReportDocument) -> tuple[str, str, str]:
     """(razon social, titulo, linea de detalle) del encabezado de cada pagina."""
-    bits = [
-        f"CUIT {doc.cuit}" if doc.cuit else None,
-        doc.alcance_label,
-        doc.periodo_label or None,
-        f"Emitido {doc.emitido_label}",
-    ]
-    return doc.razon_social, doc.titulo, "   ·   ".join(bit for bit in bits if bit)
+    quien, cuando = _header_bits(doc)
+    return doc.razon_social, doc.titulo, HEADER_SEP.join(quien + cuando)
+
+
+def _clip(text: str, font: str, size: float, width: float) -> str:
+    if stringWidth(text, font, size) <= width:
+        return text
+    while text and stringWidth(text + "…", font, size) > width:
+        text = text[:-1]
+    return text.rstrip() + "…"
+
+
+def header_layout(doc: ReportDocument, width: float) -> tuple[str, float, list[str]]:
+    """Encabezado que entra en `width`: (razon social, su tamano de letra, lineas
+    de detalle). La razon social se achica (y en ultimo caso se corta) para no
+    pisar el titulo; el detalle pasa a dos lineas si no entra en una."""
+    room = width - stringWidth(doc.titulo, TITLE_FONT, TITLE_SIZE) - 12
+    size = 11
+    while size > 8 and stringWidth(doc.razon_social, BOLD_FONT, size) > room:
+        size -= 0.5
+    razon_social = _clip(doc.razon_social, BOLD_FONT, size, room)
+    quien, cuando = _header_bits(doc)
+    una = HEADER_SEP.join(quien + cuando)
+    if stringWidth(una, BODY_FONT, DETAIL_SIZE) <= width:
+        return razon_social, size, [una]
+    return razon_social, size, [_clip(HEADER_SEP.join(part), BODY_FONT, DETAIL_SIZE, width) for part in (quien, cuando)]
 
 
 def footer_text(doc: ReportDocument) -> str:
@@ -141,21 +173,25 @@ def _draw_page_frame(canv, _doc):
     report = getattr(canv, "_report_doc", None)
     if report is None:
         return
-    razon_social, titulo, detalle = header_lines(report)
+    width = A4[0] - 2 * MARGIN_X
+    razon_social, size, detalle = header_layout(report, width)
     top = A4[1] - 14 * mm
     canv.saveState()
     canv.setFillColor(INK)
-    canv.rect(MARGIN_X, top + 2 * mm, A4[0] - 2 * MARGIN_X, 1.2 * mm, stroke=0, fill=1)
-    canv.setFont(BOLD_FONT, 11)
+    canv.rect(MARGIN_X, top + 2 * mm, width, 1.2 * mm, stroke=0, fill=1)
+    canv.setFont(BOLD_FONT, size)
     canv.drawString(MARGIN_X, top - 4 * mm, razon_social)
     canv.setFillColor(GREEN)
-    canv.setFont("Times-Bold", 12)
-    canv.drawRightString(A4[0] - MARGIN_X, top - 4 * mm, titulo)
+    canv.setFont(TITLE_FONT, TITLE_SIZE)
+    canv.drawRightString(A4[0] - MARGIN_X, top - 4 * mm, report.titulo)
     canv.setFillColor(MUTED)
-    canv.setFont(BODY_FONT, 8)
-    canv.drawString(MARGIN_X, top - 9.5 * mm, detalle)
+    canv.setFont(BODY_FONT, DETAIL_SIZE)
+    y = top - 9.5 * mm
+    for linea in detalle:
+        canv.drawString(MARGIN_X, y, linea)
+        y -= 3.8 * mm
     canv.setStrokeColor(LINE)
-    canv.line(MARGIN_X, top - 12 * mm, A4[0] - MARGIN_X, top - 12 * mm)
+    canv.line(MARGIN_X, y + 1.3 * mm, A4[0] - MARGIN_X, y + 1.3 * mm)
     canv.setFont(BODY_FONT, 7.5)
     canv.drawString(MARGIN_X, 9 * mm, footer_text(report))
     canv.restoreState()

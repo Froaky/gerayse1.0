@@ -11,7 +11,20 @@ from django.utils import timezone
 from cashops.models import Empresa, Sucursal
 from treasury.reportes.alcance import ReportScope, nombre_mes, rango_de_meses
 from treasury.reportes.documento import Kpi, NoteBlock, Pct, ReportDocument, TableBlock
-from treasury.reportes.pdf import _label_span_end, build_story, format_value, header_lines, render_report_pdf
+from reportlab.pdfbase.pdfmetrics import stringWidth
+
+from treasury.reportes.pdf import (
+    BODY_FONT,
+    BOLD_FONT,
+    TITLE_FONT,
+    TITLE_SIZE,
+    _label_span_end,
+    build_story,
+    format_value,
+    header_layout,
+    header_lines,
+    render_report_pdf,
+)
 
 
 def _pages(pdf: bytes) -> int:
@@ -124,6 +137,11 @@ class ReportScopeTests(SimpleTestCase):
         self.assertEqual(rango_de_meses(date(2026, 8, 15), date(2026, 10, 1), hoy=hoy), (date(2026, 8, 1), date(2026, 10, 13)))
         self.assertEqual(rango_de_meses(date(2026, 2, 1), date(2026, 2, 1), hoy=hoy), (date(2026, 2, 1), date(2026, 2, 28)))
 
+    def test_month_range_never_ends_in_the_future(self):
+        # El form ya rechaza meses futuros; el rango igual nunca da un corte futuro.
+        hoy = date(2026, 10, 13)
+        self.assertEqual(rango_de_meses(date(2026, 10, 1), date(2026, 12, 1), hoy=hoy), (date(2026, 10, 1), hoy))
+
     def test_month_name(self):
         self.assertEqual(nombre_mes(date(2026, 9, 1)), "Septiembre 2026")
 
@@ -193,3 +211,33 @@ class LabelSpanTests(SimpleTestCase):
         # "Pagado" vacio en el subtotal: es numerica, el rotulo no la ocupa.
         self.assertEqual(_label_span_end(["Total", "", "$ 5,00"], frozenset({1, 2})), 0)
         self.assertEqual(_label_span_end(["Total", "$ 5,00"], frozenset({1})), 0)
+
+
+class HeaderLayoutTests(SimpleTestCase):
+    WIDTH = 505
+
+    def test_short_header_stays_in_one_line(self):
+        razon, size, lineas = header_layout(_doc(), self.WIDTH)
+        self.assertEqual((razon, size), ("ARMADI SRL", 11))
+        self.assertEqual(len(lineas), 1)
+
+    def test_long_detail_splits_in_two_lines_that_fit(self):
+        # Peor caso real: desglose con filtro de meses, CUIT y empresa de sucursal unica.
+        doc = _doc(
+            titulo="Desglose de deudas",
+            alcance_label="Sucursal Estación Belgrano Norte (única de la empresa)",
+            periodo_label="Deuda abierta al 13/10/2026 · períodos 07/2026 a 09/2026",
+        )
+        _, _, lineas = header_layout(doc, self.WIDTH)
+        self.assertEqual(len(lineas), 2)
+        self.assertTrue(lineas[0].startswith("CUIT 30-11111111-1"))
+        self.assertIn("Emitido 13/10/2026 11:40", lineas[1])
+        for linea in lineas:
+            self.assertLessEqual(stringWidth(linea, BODY_FONT, 8), self.WIDTH)
+
+    def test_long_company_name_never_overlaps_the_title(self):
+        doc = _doc(razon_social="SOCIEDAD ANÓNIMA DE GASTRONOMÍA Y PANADERÍA DEL CENTRO Y ALREDEDORES SRL")
+        razon, size, _ = header_layout(doc, self.WIDTH)
+        room = self.WIDTH - stringWidth(doc.titulo, TITLE_FONT, TITLE_SIZE) - 12
+        self.assertLess(size, 11)
+        self.assertLessEqual(stringWidth(razon, BOLD_FONT, size), room)

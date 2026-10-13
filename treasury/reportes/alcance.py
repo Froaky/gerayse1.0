@@ -48,9 +48,8 @@ def rango_de_meses(mes_desde: date, mes_hasta: date, *, hoy: date | None = None)
     date_from = mes_desde.replace(day=1)
     ultimo = calendar.monthrange(mes_hasta.year, mes_hasta.month)[1]
     date_to = mes_hasta.replace(day=ultimo)
-    if date_to > hoy >= mes_hasta.replace(day=1):
-        date_to = hoy
-    return date_from, date_to
+    # El form ya rechaza meses futuros; esto es la defensa: nunca un corte futuro.
+    return date_from, min(date_to, hoy)
 
 
 @dataclass(frozen=True)

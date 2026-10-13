@@ -69,9 +69,6 @@ NOTA_OBJETIVOS_GENERAL = (
     "En el reporte general solo se comparan objetivos globales. "
     "Los objetivos propios de cada sucursal se aplican en el reporte de esa sucursal."
 )
-NOTA_OBJETIVOS_SUCURSAL_UNICA = (
-    "En este reporte solo se comparan objetivos globales; los objetivos propios de la sucursal no se aplican."
-)
 NOTA_SOLO_VENTAS = (
     "No se listan los rubros que en el período solo tuvieron ventas, sin gasto ni objetivo; "
     "esas ventas sí cuentan en el total de ventas."
@@ -598,14 +595,32 @@ class SituacionEconomicaNotasTests(SituacionEconomicaFixtureMixin, TestCase):
             doc.notes,
         )
 
-    def test_empresa_de_una_sola_sucursal_no_remite_a_otro_reporte(self):
-        # Con una sola sucursal activa el form solo ofrece el general.
-        self._venta(self._caja(self.vivre), Decimal("400.00"), self.almacen)
+    def test_empresa_de_una_sola_sucursal_se_lee_por_esa_sucursal(self):
+        # Con una sola sucursal (y ninguna cerrada) el form solo ofrece el general,
+        # rotulado con ella. Se lee por la sucursal para que aplique sus objetivos
+        # propios: en el general no se comparan y no hay otro reporte donde verlos.
+        caja = self._caja(self.vivre)
+        self._venta(caja, Decimal("400.00"), self.almacen)
+        self._gasto(caja, Decimal("60.00"), self.almacen)
+        ObjetivoRubroEconomico.objects.create(
+            rubro_operativo=self.almacen,
+            sucursal=self.vivre,
+            porcentaje_objetivo=Decimal("10.00"),
+            vigencia_desde=date(2026, 1, 1),
+            creado_por=self.admin,
+        )
 
-        doc, _ = self._leer(empresa=self.otra_empresa, sucursal_unica=self.vivre)
+        scope = self._scope(empresa=self.otra_empresa, sucursal_unica=self.vivre)
+        doc = build_situacion_economica(scope)
+        por_sucursal = build_economic_period_snapshot(
+            date_from=scope.date_from, date_to=scope.date_to, sucursal=self.vivre, empresa_ids=scope.empresa_ids
+        )
 
         self.assertEqual(doc.alcance_label, "Sucursal Vivre (única de la empresa)")
-        self.assertIn(NOTA_OBJETIVOS_SUCURSAL_UNICA, doc.notes)
+        self.assertTrue(por_sucursal["branch_objectives_enabled"])
+        self.assertEqual(doc.kpi("Ventas").value, por_sucursal["sales_total"])
+        self.assertEqual(doc.kpi("Objetivo").value, por_sucursal["objective_total"])
+        self.assertEqual(doc.kpi("Objetivo").value, Decimal("40.00"))
         self.assertNotIn(NOTA_OBJETIVOS_GENERAL, doc.notes)
 
 

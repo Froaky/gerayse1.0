@@ -189,6 +189,65 @@ class ReportesFormularioTests(ReportesVistasBase):
         response = self._get_pdf("desglose-deudas", mes_hasta=None)
         self.assertRedirects(response, reverse("treasury:reportes"), fetch_redirect_response=False)
 
+    def _mes(self, meses):
+        anio, mes = divmod(self.hoy.year * 12 + self.hoy.month - 1 + meses, 12)
+        return f"{anio:04d}-{mes + 1:02d}"
+
+    def test_mes_hasta_futuro_vuelve_con_error(self):
+        # Sin tope, la situacion financiera tomaba de corte una fecha futura.
+        for slug in ("situacion-economica", "situacion-financiera"):
+            with self.subTest(slug=slug):
+                response = self._get_pdf(slug, mes_desde=self.mes, mes_hasta=self._mes(1))
+                self.assertRedirects(response, reverse("treasury:reportes"), fetch_redirect_response=False)
+
+    def test_anios_fuera_de_rango_no_rompen(self):
+        casos = (
+            ("situacion-economica", {"mes_hasta": "9999-12"}),
+            ("situacion-financiera", {"mes_hasta": "9999-12"}),
+            ("desglose-deudas", {"mes_desde": self.mes, "mes_hasta": "9999-12"}),
+            ("situacion-economica", {"mes_desde": "1999-12"}),
+            ("desglose-deudas", {"mes_desde": "0001-01", "mes_hasta": self.mes}),
+        )
+        for slug, params in casos:
+            with self.subTest(slug=slug, params=params):
+                response = self._get_pdf(slug, **params)
+                self.assertRedirects(response, reverse("treasury:reportes"), fetch_redirect_response=False)
+
+    def test_desglose_deja_filtrar_hasta_el_anio_que_viene(self):
+        response = self._get_pdf("desglose-deudas", mes_desde=self.mes, mes_hasta=f"{self.hoy.year + 1}-12")
+        self.assertEqual(response.status_code, 200)
+        response = self._get_pdf("desglose-deudas", mes_desde=self.mes, mes_hasta=f"{self.hoy.year + 2}-01")
+        self.assertRedirects(response, reverse("treasury:reportes"), fetch_redirect_response=False)
+
+    def test_los_meses_tienen_tope_en_el_selector(self):
+        form = ReportFilterForm(empresas=[self.armadi])
+        self.assertEqual(form.fields["mes_hasta"].widget.attrs["max"], self.mes)
+        self.assertEqual(form.fields["mes_desde"].widget.attrs["min"], "2000-01")
+        desglose = ReportFilterForm(empresas=[self.armadi], usa_periodo=False)
+        self.assertEqual(desglose.fields["mes_hasta"].widget.attrs["max"], f"{self.hoy.year + 1}-12")
+
+    def test_sucursal_cerrada_impide_rotular_como_unica(self):
+        # El general suma tambien la sucursal cerrada: no puede decir "unica".
+        Sucursal.objects.create(
+            nombre="Vivre vieja", codigo="VIV2", razon_social="MAPOGO SRL", empresa=self.mapogo, activa=False
+        )
+        form = ReportFilterForm(empresas=[self.mapogo])
+        self.assertEqual(
+            form.fields["alcance"].choices,
+            [
+                (f"e{self.mapogo.pk}", "General (todas las sucursales)"),
+                (f"t{self.mapogo.pk}", "General y cada sucursal (un solo PDF)"),
+                (f"s{self.vivre.pk}", "Sucursal Vivre"),
+            ],
+        )
+        form = ReportFilterForm(
+            {"alcance": f"e{self.mapogo.pk}", "mes_desde": self.mes, "mes_hasta": self.mes}, empresas=[self.mapogo]
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        (scope,) = form.build_scopes()
+        self.assertIsNone(scope.sucursal_unica)
+        self.assertEqual(scope.alcance_label, "General (todas las sucursales)")
+
     def test_opciones_de_alcance_por_empresa(self):
         form = ReportFilterForm(empresas=[self.armadi, self.mapogo])
         grupos = dict(form.fields["alcance"].choices)

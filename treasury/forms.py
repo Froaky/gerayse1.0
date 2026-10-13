@@ -350,6 +350,8 @@ class ReportFilterForm(TreasuryStyledFormMixin, forms.Form):
     """
 
     FUERA_DE_ALCANCE = "fuera_de_alcance"
+    # Antes no hay datos, y un anio enorme rompe la aritmetica de fechas de las lecturas.
+    PRIMER_ANIO = 2000
 
     alcance = forms.ChoiceField(label="Empresa y alcance")
     mes_desde = forms.DateField(
@@ -374,10 +376,18 @@ class ReportFilterForm(TreasuryStyledFormMixin, forms.Form):
             )
             for empresa_pk in self.empresas
         }
+        # "Unica" solo si la empresa no tiene otras sucursales, ni cerradas: el general
+        # suma todas, y el rotulo no puede prometer un alcance menor al que suma.
+        self.sucursal_unica = {
+            empresa_pk: activas[0]
+            for empresa_pk, activas in self.sucursales_activas.items()
+            if len(activas) == 1
+            and not Sucursal.objects.filter(empresa_id=empresa_pk).exclude(pk=activas[0].pk).exists()
+        }
         grupos = []
         for empresa in sorted(self.empresas.values(), key=lambda item: item.nombre):
             sucursales = self.sucursales_activas[empresa.pk]
-            if len(sucursales) == 1:
+            if empresa.pk in self.sucursal_unica:
                 opciones = [(f"e{empresa.pk}", f"General · {sucursales[0].nombre} (única sucursal)")]
             else:
                 opciones = [(f"e{empresa.pk}", "General (todas las sucursales)")]
@@ -386,21 +396,27 @@ class ReportFilterForm(TreasuryStyledFormMixin, forms.Form):
                 opciones += [(f"s{sucursal.pk}", f"Sucursal {sucursal.nombre}") for sucursal in sucursales]
             grupos.append((empresa.nombre, opciones))
         self.fields["alcance"].choices = grupos[0][1] if len(grupos) == 1 else grupos
+        mes_actual = self.hoy.replace(day=1)
+        minimo = f"{self.PRIMER_ANIO}-01"
+        self.fields["mes_desde"].widget.attrs.update(min=minimo, max=f"{mes_actual:%Y-%m}")
         if usa_periodo:
-            mes_actual = self.hoy.replace(day=1)
             self.fields["mes_desde"].initial = mes_actual
             self.fields["mes_hasta"].initial = mes_actual
+            self.fields["mes_hasta"].widget.attrs.update(min=minimo, max=f"{mes_actual:%Y-%m}")
         else:
             self.fields["mes_desde"].required = False
             self.fields["mes_hasta"].required = False
             self.fields["mes_desde"].label = "Desde (opcional)"
             self.fields["mes_hasta"].label = "Hasta (opcional)"
+            # Una deuda puede estar imputada a un mes que todavia no llego (un alquiler
+            # cargado por adelantado): el desglose deja filtrar hasta el anio que viene.
+            self.fields["mes_hasta"].widget.attrs.update(min=minimo, max=f"{self.hoy.year + 1}-12")
         self._apply_input_classes()
 
     def clean_alcance(self):
-        # ChoiceField ya rechaza valores que no estan entre las opciones. Igual se
-        # marca con un codigo propio para que la vista responda 404: una sucursal o
-        # empresa ajena por URL no tiene que caer en silencio al general.
+        # ChoiceField ya rechaza lo que no esta entre las opciones (la vista responde
+        # 404 con fuera_de_alcance()). Esto es la defensa por si las opciones y los
+        # diccionarios dejaran de coincidir: nunca caer en silencio al general.
         valor = self.cleaned_data["alcance"]
         modo, pk = valor[:1], valor[1:]
         if modo == "s":
@@ -416,13 +432,22 @@ class ReportFilterForm(TreasuryStyledFormMixin, forms.Form):
         cleaned_data = super().clean()
         mes_desde = cleaned_data.get("mes_desde")
         mes_hasta = cleaned_data.get("mes_hasta")
+        mes_actual = self.hoy.replace(day=1)
         if not self.usa_periodo and bool(mes_desde) != bool(mes_hasta):
             raise forms.ValidationError("Para filtrar por período completá los dos meses, o dejá los dos vacíos.")
+        if any(mes and mes.year < self.PRIMER_ANIO for mes in (mes_desde, mes_hasta)):
+            raise forms.ValidationError(f"El período no puede empezar antes de {self.PRIMER_ANIO}.")
         if mes_desde and mes_hasta:
             if mes_hasta < mes_desde:
                 raise forms.ValidationError("El mes hasta no puede ser anterior al mes desde.")
-            if mes_desde > self.hoy.replace(day=1):
+            if mes_desde > mes_actual:
                 raise forms.ValidationError("El período no puede empezar en un mes futuro.")
+        if mes_hasta and self.usa_periodo and mes_hasta > mes_actual:
+            # Sin este tope la lectura financiera toma de corte una fecha futura:
+            # saldos que todavia no existen y vencimientos contados desde ahi.
+            raise forms.ValidationError("El período no puede terminar en un mes futuro.")
+        if mes_hasta and not self.usa_periodo and mes_hasta.year > self.hoy.year + 1:
+            raise forms.ValidationError("El filtro de meses no puede pasar del año que viene.")
         return cleaned_data
 
     def fuera_de_alcance(self) -> bool:
@@ -445,7 +470,7 @@ class ReportFilterForm(TreasuryStyledFormMixin, forms.Form):
         comun = {"empresa": empresa, "date_from": date_from, "date_to": date_to, "emitido": emitido}
         if alcance["sucursal"] is not None:
             return [ReportScope(sucursal=alcance["sucursal"], **comun)]
-        unica = sucursales[0] if len(sucursales) == 1 else None
+        unica = self.sucursal_unica.get(empresa.pk)
         general = ReportScope(sucursal_unica=unica, todas_las_sucursales=alcance["modo"] == "t", **comun)
         if alcance["modo"] == "t":
             return [general] + [ReportScope(sucursal=sucursal, **comun) for sucursal in sucursales]

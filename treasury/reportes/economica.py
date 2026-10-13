@@ -132,18 +132,18 @@ def _notas(snapshot: dict, scope: ReportScope) -> list[NoteBlock]:
             )
 
     if not snapshot["branch_objectives_enabled"]:
-        if scope.sucursal_unica is not None:
-            # Empresa de una sola sucursal: no hay reporte de la sucursal aparte.
-            notas.append(
-                "En este reporte solo se comparan objetivos globales; "
-                "los objetivos propios de la sucursal no se aplican."
-            )
-        else:
-            notas.append(
-                "En el reporte general solo se comparan objetivos globales. "
-                "Los objetivos propios de cada sucursal se aplican en el reporte de esa sucursal."
-            )
+        notas.append(
+            "En el reporte general solo se comparan objetivos globales. "
+            "Los objetivos propios de cada sucursal se aplican en el reporte de esa sucursal."
+        )
     return [NoteBlock(texto) for texto in notas]
+
+
+def lectura_sucursal(scope: ReportScope):
+    """Sucursal con la que se lee el snapshot. Una empresa de sucursal unica (sin
+    otras, ni cerradas) se lee por esa sucursal: asi aplica sus objetivos propios,
+    que en el general no se comparan, y no hay otro reporte donde verlos."""
+    return scope.sucursal or scope.sucursal_unica
 
 
 def build_situacion_economica(scope: ReportScope) -> ReportDocument:
@@ -151,7 +151,7 @@ def build_situacion_economica(scope: ReportScope) -> ReportDocument:
     snapshot = build_economic_period_snapshot(
         date_from=scope.date_from,
         date_to=scope.date_to,
-        sucursal=scope.sucursal,
+        sucursal=lectura_sucursal(scope),
         empresa_ids=scope.empresa_ids,
     )
     return ReportDocument(
