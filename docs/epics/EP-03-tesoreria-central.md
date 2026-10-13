@@ -326,6 +326,33 @@ Criterios:
 Estado: ensayado en staging con copia de produccion. Falta el OK de tesoreria
 sobre el informe y las filas a revisar antes de correrlo en produccion.
 
+### [ ] US-3.20 Regularizar deudas viejas y proveedor interno
+
+Como tesorera
+Quiero ver pagadas en Gerayse las facturas que ya pague por fuera hasta el
+23/09/2026, y que las de la panaderia propia (OVEJA NEGRA ARMADI SRL) queden
+pagadas sin que salga plata
+Para que la deuda viva sea la real sin tocar banco, caja fuerte ni resultado
+
+Criterios:
+- una cancelacion sin movimiento (REGULARIZACION o INTERNO) deja la deuda
+  pagada, no lleva cuenta ni movimiento y nunca crea un debito bancario ni un
+  egreso de la caja fuerte
+- banco, caja fuerte, disponibilidades y resultado economico quedan iguales;
+  solo baja lo que falta pagar
+- "Pagado" muestra solo plata que salio; lo cancelado sin movimiento se ve
+  aparte, en la deuda y en el historial del proveedor
+- el listado de pagos muestra por defecto solo lo que movio plata; las
+  cancelaciones se ven filtrando por su medio
+- no aparecen en ningun formulario de alta de pagos
+- excluidos: ARCA/AFIP/impuestos, sueldos y cargas sociales, deudas con
+  compromiso especial
+
+Estado: slice 1 (medios sin movimiento y lecturas) hecho en la rama
+`feat/regularizar-deudas`. Faltan el comando de regularizacion, el alta
+automatica del proveedor interno y que la regularizacion se reemplace por el
+pago real cuando este se cargue.
+
 ## Orden tecnico sugerido
 
 1. proveedores

@@ -1,8 +1,58 @@
 # Context
 
-Last updated: 2026-10-06
+Last updated: 2026-10-13
 
 ## Current Session
+
+### Treasury Regularizar deudas viejas y proveedor interno (US-3.20) 2026-10-13
+
+- Pedido de Tais (2026-10-13): todas las facturas de proveedores de todas las sucursales,
+  salvo ARCA/AFIP/impuestos y sueldos, estan pagadas hasta el 23/09/2026 inclusive y las
+  quiere ver pagadas en Gerayse. OVEJA NEGRA ARMADI SRL (panaderia propia) nunca se paga
+  pero cuenta como materia prima. Se hace por slices en la rama `feat/regularizar-deudas`.
+- SLICE 1 (medios sin movimiento, lecturas):
+  - `PagoTesoreria.MedioPago` suma REGULARIZACION ("Regularizacion sin movimiento", pagada
+    fuera de Gerayse) e INTERNO ("Proveedor interno (sin pago)"); `EstadoBancario.NO_APLICA`.
+    `PagoTesoreria.MEDIOS_SIN_MOVIMIENTO` y la property `mueve_fondos`.
+  - Excepcion documentada a "todo pago mueve una disponibilidad": estos medios cancelan la
+    deuda con un PagoTesoreria real (saldo derivado, sobrepago, token y anulacion de siempre)
+    pero no llevan cuenta, movimiento ni fecha diferida, quedan NO_APLICA y NUNCA crean
+    MovimientoBancario ni MovimientoCajaCentral. Lo garantizan `PagoTesoreria.clean`, una
+    guarda al inicio de `register_payment` (antes del token), `MovimientoCajaCentral.clean`
+    y `link_payment_to_bank_movement` (rechazo con mensaje propio). `register_payment`
+    tambien rechaza estos medios sobre deudas con compromiso especial (si no, el compromiso
+    quedaria EJECUTADO sin pagarse). No estan en ningun formulario de alta ni en
+    `CLASE_POR_MEDIO_DE_PAGO`.
+  - `Proveedor.es_interno` (default False). En el admin: list_display, list_filter y SOLO
+    LECTURA (lo marca el comando, que deja informe y lote; tildarlo a mano haria que las
+    facturas se den por pagadas sin rastro). Ninguna pantalla de la app lo edita.
+  - Migracion `treasury/0037_medios_sin_movimiento_y_proveedor_interno` (AlterField de
+    choices, sin SQL en Postgres, + AddField). ROLLBACK: anular antes, con el codigo nuevo,
+    todos los pagos REGULARIZACION/INTERNO; con el codigo viejo esas filas no se pueden ni
+    guardar (full_clean) y las deudas quedan congeladas.
+  - REGLA PARA INFORMES: `PagoTesoreria.objects.con_movimiento_de_fondos()` /
+    `.sin_movimiento_de_fondos()` son el punto unico. Todo informe nuevo que sume
+    `PagoTesoreria.monto` como plata que salio parte de `con_movimiento_de_fondos()`.
+  - Lecturas ajustadas: pagos recientes y contador "Pagos" del dashboard (solo con fondos);
+    historial del proveedor ("Pagado historico" solo con fondos + "Cancelado sin
+    movimiento"); detalle de la deuda ("Pagado" y "Cancelado sin movimiento" por separado,
+    estado "Pagada (sin movimiento)" si no salio plata, via
+    `build_payable_settlement_breakdown`); rotulo "Sin movimiento de fondos" en lugar de
+    "Caja central"/"Efectivo central"; listado de Pagos: por defecto solo medios con fondos
+    (las cancelaciones se ven eligiendo su medio en el filtro), subtitulo "Pagos y
+    cancelaciones de deudas" y paginado de a 100 (Anterior/Siguiente conservando filtros,
+    bloque opcional en `list_page.html`).
+  - SIN CAMBIOS, con tests de regresion: saldo de banco, caja fuerte, disponibilidades,
+    snapshot financiero (saldos y flujos) y resultado economico (`debt_period_total`,
+    `treasury_expense_total`, `economic_result`); solo baja "De eso, falta pagar" y la deuda
+    viva. El importador no toma estos medios como "efectivo ya cargado".
+  - Archivos: `treasury/models.py`, `treasury/services.py`, `treasury/views.py`,
+    `treasury/forms.py`, `treasury/admin.py`, `templates/treasury/list_page.html`,
+    `templates/treasury/dashboard.html`, migracion 0037,
+    `treasury/tests_pago_sin_movimiento.py` (nuevo, 44 tests).
+  - Pendiente (slices siguientes): comando `regularizar_deudas` con modo interno (slice 2),
+    alta automatica de INTERNO para proveedores es_interno (slice 3) y REGULARIZACION
+    reemplazable por el pago real (slice 4, obligatorio ANTES de correr el comando).
 
 ### Treasury Importacion de planillas de banco y efectivo central 2026-09-30
 
