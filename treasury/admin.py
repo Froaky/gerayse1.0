@@ -57,10 +57,14 @@ class MovimientoCajaCentralAdmin(TreasuryReadOnlyAdminMixin, admin.ModelAdmin):
 
 @admin.register(Proveedor)
 class ProveedorAdmin(TreasuryNoDeleteAdminMixin, admin.ModelAdmin):
-    list_display = ("razon_social", "identificador_fiscal", "contacto", "activo", "creado_en")
-    list_filter = ("activo",)
+    list_display = ("razon_social", "identificador_fiscal", "contacto", "activo", "es_interno", "creado_en")
+    list_filter = ("activo", "es_interno")
     search_fields = ("razon_social", "identificador_fiscal", "contacto", "email")
     autocomplete_fields = ("creado_por",)
+    # US-3.20: lo marca el comando de regularizacion, que deja informe y lote.
+    # Tildarlo a mano haria que las facturas del proveedor se den por pagadas
+    # sin mover fondos, sin rastro de quien lo decidio.
+    readonly_fields = ("es_interno",)
 
 
 @admin.register(CategoriaCuentaPagar)

@@ -54,5 +54,16 @@
   </section>
   <section class="card">
     {% include "treasury/partials/list_items.html" %}
+    {% if pagination %}
+      <div class="list-actions mt-16">
+        {% if pagination.prev_url %}
+          <a class="button-secondary" href="{{ pagination.prev_url }}">Anterior</a>
+        {% endif %}
+        <span class="muted">{{ pagination.label }}</span>
+        {% if pagination.next_url %}
+          <a class="button-secondary" href="{{ pagination.next_url }}">Siguiente</a>
+        {% endif %}
+      </div>
+    {% endif %}
   </section>
 {% endblock %}

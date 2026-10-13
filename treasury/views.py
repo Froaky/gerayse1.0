@@ -4,6 +4,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.paginator import Paginator
 from django.db import IntegrityError
 from django.db.models import Count, Q, Sum
 from django.http import HttpResponse
@@ -89,6 +90,7 @@ from .services import (
     build_economic_rubro_detail,
     build_disponibilidades_snapshot,
     build_financial_period_snapshot,
+    build_payable_settlement_breakdown,
     build_special_commitments_snapshot,
     build_supplier_history_snapshot,
     CENTRAL_CASH_IN_TYPES,
@@ -398,9 +400,19 @@ def _payable_item(payable: CuentaPorPagar) -> dict:
     }
 
 
+def _payment_account_label(payment: PagoTesoreria) -> str:
+    """De donde salio la plata del pago. 'Caja central' es solo para el
+    efectivo: una cancelacion sin movimiento (US-3.20) no salio de ningun lado."""
+    if payment.cuenta_bancaria_id:
+        return payment.cuenta_bancaria.nombre
+    if not payment.mueve_fondos:
+        return "Sin movimiento de fondos"
+    return "Caja central"
+
+
 def _payment_item(payment: PagoTesoreria) -> dict:
     badge, badge_class = _payment_badge(payment)
-    account_label = payment.cuenta_bancaria.nombre if payment.cuenta_bancaria_id else "Caja central"
+    account_label = _payment_account_label(payment)
     return {
         "href": reverse("treasury:pagos_detail", args=[payment.pk]),
         "title": payment.cuenta_por_pagar.proveedor.razon_social,
@@ -452,7 +464,8 @@ def dashboard(request):
             "label": "Pagos",
             "description": "Egresos internos por transferencia, cheque o efectivo.",
             "href": reverse("treasury:pagos_list"),
-            "count": PagoTesoreria.objects.count(),
+            # US-3.20: las cancelaciones sin movimiento no son egresos.
+            "count": PagoTesoreria.objects.con_movimiento_de_fondos().count(),
         },
         {
             "label": "Movimientos",
@@ -683,8 +696,16 @@ def proveedores_detail(request, supplier_id: int):
         {"label": "Saldo historico", "value": _money(snapshot["historical_pending"])},
         {"label": "Total historico", "value": _money(snapshot["historical_total"])},
         {"label": "Pagado historico", "value": _money(snapshot["historical_paid"])},
-        {"label": "Estado", "value": "Activo" if supplier.activo else "Inactivo"},
     ]
+    if snapshot["historical_settled_without_funds"]:
+        # US-3.20: separado de lo pagado, porque ahi no salio plata.
+        fields.append(
+            {
+                "label": "Cancelado sin movimiento",
+                "value": _money(snapshot["historical_settled_without_funds"]),
+            }
+        )
+    fields.append({"label": "Estado", "value": "Activo" if supplier.activo else "Inactivo"})
     extra_sections = [
         {"title": "Obligaciones", "items": [_payable_item(payable) for payable in snapshot["payables"][:10]], "empty_label": "No hay obligaciones para este proveedor."},
         {"title": "Pagos", "items": [_payment_item(payment) for payment in snapshot["payments"][:10]], "empty_label": "No hay pagos para este proveedor."},
@@ -1137,6 +1158,11 @@ def cuentas_por_pagar_detail(request, payable_id: int):
     )
     payments = payable.pagos.select_related("cuenta_bancaria", "creado_por", "anulado_por").order_by("-fecha_pago", "-id")
     badge, badge_class = _payable_badge(payable)
+    # US-3.20: lo pagado con plata y lo cancelado sin movimiento van por separado.
+    settlement = build_payable_settlement_breakdown(payable)
+    settled_without_funds = settlement["settled_without_funds"]
+    if settlement["settled_only_without_funds"]:
+        badge = "Pagada (sin movimiento)"
     fields = [
         {"label": "Proveedor", "value": payable.proveedor.razon_social},
         {"label": "Sucursal", "value": payable.sucursal_label},
@@ -1148,7 +1174,11 @@ def cuentas_por_pagar_detail(request, payable_id: int):
         {"label": "Periodo economico", "value": payable.periodo_referencia.strftime("%m/%Y")},
         {"label": "Vencimiento", "value": payable.fecha_vencimiento.strftime("%d/%m/%Y")},
         {"label": "Importe total", "value": _money(payable.importe_total)},
-        {"label": "Pagado", "value": _money(payable.total_pagado)},
+        {"label": "Pagado", "value": _money(settlement["paid_with_funds"])},
+    ]
+    if settled_without_funds:
+        fields.append({"label": "Cancelado sin movimiento", "value": _money(settled_without_funds)})
+    fields += [
         {"label": "Saldo pendiente", "value": _money(payable.saldo_pendiente)},
         {"label": "Estado", "value": badge},
         {"label": "Creado por", "value": str(payable.creado_por) if payable.creado_por else "Sistema"},
@@ -1440,6 +1470,27 @@ def compromisos_especiales_decide(request, commitment_id: int):
     )
 
 
+PAGOS_POR_PAGINA = 100
+
+
+def _pagination_context(request, page, noun: str) -> dict | None:
+    """Anterior/Siguiente conservando los filtros del GET. None con una sola pagina."""
+    paginator = page.paginator
+    if paginator.num_pages <= 1:
+        return None
+
+    def page_url(number: int) -> str:
+        params = request.GET.copy()
+        params["page"] = number
+        return f"?{params.urlencode()}"
+
+    return {
+        "label": f"Pagina {page.number} de {paginator.num_pages} ({paginator.count} {noun})",
+        "prev_url": page_url(page.previous_page_number()) if page.has_previous() else "",
+        "next_url": page_url(page.next_page_number()) if page.has_next() else "",
+    }
+
+
 @login_required
 def pagos_list(request):
     _require_treasury_admin(request)
@@ -1456,6 +1507,7 @@ def pagos_list(request):
                 Q(cuenta_por_pagar__sucursal__empresa_id__in=empresa_ids)
                 | Q(cuenta_por_pagar__sucursal__isnull=True)
             )
+    medio_pago = ""
     if form.is_valid():
         q = (form.cleaned_data.get("q") or "").strip()
         medio_pago = form.cleaned_data.get("medio_pago")
@@ -1476,6 +1528,12 @@ def pagos_list(request):
             queryset = queryset.filter(estado=estado)
         if sucursal:
             queryset = queryset.filter(cuenta_por_pagar__sucursal=sucursal)
+    if not medio_pago:
+        # US-3.20: por defecto, solo lo que movio plata. Las cancelaciones sin
+        # movimiento (regularizaciones, proveedor interno) son miles y taparian
+        # los egresos reales; se ven eligiendo su medio en el filtro.
+        queryset = queryset.con_movimiento_de_fondos()
+    page = Paginator(queryset, PAGOS_POR_PAGINA).get_page(request.GET.get("page"))
     actions = [
         # Camino recomendado: elegir proveedor y pagar 1 o varias de sus facturas
         # de una sola vez. Los cuatro de abajo siguen para el pago de a uno.
@@ -1490,10 +1548,11 @@ def pagos_list(request):
         "treasury/list_page.html",
         {
             "title": "Pagos de tesoreria",
-            "subtitle": "Trazabilidad completa de egresos administrativos.",
-            "items": [_payment_item(item) for item in queryset],
+            "subtitle": "Pagos y cancelaciones de deudas",
+            "items": [_payment_item(item) for item in page.object_list],
             "actions": actions,
             "filter_form": form,
+            "pagination": _pagination_context(request, page, "pagos"),
         },
     )
 
@@ -1702,7 +1761,7 @@ def pagos_detail(request, payment_id: int):
         {"label": "Proveedor", "value": payment.cuenta_por_pagar.proveedor.razon_social},
         {"label": "Obligacion", "value": payment.cuenta_por_pagar.concepto},
         {"label": "Categoria", "value": payment.cuenta_por_pagar.categoria.nombre},
-        {"label": "Cuenta de registro", "value": payment.cuenta_bancaria.nombre if payment.cuenta_bancaria_id else "Caja central"},
+        {"label": "Cuenta de registro", "value": _payment_account_label(payment)},
         {"label": "Medio de pago", "value": payment.get_medio_pago_display()},
         {"label": "Monto", "value": _money(payment.monto)},
         {"label": "Fecha de pago", "value": payment.fecha_pago.strftime("%d/%m/%Y")},

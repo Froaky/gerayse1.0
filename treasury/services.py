@@ -831,6 +831,17 @@ def register_payment(
     actor=None,
 ) -> PagoTesoreria:
     _require_actor(actor)
+    # US-3.20: los medios sin movimiento (REGULARIZACION, INTERNO) cancelan la
+    # deuda sin sacar plata de ningun lado. Con cuenta, la rama de abajo crearia
+    # un debito PAGO_TESORERIA que nunca existio en el banco; con movimiento, lo
+    # ataria a un debito real. Se corta antes de todo, incluso del token.
+    sin_movimiento = medio_pago in PagoTesoreria.MEDIOS_SIN_MOVIMIENTO
+    if sin_movimiento and (
+        bank_account is not None or bank_movement is not None or fecha_diferida is not None
+    ):
+        raise ValidationError(
+            {"medio_pago": "Este medio no mueve fondos: no lleva cuenta ni movimiento."}
+        )
     # Reenvio del mismo formulario: el pago ya existe, se devuelve tal cual
     # ANTES de tomar ningun lock ni mover plata de nuevo.
     existing = _existing_by_creation_token(PagoTesoreria.objects, token_alta)
@@ -845,6 +856,16 @@ def register_payment(
         raise ValidationError({"cuenta_por_pagar": "La cuenta por pagar esta anulada."})
     if locked_payable.estado == CuentaPorPagar.Estado.PAGADA:
         raise ValidationError({"cuenta_por_pagar": "La cuenta por pagar ya esta cancelada."})
+    if sin_movimiento and getattr(locked_payable, "compromiso_especial", None) is not None:
+        # Al quedar PAGADA, el compromiso (impuesto, plan, embargo) pasaria a
+        # EJECUTADO sin que se haya pagado nada.
+        raise ValidationError(
+            {
+                "cuenta_por_pagar": (
+                    "Una deuda con compromiso especial no se puede cancelar sin movimiento de fondos."
+                )
+            }
+        )
     _ensure_special_commitment_can_be_paid(locked_payable)
     if medio_pago == PagoTesoreria.MedioPago.TRANSFERENCIA and fecha_diferida is not None:
         raise ValidationError({"fecha_diferida": "La transferencia no admite fecha diferida."})
@@ -862,6 +883,8 @@ def register_payment(
         token_alta=token_alta,
         creado_por=actor,
     )
+    if sin_movimiento:
+        payment.estado_bancario = PagoTesoreria.EstadoBancario.NO_APLICA
     # Savepoint para la carrera: dos POST simultaneos con el mismo token pasan
     # ambos el chequeo de arriba; la constraint parcial corta al segundo y se
     # le devuelve el pago del primero. El save de PagoTesoreria pasa por
@@ -878,7 +901,12 @@ def register_payment(
 
     # Todo pago tiene que mover la disponibilidad de donde salio la plata: el
     # efectivo baja la caja fuerte, y transferencia/cheque/ECHEQ bajan el banco.
-    if medio_pago == PagoTesoreria.MedioPago.EFECTIVO:
+    # Excepcion documentada (US-3.20): los medios sin movimiento NO mueven
+    # ninguna disponibilidad, a proposito. La deuda queda cancelada y el gasto
+    # sigue contando por la deuda; banco y caja fuerte quedan como estaban.
+    if sin_movimiento:
+        pass
+    elif medio_pago == PagoTesoreria.MedioPago.EFECTIVO:
         register_central_cash_movement(
             empresa=_empresa_de_la_deuda(locked_payable, empresa),
             tipo=MovimientoCajaCentral.Tipo.EGRESO_PAGO,
@@ -1978,6 +2006,13 @@ def link_payment_to_bank_movement(
     """
     _require_actor(actor)
 
+    if not payment.mueve_fondos:
+        # US-3.20: sin esto igual se rechazaba, pero por "las cuentas no
+        # coinciden", que no dice que hacer.
+        raise ValidationError(
+            "Este pago es una cancelacion sin movimiento de fondos: no se vincula a un "
+            "movimiento bancario. Anule la cancelacion y pague la deuda desde el movimiento."
+        )
     if bank_movement.estado != MovimientoBancario.Estado.REGISTRADO:
         raise ValidationError("No se puede vincular un movimiento bancario eliminado.")
     if payment.cuenta_bancaria_id != bank_movement.cuenta_bancaria_id:
@@ -3084,7 +3119,9 @@ def build_financial_period_snapshot(*, date_from: date, date_to: date, sucursal=
         )
     recent_batches = recent_batches.select_related("cuenta_bancaria").order_by("-fecha_lote", "-id")[:5]
 
-    recent_payments = PagoTesoreria.objects.filter(
+    # US-3.20: el bloque presenta "egresos registrados"; las cancelaciones sin
+    # movimiento (cientos fechadas el mismo dia) taparian los pagos reales.
+    recent_payments = PagoTesoreria.objects.con_movimiento_de_fondos().filter(
         estado=PagoTesoreria.Estado.REGISTRADO,
         fecha_pago__gte=date_from,
         fecha_pago__lte=date_to,
@@ -3182,6 +3219,7 @@ def build_supplier_history_snapshot(*, supplier: Proveedor, date_from=None, date
     if date_to:
         payables = payables.filter(fecha_emision__lte=date_to)
         payments = payments.filter(fecha_pago__lte=date_to)
+    registered_payments = payments.filter(estado=PagoTesoreria.Estado.REGISTRADO)
     return {
         "supplier": supplier,
         "date_from": date_from,
@@ -3192,7 +3230,37 @@ def build_supplier_history_snapshot(*, supplier: Proveedor, date_from=None, date
         # en el pendiente daba un historial inflado e incoherente consigo mismo.
         "historical_total": payables.exclude(estado=CuentaPorPagar.Estado.ANULADA).aggregate(total=Sum("importe_total"))["total"] or Decimal("0.00"),
         "historical_pending": payables.exclude(estado=CuentaPorPagar.Estado.ANULADA).aggregate(total=Sum("saldo_pendiente"))["total"] or Decimal("0.00"),
-        "historical_paid": payments.filter(estado=PagoTesoreria.Estado.REGISTRADO).aggregate(total=Sum("monto"))["total"] or Decimal("0.00"),
+        # US-3.20: "pagado" es plata que salio. Lo cancelado sin movimiento
+        # (regularizaciones, proveedor interno) va aparte: si no, la panaderia
+        # propia figuraria como pagada sin que se le haya pagado nunca.
+        "historical_paid": registered_payments.con_movimiento_de_fondos().aggregate(total=Sum("monto"))["total"] or Decimal("0.00"),
+        "historical_settled_without_funds": registered_payments.sin_movimiento_de_fondos().aggregate(total=Sum("monto"))["total"] or Decimal("0.00"),
+    }
+
+
+def build_payable_settlement_breakdown(payable: CuentaPorPagar) -> dict:
+    """US-3.20: cuanto de la deuda se pago con plata y cuanto se cancelo sin
+    movimiento de fondos. Los dos suman lo cancelado (importe - saldo), porque el
+    saldo se deriva de TODOS los pagos REGISTRADO (_recalculate_payable_locked).
+    Lo pagado se toma como lo cancelado menos lo nominal, asi una deuda sin
+    cancelaciones nominales muestra exactamente lo mismo que antes."""
+    settled_without_funds = (
+        payable.pagos.filter(estado=PagoTesoreria.Estado.REGISTRADO)
+        .sin_movimiento_de_fondos()
+        .aggregate(total=Sum("monto"))["total"]
+        or Decimal("0.00")
+    )
+    paid_with_funds = payable.total_pagado - settled_without_funds
+    return {
+        "paid_with_funds": paid_with_funds,
+        "settled_without_funds": settled_without_funds,
+        # Cancelada del todo sin que haya salido plata: la pantalla no puede
+        # decir solo "Pagada".
+        "settled_only_without_funds": (
+            payable.estado == CuentaPorPagar.Estado.PAGADA
+            and settled_without_funds > 0
+            and paid_with_funds == 0
+        ),
     }
 
 

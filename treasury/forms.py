@@ -544,7 +544,12 @@ class ECheqPaymentForm(PaymentBaseForm):
 
 class PaymentFilterForm(TreasuryStyledFormMixin, forms.Form):
     q = forms.CharField(required=False, label="Buscar", widget=forms.TextInput(attrs={"placeholder": "Proveedor, referencia o concepto"}))
-    medio_pago = forms.ChoiceField(required=False, choices=(("", "Todos los medios"),) + tuple(PagoTesoreria.MedioPago.choices))
+    # US-3.20: sin elegir medio, el listado muestra solo lo que movio plata; las
+    # cancelaciones sin movimiento se ven eligiendo su medio.
+    medio_pago = forms.ChoiceField(
+        required=False,
+        choices=(("", "Todos los medios con movimiento de fondos"),) + tuple(PagoTesoreria.MedioPago.choices),
+    )
     cuenta_bancaria = forms.ModelChoiceField(queryset=CuentaBancaria.objects.none(), required=False, empty_label="Todas las cuentas")
     estado = forms.ChoiceField(required=False, choices=(("", "Todos"),) + tuple(PagoTesoreria.Estado.choices))
     sucursal = forms.ModelChoiceField(queryset=Sucursal.objects.all(), required=False, empty_label="Todas las sucursales")

@@ -20,6 +20,18 @@ class Proveedor(models.Model):
     cbu = models.CharField(max_length=22, blank=True)
     observaciones = models.CharField(max_length=255, blank=True)
     activo = models.BooleanField(default=True)
+    # US-3.20: la panaderia propia (OVEJA NEGRA ARMADI SRL). Sus facturas
+    # cuentan como gasto (materia prima de las cafeterias) pero nunca se pagan:
+    # se cancelan con el medio INTERNO, que no mueve fondos. Ninguna pantalla
+    # de la app lo edita; lo marca el comando de regularizacion.
+    es_interno = models.BooleanField(
+        default=False,
+        verbose_name="Proveedor interno",
+        help_text=(
+            "Proveedor propio: sus facturas cuentan como gasto pero se dan por "
+            "pagadas sin mover fondos."
+        ),
+    )
     creado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -784,12 +796,32 @@ class CompromisoEspecial(models.Model):
         return f"{self.get_tipo_display()} - {self.concepto}"
 
 
+class PagoTesoreriaQuerySet(models.QuerySet):
+    """US-3.20: punto unico para separar la plata real de las cancelaciones
+    nominales. Todo informe que sume PagoTesoreria.monto como salida de fondos
+    tiene que partir de `con_movimiento_de_fondos()`: los medios sin movimiento
+    cancelan la deuda pero no sacaron plata de ningun lado."""
+
+    def con_movimiento_de_fondos(self):
+        return self.exclude(medio_pago__in=PagoTesoreria.MEDIOS_SIN_MOVIMIENTO)
+
+    def sin_movimiento_de_fondos(self):
+        return self.filter(medio_pago__in=PagoTesoreria.MEDIOS_SIN_MOVIMIENTO)
+
+
 class PagoTesoreria(models.Model):
     class MedioPago(models.TextChoices):
         TRANSFERENCIA = "TRANSFERENCIA", "Transferencia"
         CHEQUE = "CHEQUE", "Cheque"
         ECHEQ = "ECHEQ", "ECHEQ"
         EFECTIVO = "EFECTIVO", "Efectivo"
+        # US-3.20: medios que cancelan la deuda SIN mover fondos. No crean
+        # debito bancario ni egreso de la caja fuerte, no llevan cuenta y no
+        # aparecen en ningun formulario de alta manual.
+        # REGULARIZACION: pagada fuera de Gerayse segun tesoreria.
+        REGULARIZACION = "REGULARIZACION", "Regularizacion sin movimiento"
+        # INTERNO: proveedor propio (es_interno), su factura nunca se paga.
+        INTERNO = "INTERNO", "Proveedor interno (sin pago)"
 
     class Estado(models.TextChoices):
         REGISTRADO = "REGISTRADO", "Registrado"
@@ -800,6 +832,10 @@ class PagoTesoreria(models.Model):
         IMPACTADO = "IMPACTADO", "Impactado"
         RECHAZADO = "RECHAZADO", "Rechazado"
         ANULADO = "ANULADO", "Anulado"
+        # Solo para los medios sin movimiento: no hay reflejo bancario que esperar.
+        NO_APLICA = "NO_APLICA", "No aplica"
+
+    MEDIOS_SIN_MOVIMIENTO = frozenset({MedioPago.REGULARIZACION, MedioPago.INTERNO})
 
     cuenta_por_pagar = models.ForeignKey(
         CuentaPorPagar,
@@ -875,6 +911,8 @@ class PagoTesoreria(models.Model):
         null=True, blank=True, editable=False, verbose_name="Token de alta",
     )
 
+    objects = PagoTesoreriaQuerySet.as_manager()
+
     class Meta:
         ordering = ["-fecha_pago", "-id"]
         constraints = [
@@ -907,6 +945,11 @@ class PagoTesoreria(models.Model):
         "Los pagos de tesoreria deben registrarse o anularse desde los servicios de dominio."
     )
 
+    @property
+    def mueve_fondos(self) -> bool:
+        """False para las cancelaciones sin movimiento (REGULARIZACION, INTERNO)."""
+        return self.medio_pago not in self.MEDIOS_SIN_MOVIMIENTO
+
     def clean(self) -> None:
         self.referencia = (self.referencia or "").strip()
         self.observaciones = (self.observaciones or "").strip()
@@ -927,8 +970,34 @@ class PagoTesoreria(models.Model):
             errors["estado_bancario"] = "Un pago anulado debe quedar con estado bancario anulado."
         if self.estado != self.Estado.ANULADO and self.estado_bancario == self.EstadoBancario.ANULADO:
             errors["estado_bancario"] = "Solo un pago anulado puede tener estado bancario anulado."
-        if self.medio_pago != self.MedioPago.EFECTIVO and not self.cuenta_bancaria_id:
+        sin_movimiento = self.medio_pago in self.MEDIOS_SIN_MOVIMIENTO
+        if (
+            self.medio_pago != self.MedioPago.EFECTIVO
+            and not sin_movimiento
+            and not self.cuenta_bancaria_id
+        ):
             errors["cuenta_bancaria"] = "La cuenta bancaria es obligatoria para este medio de pago."
+        if sin_movimiento:
+            # US-3.20: un medio sin movimiento cancela la deuda sin sacar plata
+            # de ningun lado. Con cuenta o movimiento se lo podria vincular a un
+            # debito (o el servicio le generaria uno): seria una salida falsa.
+            if self.cuenta_bancaria_id:
+                errors["cuenta_bancaria"] = "Este medio no mueve fondos: no lleva cuenta bancaria."
+            if self.movimiento_bancario_id:
+                errors["movimiento_bancario"] = "Este medio no mueve fondos: no lleva movimiento bancario."
+            if self.fecha_diferida:
+                errors["fecha_diferida"] = "Este medio no mueve fondos: no lleva fecha diferida."
+            if (
+                self.estado == self.Estado.REGISTRADO
+                and self.estado_bancario != self.EstadoBancario.NO_APLICA
+            ):
+                errors["estado_bancario"] = (
+                    "Un pago sin movimiento de fondos queda con estado bancario 'No aplica'."
+                )
+        elif self.estado_bancario == self.EstadoBancario.NO_APLICA:
+            errors["estado_bancario"] = (
+                "El estado bancario 'No aplica' es solo para los medios sin movimiento de fondos."
+            )
         if (
             self.cuenta_bancaria_id
             and self.estado == self.Estado.REGISTRADO
@@ -1646,6 +1715,11 @@ class MovimientoCajaCentral(models.Model):
         self.motivo_anulacion = (self.motivo_anulacion or "").strip()
         if self.estado == self.Estado.ANULADO and not self.motivo_anulacion:
             raise ValidationError({"motivo_anulacion": "El motivo es obligatorio para anular."})
+        if self.pago_tesoreria_id and not self.pago_tesoreria.mueve_fondos:
+            # US-3.20: una cancelacion sin movimiento no saca plata de la caja fuerte.
+            raise ValidationError(
+                {"pago_tesoreria": "Ese pago no mueve fondos: no puede tener movimiento de caja fuerte."}
+            )
 
     @property
     def esta_anulado(self) -> bool:

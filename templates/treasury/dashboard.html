@@ -450,7 +450,7 @@
               </div>
               <span class="badge badge-success">{{ payment.monto|money }}</span>
             </div>
-            <div class="muted mt-16">{{ payment.fecha_pago|date:"d/m/Y" }} - {{ payment.cuenta_bancaria.nombre|default:"Efectivo central" }}</div>
+            <div class="muted mt-16">{{ payment.fecha_pago|date:"d/m/Y" }} - {% if payment.cuenta_bancaria %}{{ payment.cuenta_bancaria.nombre }}{% elif payment.mueve_fondos %}Efectivo central{% else %}Sin movimiento de fondos{% endif %}</div>
           </a>
         {% endfor %}
         {% for b in recent_batches %}
