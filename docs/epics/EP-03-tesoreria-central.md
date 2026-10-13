@@ -329,34 +329,40 @@ sobre el informe y las filas a revisar antes de correrlo en produccion.
 ### [ ] US-3.20 Regularizar deudas viejas y proveedor interno
 
 Como tesorera
-Quiero ver pagadas en Gerayse las facturas que ya pague por fuera hasta el
-23/09/2026, y que las de la panaderia propia (OVEJA NEGRA ARMADI SRL) queden
-pagadas sin que salga plata
-Para que la deuda viva sea la real sin tocar banco, caja fuerte ni resultado
+Quiero ver pagadas en Gerayse las facturas que pague en efectivo desde la caja
+fuerte hasta el 23/09/2026, y que las de la panaderia propia (OVEJA NEGRA
+ARMADI SRL) queden pagadas sin que salga plata
+Para que la deuda viva y la caja fuerte sean las reales, sin duplicar el gasto
 
 Criterios:
-- una cancelacion sin movimiento (REGULARIZACION o INTERNO) deja la deuda
-  pagada, no lleva cuenta ni movimiento y nunca crea un debito bancario ni un
-  egreso de la caja fuerte
-- banco, caja fuerte, disponibilidades y resultado economico quedan iguales;
-  solo baja lo que falta pagar
+- lo que no esta pagado por banco hasta el corte se registra como pago en
+  efectivo real, a la fecha de cada factura, con su egreso de la caja fuerte
+  de la empresa de la deuda; el resultado economico no cambia
+- antes de aplicar se ve, por empresa, el saldo de la caja fuerte hoy, el
+  efectivo a registrar y el saldo que quedaria, para compararlo con el arqueo
+- se simula, tesoreria revisa el informe y se aplica solo lo que aprobo, con
+  el mismo saldo; un lote se puede revertir y el efectivo vuelve a la caja
+- quedan afuera, con su motivo: ARCA/AFIP/impuestos, sueldos y cargas sociales,
+  tarjetas, deudas con compromiso especial, sin sucursal, meses cerrados, las
+  cargadas despues de la declaracion, las que parecen cargadas dos veces y las
+  que pudieron pagarse con un debito del banco sin asignar
+- las facturas del proveedor interno se cancelan sin movimiento (INTERNO): la
+  deuda queda pagada, no lleva cuenta ni movimiento y nunca crea un debito
+  bancario ni un egreso de la caja fuerte
 - "Pagado" muestra solo plata que salio; lo cancelado sin movimiento se ve
   aparte, en la deuda y en el historial del proveedor
 - el listado de pagos muestra por defecto solo lo que movio plata; las
   cancelaciones se ven filtrando por su medio
-- no aparecen en ningun formulario de alta de pagos
+- los medios sin movimiento no aparecen en ningun formulario de alta de pagos
 - un pago con plata sobre una deuda ya cancelada sin movimiento se rechaza con
   un mensaje que dice que hay que anular primero esa cancelacion
-- excluidos: ARCA/AFIP/impuestos, sueldos y cargas sociales, deudas con
-  compromiso especial
 
-Estado: slice 1 (medios sin movimiento y lecturas) y slice 4 reducido (rechazo
-claro del pago real sobre una deuda cancelada sin movimiento) hechos en la rama
-`feat/regularizar-deudas`. Faltan el comando de regularizacion y el alta
-automatica del proveedor interno. Por la aclaracion de tesoreria del
-2026-10-13, lo no pagado por banco se registra como pago en efectivo:
-REGULARIZACION queda definido pero sin uso y no se reemplaza solo por el pago
-real.
+Estado: hechos en la rama `feat/regularizar-deudas` el slice 1 (medios sin
+movimiento y lecturas), el slice 4 reducido (rechazo claro del pago real sobre
+una deuda cancelada sin movimiento) y el slice 2 (comando `regularizar_deudas`
+con modo general en efectivo, modo interno, plan revisado y reversion). Falta
+el alta automatica del proveedor interno (slice 3) y el ensayo en staging.
+REGULARIZACION queda definido en el modelo pero sin uso.
 
 ## Orden tecnico sugerido
 

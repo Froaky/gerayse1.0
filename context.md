@@ -71,6 +71,52 @@ Last updated: 2026-10-13
     opciones fijas de todos los formularios de `treasury` y `cashops`.
   - Tests: 15 nuevos en `treasury/tests_pago_sin_movimiento.py` (59 en el modulo).
     `manage.py test treasury cashops core`: 733 OK (4 skipped); suite completa 783 OK.
+- SLICE 2 (comando `regularizar_deudas`, logica en `treasury/regularizacion.py`):
+  - Modo general (`--hasta`): registra PAGOS EN EFECTIVO reales con `register_payment`
+    (medio EFECTIVO), cada uno con su EGRESO_PAGO en la boveda de la empresa de la deuda
+    (sucursal, o la caja de origen si se pide `--incluir-sin-sucursal`). La caja fuerte baja a
+    la realidad y el gasto no se duplica (lo cuenta la factura; EGRESO_PAGO no es gasto).
+    fecha_pago = fecha de cada factura (o `--fecha-pago`). Referencia = lote (`--lote`, por
+    defecto `REG-<hasta>`), token `uuid5(NS, "<lote>|<medio>|<deuda>")`, observaciones "Pago
+    en efectivo segun tesoreria, regularizacion <lote> (corte <hasta>)". NUNCA usa
+    REGULARIZACION (test).
+  - Modo interno (`--proveedor-interno NOMBRE|id`): todas las abiertas del proveedor, sin
+    corte, con INTERNO (sin plata) y fecha_pago = fecha de la factura; con `--apply` marca
+    `Proveedor.es_interno` (`services.set_supplier_internal`, sin full_clean a proposito). El
+    informe lista ademas los pagos con plata ya hechos al proveedor (AVISO_PAGO_REAL) y otros
+    proveedores con OVEJA en la razon social (AVISO_OTRO_PROVEEDOR).
+  - Excluidas por defecto, con motivo en el CSV: cargadas despues de `--cargadas-hasta` (hoy),
+    proveedor interno u OVEJA NEGRA (modo general), compromiso especial, impuestos/tasas/
+    juicios, sueldos y cargas sociales, tarjeta de credito (por razon social normalizada y por
+    rubro de la categoria), `--excluir-proveedor`, sin sucursal (o sin boveda deducible), mes
+    cerrado en tesoreria para esa empresa, POSIBLE_DUPLICADA (misma clave que el aviso de
+    carga contra toda deuda no anulada, incluidas las pagadas; columna `gemelos`) y
+    POSIBLE_PAGO_EN_GERAYSE (debito REGISTRADO del mismo proveedor y empresa con importe sin
+    asignar entre emision-30 y emision+75 dias; columna `posibles_pagos`). Las dos ultimas se
+    incluyen con `--incluir-posibles-duplicadas` / `--incluir-posibles-pagos`.
+  - Aplicacion: deuda por deuda, una transaccion cada una, con la deuda bloqueada. Monto =
+    importe - pagos REGISTRADO; si no coincide con saldo_pendiente, ERROR_SALDO_INCONSISTENTE.
+    Con la deuda bloqueada se vuelve a mirar compromiso, proveedor interno, empresa de la boveda
+    y mes cerrado. Token del lote ANULADO o de otra deuda: ERROR explicito (no se rehace solo;
+    se usa otro `--lote`). YA_PROCESADA si el pago del lote sigue vivo o si la deuda ya tiene
+    una cancelacion sin movimiento.
+  - `--apply` del modo general EXIGE `--plan` (el informe de la simulacion revisado por
+    tesoreria): aplica solo sus filas A_REGULARIZAR con el mismo saldo; lo demas queda
+    FUERA_DEL_PLAN / DISTINTA_AL_PLAN / NO_DISPONIBLE. El plan acepta CSV guardado por Excel
+    (`;` o `,`, UTF-8 o ANSI) y tiene que ser del mismo medio que la corrida.
+  - Consola: resumen por accion, caja fuerte por empresa (saldo hoy, efectivo a registrar y
+    saldo que quedaria; despues de aplicar, el saldo real) para comparar con el arqueo, aviso
+    por empresa y mes con debitos sin pago atado y EGRESO_ADMIN del mes, y los 30 proveedores
+    con mas importe.
+  - `--revertir LOTE [--motivo] [--desmarcar-interno]`: anula con `annul_payment` los pagos
+    del lote que creo el comando (referencia + token; uno cargado a mano con la misma
+    referencia no se toca). El EGRESO_PAGO se anula y el efectivo vuelve a la boveda. No
+    revierte pagos cuyo egreso cae en un mes cerrado. Tambien simula salvo `--apply`.
+  - Uso: simular en staging con copia de prod, Tais revisa el CSV, aplicar con `--plan`. Correr
+    primero el modo interno (Oveja Negra). Antes de un rollback de la 0037, `--revertir` del
+    lote interno con el codigo nuevo.
+  - Tests: `treasury/tests_regularizar_deudas.py` (60). `manage.py test treasury cashops core`:
+    793 OK (4 skipped).
 
 ### Treasury Importacion de planillas de banco y efectivo central 2026-09-30
 
