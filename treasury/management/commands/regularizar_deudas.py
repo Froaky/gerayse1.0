@@ -11,12 +11,15 @@ efectivo real (con su egreso de la boveda), a la fecha de cada factura:
         --plan plan.csv --informe aplicado.csv --apply
 
 Modo interno: la panaderia propia nunca se paga. Cancela sus deudas abiertas
-con el medio INTERNO, sin mover fondos, y con --apply marca al proveedor:
+con el medio INTERNO, sin mover fondos, y con --apply marca al proveedor. Desde
+ahi sus facturas nuevas nacen saldadas solas (alta automatica):
 
     python manage.py regularizar_deudas --proveedor-interno "OVEJA NEGRA ARMADI SRL" \\
         --usuario tesoreria --informe interno.csv [--plan interno.csv --apply]
 
-Reversion de un lote (anula sus pagos; el efectivo vuelve a la boveda):
+Reversion de un lote (anula sus pagos; el efectivo vuelve a la boveda). Con
+--desmarcar-interno desmarca al proveedor y anula tambien sus cancelaciones
+automaticas:
 
     python manage.py regularizar_deudas --revertir REG-2026-09-23 --motivo "..." \\
         --usuario tesoreria [--apply]
@@ -114,7 +117,10 @@ class Command(BaseCommand):
         parser.add_argument(
             "--desmarcar-interno",
             action="store_true",
-            help="Al revertir un lote del modo interno, desmarca tambien al proveedor como interno.",
+            help=(
+                "Al revertir un lote del modo interno, desmarca tambien al proveedor como interno y anula "
+                "las cancelaciones INTERNO que el sistema registro solo para sus facturas nuevas."
+            ),
         )
 
     def handle(self, *args, **options):

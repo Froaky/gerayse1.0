@@ -44,7 +44,7 @@ from pathlib import Path
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import DecimalField, Exists, OuterRef, Q, Subquery, Sum, Value
+from django.db.models import Count, DecimalField, Exists, OuterRef, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
@@ -66,6 +66,7 @@ from treasury.services import (
     annul_payment,
     register_payment,
     set_supplier_internal,
+    token_interno_automatico,
 )
 
 # Namespace fijo y propio (distinto del del importador): el token de cada pago
@@ -134,6 +135,9 @@ class Accion:
     AVISO_OTRO_PROVEEDOR = "AVISO_OTRO_PROVEEDOR"
     # Reversion de un lote.
     A_REVERTIR = "A_REVERTIR"
+    # Con --desmarcar-interno: cancelacion INTERNO que el sistema registro solo
+    # (alta automatica, slice 3) para el proveedor que se desmarca.
+    A_REVERTIR_AUTOMATICA = "A_REVERTIR_AUTOMATICA"
     YA_ANULADO = "YA_ANULADO"
     NO_ES_DEL_LOTE = "NO_ES_DEL_LOTE"
 
@@ -1054,6 +1058,12 @@ class Reversion(_Informe):
     Solo toca los pagos que el comando creo: referencia = lote, medio EFECTIVO o
     INTERNO y token del lote. Un pago cargado a mano con la misma referencia se
     informa y no se anula.
+
+    Con `desmarcar_interno`, ademas, anula las cancelaciones INTERNO que el
+    sistema registro solo (alta automatica) para los proveedores que se
+    desmarcan: si quedaran vivas, el proveedor dejaria de ser interno con
+    facturas dadas por pagadas sin plata. Es tambien el paso previo a un
+    rollback de la migracion 0037.
     """
 
     def __init__(self, *, actor, lote: str, motivo: str = "", desmarcar_interno: bool = False):
@@ -1113,15 +1123,83 @@ class Reversion(_Informe):
                     f"El mes {egreso.fecha:%m/%Y} esta cerrado en tesoreria: anularlo cambiaria la foto del cierre."
                 )
             self.filas.append(fila)
+        if self.desmarcar_interno:
+            self.filas.extend(self._cancelaciones_automaticas())
         empresas = {
             f.empresa_id for f in self.filas if f.accion == Accion.A_REVERTIR and f.medio == EFECTIVO and f.empresa_id
         }
         self.boveda_antes = _saldos_de_boveda(empresas)
         return self.filas
 
+    def _proveedores_internos_del_lote(self) -> set:
+        """Proveedores de las cancelaciones INTERNO que creo el lote. Un pago con
+        la referencia del lote que no lo creo el comando (NO_ES_DEL_LOTE) no
+        cuenta: no puede llevar a desmarcar a su proveedor."""
+        return {
+            f.deuda.proveedor_id
+            for f in self.filas
+            if f.medio == INTERNO and f.deuda is not None and f.accion != Accion.NO_ES_DEL_LOTE
+        }
+
+    def _cancelaciones_automaticas(self) -> list[Fila]:
+        """Las cancelaciones INTERNO vivas del alta automatica (token del saldado
+        automatico) de los proveedores del lote. Las de otros lotes del comando
+        no se tocan: se revierten con su propio lote."""
+        proveedores = self._proveedores_internos_del_lote()
+        if not proveedores:
+            return []
+        internos_por_deuda = dict(
+            PagoTesoreria.objects.filter(
+                medio_pago=INTERNO, cuenta_por_pagar__proveedor_id__in=proveedores
+            )
+            .order_by()
+            .values("cuenta_por_pagar")
+            .annotate(cantidad=Count("pk"))
+            .values_list("cuenta_por_pagar", "cantidad")
+        )
+        pagos = (
+            PagoTesoreria.objects.filter(
+                medio_pago=INTERNO,
+                estado=PagoTesoreria.Estado.REGISTRADO,
+                cuenta_por_pagar__proveedor_id__in=proveedores,
+            )
+            .exclude(pk__in=[f.pago_id for f in self.filas if f.pago_id])
+            .select_related(
+                "cuenta_por_pagar__proveedor",
+                "cuenta_por_pagar__sucursal__empresa",
+                "cuenta_por_pagar__caja_origen__sucursal__empresa",
+                "cuenta_por_pagar__categoria__rubro_operativo",
+            )
+            .order_by("pk")
+        )
+        filas = []
+        for pago in pagos:
+            deuda = pago.cuenta_por_pagar
+            automaticos = {
+                token_interno_automatico(deuda.pk, numero)
+                for numero in range(internos_por_deuda.get(deuda.pk, 0))
+            }
+            if pago.token_alta not in automaticos:
+                continue
+            filas.append(
+                Fila(
+                    deuda_id=deuda.pk,
+                    accion=Accion.A_REVERTIR_AUTOMATICA,
+                    medio=INTERNO,
+                    deuda=deuda,
+                    proveedor=deuda.proveedor.razon_social,
+                    empresa_id=_empresa_o_none(deuda),
+                    saldo=pago.monto,
+                    fecha_pago=pago.fecha_pago,
+                    pago_id=pago.pk,
+                    motivo="Cancelacion automatica del proveedor interno: se anula al desmarcarlo.",
+                )
+            )
+        return filas
+
     def aplicar(self) -> list[Fila]:
         for fila in self.filas:
-            if fila.accion != Accion.A_REVERTIR:
+            if fila.accion not in (Accion.A_REVERTIR, Accion.A_REVERTIR_AUTOMATICA):
                 continue
             try:
                 annul_payment(
@@ -1133,7 +1211,7 @@ class Reversion(_Informe):
             else:
                 fila.resultado = "Pago anulado"
         if self.desmarcar_interno:
-            ids = {f.deuda.proveedor_id for f in self.filas if f.medio == INTERNO and f.deuda is not None}
+            ids = self._proveedores_internos_del_lote()
             for proveedor in Proveedor.objects.filter(pk__in=ids, es_interno=True).order_by("pk"):
                 set_supplier_internal(supplier=proveedor, es_interno=False, actor=self.actor)
                 self.proveedores_desmarcados.append(proveedor.razon_social)
@@ -1141,7 +1219,7 @@ class Reversion(_Informe):
         return self.filas
 
     def proveedores_internos(self) -> list[str]:
-        ids = {f.deuda.proveedor_id for f in self.filas if f.medio == INTERNO and f.deuda is not None}
+        ids = self._proveedores_internos_del_lote()
         return list(
             Proveedor.objects.filter(pk__in=ids, es_interno=True).order_by("razon_social").values_list(
                 "razon_social", flat=True

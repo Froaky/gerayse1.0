@@ -1577,7 +1577,7 @@ def register_box_expense_debt_view(request, box_id: int):
             form.is_valid()
         else:
             try:
-                register_box_expense_debt(
+                deuda = register_box_expense_debt(
                     caja=box,
                     proveedor=form.cleaned_data["proveedor"],
                     rubro=form.cleaned_data["rubro"],
@@ -1594,10 +1594,18 @@ def register_box_expense_debt_view(request, box_id: int):
             except (ValidationError, IntegrityError) as error:
                 _handle_operation_error(form, error, "No se pudo registrar el gasto como deuda.")
             else:
-                messages.success(
-                    request,
-                    "Gasto registrado como deuda pendiente. No salió efectivo de la caja; tesorería lo paga después.",
-                )
+                if deuda.estado == deuda.Estado.PAGADA and deuda.proveedor.es_interno:
+                    # US-3.20: la deuda de la panaderia propia nace saldada.
+                    messages.success(
+                        request,
+                        "Gasto registrado como deuda de proveedor interno: se da por pagada sin mover "
+                        "fondos. No salió efectivo de la caja.",
+                    )
+                else:
+                    messages.success(
+                        request,
+                        "Gasto registrado como deuda pendiente. No salió efectivo de la caja; tesorería lo paga después.",
+                    )
                 url = f"{reverse('cashops:dashboard')}?scope=box&box={box.pk}"
                 return _hx_redirect(url) if _is_htmx(request) else redirect(url)
 

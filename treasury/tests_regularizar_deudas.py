@@ -317,8 +317,10 @@ class PlanTests(RegularizacionBase):
     def test_oveja_negra_nunca_entra_al_modo_general(self):
         por_nombre = self._deuda("100.00", proveedor=self._proveedor("Oveja Negra Armadi SRL"))
         marcado = self._proveedor("Panaderia Propia")
-        set_supplier_internal(supplier=marcado, es_interno=True, actor=self.admin)
+        # Cargada ANTES de marcarlo: desde el slice 3, una factura cargada despues
+        # nace saldada con INTERNO y ni siquiera queda abierta.
         por_marca = self._deuda("200.00", proveedor=marcado)
+        set_supplier_internal(supplier=marcado, es_interno=True, actor=self.admin)
 
         filas = self._por_deuda(self._plan())
 
