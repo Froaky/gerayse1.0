@@ -10,6 +10,11 @@ en la máquina de la oficina). Esta bitácora es lo que hay que leer para retoma
 
 ## ESTADO AL CIERRE (2026-10-13 23:40) — leer esto primero
 
+**Actualización 14/10 ~20:00: EN MAIN Y EN PRODUCCIÓN** (fast-forward de main a staging con el OK de
+Mateo: "publiquemos el módulo de reportes"). Suite 1106 OK (6 skipped), sin migraciones. Lo de
+abajo queda como historia; lo que sigue pendiente son las preguntas de datos a Tais (punto 1) y los
+reportes 4 a 7.
+
 **Los 3 reportes están terminados, con el diseño del presupuesto, y en staging.** Falta que
 Tais los mire y conteste tres preguntas de datos, y el pase a main, que espera el OK de Mateo.
 Actualización 14/10 02:00: US-3.20 (de la que dependen: `es_interno`, medios sin movimiento,

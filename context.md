@@ -4,6 +4,23 @@ Last updated: 2026-10-13
 
 ## Current Session
 
+### Treasury Reportes PDF (presupuesto aceptado 2026-10-13) — en main desde 2026-10-14
+
+- Tesoreria > Reportes > Reportes PDF: situacion economica, situacion financiera y
+  desglose de deudas en PDF (ReportLab, `reportlab==5.0.0`), por empresa (razon social =
+  `Empresa.nombre`, CUIT = `Empresa.identificador_fiscal`), por sucursal, general o
+  general + cada sucursal en un PDF. Presupuesto: 7 reportes, 3 hechos, 4 a cuenta.
+- Capas: snapshot existente -> builder (`treasury/reportes/<reporte>.py`) ->
+  `ReportDocument` -> `render_report_pdf`. Sin formulas nuevas de dinero. Lectura nueva:
+  `build_open_payables_breakdown` (mismo alcance que pending_payables; concilia).
+- Seguridad: permiso treasury read; empresas = activas ∩ sesion ∩ permitidas; alcance
+  ajeno por URL -> 404. Los snapshots ignoran empresa_ids con sucursal: la pertenencia
+  la valida `ReportFilterForm`.
+- FIX incluido: egresos de boveda sin imputar acotados por empresa en la lectura
+  economica (antes aparecian los de la otra empresa).
+- Limite conocido: deuda sin sucursal suma en el general de todas las empresas.
+- Bitacora completa: docs/bitacora-reportes-pdf.md.
+
 ### Treasury Regularizar deudas viejas y proveedor interno (US-3.20) 2026-10-13
 
 - Pedido de Tais (2026-10-13): todas las facturas de proveedores de todas las sucursales,
