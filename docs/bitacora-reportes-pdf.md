@@ -11,10 +11,12 @@ en la máquina de la oficina). Esta bitácora es lo que hay que leer para retoma
 ## ESTADO AL CIERRE (2026-10-13 23:40) — leer esto primero
 
 **Los 3 reportes están terminados, con el diseño del presupuesto, y en staging.** Falta que
-Tais los mire y conteste tres preguntas de datos, y el pase a main, que va JUNTO con la
-regularización de deudas (US-3.20): decisión de Mateo del 13/10 ("seguimos sobre staging y
-después pasamos todo a main"). Los reportes dependen de US-3.20 (`es_interno`, medios sin
-movimiento, migración 0037), así que no se pueden pasar solos.
+Tais los mire y conteste tres preguntas de datos, y el pase a main, que espera el OK de Mateo.
+Actualización 14/10 02:00: US-3.20 (de la que dependen: `es_interno`, medios sin movimiento,
+migración 0037) YA está en main y en producción desde las 00:05, sin los reportes, porque Mateo
+pidió que los reportes esperen. Ya se pueden pasar solos: merge de `origin/staging` en main, sin
+conflictos según `git merge-tree` (receta en el TRASPASO v3). Si antes se integra atar al banco
+en staging, el pase de staging a main pasa a ser fast-forward.
 
 - Hecho a la tarde: S0 a S5, revisión adversarial y subida a staging (ver Registro).
 - Hecho a la noche (otra computadora, sesión nueva):
@@ -44,10 +46,10 @@ movimiento, migración 0037), así que no se pueden pasar solos.
      asignándoles sucursal.
    - Ninguna empresa tiene CUIT (`Empresa.identificador_fiscal` vacío): el encabezado sale
      sin CUIT. Cargarlo desde el admin de Django cuando Tais lo pase.
-2. **Pase a main junto con US-3.20**, con el OK de Tais y de Mateo. Agregar la nota en
-   `context.md` (borrador al final) y correr la suite antes del push. Avisarle a Tais de los
-   reportes en producción DESPUÉS de correr la regularización allá: antes, el desglose
-   muestra como abiertas las facturas que se van a atar al banco.
+2. **Pase a main** cuando Mateo lo diga (US-3.20 ya está en main desde el 14/10). Agregar la
+   nota en `context.md` (borrador al final) y correr la suite antes del push. Avisarle a Tais de
+   los reportes en producción DESPUÉS de atar al banco allá (660 facturas en prod): antes, el
+   desglose muestra como abiertas las facturas que se van a atar.
 3. **Reportes 4 a 7**, cuando Tais los pida (quedan a cuenta). Cada uno es: un módulo
    `treasury/reportes/<nombre>.py` con `SLUG`, `TITULO`, `build_<nombre>(scope)` y
    `nombre_archivo(scope)` que lea una lectura existente (si hace falta una nueva, va
@@ -108,7 +110,7 @@ La rama sigue a `origin/feat/reportes-pdf` (un `git push` pelado va ahí). Naci�
 | merge | Lo nuevo de staging (US-3.20) integrado; test del interno adaptado | Hecho (c4c4823, 212ba1b) |
 | S6 | Subido a staging y números validados contra el dashboard | Hecho (13/10 noche) |
 | diseño | Estilo del presupuesto, fuentes de marca, cifras que no se pisan | Hecho (13/10 noche) |
-| S7 | Pase a main junto con US-3.20, con OK de Tais y Mateo; nota en `context.md` | Pendiente |
+| S7 | Pase a main cuando Mateo lo diga (US-3.20 ya está en main desde el 14/10); nota en `context.md` | Pendiente |
 
 ## Mapa del código
 
