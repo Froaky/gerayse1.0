@@ -479,6 +479,9 @@ def _table(block: TableBlock, width: float) -> list:
                 style += _smaller_figures((col, index + 1), (col, index + 1), total_size)
     for index in block.group_rows:
         row = index + 1
+        if row + 1 < len(data):
+            # El rotulo del grupo (el mes, en el desglose) no queda solo al pie de la pagina.
+            style.append(("NOSPLIT", (0, row), (-1, row + 1)))
         style += [
             ("SPAN", (0, row), (-1, row)),
             ("BACKGROUND", (0, row), (-1, row), GROUP_BG),

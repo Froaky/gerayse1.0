@@ -12,6 +12,7 @@ from cashops.models import Empresa, Sucursal
 from treasury.reportes.alcance import ReportScope, nombre_mes, rango_de_meses
 from treasury.reportes.documento import Kpi, NoteBlock, Pct, ReportDocument, TableBlock
 from reportlab.pdfbase.pdfmetrics import stringWidth
+from reportlab.platypus import LongTable
 
 from treasury.reportes.pdf import (
     BODY_FONT,
@@ -329,3 +330,31 @@ class FooterAndFigureAlignmentTests(SimpleTestCase):
             # Y sale del de abajo: la fila no crece.
             self.assertEqual(comandos["TOPPADDING"] + comandos["BOTTOMPADDING"], 2 * ROW_PADDING)
             self.assertGreaterEqual(comandos["BOTTOMPADDING"], 0)
+
+
+class GroupRowKeepsWithNextTests(SimpleTestCase):
+    WIDTH = 505
+
+    def _split_right_after_the_group(self):
+        rows = [[f"Proveedor {i}", Decimal(i)] for i in range(40)]
+        group = len(rows)
+        rows += [["Octubre 2026 · 3 facturas", None], ["Proveedor A", Decimal("1")], ["Proveedor B", Decimal("2")]]
+        block = TableBlock(
+            title="Por mes",
+            columns=["Proveedor", "Saldo"],
+            rows=rows,
+            widths=[0.7, 0.3],
+            numeric_cols=frozenset({1}),
+            group_rows=frozenset({group}),
+        )
+        table = [flowable for flowable in build_story([_doc(blocks=[block])], self.WIDTH) if isinstance(flowable, LongTable)][0]
+        table.wrap(self.WIDTH, 10**6)
+        # Lugar justo para la cabecera, las 40 filas y el rotulo del mes, pero no para su primera factura.
+        alto = sum(table._rowHeights[: group + 2]) + 0.5
+        return table.split(self.WIDTH, alto)
+
+    def test_the_month_label_moves_to_the_next_page_with_its_first_invoice(self):
+        primera, segunda = self._split_right_after_the_group()
+        self.assertEqual(primera._cellvalues[-1][0], "Proveedor 39")
+        # La segunda parte repite la cabecera y arranca con el rotulo del mes.
+        self.assertEqual(segunda._cellvalues[1][0], "Octubre 2026 · 3 facturas")
