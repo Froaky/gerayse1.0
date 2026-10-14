@@ -1,8 +1,14 @@
 """Regulariza deudas viejas de proveedores (US-3.20). Sin --apply no escribe nada.
 
 Modo general: lo que tesoreria declaro pagado hasta una fecha y no esta pagado
-por banco se pago en EFECTIVO desde la caja fuerte. Se registra como pago en
-efectivo real (con su egreso de la boveda), a la fecha de cada factura:
+por banco se pago en EFECTIVO desde la caja fuerte. Antes del efectivo, las
+facturas que tienen un debito del banco del mismo proveedor y empresa sin
+asignar se ATAN a ese debito (se pagaron por banco; --sin-atar-banco lo apaga).
+Un debito que hoy cuenta como gasto (o esta pendiente de imputar) solo se ata
+si sus facturas lo consumen entero y tienen rubro; si no, quedan para revisar
+(--atar-con-sobrante acepta el sobrante). El resto se registra como pago en
+efectivo real (con su egreso de la boveda), a la fecha de cada factura, salvo
+las que pudieron pagarse con un egreso de la boveda ya cargado:
 
     python manage.py regularizar_deudas --hasta 2026-09-23 --usuario tesoreria \\
         --informe plan.csv
@@ -22,7 +28,8 @@ hay que repetirla con --confirmar:
     python manage.py regularizar_deudas --proveedor-interno "OVEJA NEGRA ARMADI SRL" \\
         --usuario tesoreria --plan interno.csv --informe interno_aplicado.csv --apply
 
-Reversion de un lote (anula sus pagos; el efectivo vuelve a la boveda). Con
+Reversion de un lote (anula sus pagos; el efectivo vuelve a la boveda y los
+debitos atados vuelven a quedar sin asignar e imputados como estaban). Con
 --desmarcar-interno desmarca al proveedor y anula tambien sus cancelaciones
 automaticas:
 
@@ -33,6 +40,7 @@ Ver treasury/regularizacion.py para las reglas.
 """
 
 from datetime import date
+from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -48,6 +56,7 @@ from treasury.regularizacion import (
     Accion,
     Regularizacion,
     Reversion,
+    leer_ataduras,
     leer_plan,
 )
 
@@ -82,8 +91,9 @@ class Command(BaseCommand):
             "--plan",
             help=(
                 "CSV revisado por tesoreria (el informe de la simulacion). Con --apply se aplican solo "
-                "sus filas A_REGULARIZAR que hoy siguen igual (saldo, importe, proveedor, sucursal, "
-                "empresa y fecha de pago); lo demas se informa. Obligatorio para aplicar."
+                "sus filas A_ATAR_BANCO (al debito del plan, con el mismo saldo) y A_REGULARIZAR que hoy "
+                "siguen igual (saldo, importe, proveedor, sucursal, empresa y fecha de pago); lo demas se "
+                "informa. Obligatorio para aplicar."
             ),
         )
         parser.add_argument("--hasta", help="Modo general: facturas con fecha de emision hasta esta fecha.")
@@ -126,6 +136,23 @@ class Command(BaseCommand):
             help=(
                 "Incluye las facturas con un egreso de la boveda sin factura (EGRESO_ADMIN) de la misma "
                 "sucursal e importe: quedan con aviso para que tesoreria las saque del plan si ya se pagaron."
+            ),
+        )
+        parser.add_argument(
+            "--sin-atar-banco",
+            action="store_true",
+            help=(
+                "Modo general: no ata facturas a los debitos del banco sin asignar (comportamiento "
+                "anterior: esas facturas quedan como POSIBLE_PAGO_EN_GERAYSE)."
+            ),
+        )
+        parser.add_argument(
+            "--atar-con-sobrante",
+            action="store_true",
+            help=(
+                "Modo general: ata tambien un debito que cuenta como gasto (o esta pendiente de imputar) "
+                "aunque le sobre importe. Ese sobrante deja de contar como gasto, como al pagar desde el "
+                "movimiento en la pantalla. Por defecto esas facturas quedan como POSIBLE_PAGO_EN_GERAYSE."
             ),
         )
         parser.add_argument(
@@ -173,6 +200,10 @@ class Command(BaseCommand):
             raise CommandError("Indique --hasta (modo general), --proveedor-interno o --revertir.")
         if proveedor is None and options["confirmar"]:
             raise CommandError("--confirmar va solo con --proveedor-interno.")
+        if proveedor is not None and options["sin_atar_banco"]:
+            raise CommandError("--sin-atar-banco es solo del modo general: el modo interno no paga con plata.")
+        if options["atar_con_sobrante"] and (proveedor is not None or options["sin_atar_banco"]):
+            raise CommandError("--atar-con-sobrante va solo con la atadura al banco del modo general.")
         if options["apply"] and not options["plan"]:
             # El modo general mueve la caja fuerte y el interno cancela deudas y
             # marca al proveedor para siempre: se aplica solo lo que tesoreria
@@ -195,14 +226,25 @@ class Command(BaseCommand):
                 incluir_posibles_pagos=options["incluir_posibles_pagos"],
                 incluir_posibles_duplicadas=options["incluir_posibles_duplicadas"],
                 incluir_posibles_pagos_en_efectivo=options["incluir_posibles_pagos_en_efectivo"],
+                atar_banco=not options["sin_atar_banco"],
+                atar_con_sobrante=options["atar_con_sobrante"],
             )
             aprobadas = leer_plan(options["plan"], regularizacion.medio) if options["plan"] else None
+            ataduras = leer_ataduras(options["plan"]) if options["plan"] else None
+            if ataduras and not regularizacion.atar_banco:
+                raise ValidationError(
+                    "El plan revisado tiene filas A_ATAR_BANCO y esta corrida no ata al banco "
+                    "(modo interno o --sin-atar-banco): use el plan de este mismo modo."
+                )
         except ValidationError as error:
             raise CommandError(" ".join(error.messages)) from error
 
         regularizacion.planificar()
         if aprobadas is not None:
-            regularizacion.restringir_a_plan(aprobadas)
+            try:
+                regularizacion.restringir_a_plan(aprobadas, ataduras)
+            except ValidationError as error:
+                raise CommandError(" ".join(error.messages)) from error
 
         self.stdout.write(
             self.style.WARNING("APLICANDO" if options["apply"] else "SIMULACION (no se escribe nada)")
@@ -221,8 +263,24 @@ class Command(BaseCommand):
                 f"hasta {regularizacion.cargadas_hasta:%d/%m/%Y}, fecha de pago: {fecha_pago}, "
                 f"lote {regularizacion.lote}."
             )
+            if regularizacion.atar_banco:
+                self.stdout.write(
+                    "Antes del efectivo se atan al banco las facturas con un debito del mismo proveedor y "
+                    "empresa sin asignar (A_ATAR_BANCO); las que no se pueden atar quedan como "
+                    "POSIBLE_PAGO_EN_GERAYSE."
+                )
+                if regularizacion.atar_con_sobrante:
+                    self.stdout.write(
+                        "Con --atar-con-sobrante: un debito que cuenta como gasto se ata aunque le sobre "
+                        "importe, y ese sobrante deja de contar como gasto."
+                    )
+            else:
+                self.stdout.write("Sin atar al banco (--sin-atar-banco).")
         if aprobadas is not None:
-            self.stdout.write(f"Plan revisado: {options['plan']} ({len(aprobadas)} deudas aprobadas).")
+            detalle = f"{len(aprobadas)} deudas aprobadas"
+            if not regularizacion.interno:
+                detalle += f", {len(ataduras)} ataduras al banco"
+            self.stdout.write(f"Plan revisado: {options['plan']} ({detalle}).")
 
         if options["apply"]:
             regularizacion.aplicar()
@@ -232,8 +290,12 @@ class Command(BaseCommand):
             self._imprimir_interno(regularizacion, options["apply"])
         else:
             self._imprimir_bovedas(regularizacion.bovedas(), aplicado=options["apply"])
+            self._imprimir_por_mes(regularizacion, aplicado=options["apply"])
+            self._imprimir_sobrantes(regularizacion, aplicado=options["apply"])
+            self._imprimir_no_atados(regularizacion)
             self._imprimir_avisos_por_mes(regularizacion)
             self._imprimir_top_proveedores(regularizacion)
+            self._imprimir_sin_rubro(regularizacion)
         self._imprimir_errores(regularizacion)
         self._escribir_informe(regularizacion, options["informe"])
 
@@ -307,6 +369,8 @@ class Command(BaseCommand):
                 "incluir_posibles_pagos",
                 "incluir_posibles_duplicadas",
                 "incluir_posibles_pagos_en_efectivo",
+                "sin_atar_banco",
+                "atar_con_sobrante",
             )
             if options[opcion]
         ]
@@ -335,6 +399,7 @@ class Command(BaseCommand):
 
         self._imprimir_resumen(reversion)
         self._imprimir_bovedas(reversion.bovedas(), aplicado=options["apply"], reversion=True)
+        self._imprimir_ataduras_revertidas(reversion, aplicado=options["apply"])
         if reversion.proveedores_desmarcados:
             self.stdout.write("")
             self.stdout.write(
@@ -390,6 +455,96 @@ class Command(BaseCommand):
                     "Antes de aplicar, decidir con tesoreria si se registra el prestamo entre empresas (un "
                     "egreso en la boveda que presta y un aporte en la que recibe) para que ninguna quede negativa."
                 )
+            )
+
+    def _imprimir_por_mes(self, regularizacion, *, aplicado):
+        filas = regularizacion.por_mes()
+        if not filas:
+            return
+        self.stdout.write("")
+        self.stdout.write(
+            "Por empresa y mes del pago: lo que se ata al banco, lo que va a efectivo y la caja fuerte al "
+            "cierre del mes (comparar con el arqueo de ese mes):"
+        )
+        atado = "atado al banco" if aplicado else "a atar al banco"
+        efectivo = "efectivo" if aplicado else "a efectivo"
+        proyectada = "despues" if aplicado else "proyectada"
+        self.stdout.write(
+            f"  {'mes':<8} {'empresa':<28} {atado:>18} {efectivo:>18} {'caja fuerte hoy':>18} {proyectada:>18}"
+        )
+        for fila in filas:
+            self.stdout.write(
+                f"  {fila['mes']:%m/%Y}  {fila['empresa'][:28]:<28} {dinero(fila['atado_banco']):>18} "
+                f"{dinero(fila['efectivo']):>18} {dinero(fila['boveda_hoy']):>18} "
+                f"{dinero(fila['boveda_proyectada']):>18}"
+            )
+        total_atado = sum((fila["atado_banco"] for fila in filas), Decimal("0.00"))
+        total_efectivo = sum((fila["efectivo"] for fila in filas), Decimal("0.00"))
+        self.stdout.write(f"  {'total':<37} {dinero(total_atado):>18} {dinero(total_efectivo):>18}")
+
+    def _imprimir_sobrantes(self, regularizacion, *, aplicado):
+        sobrantes = regularizacion.sobrantes_de_debitos()
+        if not sobrantes["debitos"]:
+            return
+        self.stdout.write("")
+        verbo = "quedaron" if aplicado else "quedan"
+        self.stdout.write(
+            f"{sobrantes['debitos']} debitos atados {verbo} con importe sin asignar: "
+            f"{dinero(sobrantes['sobrante'])} en total."
+        )
+        if sobrantes["debitos_de_gasto"]:
+            self.stdout.write(
+                f"  De esos, {sobrantes['debitos_de_gasto']} contaban como gasto o estaban pendientes de "
+                f"imputar (--atar-con-sobrante): sus {dinero(sobrantes['sobrante_de_gasto'])} sobrantes "
+                "dejan de contar como gasto al atarlos (revisar si pagan facturas que faltan cargar; ver el "
+                "aviso en el informe)."
+            )
+
+    def _imprimir_no_atados(self, regularizacion):
+        no_atados = regularizacion.debitos_no_atados
+        if not no_atados:
+            return
+        sobrante = sum((d["sobrante"] for d in no_atados), Decimal("0.00"))
+        facturas = sum(d["facturas"] for d in no_atados)
+        importe = sum((d["importe"] for d in no_atados), Decimal("0.00"))
+        self.stdout.write("")
+        self.stdout.write(
+            f"{len(no_atados)} debitos que cuentan como gasto (o estan pendientes de imputar) no se atan: "
+            f"les sobrarian {dinero(sobrante)} sin asignar, que dejarian de contar como gasto. Sus "
+            f"{facturas} facturas ({dinero(importe)}) quedan como POSIBLE_PAGO_EN_GERAYSE para revisar "
+            "(falta cargar alguna factura?). Con --atar-con-sobrante se atan igual."
+        )
+
+    def _imprimir_sin_rubro(self, regularizacion):
+        if regularizacion.categorias_sin_rubro:
+            self.stdout.write("")
+            self.stdout.write(
+                f"{regularizacion.categorias_sin_rubro} deudas a pagar tienen una categoria sin rubro: no "
+                "cuentan como gasto en la lectura economica."
+            )
+        if regularizacion.sin_rubro_sin_atar:
+            self.stdout.write("")
+            self.stdout.write(
+                f"{regularizacion.sin_rubro_sin_atar} facturas con categoria sin rubro no se atan a su debito "
+                "de gasto (el gasto desapareceria de la lectura economica): asigneles rubro y vuelva a "
+                "simular. Quedan como POSIBLE_PAGO_EN_GERAYSE."
+            )
+
+    def _imprimir_ataduras_revertidas(self, reversion, *, aplicado):
+        ataduras = [f for f in reversion.filas if f.debito_id and f.accion == Accion.A_REVERTIR]
+        if not ataduras:
+            return
+        debitos = {f.debito_id for f in ataduras}
+        self.stdout.write("")
+        if aplicado:
+            self.stdout.write(
+                f"Ataduras al banco anuladas: {len(ataduras)} pagos en {len(debitos)} debitos; "
+                f"{len(reversion.debitos_restaurados)} debitos volvieron a su imputacion anterior."
+            )
+        else:
+            self.stdout.write(
+                f"Ataduras al banco a anular: {len(ataduras)} pagos en {len(debitos)} debitos. Los debitos "
+                "vuelven a quedar sin asignar e imputados como estaban (el saldo del banco no cambia)."
             )
 
     def _imprimir_avisos_por_mes(self, regularizacion):
@@ -475,7 +630,8 @@ class Command(BaseCommand):
         self.stdout.write("")
         for fila in errores[:MAX_ERRORES_EN_CONSOLA]:
             detalle = fila.resultado or fila.motivo
-            self.stdout.write(self.style.ERROR(f"{fila.accion} deuda #{fila.deuda_id}: {detalle}"))
+            debito = f" (debito #{fila.debito_id})" if fila.debito_id else ""
+            self.stdout.write(self.style.ERROR(f"{fila.accion} deuda #{fila.deuda_id}{debito}: {detalle}"))
         if len(errores) > MAX_ERRORES_EN_CONSOLA:
             self.stdout.write(self.style.ERROR(f"... y {len(errores) - MAX_ERRORES_EN_CONSOLA} mas en el informe."))
 

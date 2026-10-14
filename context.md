@@ -219,6 +219,100 @@ Last updated: 2026-10-13
   - Impacto operativo: los CSV simulados antes de esta correccion no sirven como plan (faltan
     columnas): volver a simular. El modo interno ya no se corre por sucursal (el script de
     staging `aplicar_paralelo.sh` lo hacia): una sola corrida, con plan.
+- SLICE 2b (atadura al banco, 2026-10-13): el ensayo en staging (copia de prod del 13/10)
+  dejo 661 facturas ($103,7 M) como POSIBLE_PAGO_EN_GERAYSE: debitos REGISTRADO del mismo
+  proveedor y empresa sin asignar, cargados sueltos (junio sin imputar, julio como gasto con
+  rubro, agosto como gasto porque la factura se cargo despues de la importacion). Se pagaron
+  por banco: efectivo sacaria de la boveda plata que no salio, y dejarlas cuenta el gasto dos
+  veces (factura + debito imputado).
+  - Por defecto el modo general ATA esas facturas a su debito (`--sin-atar-banco` = antes).
+    Candidatas: A_REGULARIZAR o POSIBLE_PAGO (mismas exclusiones; duplicadas y mes cerrado
+    no). Debitos: REGISTRADO, mismo proveedor y empresa (cuenta, sucursal de la cuenta o
+    sucursal imputada; sin empresa conocida no se atan), clase transferencia/cheque/ECHEQ/otro
+    egreso, sin asignar > 0. Con sucursal imputada solo pagan facturas de esa sucursal.
+    Ventana emision-30..emision+75. Asignacion determinista por (proveedor, empresa), cada
+    fase sobre todos los debitos: 1) importe exacto (la factura mas vieja), 2) hasta 6
+    facturas consecutivas por fecha que sumen exacto, 3) por antiguedad solo facturas que
+    entran enteras. Nunca parcial; el sobrante queda sin asignar.
+  - Accion A_ATAR_BANCO, columnas nuevas `debito_id` e `importe_debito` (monto total del
+    debito); medio TRANSFERENCIA (CHEQUE/ECHEQ si el debito lo es), fecha_pago = fecha del
+    debito, referencia `<lote> #<deuda>`, token `uuid5(NS, "<lote>|ATAR|<deuda>|<debito>")`,
+    observaciones "Atado al debito #N del dd/mm/aaaa por la regularizacion <lote> (corte ..)".
+    Las POSIBLE_PAGO que no se atan siguen excluidas; el resto va a efectivo como antes.
+  - Aplicacion: primero ataduras, despues efectivo. Con `--plan` se atan EXACTAMENTE sus filas
+    A_ATAR_BANCO (al debito del CSV, aunque hoy el plan elija otro), una transaccion por
+    debito, con debito y deuda bloqueados: mismo saldo, mismas exclusiones, mismo proveedor/
+    empresa/sucursal original, ventana y sin asignar suficiente; si no, ERROR y se saltea. Lo
+    aprobado en efectivo que hoy tiene debito para atar queda FUERA_DEL_PLAN.
+  - Servicio: `pay_debt_from_bank_movement` suma `medio_pago`, `token_alta` y
+    `observacion_bancaria` (opcionales, sin cambio para pantallas e importador). Efecto
+    economico verificado con test: al atar, el debito pasa a origen PAGO_TESORERIA y sale de
+    `treasury_expense_total` (la factura ya lo cuenta); banco y saldo bancario sin cambios.
+  - Debitos de gasto (revision adversarial del 2026-10-13): el debito pasa ENTERO a
+    PAGO_TESORERIA (`link_payment_to_bank_movement`), asi que un debito MANUAL o
+    EGRESO_TESORERIA, imputado como gasto o pendiente de imputar, sale entero de la lectura
+    economica. Con sobrante, el gasto bajaba mas que lo atado (debito 1000 + factura 600:
+    gasto 1000 -> 600, y el sobrante tampoco quedaba en pendientes de imputar ni se podia
+    volver a imputar); con una factura de categoria sin rubro, el gasto desaparecia. Regla: a
+    un debito de gasto solo se le atan facturas con rubro y que lo consumen ENTERO (exacta,
+    combinacion o antiguedad que llega a cero), todas o ninguna en una transaccion (se
+    verifica en el plan, en `--plan` y bajo lock al aplicar). Si no, sus facturas quedan
+    POSIBLE_PAGO_EN_GERAYSE con el aviso (sobrante o "categoria sin rubro") y la consola los
+    resume. `--atar-con-sobrante` acepta el sobrante (como la pantalla); la factura sin rubro
+    no se ata ni con la opcion. Un debito ya atado a otras facturas (PAGO_TESORERIA) no cuenta
+    como gasto: se le atan facturas con sobrante o sin rubro sin cambiar la lectura. No se
+    toco el servicio. Test: el gasto total no baja mas que lo atado.
+  - En `observacion_bancaria` del pago queda la imputacion previa del debito (origen, clase,
+    proveedor, categoria, rubro, sucursal, periodo, pagos previos). `--revertir LOTE` anula
+    tambien las ataduras (una transaccion por debito) y, si el debito tiene los mismos pagos
+    que antes del lote, le devuelve esa imputacion con
+    `services.restore_bank_movement_imputation` (excepcion documentada a full_clean solo para
+    volver a dejar vacios rubro/sucursal/periodo de un historico sin imputar). Si tiene pagos
+    nuevos, se desata igual y se avisa.
+  - Consola: tabla por empresa y mes del pago con atado al banco, efectivo, caja fuerte al
+    cierre del mes hoy y proyectada (resta el efectivo acumulado); sobrante de debitos atados;
+    debitos de gasto que no se atan por sobrante y facturas sin rubro que no se atan.
+  - Tests: `treasury/tests_regularizar_atar_banco.py` (43). `manage.py test treasury cashops
+    core`: 836 OK (4 skipped). Sin migraciones.
+- INTEGRACION de la atadura (slice 2b) con el slice 3 y las correcciones de la revision
+  (rama `feat/regularizar-atar`, cherry-pick sobre `feat/regularizar-deudas`):
+  - Orden del modo general: 1) clasificar (exclusiones), 2) atar al banco (candidatas
+    A_REGULARIZAR y POSIBLE_PAGO_EN_GERAYSE), 3) mes cerrado posterior, 4) las
+    POSIBLE_PAGO_EN_GERAYSE que no se ataron (con `--incluir-posibles-pagos` van a efectivo),
+    5) POSIBLE_PAGO_EN_EFECTIVO. Solo compiten por los EGRESO_ADMIN de la boveda las facturas
+    que quedan para efectivo (A_REGULARIZAR a esa altura): una atada no toca la caja fuerte y
+    deja el egreso libre para otra; tampoco lo toma una excluida o para revisar. Antes (A sola)
+    competian todas las deudas abiertas y la mas vieja se quedaba el egreso aunque no fuera a
+    efectivo, y la que si iba salia pagada otra vez.
+  - Mes cerrado: el del mes del pago excluye siempre (efectivo y atadura, como en 2b). Un mes
+    cerrado solo POSTERIOR excluye el efectivo (regla de la revision) pero no la atadura, que no
+    mueve fondos: la factura con posible debito se intenta atar y, si no se ata, queda
+    EXCLUIDA_MES_CERRADO. Con `--plan`, una A_ATAR_BANCO del CSV se ata aunque hoy la factura
+    salga EXCLUIDA_MES_CERRADO solo por un cierre posterior. Al aplicar, el chequeo de cierre
+    (`_hay_cierre_desde`) es solo del efectivo.
+  - Plan CSV: columnas de los dos lados (`debito_id`, `importe_debito` despues de `fecha_pago`;
+    `posibles_pagos_efectivo` despues de `posibles_pagos`; `empresa_id`, `proveedor_id` al
+    final). `leer_plan` (FilaDelPlan, columnas obligatorias de la revision) lee las
+    A_REGULARIZAR y `leer_ataduras` las A_ATAR_BANCO. Efectivo: DISTINTA_AL_PLAN si cambio
+    saldo, importe, proveedor, sucursal, empresa o fecha de pago; ataduras: verificaciones de
+    2b (saldo en el plan; debito, proveedor, empresa, sucursal, ventana y sin asignar bajo lock).
+  - Con `--apply` el efectivo registrado pasa a APLICADA; una atadura registrada sigue
+    A_ATAR_BANCO, con `pago_id` y "atado al debito #N" en el resultado. Re-corrida con el mismo
+    plan: una atadura que ya hizo el lote sale YA_PROCESADA "Ya pagada por este lote: pago #N
+    atado al debito #M" (token de la atadura). `por_mes()` cuenta el efectivo APLICADA despues
+    de aplicar.
+  - Modo interno: nunca ata (`atar_banco` queda en False) y conserva las reglas de la revision
+    (plan obligatorio, sin filtros, `--confirmar`); el comando rechaza `--sin-atar-banco` y
+    `--atar-con-sobrante` con `--proveedor-interno`. Reversion: anula efectivo e INTERNO del
+    lote, desata y restaura la imputacion de los debitos (2b) y, con `--desmarcar-interno`,
+    anula las cancelaciones automaticas (slice 3). El cierre posterior de la revision bloquea
+    revertir efectivo; las ataduras se revierten como en 2b.
+  - `services._register_payment` recibe y guarda `observacion_bancaria` (la atadura pasa por
+    `register_payment`, que desde el slice 3 delega en `_register_payment`).
+  - Tests: 10 nuevos en `treasury/tests_regularizar_atar_banco.py` (53). Un test de 2b se
+    ajusto a la regla APLICADA (la factura que va a efectivo queda APLICADA, no A_REGULARIZAR).
+    Suite completa 973 OK (6 skipped); `manage.py test treasury cashops core`: 923 OK (6
+    skipped); makemigrations --check sin cambios.
 
 ### Treasury Importacion de planillas de banco y efectivo central 2026-09-30
 

@@ -349,11 +349,30 @@ Criterios:
   tarjetas, deudas con compromiso especial, sin sucursal, meses cerrados (o
   anteriores a un mes cerrado), las cargadas despues de la declaracion, las que
   parecen cargadas dos veces, las que pudieron pagarse con un debito del banco
-  sin asignar y las que pudieron pagarse con un egreso de la caja fuerte sin
-  factura de la misma sucursal e importe
+  sin asignar y no se pudieron atar, y las que pudieron pagarse con un egreso de
+  la caja fuerte sin factura de la misma sucursal e importe
 - el proveedor interno se marca solo con el plan revisado, si se cancelo al
   menos una de sus deudas y ninguna dio error; si el nombre no es el de la
   panaderia hay que confirmarlo, y se informa lo que le queda abierto
+- antes del efectivo, la factura que tiene un debito del banco del mismo
+  proveedor y empresa sin asignar se ata a ese debito (importe exacto, despues
+  una combinacion exacta chica, despues por antiguedad; nunca parcial): no sale
+  plata de la caja fuerte, el banco no cambia y el debito deja de contar como
+  gasto porque lo cuenta la factura
+- un debito que cuenta como gasto (o esta pendiente de imputar) solo se ata si
+  sus facturas lo consumen entero y tienen rubro: el gasto del resultado
+  economico nunca baja mas que lo atado. Si le sobraria importe, o la factura
+  tiene una categoria sin rubro, la factura queda para revisar con el aviso
+  (`--atar-con-sobrante` acepta el sobrante, como al pagar desde el movimiento)
+- antes de aplicar se ve, por empresa y mes, cuanto se ata al banco, cuanto va
+  a efectivo y la caja fuerte proyectada al cierre de cada mes
+- revertir un lote tambien desata los debitos, que vuelven a quedar sin asignar
+  e imputados como estaban
+- primero se decide que se ata al banco y despues, sobre lo que queda para
+  efectivo, se buscan los egresos de la caja fuerte que pudieron ser el pago: una
+  factura atada no se queda con un egreso que pudo ser el pago de otra
+- un mes cerrado posterior saca la factura del efectivo pero no impide atarla al
+  banco, que no mueve fondos
 - las facturas del proveedor interno se cancelan sin movimiento (INTERNO): la
   deuda queda pagada, no lleva cuenta ni movimiento y nunca crea un debito
   bancario ni un egreso de la caja fuerte
@@ -381,7 +400,10 @@ con modo general en efectivo, modo interno, plan revisado y reversion) y el
 slice 3 (alta automatica del proveedor interno, edicion y anulacion atomicas,
 anulaciones de caja), y las correcciones de la revision del comando (plan
 atado a boveda y fecha, posible pago en efectivo ya cargado, modo interno con
-plan y confirmacion, mes cerrado posterior). Falta el ensayo en staging.
+plan y confirmacion, mes cerrado posterior). El ensayo en staging dejo 661
+facturas como posible pago por banco; por eso el comando ahora las ata a sus
+debitos antes del efectivo (`--sin-atar-banco` vuelve al comportamiento
+anterior). Falta repetir el ensayo en staging con la atadura.
 REGULARIZACION queda definido en el modelo pero sin uso.
 
 ## Orden tecnico sugerido
