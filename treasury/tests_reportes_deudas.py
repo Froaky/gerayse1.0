@@ -4,23 +4,40 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
 
 from cashops.models import Empresa, RubroOperativo, Sucursal
 from treasury.models import CuentaBancaria, CuentaPorPagar, PagoTesoreria
 from treasury.reportes.alcance import ReportScope
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfbase.pdfmetrics import stringWidth
+
 from treasury.reportes.deudas import (
+    ANCHOS_GENERAL,
+    ANCHOS_SUCURSAL,
+    COLUMNAS_GENERAL,
+    COLUMNAS_SUCURSAL,
     NOTA_INTERNO,
     NOTA_PAGADO,
     NOTA_SIN_FONDOS,
     NOTA_VENCIDA,
     SIN_DEUDAS,
+    SIN_SUCURSAL,
     TABLA,
     build_desglose_deudas,
     nombre_archivo,
 )
-from treasury.reportes.pdf import format_value, render_report_pdf
+from treasury.reportes.pdf import (
+    BODY_FONT,
+    CELL_PADDING,
+    CELL_SIZE,
+    HEAD_SIZE,
+    MARGIN_X,
+    SEMIBOLD_FONT,
+    format_value,
+    render_report_pdf,
+)
 from treasury.services import (
     annul_payable,
     build_financial_period_snapshot,
@@ -402,7 +419,7 @@ class DesgloseDeudasBuilderTests(DeudasFixtureMixin, TestCase):
         )
         self.assertEqual(de_sucursal.table(TABLA).numeric_cols, frozenset({4, 5, 6}))
         self.assertEqual(general.table(TABLA).numeric_cols, frozenset({5, 6, 7}))
-        self.assertEqual(de_sucursal.alcance_label, "Sucursal Deudas Uno")
+        self.assertEqual(de_sucursal.alcance_label, "Sucursal: Deudas Uno")
         self.assertEqual(de_sucursal.kpi("Deuda abierta").value, Decimal("100.00"))
 
     def test_branch_report_only_lists_that_branch(self):
@@ -487,3 +504,25 @@ class DesgloseDeudasBuilderTests(DeudasFixtureMixin, TestCase):
             build_desglose_deudas(self._general(date_from=JULIO))
         with self.assertRaises(ValueError):
             nombre_archivo(self._general(date_to=JULIO))
+
+
+class AnchosDelDesgloseTests(SimpleTestCase):
+    """Fechas, vencimientos marcados, codigos de sucursal y numeros de comprobante
+    entran en su columna sin partirse a la mitad (con la letra de las tablas)."""
+
+    def _usable(self, columnas, anchos):
+        ancho = A4[0] - 2 * MARGIN_X
+        return {columna: fraccion * ancho - 2 * CELL_PADDING for columna, fraccion in zip(columnas, anchos)}
+
+    def test_fechas_codigos_y_comprobantes_entran_en_su_columna(self):
+        for columnas, anchos in ((COLUMNAS_GENERAL, ANCHOS_GENERAL), (COLUMNAS_SUCURSAL, ANCHOS_SUCURSAL)):
+            usable = self._usable(columnas, anchos)
+            self.assertLessEqual(stringWidth("28/08/2028", BODY_FONT, CELL_SIZE), usable["Emisión"])
+            self.assertLessEqual(stringWidth("28/08/2028 *", BODY_FONT, CELL_SIZE), usable["Vence"])
+            self.assertLessEqual(stringWidth("00004-00012345", BODY_FONT, CELL_SIZE), usable["Comprobante"])
+            self.assertLessEqual(stringWidth("$ 9.999.999,99", BODY_FONT, CELL_SIZE), usable["Importe"])
+            for columna in columnas:
+                self.assertLessEqual(stringWidth(columna, SEMIBOLD_FONT, HEAD_SIZE), usable[columna], columna)
+        general = self._usable(COLUMNAS_GENERAL, ANCHOS_GENERAL)
+        for codigo in ("TERM-01", "CENT-02", "PP-OV-06", "VIV-01", "BELGRANO", "CABALLITO", SIN_SUCURSAL):
+            self.assertLessEqual(stringWidth(codigo, BODY_FONT, CELL_SIZE), general["Sucursal"], codigo)

@@ -16,13 +16,21 @@ from reportlab.pdfbase.pdfmetrics import stringWidth
 from treasury.reportes.pdf import (
     BODY_FONT,
     BOLD_FONT,
+    CELL_SIZE,
+    MIN_CELL_SIZE,
+    RAZON_CHAR_SPACE,
+    RAZON_SIZE,
+    ROW_PADDING,
     TITLE_FONT,
     TITLE_SIZE,
     _label_span_end,
+    _smaller_figures,
     build_story,
+    footer_line,
     format_value,
     header_layout,
     header_lines,
+    numeric_font_sizes,
     render_report_pdf,
 )
 
@@ -38,8 +46,8 @@ def _doc(rows=None, **overrides) -> ReportDocument:
         titulo="Reporte de prueba",
         razon_social="ARMADI SRL",
         cuit="30-11111111-1",
-        alcance_label="General (todas las sucursales)",
-        periodo_label="Período 01/09/2026 al 30/09/2026",
+        alcance_label="Alcance: General (todas las sucursales)",
+        periodo_label="Período: 01/09/2026 al 30/09/2026",
         emitido_label="13/10/2026 11:40",
         kpis=[Kpi("Ventas", Decimal("1234.5"), "del período"), Kpi("Facturas", 3), Kpi("Margen", Pct(Decimal("12.345")))],
         blocks=[
@@ -104,8 +112,8 @@ class ReportScopeTests(SimpleTestCase):
         self.assertEqual(scope.razon_social, "ARMADI SRL")
         self.assertEqual(scope.cuit, "30-11111111-1")
         self.assertTrue(scope.es_general)
-        self.assertEqual(scope.alcance_label, "General (todas las sucursales)")
-        self.assertEqual(scope.periodo_label, "Período 01/09/2026 al 30/09/2026")
+        self.assertEqual(scope.alcance_label, "Alcance: General (todas las sucursales)")
+        self.assertEqual(scope.periodo_label, "Período: 01/09/2026 al 30/09/2026")
         self.assertEqual(
             scope.filename("situacion-economica"), "situacion-economica_armadi-srl_general_2026-09_2026-09.pdf"
         )
@@ -113,7 +121,7 @@ class ReportScopeTests(SimpleTestCase):
     def test_sucursal_scope_labels(self):
         scope = ReportScope(empresa=self.empresa, sucursal=self.sucursal, date_from=date(2026, 7, 1), date_to=date(2026, 9, 30))
         self.assertFalse(scope.es_general)
-        self.assertEqual(scope.alcance_label, "Sucursal Estación Belgrano")
+        self.assertEqual(scope.alcance_label, "Sucursal: Estación Belgrano")
         self.assertEqual(scope.filename("situacion-financiera"), "situacion-financiera_armadi-srl_eb_2026-07_2026-09.pdf")
         self.assertEqual(scope.filename("desglose-deudas", sufijo="al_2026-10-13"), "desglose-deudas_armadi-srl_eb_al_2026-10-13.pdf")
 
@@ -123,7 +131,7 @@ class ReportScopeTests(SimpleTestCase):
         scope = ReportScope(empresa=mapogo, sucursal_unica=vivre)
         self.assertTrue(scope.es_general)
         self.assertIsNone(scope.cuit)
-        self.assertEqual(scope.alcance_label, "Sucursal Vivre (única de la empresa)")
+        self.assertEqual(scope.alcance_label, "Sucursal: Vivre (única de la empresa)")
         self.assertEqual(scope.alcance_slug, "general")
 
     def test_emitido_label_uses_local_time(self):
@@ -163,7 +171,7 @@ class RendererTests(SimpleTestCase):
         self.assertIn("Sin datos para el alcance elegido.", texts)
 
     def test_several_documents_start_each_on_a_new_page(self):
-        pdf = render_report_pdf([_doc(), _doc(alcance_label="Sucursal Estación Belgrano")])
+        pdf = render_report_pdf([_doc(), _doc(alcance_label="Sucursal: Estación Belgrano")])
         self.assertEqual(_pages(pdf), 2)
 
     def test_group_and_total_rows_render(self):
@@ -186,8 +194,8 @@ class RendererTests(SimpleTestCase):
         self.assertNotIn("CUIT", detalle)
         self.assertNotIn("Período", detalle)
         _, _, con_periodo = header_lines(_doc())
-        self.assertIn("Período 01/09/2026 al 30/09/2026", con_periodo)
-        self.assertIn("Emitido 13/10/2026 11:40", detalle)
+        self.assertIn("Período: 01/09/2026 al 30/09/2026", con_periodo)
+        self.assertIn("Emitido: 13/10/2026 11:40", detalle)
 
     def test_requires_at_least_one_document(self):
         with self.assertRaises(ValueError):
@@ -218,20 +226,20 @@ class HeaderLayoutTests(SimpleTestCase):
 
     def test_short_header_stays_in_one_line(self):
         razon, size, lineas = header_layout(_doc(), self.WIDTH)
-        self.assertEqual((razon, size), ("ARMADI SRL", 11))
+        self.assertEqual((razon, size), ("ARMADI SRL", RAZON_SIZE))
         self.assertEqual(len(lineas), 1)
 
     def test_long_detail_splits_in_two_lines_that_fit(self):
         # Peor caso real: desglose con filtro de meses, CUIT y empresa de sucursal unica.
         doc = _doc(
             titulo="Desglose de deudas",
-            alcance_label="Sucursal Estación Belgrano Norte (única de la empresa)",
+            alcance_label="Sucursal: Estación Belgrano Norte (única de la empresa)",
             periodo_label="Deuda abierta al 13/10/2026 · períodos 07/2026 a 09/2026",
         )
         _, _, lineas = header_layout(doc, self.WIDTH)
         self.assertEqual(len(lineas), 2)
-        self.assertTrue(lineas[0].startswith("CUIT 30-11111111-1"))
-        self.assertIn("Emitido 13/10/2026 11:40", lineas[1])
+        self.assertTrue(lineas[0].startswith("CUIT: 30-11111111-1"))
+        self.assertIn("Emitido: 13/10/2026 11:40", lineas[1])
         for linea in lineas:
             self.assertLessEqual(stringWidth(linea, BODY_FONT, 8), self.WIDTH)
 
@@ -239,5 +247,85 @@ class HeaderLayoutTests(SimpleTestCase):
         doc = _doc(razon_social="SOCIEDAD ANÓNIMA DE GASTRONOMÍA Y PANADERÍA DEL CENTRO Y ALREDEDORES SRL")
         razon, size, _ = header_layout(doc, self.WIDTH)
         room = self.WIDTH - stringWidth(doc.titulo, TITLE_FONT, TITLE_SIZE) - 12
-        self.assertLess(size, 11)
-        self.assertLessEqual(stringWidth(razon, BOLD_FONT, size), room)
+        self.assertLess(size, RAZON_SIZE)
+        self.assertLessEqual(stringWidth(razon, BOLD_FONT, size) + RAZON_CHAR_SPACE * (len(razon) - 1), room)
+
+
+class NumericFontSizeTests(SimpleTestCase):
+    """Una cifra no hace salto de linea: si no entra, la tabla achica sus cifras."""
+
+    WIDTH = 505
+    WIDTHS = [0.66, 0.2, 0.14]
+
+    def _sizes(self, rows, total_rows=frozenset()):
+        block = TableBlock(
+            title="Cifras",
+            columns=["Concepto", "Uno", "Dos"],
+            rows=rows,
+            widths=self.WIDTHS,
+            numeric_cols=frozenset({1, 2}),
+            total_rows=total_rows,
+        )
+        texts = [[format_value(value) for value in row] for row in rows]
+        col_widths = [fraction * self.WIDTH for fraction in self.WIDTHS]
+        return texts, col_widths, numeric_font_sizes(texts, block, col_widths)
+
+    def test_numbers_that_fit_keep_the_cell_size(self):
+        *_, sizes = self._sizes([["Uno", Decimal("1.00"), Decimal("100.50")]])
+        self.assertEqual(sizes, (CELL_SIZE, CELL_SIZE))
+
+    def test_a_wide_number_shrinks_the_whole_body_until_it_fits(self):
+        rows = [["Uno", Decimal("1.00"), Decimal("1234567890.12")], ["Total", Decimal("1.00"), Decimal("1.00")]]
+        texts, col_widths, (body, total) = self._sizes(rows, frozenset({1}))
+        self.assertLess(body, CELL_SIZE)
+        self.assertGreaterEqual(body, MIN_CELL_SIZE)
+        self.assertLessEqual(stringWidth(texts[0][2], BODY_FONT, body), col_widths[2] - 8)
+        # Un total nunca queda mas grande que el cuerpo.
+        self.assertEqual(total, body)
+
+    def test_a_wide_total_only_shrinks_the_totals(self):
+        rows = [["Uno", Decimal("1.00"), Decimal("1.00")], ["Total", Decimal("1.00"), Decimal("1234567890.12")]]
+        texts, col_widths, (body, total) = self._sizes(rows, frozenset({1}))
+        self.assertEqual(body, CELL_SIZE)
+        self.assertLess(total, CELL_SIZE)
+        self.assertLessEqual(stringWidth(texts[1][2], BOLD_FONT, total), col_widths[2] - 8)
+
+    def test_never_goes_below_the_minimum(self):
+        *_, sizes = self._sizes([["Uno", Decimal("1.00"), Decimal("123456789012.34")]])
+        self.assertEqual(sizes, (MIN_CELL_SIZE, MIN_CELL_SIZE))
+
+
+class BrandFontsTests(SimpleTestCase):
+    def test_pdf_embeds_the_brand_fonts(self):
+        pdf = render_report_pdf([_doc()])
+        for font in (b"PublicSans-Regular", b"PublicSans-SemiBold", b"PublicSans-Bold", b"Fraunces-SemiBold", b"SplineSansMono-SemiBold"):
+            self.assertIn(font, pdf)
+
+    def test_header_detail_uses_label_and_value(self):
+        _, _, detalle = header_lines(_doc())
+        self.assertTrue(detalle.startswith("CUIT: 30-11111111-1"))
+        self.assertIn("Alcance: General (todas las sucursales)", detalle)
+
+
+class FooterAndFigureAlignmentTests(SimpleTestCase):
+    WIDTH = 505
+
+    def test_long_company_name_is_cut_before_the_page_number(self):
+        doc = _doc(razon_social="SOCIEDAD ANÓNIMA DE GASTRONOMÍA " * 5)
+        linea = footer_line(doc, self.WIDTH)
+        self.assertTrue(linea.endswith("…"))
+        room = self.WIDTH - stringWidth("Página 999 de 999", BODY_FONT, 7.5) - 12
+        self.assertLessEqual(stringWidth(linea, BODY_FONT, 7.5), room)
+
+    def test_short_footer_is_left_as_is(self):
+        self.assertEqual(footer_line(_doc(), self.WIDTH), "Gerayse — Reporte de prueba · ARMADI SRL")
+
+    def test_smaller_figures_keep_the_row_height_and_the_baseline(self):
+        for size in (MIN_CELL_SIZE, 6.5, 7.25):
+            comandos = {cmd[0]: cmd[3] for cmd in _smaller_figures((1, 1), (1, -1), size)}
+            self.assertEqual(comandos["FONTSIZE"], size)
+            # Lo que baja la letra sube el relleno de arriba: misma linea base que el rotulo.
+            self.assertEqual(comandos["TOPPADDING"] + size, ROW_PADDING + CELL_SIZE)
+            # Y sale del de abajo: la fila no crece.
+            self.assertEqual(comandos["TOPPADDING"] + comandos["BOTTOMPADDING"], 2 * ROW_PADDING)
+            self.assertGreaterEqual(comandos["BOTTOMPADDING"], 0)

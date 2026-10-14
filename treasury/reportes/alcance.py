@@ -82,11 +82,12 @@ class ReportScope:
 
     @property
     def alcance_label(self) -> str:
+        """"Rotulo: valor", como en el encabezado del presupuesto del modulo."""
         if self.sucursal is not None:
-            return f"Sucursal {self.sucursal.nombre}"
+            return f"Sucursal: {self.sucursal.nombre}"
         if self.sucursal_unica is not None:
-            return f"Sucursal {self.sucursal_unica.nombre} (única de la empresa)"
-        return "General (todas las sucursales)"
+            return f"Sucursal: {self.sucursal_unica.nombre} (única de la empresa)"
+        return "Alcance: General (todas las sucursales)"
 
     @property
     def alcance_slug(self) -> str:
@@ -100,7 +101,7 @@ class ReportScope:
     def periodo_label(self) -> str:
         if self.date_from is None or self.date_to is None:
             return ""
-        return f"Período {fecha_label(self.date_from)} al {fecha_label(self.date_to)}"
+        return f"Período: {fecha_label(self.date_from)} al {fecha_label(self.date_to)}"
 
     @property
     def emitido_label(self) -> str:

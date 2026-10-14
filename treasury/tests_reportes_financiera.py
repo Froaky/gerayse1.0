@@ -317,8 +317,8 @@ class SituacionFinancieraGeneralTests(SituacionFinancieraFixtureMixin, TestCase)
         self.assertEqual(self.doc.titulo, TITULO)
         self.assertEqual(self.doc.razon_social, "ARMADI SRL")
         self.assertEqual(self.doc.cuit, "30-11111111-1")
-        self.assertEqual(self.doc.alcance_label, "General (todas las sucursales)")
-        self.assertEqual(self.doc.periodo_label, "Período 01/09/2026 al 30/09/2026")
+        self.assertEqual(self.doc.alcance_label, "Alcance: General (todas las sucursales)")
+        self.assertEqual(self.doc.periodo_label, "Período: 01/09/2026 al 30/09/2026")
 
     def test_kpis_equal_the_snapshot(self):
         self.assertEqual([kpi.label for kpi in self.doc.kpis], [label for label, _ in KPIS_GENERAL])
@@ -450,7 +450,7 @@ class SituacionFinancieraSucursalTests(SituacionFinancieraFixtureMixin, TestCase
         doc = build_situacion_financiera(self._scope(sucursal=self.belgrano))
         snapshot = self._snapshot(sucursal=self.belgrano)
 
-        self.assertEqual(doc.alcance_label, "Sucursal Estación Belgrano")
+        self.assertEqual(doc.alcance_label, "Sucursal: Estación Belgrano")
         self.assertEqual([kpi.label for kpi in doc.kpis], [label for label, _ in KPIS_SUCURSAL])
         for label, key in KPIS_SUCURSAL:
             with self.subTest(kpi=label):

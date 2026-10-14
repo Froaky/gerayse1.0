@@ -329,8 +329,8 @@ class SituacionEconomicaKpiTests(SituacionEconomicaFixtureMixin, TestCase):
         self.assertEqual(doc.titulo, TITULO)
         self.assertEqual(doc.razon_social, "ARMADI Reportes SRL")
         self.assertEqual(doc.cuit, "30-11111111-1")
-        self.assertEqual(doc.alcance_label, "Sucursal Centro")
-        self.assertEqual(doc.periodo_label, "Período 01/09/2026 al 30/09/2026")
+        self.assertEqual(doc.alcance_label, "Sucursal: Centro")
+        self.assertEqual(doc.periodo_label, "Período: 01/09/2026 al 30/09/2026")
         self.assertEqual(doc.emitido_label, "13/10/2026 11:40")
 
     def test_sin_objetivo_no_aparecen_los_kpis_de_objetivo(self):
@@ -616,7 +616,7 @@ class SituacionEconomicaNotasTests(SituacionEconomicaFixtureMixin, TestCase):
             date_from=scope.date_from, date_to=scope.date_to, sucursal=self.vivre, empresa_ids=scope.empresa_ids
         )
 
-        self.assertEqual(doc.alcance_label, "Sucursal Vivre (única de la empresa)")
+        self.assertEqual(doc.alcance_label, "Sucursal: Vivre (única de la empresa)")
         self.assertTrue(por_sucursal["branch_objectives_enabled"])
         self.assertEqual(doc.kpi("Ventas").value, por_sucursal["sales_total"])
         self.assertEqual(doc.kpi("Objetivo").value, por_sucursal["objective_total"])

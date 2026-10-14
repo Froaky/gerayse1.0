@@ -246,7 +246,7 @@ class ReportesFormularioTests(ReportesVistasBase):
         self.assertTrue(form.is_valid(), form.errors)
         (scope,) = form.build_scopes()
         self.assertIsNone(scope.sucursal_unica)
-        self.assertEqual(scope.alcance_label, "General (todas las sucursales)")
+        self.assertEqual(scope.alcance_label, "Alcance: General (todas las sucursales)")
 
     def test_opciones_de_alcance_por_empresa(self):
         form = ReportFilterForm(empresas=[self.armadi, self.mapogo])
@@ -269,7 +269,7 @@ class ReportesFormularioTests(ReportesVistasBase):
         self.assertTrue(form.is_valid(), form.errors)
         (scope,) = form.build_scopes()
         self.assertIsNone(scope.sucursal)
-        self.assertEqual(scope.alcance_label, "Sucursal Vivre (única de la empresa)")
+        self.assertEqual(scope.alcance_label, "Sucursal: Vivre (única de la empresa)")
 
     def test_todas_arma_el_general_y_cada_sucursal_activa(self):
         form = ReportFilterForm(

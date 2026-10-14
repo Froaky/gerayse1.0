@@ -69,8 +69,9 @@ class ReportDocument:
     titulo: str
     razon_social: str
     cuit: str | None
+    # "Rotulo: valor" ("Sucursal: Estación Belgrano"): el renderer pinta en gris lo que
+    # va hasta el primer ": ". Sin ": " se muestra todo como valor ("Deuda abierta al 13/10/2026").
     alcance_label: str
-    # Rotulo completo: "Período 01/09/2026 al 30/09/2026" o "Deuda abierta al 13/10/2026".
     periodo_label: str
     emitido_label: str
     kpis: list[Kpi] = field(default_factory=list)

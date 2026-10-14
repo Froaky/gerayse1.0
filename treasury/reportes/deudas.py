@@ -27,10 +27,14 @@ NOTA_SIN_FONDOS = "Pagado incluye {monto} cancelados sin movimiento de fondos (r
 NOTA_INTERNO = "(interno): proveedor interno; sus facturas se cancelan sin movimiento de fondos."
 
 COLUMNAS_GENERAL = ["Proveedor", "Comprobante", "Sucursal", "Emisión", "Vence", "Importe", "Pagado", "Saldo"]
-# Fechas y montos al ancho justo de "dd/mm/aaaa *" y "$ 99.999.999,99"; "Sin sucursal" entra en una linea.
-ANCHOS_GENERAL = [0.166, 0.136, 0.104, 0.096, 0.108, 0.13, 0.13, 0.13]
+# Con la letra de las tablas (Public Sans 7,5): fechas al ancho justo de "dd/mm/aaaa *", el
+# comprobante corta en el espacio ("FC A" / "00004-00012345"), la sucursal es el codigo
+# ("BELGRANO", "PP-OV-06") y "Sin sucursal" entra en una linea. Las cifras son proporcionales:
+# entran montos de hasta unos $ 13 millones; uno mas ancho achica las cifras del cuerpo, y los
+# subtotales en negrita se achican aparte (ver pdf.numeric_font_sizes). Lo que sobra va al proveedor.
+ANCHOS_GENERAL = [0.151, 0.144, 0.104, 0.101, 0.11, 0.13, 0.13, 0.13]
 COLUMNAS_SUCURSAL = ["Proveedor", "Comprobante", "Emisión", "Vence", "Importe", "Pagado", "Saldo"]
-ANCHOS_SUCURSAL = [0.23, 0.176, 0.096, 0.108, 0.13, 0.13, 0.13]
+ANCHOS_SUCURSAL = [0.255, 0.144, 0.101, 0.11, 0.13, 0.13, 0.13]
 
 
 def _filtro_de_periodos(scope: ReportScope):
