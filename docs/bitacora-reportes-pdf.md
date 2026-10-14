@@ -8,38 +8,47 @@ El plan técnico completo está en el PDF "Plan Implementacion Reportes Gerayse"
 (fuente HTML en `C:\tmp\gerayse-presupuesto-reportes\plan-implementacion-reportes.html`
 en la máquina de la oficina). Esta bitácora es lo que hay que leer para retomar.
 
-## ESTADO AL CIERRE (2026-10-13 17:10) — leer esto primero
+## ESTADO AL CIERRE (2026-10-13 23:40) — leer esto primero
 
-**El desarrollo está terminado, probado y SUBIDO A STAGING.** Falta validar los
-números en staging, mostrárselo a Tais y pasarlo a main con el OK de Mateo.
-Todo está commiteado y empujado a `origin/feat/reportes-pdf` y a `origin/staging`
-(fast-forward: staging = la rama).
+**Los 3 reportes están terminados, con el diseño del presupuesto, y en staging.** Falta que
+Tais los mire y conteste tres preguntas de datos, y el pase a main, que va JUNTO con la
+regularización de deudas (US-3.20): decisión de Mateo del 13/10 ("seguimos sobre staging y
+después pasamos todo a main"). Los reportes dependen de US-3.20 (`es_interno`, medios sin
+movimiento, migración 0037), así que no se pueden pasar solos.
 
-- Hecho: S0 a S5 + revisión adversarial con sus arreglos. Los 3 reportes (situación
-  económica, situación financiera, desglose de deudas) se descargan desde
-  Tesorería > Reportes > Reportes PDF, por empresa (razón social en el encabezado),
-  por sucursal, general, o general + cada sucursal en un solo PDF.
-- La rama ya incluye lo último de staging (US-3.20, alta automática del proveedor
-  interno; merge c4c4823). Suite completa sobre ese estado: **1042 OK (6 skipped)**.
-  Sin migraciones.
-- Verificado a ojo con la base de demo (datos ficticios): los 3 PDFs, por sucursal,
-  general y "general y cada sucursal".
+- Hecho a la tarde: S0 a S5, revisión adversarial y subida a staging (ver Registro).
+- Hecho a la noche (otra computadora, sesión nueva):
+  - S6 en staging: el deploy de 9c09d33 quedó verde. Números de septiembre 2026 comparados
+    contra el dashboard con el mismo alcance: por sucursal coinciden los 132 valores
+    (6 sucursales de ARMADI en económica y financiera + económica de VIVRÉ); la económica
+    general de ARMADI + MAPOGO da exacto el consolidado. Las diferencias de la financiera
+    general son de DATOS (abajo, punto 1).
+  - Rediseño al estilo del presupuesto ("Presupuesto Reportes Gerayse.pdf"): fuentes de marca
+    embebidas, encabezado en caja con "Rótulo: valor", tarjetas KPI con cifras en mono,
+    cifras de tabla que nunca se pisan. Revisión adversarial (4 lentes + verificadores) y sus
+    arreglos. Ver Registro 23:40.
+- Sin migraciones.
 
 ### Qué falta, en orden
 
-1. **S6 — Validar en staging** (el código YA está en staging). Revisar que el deploy
-   de Railway del environment `staging` haya quedado verde (instala `reportlab==5.0.0`,
-   Python puro + Pillow). En staging: Tesorería > Reportes > Reportes PDF, bajar los 3
-   reportes de septiembre 2026 para Armadi general, cada sucursal y Mapogo, y comparar
-   contra el dashboard de tesorería con el mismo alcance y período (tienen que dar lo
-   mismo: los PDFs leen los mismos snapshots). Si hay que corregir algo: commit en
-   `feat/reportes-pdf` y de nuevo fast-forward de staging
-   (`git push origin feat/reportes-pdf:staging`, que falla solo si staging se movió:
-   en ese caso `git merge origin/staging` en la rama, suite completa, y reintentar).
-2. **Mandarle a Tais PDFs de muestra** y cerrar las decisiones abiertas (abajo).
-3. **S7 — main**, solo con OK de Mateo. Agregar la nota en `context.md` (borrador al
-   final de esta bitácora) y correr la suite antes del push.
-4. **Reportes 4 a 7**, cuando Tais los pida (quedan a cuenta). Cada uno es: un módulo
+1. **Tais revisa staging** y contesta (mensaje armado para Mateo el 13/10 a la noche):
+   - La cuenta "ARMADI SRL MACRO" está "Sin empresa asignada": por la regla de
+     `bank_account_empresa_scope_query` aparece también en el general de MAPOGO (bancos
+     $ 77,46 M en vez de $ 8,44 M; arrastra total disponible, pendiente de acreditación y
+     banco menos deuda). Se arregla asignándole la empresa (Cuentas bancarias > Editar), en
+     producción también. Ojo: con empresa asignada ya no puede pagar facturas de MAPOGO
+     (regla de 0d74ca5), que es lo correcto.
+   - Dos facturas sin sucursal suman en el general de las DOS empresas (límite conocido,
+     que a la tarde se creía en 0): JUICIOS ARCA "ANT. PEND. PP. ENE.FEB.MAR. ABR.MAY"
+     01/07/2026 $ 3.110.361,24 y ESMERALDA 01/07/2026 (saldo $ 16.123,56). Se arregla
+     asignándoles sucursal.
+   - Ninguna empresa tiene CUIT (`Empresa.identificador_fiscal` vacío): el encabezado sale
+     sin CUIT. Cargarlo desde el admin de Django cuando Tais lo pase.
+2. **Pase a main junto con US-3.20**, con el OK de Tais y de Mateo. Agregar la nota en
+   `context.md` (borrador al final) y correr la suite antes del push. Avisarle a Tais de los
+   reportes en producción DESPUÉS de correr la regularización allá: antes, el desglose
+   muestra como abiertas las facturas que se van a atar al banco.
+3. **Reportes 4 a 7**, cuando Tais los pida (quedan a cuenta). Cada uno es: un módulo
    `treasury/reportes/<nombre>.py` con `SLUG`, `TITULO`, `build_<nombre>(scope)` y
    `nombre_archivo(scope)` que lea una lectura existente (si hace falta una nueva, va
    en `treasury/services.py` con su test), una entrada en `treasury/reportes/registro.py`
@@ -47,17 +56,22 @@ Todo está commiteado y empujado a `origin/feat/reportes-pdf` y a `origin/stagin
    (`build_disponibilidades_snapshot`; por sucursal el saldo inicial da 0 porque los
    cierres son por empresa), cheques por vencer, ventas por canal, cierres de caja,
    pagos a proveedores (partir de `PagoTesoreria.objects.con_movimiento_de_fondos()`),
-   cuenta de un proveedor (`build_supplier_history_snapshot`).
+   cuenta de un proveedor (`build_supplier_history_snapshot`). Anchos de columna: medirlos
+   con Public Sans 7,5 (ver `AnchosDelDesgloseTests`); las cifras se achican solas.
 
 ### Para seguir en otra computadora
 
-- La demo local (`C:/tmp/gerayse-reportes-demo/gerayse_demo.sqlite3`, config
-  `reportes-demo` del `.claude/launch.json` del checkout principal, puerto 8011) solo
-  existe en la máquina de la oficina. En otra máquina alcanza con los tests; para ver
-  un PDF, cualquier base con datos y `python manage.py runserver` (con `DEBUG=True`).
-- En la oficina quedaron: worktree `C:/tmp/gerayse-reportes`, venv
-  `C:/tmp/venv-gerayse-reportes`. Se pueden borrar cuando la rama esté en main
-  (`git worktree remove C:/tmp/gerayse-reportes`).
+- Casa (13/10 noche): worktree `C:/code/gerayse-reportes`, venv `C:/code/venv-gerayse-reportes`
+  (Python 3.13 + requirements + fonttools y pymupdf para mirar PDFs). La base de demo con
+  datos ficticios salió del zip de traspaso (`tmp/gerayse-demo/gerayse_demo.sqlite3` +
+  `demo_settings.py` + `sqlite_decimal_patch.py`), copiada al scratchpad de la sesión y
+  migrada a esta rama.
+- Oficina: worktree `C:/tmp/gerayse-reportes`, venv `C:/tmp/venv-gerayse-reportes`, demo en
+  `C:/tmp/gerayse-reportes-demo/` (config `reportes-demo` del `.claude/launch.json`, puerto 8011).
+- Los worktrees se borran cuando la rama esté en main (`git worktree remove <ruta>`).
+- Validar en staging sin enviar formularios: Mateo se loguea en el navegador integrado y se
+  leen pantallas y PDFs con GET. Los PDFs de ReportLab llevan los streams en ASCII85 + Flate;
+  con las fuentes de marca el texto queda en glifos (para leerlo, pymupdf sobre el archivo).
 
 ## Cómo retomar (por ejemplo, en casa)
 
@@ -92,8 +106,9 @@ La rama sigue a `origin/feat/reportes-pdf` (un `git push` pelado va ahí). Naci�
 | S5 | Formulario, vistas, URLs, página y menú (+ tests de permisos y aislamiento) | Hecho (d8e4fc1) |
 | rev | Revisión adversarial de toda la rama y sus 5 arreglos | Hecho (819c031) |
 | merge | Lo nuevo de staging (US-3.20) integrado; test del interno adaptado | Hecho (c4c4823, 212ba1b) |
-| S6 | Subido a staging (fast-forward) | Hecho; falta validar los números allá |
-| S7 | Pase a main con OK de Mateo; nota en `context.md` | Pendiente |
+| S6 | Subido a staging y números validados contra el dashboard | Hecho (13/10 noche) |
+| diseño | Estilo del presupuesto, fuentes de marca, cifras que no se pisan | Hecho (13/10 noche) |
+| S7 | Pase a main junto con US-3.20, con OK de Tais y Mateo; nota en `context.md` | Pendiente |
 
 ## Mapa del código
 
@@ -229,6 +244,48 @@ La rama sigue a `origin/feat/reportes-pdf` (un `git push` pelado va ahí). Naci�
   como interno sí aparece, marcada "(interno)", hasta que corre la regularización.
 - Suite completa: 1042 OK (6 skipped). Push de la rama y fast-forward de staging.
 
+### 2026-10-13 23:40 — S6 en staging, rediseño al estilo del presupuesto y revisión
+
+- Sesión nueva en otra computadora (se cortó la luz). `origin/staging` = 9c09d33; deploy de
+  staging verde (GitHub deployments, 17:05).
+- S6: los 9 PDFs de septiembre (ARMADI general, general + sucursales y MAPOGO, los 3
+  reportes) responden 200 en menos de 1 s. Comparación automática contra el dashboard con el
+  mismo alcance y período: por sucursal coinciden los 132 valores; la económica general suma
+  exacto. Financiera general: caja fuerte, movimientos de caja, deuda y vencimientos suman;
+  bancos no, por la cuenta "ARMADI SRL MACRO" sin empresa (aparece en las dos), y la deuda de
+  los generales tiene $ 3.126.484,80 de dos facturas sin sucursal contadas en las dos
+  empresas. Son datos, no código: el dashboard usa la misma regla.
+- Mateo pidió que los PDFs tengan "algo de estilo Gerayse pero sin demasiado chiche, como el
+  presupuesto". Hecho en `treasury/reportes/pdf.py` (solo presentación, sin fórmulas):
+  - Fuentes del manual embebidas (`treasury/reportes/fuentes/`, OFL 1.1 con sus licencias):
+    Public Sans 400/600/700 (cuerpo), Fraunces SemiBold (títulos), Spline Sans Mono SemiBold
+    (cifras de las tarjetas). Instancias estáticas generadas con fontTools desde las
+    variables de Google Fonts (ReportLab no maneja variables). Unos 360 KB en el repo.
+  - Encabezado como el ejemplo del presupuesto: caja con barra verde, razón social en
+    mayúsculas (verde bosque), título en Fraunces a la derecha y "Rótulo: valor" con el
+    rótulo en gris. `alcance_label`/`periodo_label` pasan a "Sucursal: X",
+    "Alcance: General (todas las sucursales)", "Período: …" (contrato en documento.py: el
+    renderer pinta en gris hasta el primer ": ").
+  - Tarjetas KPI separadas, cada una con su filete; cifras en mono como el dashboard (las
+    tablas del dashboard no usan mono y las del PDF tampoco: no entran 7 columnas).
+  - Sin rojo en negativos: el desvío negativo es bueno (gasto − objetivo) y el dashboard no
+    colorea.
+  - FIX: las cifras no hacen salto de línea, y con Helvetica una de 9 cifras ya se pisaba con
+    la columna vecina (el total del desglose general de ARMADI es $ 265 M).
+    `numeric_font_sizes` achica las cifras del cuerpo (todas iguales) y, aparte, las de
+    subtotales y totales, sin bajar de 6 pt; el relleno compensa para que queden en la misma
+    línea base y la fila no crezca.
+  - Tablas a 7,5 pt, frame sin relleno (títulos y notas alinean con las tablas), anchos del
+    desglose medidos con Public Sans (fechas, "dd/mm/aaaa *", códigos de sucursal y
+    "Sin sucursal" en una línea; el comprobante corta en el espacio).
+  - La financiera general sigue entrando en una página.
+- Revisión adversarial (workflow, 4 lentes + un escéptico por lente): 9 hallazgos, 8
+  confirmados y corregidos (columna Sucursal angosta, línea base de cifras achicadas, pie que
+  pisaba "Página X de Y" con razón social larga, color de la razón social, comentario de
+  anchos, bits de negrita de PublicSans-Bold). El restante (rótulo del mes solo al pie de una
+  página) ya pasaba antes: va en un commit aparte con `NOSPLIT` entre el rótulo y su primera fila.
+- Suite completa con todo: 1053 OK (6 skipped). `makemigrations --check` sin cambios.
+
 ## Borrador de nota para `context.md` (agregar en S7, arriba de "Current Session")
 
 ```
@@ -250,19 +307,20 @@ La rama sigue a `origin/feat/reportes-pdf` (un `git push` pelado va ahí). Naci�
 - Bitacora completa: docs/bitacora-reportes-pdf.md.
 ```
 
-## Decisiones abiertas (preguntar a Mateo, no resolver solo)
+## Decisiones (actualizado 13/10 noche)
 
-1. "El mismo diseño" que pidió Tais: ¿pantallas del dashboard o el PDF de desglose de
-   deuda entregado en julio?
-2. Proveedor interno (Oveja Negra): HECHO como propuesta — se incluye y se marca
-   "(interno)" con una nota. Si Mateo prefiere excluirlo, es un filtro en
-   `build_open_payables_breakdown` (y habría que dejar de conciliar con pending_total).
-3. Publicar el desglose después de que corra la regularización en producción, o avisarle
-   a Tais que va a ver la deuda inflada por pagos sin atar.
-4. Banco por sucursal en Armadi: la cuenta es de la empresa, el reporte por sucursal sale
-   sin saldo bancario (lleva una nota que lo explica). Validar con Tais que se entienda.
-5. Precio de un reporte extra y si los reportes "a cuenta" vencen: no está en el
-   presupuesto.
-6. Empresa de sucursal única (Mapogo): la situación económica se lee por la sucursal
-   (aplica objetivos de Vivre); la financiera y el desglose, por la empresa. Si Tais
-   prefiere otra cosa es un cambio de una línea en cada builder.
+1. Diseño: Mateo, 13/10: "pdf con algo de estilo gerayse pero sin demasiado chiche, algo así
+   como el presupuesto". HECHO.
+2. Proveedor interno (Oveja Negra): se incluye marcado "(interno)" con una nota, como venía
+   (Mateo: "fijate qué dice la bitácora y cómo veníamos haciendo"). Si algún día se excluye,
+   es un filtro en `build_open_payables_breakdown` (y deja de conciliar con pending_total).
+3. Cuándo ve Tais el desglose en producción: después de correr la regularización allá (va
+   todo junto a main). En staging se le avisa que el desglose todavía cuenta las facturas
+   que se están atando al banco.
+4. Banco por sucursal en Armadi: la cuenta es de la empresa; el reporte por sucursal sale sin
+   saldo bancario, con una nota. Validar con Tais que se entienda.
+5. Reportes extra: el presupuesto dice que se estiman antes de hacerlos; los 4 que faltan
+   quedan a cuenta sin volver a cotizar.
+6. Empresa de sucursal única (Mapogo): económica por la sucursal (objetivos de Vivre);
+   financiera y desglose por la empresa. Cambio de una línea en cada builder si Tais
+   prefiere otra cosa.
