@@ -4,6 +4,17 @@ Last updated: 2026-10-15
 
 ## Current Session
 
+### Treasury Regularizacion REG2-2026-09-23 en produccion (US-3.20) 2026-10-15
+
+- Pedido de Mateo: todo pagado hasta el 23/09. `regularizar_deudas` modo general con las cuatro
+  inclusiones (`--incluir-posibles-pagos`, `-posibles-duplicadas`, `-posibles-pagos-en-efectivo`,
+  `-sin-sucursal`) y `--atar-con-sobrante`, lote `REG2-2026-09-23`: 215 facturas atadas a su debito
+  (29.101.196,70) y 265 pagadas en efectivo (33.264.666,80), 0 errores, resimulacion en 0.
+- Quedan abiertas hasta el 23/09 solo 13 de impuestos y 3 de sindicato (44.442.863,01). Caja fuerte
+  MAPOGO queda en -4.792.548,30 (falta arqueo o prestamo ARMADI -> MAPOGO). Sobrante de debitos que
+  deja de contar como gasto: 10.145.120,20. Detalle en la bitacora de US-3.20 (estado al 15/10).
+- Sin cambios de codigo.
+
 ### Treasury Libro de efectivo: pagos de factura con la sucursal de la factura 2026-10-15
 
 - Caso real: tesoreria pago en efectivo facturas de verduras y en Efectivo central todos
