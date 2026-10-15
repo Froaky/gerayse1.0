@@ -697,9 +697,8 @@ Last updated: 2026-10-13
 - Slice 5 (CI): nuevo `.github/workflows/ci.yml` que en push/PR a main corre check,
   makemigrations --check, compileall y la suite completa (Python 3.13, SQLite, DEBUG=True).
 - Estado suite: 257 tests OK (1 skip), makemigrations sin drift, cero migraciones agregadas.
-- OBSERVACION de seguridad (no actuada): en Railway el superusuario es `admin` /
-  `admin123!` (`DJANGO_SUPERUSER_*`). Conviene rotar a una password fuerte; queda a decision
-  del usuario.
+- OBSERVACION de seguridad: la contraseña del superusuario `admin` vive solo en la variable
+  `DJANGO_SUPERUSER_PASSWORD` de Railway. Nunca escribirla en el repo (es publico).
 - Diagnostico P1-6 corrido en prod (`reporte_sin_sucursal`): deudas, compromisos y egresos
   admin de caja central sin sucursal = 0 (lo sensible esta limpio). Unicos NULL relevantes:
   2 cuentas bancarias sin sucursal y 73 debitos bancarios sin `sucursal_gasto`.
