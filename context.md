@@ -1,8 +1,23 @@
 # Context
 
-Last updated: 2026-10-13
+Last updated: 2026-10-15
 
 ## Current Session
+
+### Treasury Libro de efectivo: pagos de factura con la sucursal de la factura 2026-10-15
+
+- Caso real: tesoreria pago en efectivo facturas de verduras y en Efectivo central todos
+  los pagos salian "sin sucursal imputada"; como no se pueden editar, creia que tenia que
+  anularlos para imputarlos.
+- Causa: el EGRESO_PAGO que crea un pago en efectivo no guarda sucursal, rubro ni periodo
+  (los tiene la factura). El libro solo miraba `sucursal_gasto` / `sucursal_origen`.
+- FIX (solo pantalla, `central_cash_movements`): si el movimiento es el pago de una factura,
+  muestra la sucursal y el rubro (via categoria) de la factura y su periodo ("05/2026 de la
+  factura"). El movimiento NO cambia: saldo por sucursal de la boveda, filtros y lecturas
+  quedan iguales. Limite conocido: al filtrar el libro por sucursal estos pagos siguen sin
+  aparecer (el alcance por sucursal de la boveda es otra decision).
+- Tests: `treasury/tests_libro_efectivo_alcance.py` (`PagoDeFacturaEnElLibroTests`). Suite
+  1109 OK, sin migraciones.
 
 ### Treasury Reportes PDF (presupuesto aceptado 2026-10-13) — en main desde 2026-10-14
 

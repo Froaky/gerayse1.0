@@ -3034,7 +3034,8 @@ def central_cash_movements(request):
     movements_listado = _filtrar_imputacion(
         scope_central_cash_movements(
             MovimientoCajaCentral.objects.filter(fecha__range=(first_day, last_day)).select_related(
-                "pago_tesoreria",
+                "pago_tesoreria__cuenta_por_pagar__sucursal",
+                "pago_tesoreria__cuenta_por_pagar__categoria__rubro_operativo",
                 "creado_por",
                 "caja_central__empresa",
                 "rubro_operativo",
@@ -3070,16 +3071,29 @@ def central_cash_movements(request):
         # La sucursal sale del movimiento, nunca de la boveda: un egreso la
         # trae en sucursal_gasto y un ingreso en sucursal_origen. El fallback a
         # caja_central.sucursal ya no sirve, porque la boveda es de la empresa.
+        # El pago de una factura en efectivo (EGRESO_PAGO) no guarda sucursal,
+        # rubro ni periodo: los tiene la factura que pago, y de ahi se leen. Sin
+        # esto el libro mostraba "sin sucursal imputada" en cada pago a
+        # proveedor y tesoreria creia que tenia que imputarlos a mano.
+        deuda = m.pago_tesoreria.cuenta_por_pagar if m.pago_tesoreria_id else None
         sucursal_label = "sin sucursal imputada"
         if m.sucursal_gasto_id:
             sucursal_label = m.sucursal_gasto.nombre
         elif m.sucursal_origen_id:
             sucursal_label = m.sucursal_origen.nombre
-        rubro_label = m.rubro_operativo.nombre if m.rubro_operativo_id else "sin rubro"
+        elif deuda is not None and deuda.sucursal_id:
+            sucursal_label = deuda.sucursal.nombre
+        rubro_label = "sin rubro"
+        if m.rubro_operativo_id:
+            rubro_label = m.rubro_operativo.nombre
+        elif deuda is not None and deuda.categoria.rubro_operativo_id:
+            rubro_label = deuda.categoria.rubro_operativo.nombre
         if m.periodo_pago:
             periodo_label = f"{m.periodo_pago:%m/%Y}"
         elif m.tipo == MovimientoCajaCentral.Tipo.INGRESO_CAJA:
             periodo_label = f"{m.fecha:%m/%Y} por fecha de caja"
+        elif deuda is not None:
+            periodo_label = f"{deuda.periodo_referencia:%m/%Y} de la factura"
         else:
             periodo_label = "sin periodo"
         usuario_label = m.creado_por.get_username() if m.creado_por_id else "sin usuario"
