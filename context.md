@@ -4,6 +4,15 @@ Last updated: 2026-10-15
 
 ## Current Session
 
+### Treasury Arqueo de caja fuerte cargado en produccion 2026-10-16
+
+- Cajas fuertes = planilla de tesoreria al 15/10: ARMADI 16.074.171,00 y MAPOGO -12.675.174,00
+  (incluye el prestamo de 12 M de ARMADI a Vivre). Se validaron 96 cajas hasta los cortes del arqueo,
+  se pago en efectivo el pollo (CRASH POLLO, 18 deudas hasta el 14/10), se cargaron los sueldos del
+  14/10 (16 egresos, PERSONAL, 25% en TERM/CENT/EB1/EB2), se pasaron al 15/10 los 18 pagos de Vivre
+  cargados con fecha 13/09 y se cargo el ajuste por arqueo (AJUSTE_NEGATIVO 36.691.702,40 y
+  7.872.625,70, fecha 15/10). Sin cambios de codigo. Detalle en la bitacora de US-3.20 (estado al 16/10).
+
 ### Treasury Regularizacion REG2-2026-09-23 en produccion (US-3.20) 2026-10-15
 
 - Pedido de Mateo: todo pagado hasta el 23/09. `regularizar_deudas` modo general con las cuatro
