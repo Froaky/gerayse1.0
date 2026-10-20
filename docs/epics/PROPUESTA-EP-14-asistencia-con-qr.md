@@ -16,7 +16,8 @@
 - El valor hora y los importes los tiene Mateo y NO se escriben aca: el repo es publico.
 - Quedan 3 puntos para cerrar con ella (ver "Lo que queda abierto"); se puede cotizar igual
   dejandolos como supuestos escritos en el presupuesto.
-- Tais esta averiguando los lectores QR (uno por sucursal, 6 en total).
+- Para escanear el presupuesto promete las dos opciones: lector QR 2D USB o la camara de un
+  celular. Tais esta averiguando los lectores.
 - Las fotos de la planilla y el audio quedaron en el chat de wpp, no en el repo (tienen nombres
   de empleados). Lo que importa de ellos esta en "Como lo hacen hoy".
 - Siguiente paso: Mateo le pasa el presupuesto a Tais. Recien con su OK explicito se implementa por slices
@@ -117,7 +118,7 @@ planilla de Google. Tais lo confirmo (respuesta 8): quiere dejar las planillas.
 | 1 | Padron de empleados | Alta/baja/edicion (nombre, DNI, empresa, sucursal habitual, activo). Carga inicial masiva de los 85 desde un CSV/planilla. Baja logica, nunca borrado. | 6-8 | 7 |
 | 2 | Credenciales QR | QR con un codigo opaco (sin datos personales adentro), revocable y reimprimible. PDF de carnets en A4 para recortar, por empresa o sucursal. | 4-6 | 5 |
 | 3 | Grilla semanal de turnos | Grilla por sucursal y semana: por empleado y dia, franco o uno/dos tramos. Copiar la semana anterior para cargar rapido. Valida solapamientos y cruce de medianoche. | 12-18 | 16 |
-| 4 | Pantalla de fichaje | Pantalla del cajero, pensada para lector QR USB (el lector "tipea" el codigo) y que tambien sirve con camara. Muestra grande nombre, entrada/salida del tramo que corresponde y "llego 12 min tarde". Hora del servidor. Anti doble escaneo. Solo marca en la sucursal del cajero. | 9-13 | 11 |
+| 4 | Pantalla de fichaje | Pantalla del cajero que escanea con lector QR USB (el lector "tipea" el codigo) **o con la camara del celular** (Android y iPhone, en el navegador, sin app): las dos opciones estan prometidas en el presupuesto. Muestra grande nombre, entrada/salida del tramo que corresponde y "llego 12 min tarde". Hora del servidor. Anti doble escaneo. Solo marca en la sucursal del cajero. | 9-13 | 11 |
 | 5 | Calculo | Tardanza por tramo, saldo mensual de la tolerancia de 30 min, horas extra en bloques de 30 min, turno cortado, cruce de medianoche, jornadas sin salida o sin horario senaladas. Tests de todas las reglas. | 8-12 | 10 |
 | 6 | Correcciones auditadas | Marca manual con hora informada y motivo: olvido el carnet, se corto internet, o llego antes que el cajero (respuesta 3). Queda senalada en el reporte. Anular con motivo. Quien y cuando, siempre. | 6-9 | 8 |
 | 7 | Reporte mensual | Por empleado con las mismas columnas que su planilla + tolerancia usada/saldo/exceso + resumen por empresa y sucursal. Descarga en Excel. | 9-13 | 12 |
@@ -165,16 +166,20 @@ Supuestos que conviene escribir en el presupuesto (no hace falta preguntarlos an
 - Liquidacion de sueldos ni montos: el sistema dice minutos y horas, no cuanto se paga.
 - Recargos por feriado o nocturnidad.
 - Faltas, justificaciones y presentismo (opcionales B y C, por ahora no).
-- Hardware: lectores QR, impresion y plastificado de carnets (los compra/imprime el cliente).
-- Reloj biometrico, app nativa, fichaje desde el celular del empleado con geolocalizacion.
+- Hardware: lectores QR o celulares para escanear, impresion y plastificado de carnets (los
+  compra/imprime el cliente).
+- Reloj biometrico, app nativa, que cada empleado fiche solo desde su propio celular.
 - Migrar el historico de la planilla actual (si lo quieren, es aparte).
 
 ## Hardware (lo compra el cliente; Tais lo esta averiguando)
 
-- Un **lector QR 2D USB** por sucursal: 6 en total (ojo: 2D; los lectores 1D de codigo de barras
-  no leen QR). Funciona como teclado, no necesita drivers y es lo mas rapido y confiable.
-- Alternativas sin costo: la webcam de la PC de la caja o el celular del cajero con Gerayse
-  abierto. Andan, pero son mas lentas, y las webcams de las cajas suelen ser malas.
+Cada sucursal elige (el presupuesto ofrece las dos como equivalentes):
+
+- **Lector QR 2D USB**: se enchufa a la PC de la caja y funciona como teclado, sin drivers. Ojo:
+  2D; los lectores 1D de codigo de barras no leen QR. Es lo mas rapido.
+- **Celular con camara**: Gerayse abierto en el navegador, sin instalar nada. Tecnicamente:
+  `BarcodeDetector` no existe en Safari de iPhone, asi que hace falta una libreria JS de lectura
+  de QR servida desde `static/` (sin CDN). La camara exige HTTPS (Railway ya lo da).
 
 ## Impacto de datos y hosting
 
