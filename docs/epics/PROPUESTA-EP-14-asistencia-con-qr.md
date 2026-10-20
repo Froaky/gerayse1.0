@@ -107,7 +107,7 @@ planilla de Google. Tais lo confirmo (respuesta 8): quiere dejar las planillas.
 | 5 | Calculo | Tardanza por tramo, saldo mensual de la tolerancia de 30 min, horas extra en bloques de 30 min, turno cortado, cruce de medianoche, jornadas sin salida o sin horario senaladas. Tests de todas las reglas. | 8-12 |
 | 6 | Correcciones auditadas | Marca manual con hora informada y motivo: olvido el carnet, se corto internet, o llego antes que el cajero (respuesta 3). Queda senalada en el reporte. Anular con motivo. Quien y cuando, siempre. | 6-9 |
 | 7 | Reporte mensual | Por empleado con las mismas columnas que su planilla + tolerancia usada/saldo/exceso + resumen por empresa y sucursal. Descarga en Excel. | 9-13 |
-| 8 | Puesta en marcha | Carga de los 85, staging, pruebas, pase a produccion, guia corta para cajeros y para quien carga la grilla, piloto de 1-2 semanas en una sucursal en paralelo con el cuaderno, despues las otras 5. | 7-9 |
+| 8 | Puesta en marcha | Carga de los 85, staging, pruebas, pase a produccion, guia corta para cajeros y para quien carga la grilla, arranque definitivo acompañado: de a una sucursal o todas juntas, segun elijan (sin piloto, lo decidio Mateo el 20/10). | 7-9 |
 |  | **Total fase 1** |  | **61-88** |
 
 ## Opcionales
@@ -171,10 +171,10 @@ Supuestos que conviene escribir en el presupuesto (no hace falta preguntarlos an
 ## Orden sugerido si se aprueba
 
 1. Slices 1 y 2 (padron y carnets): se pueden imprimir los carnets mientras se arma el resto.
-2. Slice 3 (grilla): que la carguen una semana antes del piloto.
+2. Slice 3 (grilla): que la carguen una semana antes del arranque.
 3. Slices 4 y 5 juntos: es la capacidad minima visible (fichar y ver la tardanza).
-4. Slice 6 antes del piloto: sin correcciones el primer corte de internet frena todo.
-5. Slice 7 y piloto en una sucursal (slice 8); despues las otras 5.
+4. Slice 6 antes del arranque: sin correcciones el primer corte de internet frena todo.
+5. Slice 7 y arranque definitivo (slice 8), de a una sucursal o todas juntas.
 
 ## Dependencias
 
