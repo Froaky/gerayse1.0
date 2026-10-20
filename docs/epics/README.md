@@ -60,6 +60,7 @@ Principios de implementacion:
 
 Propuestas para presupuestar (no aprobadas, no implementar sin OK explicito):
 - [PROPUESTA-EP-13-cajeros-y-validacion-efectivo.md](/C:/Users/MateoCoca/Documents/REPOS/gerayse/docs/epics/PROPUESTA-EP-13-cajeros-y-validacion-efectivo.md): usuarios cajero por sucursal, validacion de efectivo antes de contar, permisos por accion, egreso de caja como deuda. Pedido 2026-07-08, queda fuera del orden de implementacion hasta aprobacion.
+- [PROPUESTA-EP-14-asistencia-con-qr.md](PROPUESTA-EP-14-asistencia-con-qr.md): fichaje del personal con carnet QR escaneado en la caja, tardanza, horas extra y reporte mensual con el formato de la planilla actual. Pedido 2026-10-20, para presupuestar.
 
 Criterio de cierre global:
 - un mes completo de operacion debe poder reconstruirse desde la base sin editar planillas

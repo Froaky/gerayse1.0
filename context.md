@@ -1,8 +1,22 @@
 # Context
 
-Last updated: 2026-10-15
+Last updated: 2026-10-20
 
 ## Current Session
+
+### Propuesta EP-14 asistencia del personal con QR 2026-10-20
+
+- Pedido de Tais: presupuesto para fichar con QR (50 empleados ARMADI, 35 Vivre): hora de entrada,
+  minutos de retraso, salida y horas extra; hoy anotan en un cuaderno y el cajero lo pasa a una
+  planilla de Google.
+- `docs/epics/PROPUESTA-EP-14-asistencia-con-qr.md`: modulo dentro de Gerayse (no app aparte ni
+  escritura en su Sheet). Tais respondio el 20/10: turno cortado si, horarios rotativos semanales,
+  fichan 6 sucursales (en la base hay 7: falta saber cual no), tolerancia de 30 min acumulados por mes, extra en bloques de 30 min,
+  sin faltas/presentismo por ahora, quiere dejar las planillas. Presupuesto cerrado en 78 h + abono
+  mensual por sucursal (importes y PDF fuera del repo, en la carpeta del traspaso).
+- Abierto: quien carga la grilla semanal, si se aprueban las extra, y la marca con hora real de
+  quien llega antes que el cajero. Precio fuera del repo (es publico). No implementar sin OK de
+  Mateo. Sin cambios de codigo.
 
 ### Treasury Arqueo de caja fuerte cargado en produccion 2026-10-16
 
