@@ -107,7 +107,7 @@ planilla de Google. Tais lo confirmo (respuesta 8): quiere dejar las planillas.
 | 5 | Calculo | Tardanza por tramo, saldo mensual de la tolerancia de 30 min, horas extra en bloques de 30 min, turno cortado, cruce de medianoche, jornadas sin salida o sin horario senaladas. Tests de todas las reglas. | 8-12 |
 | 6 | Correcciones auditadas | Marca manual con hora informada y motivo: olvido el carnet, se corto internet, o llego antes que el cajero (respuesta 3). Queda senalada en el reporte. Anular con motivo. Quien y cuando, siempre. | 6-9 |
 | 7 | Reporte mensual | Por empleado con las mismas columnas que su planilla + tolerancia usada/saldo/exceso + resumen por empresa y sucursal. Descarga en Excel. | 9-13 |
-| 8 | Puesta en marcha | Carga de los 85, staging, pruebas, pase a produccion, guia corta para cajeros y para quien carga la grilla, arranque definitivo acompañado: de a una sucursal o todas juntas, segun elijan (sin piloto, lo decidio Mateo el 20/10). | 7-9 |
+| 8 | Puesta en marcha | Carga de los 85, staging, pruebas, pase a produccion, manual de usuario de todo el modulo (fichaje, grilla, correcciones y reporte), arranque definitivo de a una sucursal o todas juntas, segun elijan. Sin piloto ni acompañamiento presencial: Mateo implementa y entrega el manual (decidido el 20/10). | 7-9 |
 |  | **Total fase 1** |  | **61-88** |
 
 ## Opcionales
