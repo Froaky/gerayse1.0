@@ -22,6 +22,20 @@
 - Siguiente paso: Mateo le pasa el presupuesto a Tais. Recien con su OK explicito se implementa por slices
   (rama `feat/asistencia-qr` desde `main`, despues `staging`).
 
+## Para retomar en otra sesion
+
+1. Esta propuesta y su entrada en `context.md` viven en `staging` (rama
+   `docs/propuesta-asistencia-qr`); `main` no las tiene hasta que Mateo lo apruebe.
+2. Antes de tocar codigo: confirmar con Mateo que Tais acepto el presupuesto, cual de las 7
+   sucursales de la base no ficha y los tres puntos de "Lo que queda abierto".
+3. Implementar por slices en el orden sugerido, rama `feat/asistencia-qr` desde `main`, cada
+   slice con tests, despues `staging`. Skills: `django-feature-slice`, `testing-riguroso-extremo`.
+4. El PDF entregado (fuente HTML + `build.sh`) esta fuera del repo, en
+   `gerayse-traspaso/gerayse-traspaso-2026-10-13/tmp/gerayse-presupuesto-asistencia/`. Lo que se
+   prometio ahi es el alcance: si algo de este documento lo contradice, manda el PDF.
+5. Fuera de alcance por decision de Mateo: piloto, acompanamiento presencial, faltas,
+   presentismo y volcado a Google Sheets. Al final se entrega un manual de usuario de todo.
+
 ## Origen del pedido (2026-10-20, Tais por wpp + audio)
 
 1. Presupuesto para registrar la asistencia con QR: 50 empleados en ARMADI y 35 en Vivre (MAPOGO).
@@ -98,17 +112,17 @@ planilla de Google. Tais lo confirmo (respuesta 8): quiere dejar las planillas.
 
 ## Fase 1 (base): fichaje con QR, turnos rotativos, tardanza y horas extra
 
-| # | Slice | Que incluye | Horas |
-|---|---|---|---|
-| 1 | Padron de empleados | Alta/baja/edicion (nombre, DNI, empresa, sucursal habitual, activo). Carga inicial masiva de los 85 desde un CSV/planilla. Baja logica, nunca borrado. | 6-8 |
-| 2 | Credenciales QR | QR con un codigo opaco (sin datos personales adentro), revocable y reimprimible. PDF de carnets en A4 para recortar, por empresa o sucursal. | 4-6 |
-| 3 | Grilla semanal de turnos | Grilla por sucursal y semana: por empleado y dia, franco o uno/dos tramos. Copiar la semana anterior para cargar rapido. Valida solapamientos y cruce de medianoche. | 12-18 |
-| 4 | Pantalla de fichaje | Pantalla del cajero, pensada para lector QR USB (el lector "tipea" el codigo) y que tambien sirve con camara. Muestra grande nombre, entrada/salida del tramo que corresponde y "llego 12 min tarde". Hora del servidor. Anti doble escaneo. Solo marca en la sucursal del cajero. | 9-13 |
-| 5 | Calculo | Tardanza por tramo, saldo mensual de la tolerancia de 30 min, horas extra en bloques de 30 min, turno cortado, cruce de medianoche, jornadas sin salida o sin horario senaladas. Tests de todas las reglas. | 8-12 |
-| 6 | Correcciones auditadas | Marca manual con hora informada y motivo: olvido el carnet, se corto internet, o llego antes que el cajero (respuesta 3). Queda senalada en el reporte. Anular con motivo. Quien y cuando, siempre. | 6-9 |
-| 7 | Reporte mensual | Por empleado con las mismas columnas que su planilla + tolerancia usada/saldo/exceso + resumen por empresa y sucursal. Descarga en Excel. | 9-13 |
-| 8 | Puesta en marcha | Carga de los 85, staging, pruebas, pase a produccion, manual de usuario de todo el modulo (fichaje, grilla, correcciones y reporte), arranque definitivo de a una sucursal o todas juntas, segun elijan. Sin piloto ni acompañamiento presencial: Mateo implementa y entrega el manual (decidido el 20/10). | 7-9 |
-|  | **Total fase 1** |  | **61-88** |
+| # | Slice | Que incluye | Estimado | Presupuesto |
+|---|---|---|---|---|
+| 1 | Padron de empleados | Alta/baja/edicion (nombre, DNI, empresa, sucursal habitual, activo). Carga inicial masiva de los 85 desde un CSV/planilla. Baja logica, nunca borrado. | 6-8 | 7 |
+| 2 | Credenciales QR | QR con un codigo opaco (sin datos personales adentro), revocable y reimprimible. PDF de carnets en A4 para recortar, por empresa o sucursal. | 4-6 | 5 |
+| 3 | Grilla semanal de turnos | Grilla por sucursal y semana: por empleado y dia, franco o uno/dos tramos. Copiar la semana anterior para cargar rapido. Valida solapamientos y cruce de medianoche. | 12-18 | 16 |
+| 4 | Pantalla de fichaje | Pantalla del cajero, pensada para lector QR USB (el lector "tipea" el codigo) y que tambien sirve con camara. Muestra grande nombre, entrada/salida del tramo que corresponde y "llego 12 min tarde". Hora del servidor. Anti doble escaneo. Solo marca en la sucursal del cajero. | 9-13 | 11 |
+| 5 | Calculo | Tardanza por tramo, saldo mensual de la tolerancia de 30 min, horas extra en bloques de 30 min, turno cortado, cruce de medianoche, jornadas sin salida o sin horario senaladas. Tests de todas las reglas. | 8-12 | 10 |
+| 6 | Correcciones auditadas | Marca manual con hora informada y motivo: olvido el carnet, se corto internet, o llego antes que el cajero (respuesta 3). Queda senalada en el reporte. Anular con motivo. Quien y cuando, siempre. | 6-9 | 8 |
+| 7 | Reporte mensual | Por empleado con las mismas columnas que su planilla + tolerancia usada/saldo/exceso + resumen por empresa y sucursal. Descarga en Excel. | 9-13 | 12 |
+| 8 | Puesta en marcha | Carga de los 85, staging, pruebas, pase a produccion, manual de usuario de todo el modulo (fichaje, grilla, correcciones y reporte), arranque definitivo de a una sucursal o todas juntas, segun elijan. Sin piloto ni acompañamiento presencial: Mateo implementa y entrega el manual (decidido el 20/10). | 7-9 | 9 |
+|  | **Total fase 1** |  | **61-88** | **78** |
 
 ## Opcionales
 
@@ -123,11 +137,16 @@ planilla de Google. Tais lo confirmo (respuesta 8): quiere dejar las planillas.
 | G | Volcado a su Google Sheet | Fuera (respuesta 8). | - |
 | H | Modo sin internet (cola local que sube al volver la conexion) | No recomendado: con el slice 6 alcanza. | 10-16 |
 
-## Lo que queda abierto (para cerrar el numero)
+## Lo que queda abierto
+
+El presupuesto (PDF) ya los cotizo como supuestos escritos; confirmarlos con Tais antes de
+implementar.
 
 1. **Quien carga la grilla de horarios cada semana y hasta cuando**: Tais/administracion para
    todas las sucursales, o el encargado/cajero de cada una. Sin grilla cargada no hay tardanza.
    Cambia permisos y pantallas, no mucho las horas.
+   Supuesto del presupuesto: la carga administracion, o quien designen, antes de que empiece
+   la semana.
 2. **Horas extra: se cuentan solas o las aprueba alguien?** Sin respuesta. Supuesto del
    presupuesto: se cuentan solas; si las aprueban, se suma D.
 3. **Gente que llega antes que el cajero**: Tais dijo que no hay problema en marcarlos a la hora
