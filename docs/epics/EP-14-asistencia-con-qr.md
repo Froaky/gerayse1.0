@@ -226,7 +226,7 @@ Criterios:
   "Corregida" en el Excel (origen MANUAL) y la anulada afuera quedan para US-14.6, que lee estos
   campos
 
-### [ ] US-14.6 Excel del mes por empleado
+### [x] US-14.6 Excel del mes por empleado
 
 Como administracion
 Quiero descargar un Excel del mes con una hoja por empleado
@@ -241,6 +241,10 @@ Criterios:
 - solo empleados de las empresas permitidas
 - tests: turno cortado, medianoche, sin salida, marca corregida, marca anulada y mes sin marcas
 - estimado: 5 h
+- hecho 21/10: `/asistencia/excel/` (`asistencia/excel.py`, openpyxl 3.1.5). Los tramos se arman
+  con la regla de 16 h del fichaje sobre las marcas no anuladas, desde 16 h antes hasta 16 h despues
+  del mes; la salida del dia 1 que cierra el mes anterior queda afuera. Horas en formato `[h]:mm`;
+  un nombre que empieza con "=" queda como texto. Tests en `asistencia/tests_excel.py`
 
 ### [ ] US-14.7 Respaldo diario de la asistencia fuera del servidor
 

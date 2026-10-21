@@ -1,5 +1,5 @@
 import secrets
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -15,6 +15,7 @@ from django.views.decorators.http import require_http_methods
 
 from .alcance import empresas_en_alcance, sucursales_en_alcance
 from .carnets import generar_carnets_pdf
+from .excel import CONTENT_TYPE_XLSX, generar_excel, ventana_del_mes
 from .fichaje import fichar
 from .forms import (
     AnularCarnetForm,
@@ -22,6 +23,7 @@ from .forms import (
     CarnetsFiltroForm,
     EmpleadoFiltroForm,
     EmpleadoForm,
+    ExcelForm,
     ImportarEmpleadosForm,
     MarcaFiltroForm,
     MarcaManualForm,
@@ -397,6 +399,53 @@ def fichar_view(request):
         "asistencia/fichar.html",
         {"title": "Fichar", "fichaje": fichaje, "sucursal": request.user.sucursal_base},
     )
+
+
+@login_required
+def excel(request):
+    ensure_administrar(request.user)
+    empleados = _empleados_en_alcance(request)
+    form = ExcelForm(
+        request.GET or None,
+        initial={"mes": timezone.localdate().strftime("%Y-%m")},
+        empresas=empresas_en_alcance(request),
+        empleados=empleados,
+    )
+    if not request.GET.get("descargar"):
+        return render(request, "asistencia/excel.html", {"title": "Excel del mes", "form": form})
+    if not form.is_valid():
+        return render(request, "asistencia/excel.html", {"title": "Excel del mes", "form": form}, status=400)
+    anio, mes = form.cleaned_data["mes"]
+    desde, hasta = ventana_del_mes(anio, mes)
+    inicio_mes = timezone.make_aware(datetime(anio, mes, 1))
+    fin_mes = timezone.make_aware(datetime(anio + (mes == 12), mes % 12 + 1, 1))
+    seleccion = empleados
+    if form.cleaned_data.get("empresa"):
+        seleccion = seleccion.filter(empresa=form.cleaned_data["empresa"])
+    if form.cleaned_data.get("empleado"):
+        seleccion = seleccion.filter(pk=form.cleaned_data["empleado"].pk)
+    else:
+        # Todo activo, y los dados de baja solo si tienen marcas ese mes.
+        con_marcas = Marca.objects.filter(anulada=False, momento__gte=inicio_mes, momento__lt=fin_mes)
+        seleccion = seleccion.filter(Q(activo=True) | Q(pk__in=con_marcas.values("empleado_id")))
+    seleccion = seleccion.prefetch_related(
+        Prefetch(
+            "marcas",
+            queryset=Marca.objects.filter(anulada=False, momento__gte=desde, momento__lt=hasta).order_by("momento", "pk"),
+            to_attr="marcas_mes",
+        )
+    ).order_by("nombre", "pk")
+    lista = list(seleccion)
+    if not lista:
+        messages.error(request, "No hay empleados para ese mes con ese filtro.")
+        return redirect("asistencia:excel")
+    contenido = generar_excel([(empleado, empleado.marcas_mes) for empleado in lista], anio, mes)
+    nombre = f"asistencia-{anio}-{mes:02d}"
+    if form.cleaned_data.get("empleado"):
+        nombre += f"-{slugify(lista[0].nombre) or lista[0].pk}"
+    response = HttpResponse(contenido, content_type=CONTENT_TYPE_XLSX)
+    response["Content-Disposition"] = f'attachment; filename="{nombre}.xlsx"'
+    return response
 
 
 MAXIMO_MARCAS_LISTADO = 500

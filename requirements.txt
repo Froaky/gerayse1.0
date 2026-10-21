@@ -4,4 +4,4 @@ psycopg[binary]==3.2.9
 whitenoise==6.9.0
 gunicorn
 reportlab==5.0.0
-
+openpyxl==3.1.5

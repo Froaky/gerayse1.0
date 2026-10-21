@@ -68,9 +68,19 @@ Last updated: 2026-10-21
   y `anular_marca` (no borra). El fichaje ignora las anuladas. Pantalla `/asistencia/marcas/`.
 - OJO al escribir codigo desde la terminal: un heredoc de bash pasado a python convirtio `\x00` en
   bytes reales dentro de `services.py`. Para texto con escapes usar las herramientas de archivos.
-- Siguiente: US-14.6 (Excel del mes: origen MANUAL sale "Corregida", anuladas afuera). Pendiente
-  de Mateo/Tais: probar la camara en un Android y un iPhone en staging; cual de las 7 sucursales no
-  ficha. Importes y PDF fuera del repo.
+- **US-14.6 hecha** (21/10): Excel del mes en `/asistencia/excel/` (`asistencia/excel.py`, dependencia
+  nueva `openpyxl==3.1.5`). Una hoja por empleado, todos los dias, pares entrada/salida, horas del
+  dia, observacion y total. Entran los activos del alcance y los de baja con marcas en el mes.
+- Siguiente, en este orden y sin preguntar entre historias (pedido de Mateo):
+  - US-14.7 respaldo: comandos `respaldar_asistencia` (JSON gzip de la app, destino S3 con boto3
+    importado adentro o carpeta local, 30 dias de retencion, aviso por webhook `RESPALDO_AVISO_URL`
+    si falla) y `restaurar_asistencia`; tests; las instrucciones de Railway van al chat de servidor.
+  - US-14.8 lector USB: la pantalla de fichar ya acepta codigo + Enter con foco automatico; falta
+    un test de eso y la nota en la epica. Probar con un lector real queda para Mateo.
+  - US-14.9: manual de usuario de asistencia (cajeros y administracion). El arranque real lo
+    hacen Mateo y Tais, sin piloto.
+- Pendiente de Mateo/Tais: probar la camara en un Android y un iPhone en staging; cual de las 7
+  sucursales no ficha. Importes y PDF fuera del repo.
 
 ### Treasury Arqueo de caja fuerte cargado en produccion 2026-10-16
 

@@ -1,0 +1,35 @@
+{% extends "cashops/layout.html" %}
+{% block title %}Excel del mes | Gerayse{% endblock %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Excel del mes</h1>
+        <p class="muted">Una hoja por empleado con todos los días del mes: entradas y salidas, horas del día y una observación ("Corregida", "Sin salida", "Sin marcas"). Las marcas anuladas no cuentan. Una salida después de medianoche cuenta en el día de la entrada.</p>
+      </div>
+      <div class="list-actions">
+        <a class="button-secondary" href="{% url 'asistencia:inicio' %}">Asistencia</a>
+      </div>
+    </div>
+
+    <form method="get" class="stack mt-16">
+      <input type="hidden" name="descargar" value="1">
+      {% if form.non_field_errors %}
+        <ul class="errors">{% for error in form.non_field_errors %}<li>{{ error }}</li>{% endfor %}</ul>
+      {% endif %}
+      <div class="summary-grid grid-2">
+        {% for field in form.visible_fields %}
+          <div class="field">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% for error in field.errors %}<div class="error">{{ error }}</div>{% endfor %}
+          </div>
+        {% endfor %}
+      </div>
+      <div class="list-actions">
+        <button class="button" type="submit">Descargar Excel</button>
+      </div>
+      <small class="muted">Entran todos los empleados activos de tus empresas seleccionadas y los dados de baja que tengan marcas ese mes.</small>
+    </form>
+  </section>
+{% endblock %}

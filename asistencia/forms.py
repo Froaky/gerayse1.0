@@ -138,6 +138,28 @@ class MarcaFiltroForm(forms.Form):
         _estilar(self)
 
 
+class ExcelForm(forms.Form):
+    mes = forms.CharField(label="Mes", widget=forms.TextInput(attrs={"type": "month"}))
+    empresa = forms.ModelChoiceField(label="Empresa", queryset=None, required=False, empty_label="Todas")
+    empleado = forms.ModelChoiceField(label="Un solo empleado", queryset=None, required=False, empty_label="Todos")
+
+    def __init__(self, *args, empresas, empleados, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["empresa"].queryset = empresas
+        self.fields["empleado"].queryset = empleados
+        _estilar(self)
+
+    def clean_mes(self):
+        texto = (self.cleaned_data.get("mes") or "").strip()
+        partes = texto.split("-")
+        if len(partes) != 2 or not all(p.isdigit() for p in partes):
+            raise forms.ValidationError("Elegí un mes.")
+        anio, mes = int(partes[0]), int(partes[1])
+        if not (2020 <= anio <= 2100 and 1 <= mes <= 12):
+            raise forms.ValidationError("Elegí un mes válido.")
+        return anio, mes
+
+
 class ImportarEmpleadosForm(forms.Form):
     archivo = forms.FileField(
         label="Listado de empleados",
