@@ -20,9 +20,9 @@
     <section class="card mt-16" id="asistencia-administrar">
       <div class="row">
         <h2>Administrar</h2>
-        <span class="badge-muted">Próximamente</span>
+        <a class="button" href="{% url 'asistencia:empleado_list' %}">Empleados</a>
       </div>
-      <p class="muted mt-8">Empleados, carnets con QR, corrección de marcas y Excel del mes.</p>
+      <p class="muted mt-8">Padrón de empleados. Los carnets con QR, la corrección de marcas y el Excel del mes se suman en las próximas entregas.</p>
     </section>
   {% endif %}
 {% endblock %}

@@ -1,0 +1,91 @@
+{% extends "cashops/layout.html" %}
+{% load l10n %}
+{% block title %}Cargar empleados | Gerayse{% endblock %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>{{ title }}</h1>
+        <p class="muted">Primero se revisa el listado sin guardar nada. Después confirmás y se cargan solo las filas que están bien; las demás quedan informadas con el motivo.</p>
+      </div>
+      <a class="button-secondary" href="{% url 'asistencia:empleado_list' %}">Volver</a>
+    </div>
+
+    {% if not filas or confirmado %}
+      <form method="post" action="{% url 'asistencia:empleado_importar' %}" enctype="multipart/form-data" class="stack mt-16">
+        {% csrf_token %}
+        {% for field in form.visible_fields %}
+          <div class="field">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% if field.help_text %}
+              <small class="muted">{{ field.help_text }}</small>
+            {% endif %}
+            {% for error in field.errors %}
+              <div class="error">{{ error }}</div>
+            {% endfor %}
+          </div>
+        {% endfor %}
+        <small class="muted">Los títulos pueden ser "Nombre y apellido" (o "Apellido" y "Nombre" en columnas separadas), "DNI" o "Documento", "Local" o "Sucursal", y opcionalmente "Empresa". El local se reconoce por su código o por su nombre.</small>
+        <div class="row mt-8" style="justify-content:flex-end;">
+          <button class="button" type="submit">Revisar listado</button>
+        </div>
+      </form>
+    {% endif %}
+  </section>
+
+  {% if filas %}
+    <section class="card mt-16">
+      <div class="row">
+        <h2>{% if confirmado %}Resultado de la carga{% else %}Revisión del listado{% endif %}</h2>
+        <div class="list-actions">
+          {% if confirmado %}
+            <span class="badge badge-success">{{ cargadas }} cargada{{ cargadas|pluralize }}</span>
+          {% else %}
+            <span class="badge badge-success">{{ listas }} lista{{ listas|pluralize }} para cargar</span>
+          {% endif %}
+          <span class="badge {% if rechazadas %}badge-danger{% else %}badge-muted{% endif %}">{{ rechazadas }} rechazada{{ rechazadas|pluralize }}</span>
+        </div>
+      </div>
+
+      {% if not confirmado %}
+        {% if listas %}
+          <form method="post" action="{% url 'asistencia:empleado_importar_confirmar' %}" class="row mt-16" style="justify-content:flex-end;">
+            {% csrf_token %}
+            <input type="hidden" name="token" value="{{ token }}">
+            <a class="button-secondary" href="{% url 'asistencia:empleado_importar' %}">Subir otro archivo</a>
+            <button class="button" type="submit">Cargar {{ listas }} empleado{{ listas|pluralize }}</button>
+          </form>
+        {% else %}
+          <p class="muted mt-16">Ninguna fila se puede cargar. Corregí el listado y subilo de nuevo.</p>
+          <div class="row mt-8" style="justify-content:flex-end;">
+            <a class="button-secondary" href="{% url 'asistencia:empleado_importar' %}">Subir otro archivo</a>
+          </div>
+        {% endif %}
+      {% endif %}
+
+      <div class="list mt-16">
+        {% for fila in filas %}
+          <article class="list-item" data-estado="{{ fila.estado }}">
+            <div class="row">
+              <div>
+                <strong>Fila {{ fila.fila|unlocalize }} · {{ fila.nombre|default:"(sin nombre)" }}</strong>
+                <div class="muted mt-8">DNI {{ fila.dni|default:"—" }} · {% if fila.local_resuelto %}{{ fila.local_resuelto }}{% else %}{{ fila.local|default:"(sin local)" }}{% endif %}</div>
+                {% if fila.motivo %}
+                  <div class="error mt-8">{{ fila.motivo }}</div>
+                {% endif %}
+              </div>
+              {% if fila.estado == "cargada" %}
+                <span class="badge badge-success">Cargada</span>
+              {% elif fila.estado == "lista" %}
+                <span class="badge badge-success">Lista</span>
+              {% else %}
+                <span class="badge badge-danger">Rechazada</span>
+              {% endif %}
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+{% endblock %}

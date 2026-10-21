@@ -90,6 +90,8 @@ construir un servicio, hosting ni base aparte.
   no existe en Safari de iPhone). La camara exige HTTPS, que Gerayse ya tiene.
 - D8 Excel con `openpyxl` (dependencia nueva en `requirements.txt`). PDF de carnets con
   `reportlab`, que ya esta.
+- D9 (2026-10-21) de momento se ficha con el celular: la camara es la forma principal desde el
+  arranque (US-14.4). El lector USB queda para cuando los locales lo compren (US-14.8).
 
 ## Reglas de negocio
 
@@ -113,6 +115,9 @@ construir un servicio, hosting ni base aparte.
   empleados de sus empresas permitidas y del contexto de empresa activo; los forms no ofrecen
   empresas ni sucursales ajenas
 - datos personales minimos: nombre, DNI, empresa y local habitual
+- el DNI es unico entre activos de TODAS las empresas, pero ningun mensaje muestra el nombre de un
+  empleado de una empresa fuera del alcance de quien carga
+- un archivo subido nunca da 500: lo que no se puede leer se informa en pantalla
 
 ## User Stories
 
@@ -134,7 +139,7 @@ Criterios:
 - estimado: 2 h
 - hecha 2026-10-21: `asistencia/tests.py` + regresion de la ficha de rol en `users/tests.py`
 
-### [ ] US-14.2 Padron de empleados con carga inicial desde un listado
+### [x] US-14.2 Padron de empleados con carga inicial desde un listado
 
 Como administracion
 Quiero dar de alta, editar y dar de baja empleados, y cargar los 85 de una vez desde un listado
@@ -149,6 +154,9 @@ Criterios:
 - dar de baja no borra: el empleado deja de poder fichar y sus marcas siguen en los Excel
 - el listado se filtra por empresa, local y activos/baja, y respeta el aislamiento por empresa
 - estimado: 4 h
+- hecha 2026-10-21: `asistencia/tests_padron.py`. La carga es en dos pasos (revisar sin guardar,
+  confirmar con token y revalidando); la empresa sale del local; columnas "Nombre y apellido" o
+  "Apellido" + "Nombre", "DNI"/"Documento", "Local"/"Sucursal" y "Empresa" opcional
 
 ### [ ] US-14.3 Carnets con QR para imprimir, anular y reimprimir
 
@@ -165,24 +173,29 @@ Criterios:
 - queda registrado quien anulo cada carnet y cuando
 - estimado: 3 h
 
-### [ ] US-14.4 Fichar entrada y salida con lector QR
+### [ ] US-14.4 Fichar entrada y salida con la camara del celular
 
 Como cajero
-Quiero escanear el carnet con el lector de la caja y ver al instante que quedo registrado
-Para reemplazar el cuaderno sin frenar la fila
+Quiero escanear el carnet con la camara de mi celular, con Gerayse abierto en el navegador, y ver
+al instante que quedo registrado
+Para reemplazar el cuaderno sin frenar la fila y sin comprar lectores
 
 Criterios:
-- la pantalla de fichaje queda lista para escanear: el lector "tipea" el codigo y Enter, sin
-  clics ni confirmaciones
+- la pantalla de fichaje esta pensada para el celular: abre la camara, lee el QR y registra sin
+  clics ni confirmaciones; despues de cada carnet queda lista para el proximo
+- funciona en Chrome de Android y en Safari de iPhone, sin instalar nada
 - se registra entrada o salida segun las reglas, con la hora del servidor y el local del cajero
-- la pantalla muestra en grande el nombre, si fue entrada o salida y la hora, y vuelve a quedar
-  lista para el proximo carnet
+- la pantalla muestra en grande el nombre, si fue entrada o salida y la hora
 - un doble escaneo dentro de 2 minutos, un carnet anulado, un codigo desconocido o un empleado
   de baja no generan marca y se explica en pantalla
 - con turno cortado, las marcas alternan entrada y salida en el mismo dia
 - un usuario sin sucursal base no puede fichar
+- si el navegador no da permiso de camara, la pantalla lo dice y explica como habilitarlo
+- la misma pantalla acepta tambien el codigo tipeado + Enter (es lo que manda un lector USB), asi
+  la US-14.8 no necesita otra pantalla
 - tests: alternancia, 16 horas, doble escaneo, medianoche, rechazos y permiso
-- estimado: 4 h
+- se prueba en un Android y en un iPhone reales antes de cerrar la historia
+- estimado: 6 h
 
 ### [ ] US-14.5 Corregir marcas olvidadas o mal hechas
 
@@ -228,18 +241,18 @@ Criterios:
 - el procedimiento (variables, cron y restauracion) queda escrito para el chat de servidor
 - estimado: 3-4 h
 
-### [ ] US-14.8 Fichar con la camara del celular
+### [ ] US-14.8 Fichar con lector QR USB
 
 Como cajero
-Quiero escanear el carnet con la camara del celular, con Gerayse abierto en el navegador
-Para fichar en un local que no tiene lector
+Quiero escanear el carnet con un lector QR enchufado a la compu de la caja
+Para fichar mas rapido cuando el local compre un lector
 
 Criterios:
-- la misma pantalla ofrece leer con la camara; registra exactamente igual que con el lector
-- funciona en Chrome de Android y en Safari de iPhone, sin instalar nada
-- si el navegador no da permiso de camara, la pantalla lo dice y sigue sirviendo con el lector
-- se prueba en un Android y en un iPhone reales antes de cerrar la historia
-- estimado: 3 h
+- la pantalla de fichaje de US-14.4 funciona en la compu de la caja con el lector: el lector
+  "tipea" el codigo y Enter, sin clics; el campo queda enfocado para el proximo carnet
+- registra exactamente igual que con la camara
+- se prueba con un lector 2D real antes de cerrar la historia
+- estimado: 1 h (la logica ya esta en US-14.4)
 
 ### [ ] US-14.9 Arranque con los empleados cargados y manual de usuario
 
@@ -272,13 +285,14 @@ El de la numeracion: cada historia usa lo de la anterior.
 
 1. US-14.1: permisos y entrada; todo lo demas cuelga de aca
 2. US-14.2 y US-14.3: padron y carnets; con esto el cliente ya puede imprimir
-3. US-14.4 y US-14.5: fichar y corregir; juntas son lo minimo que reemplaza al cuaderno
+3. US-14.4 y US-14.5: fichar con el celular y corregir; juntas son lo minimo que reemplaza al
+   cuaderno
 4. US-14.6: el Excel, que es lo que administracion usa a fin de mes
 5. US-14.7: el respaldo, cuando ya existen todos los datos que hay que respaldar
-6. US-14.8: la camara del celular, el riesgo de compatibilidad mas alto, aislado
+6. US-14.8: el lector USB, solo si los locales lo compran; no frena el arranque
 7. US-14.9: carga real, permisos de los cajeros, manual y arranque
 
-Total estimado: 31-32 h.
+Total estimado: 29-30 h.
 
 ## Criterio de cierre
 

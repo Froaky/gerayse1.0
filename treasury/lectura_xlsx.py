@@ -84,11 +84,27 @@ def _valor(celda, compartidos, estilos_fecha):
     return numero
 
 
-def leer_xlsx(ruta) -> list[tuple[str, list[tuple[int, list]]]]:
+class LibroDemasiadoGrande(ValueError):
+    """El libro pasa alguno de los topes pedidos a leer_xlsx. `motivo` es
+    "columnas" o "filas"."""
+
+    def __init__(self, motivo: str):
+        super().__init__(motivo)
+        self.motivo = motivo
+
+
+def leer_xlsx(ruta, *, max_hojas=None, max_columnas=None, max_filas=None) -> list[tuple[str, list[tuple[int, list]]]]:
     """Devuelve [(nombre_de_hoja, [(numero_de_fila, [valores])])] en el orden del
     libro. Textos como str, numeros como Decimal (exactos, sin pasar por float),
     celdas con formato de fecha como date y vacias como "". Solo vienen las
-    filas que tienen algun valor."""
+    filas que tienen algun valor.
+
+    Los topes son para archivos que sube un usuario (EP-14): cada fila se arma
+    hasta la ultima columna con dato, asi que una sola celda en una columna
+    absurda pediria gigas de memoria. `max_hojas` lee solo las primeras;
+    `max_columnas` y `max_filas` cuentan solo celdas y filas con valor (una celda
+    vacia con formato no cuenta) y levantan LibroDemasiadoGrande. Sin topes, se
+    comporta como siempre."""
     with zipfile.ZipFile(ruta) as zf:
         compartidos = _textos_compartidos(zf)
         estilos_fecha = _estilos_fecha(zf)
@@ -97,6 +113,8 @@ def leer_xlsx(ruta) -> list[tuple[str, list[tuple[int, list]]]]:
         destino = {r.get("Id"): r.get("Target") for r in relaciones.findall("rel:Relationship", _NS)}
         hojas = []
         for hoja in libro.find("m:sheets", _NS).findall("m:sheet", _NS):
+            if max_hojas is not None and len(hojas) >= max_hojas:
+                break
             ruta_hoja = destino[hoja.get("{%s}id" % _NS["r"])].lstrip("/")
             if not ruta_hoja.startswith("xl/"):
                 ruta_hoja = "xl/" + ruta_hoja
@@ -107,8 +125,13 @@ def leer_xlsx(ruta) -> list[tuple[str, list[tuple[int, list]]]]:
                 for celda in fila.findall("m:c", _NS):
                     valor = _valor(celda, compartidos, estilos_fecha)
                     if valor != "":
-                        valores[_indice_columna(celda.get("r"))] = valor
+                        columna = _indice_columna(celda.get("r"))
+                        if max_columnas is not None and columna >= max_columnas:
+                            raise LibroDemasiadoGrande("columnas")
+                        valores[columna] = valor
                 if valores:
+                    if max_filas is not None and len(filas) >= max_filas:
+                        raise LibroDemasiadoGrande("filas")
                     ancho = max(valores) + 1
                     filas.append((int(fila.get("r")), [valores.get(i, "") for i in range(ancho)]))
             hojas.append((hoja.get("name"), filas))

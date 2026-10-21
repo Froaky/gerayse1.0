@@ -31,7 +31,23 @@ Last updated: 2026-10-21
 - Riesgo conocido, preexistente: un usuario con asistencia y sin Caja cae en 403 al loguearse
   (`LOGIN_REDIRECT_URL` va a `cashops:dashboard`). No afecta a cajeros ni a administracion;
   tenerlo en cuenta si se crea un usuario solo para fichar.
-- Siguiente: US-14.2 (padron de empleados). Falta saber cual de las 7 sucursales no ficha.
+- 21/10 la cliente va a fichar con el celular: la camara pasa a ser US-14.4 y el lector USB
+  US-14.8 (epica reordenada).
+- **US-14.2 hecha** (21/10): modelo `asistencia.Empleado` (migracion `asistencia/0001_initial`:
+  DNI normalizado y unico entre activos con UniqueConstraint condicional, empresa y local de esa
+  empresa, baja logica con quien/cuando), alcance estricto en `asistencia/alcance.py` (activa +
+  permitida + seleccionada; no se importa el `_get_empresa_ids` privado de cashops/treasury),
+  servicios en `asistencia/services.py`, listado/alta/edicion/baja/reactivacion y carga CSV/XLSX
+  en dos pasos (`asistencia/importacion.py`). Empleado ajeno por URL -> 404.
+- `treasury/lectura_xlsx.leer_xlsx` suma topes opcionales `max_hojas`, `max_columnas` y
+  `max_filas` (levantan `LibroDemasiadoGrande`); sin topes se comporta igual que antes, y las
+  llamadas de treasury no cambian. Hacian falta porque una celda en una columna absurda le pedia
+  gigas de memoria al armar la fila.
+- Revision adversarial (5 dimensiones + 2 rondas sobre los arreglos): se corrigieron nombres de
+  empleados de otra empresa en los mensajes de DNI repetido, la baja trabada si el local cambia de
+  empresa, el tope del xlsx que se salteaba, 500 con CSV/XLSX raros, DNI con formato fecha o con
+  digitos Unicode, apellido en columna aparte, NUL en Postgres y el token de confirmacion.
+- Siguiente: US-14.3 (carnets con QR). Falta saber cual de las 7 sucursales no ficha.
   Importes y PDF fuera del repo (es publico).
 
 ### Treasury Arqueo de caja fuerte cargado en produccion 2026-10-16
