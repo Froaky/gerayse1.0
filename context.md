@@ -81,9 +81,9 @@ Last updated: 2026-10-21
     probar con un lector 2D real (Mateo) para marcarla [x].
   - US-14.9: primer borrador del manual en `docs/manual-asistencia.md` (de usted). Falta
     revisarlo contra staging y pasarlo a PDF. El arranque real lo hacen Mateo y Tais, sin piloto.
-  - Pendiente de copy: las pantallas de asistencia hablan de vos ("Escaneá", "Elegí un mes",
-    "pedile a administración", "tus empresas"); la regla del cliente es de usted. Pasarlas a usted
-    en un slice aparte, junto con los tests que comparan textos.
+  - Copy: las pantallas de asistencia hablan de vos ("Escaneá", "Elegí un mes"), igual que caja y
+    tesoreria ("No tenés permiso..."). Queda asi a proposito: el "usted" es para avisos formales al
+    cliente (cartel de vencimiento) y documentos que se le entregan (el manual). No pasarlas a usted.
 - Pendiente de Mateo/Tais: probar la camara en un Android y un iPhone en staging; cual de las 7
   sucursales no ficha. Importes y PDF fuera del repo.
 
