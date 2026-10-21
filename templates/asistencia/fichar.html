@@ -1,4 +1,5 @@
 {% extends "cashops/layout.html" %}
+{% load static %}
 {% block title %}Fichar | Gerayse{% endblock %}
 {% block content %}
   <section class="card">
@@ -13,7 +14,7 @@
 
   {% if fichaje %}
     <section class="card mt-16" id="resultado-fichaje" data-resultado="{{ fichaje.resultado }}"
-      style="border-left: 6px solid {% if fichaje.registrada %}var(--success, #1f6b45){% elif fichaje.resultado == 'repetida' %}var(--warning, #8a5f12){% else %}var(--danger, #a83232){% endif %};">
+      style="border-left: 6px solid {% if fichaje.registrada %}#1f6b45{% elif fichaje.resultado == 'repetida' %}#8a5f12{% else %}#a83232{% endif %};">
       {% if fichaje.empleado %}
         <h2 style="font-size: 1.8rem; margin: 0;">{{ fichaje.empleado.nombre }}</h2>
       {% endif %}
@@ -24,9 +25,26 @@
     </section>
   {% endif %}
 
-  <section class="card mt-16">
-    {% if sucursal %}
-      <form method="post" action="{% url 'asistencia:fichar' %}" class="stack" autocomplete="off">
+  {% if sucursal %}
+    {% comment %} Oculta hasta que el JS confirma que hay jsQR: sin JS la pantalla
+       sigue andando con el codigo tipeado o un lector USB. {% endcomment %}
+    <section class="card mt-16" id="fichaje-camara" hidden>
+      <div class="row">
+        <h2>Cámara</h2>
+        <div class="list-actions">
+          <button class="button" type="button" id="camara-prender">Usar la cámara</button>
+          <button class="button-secondary" type="button" id="camara-apagar" hidden>Apagar la cámara</button>
+        </div>
+      </div>
+      <p class="error mt-8" id="camara-aviso" hidden></p>
+      <div class="mt-16" id="camara-marco" hidden>
+        <video id="camara-video" playsinline muted autoplay style="width: 100%; max-width: 520px; border-radius: 12px; background: #000;"></video>
+        <p class="muted mt-8">Poné el QR del carnet frente a la cámara. Cada lectura se registra sola.</p>
+      </div>
+    </section>
+
+    <section class="card mt-16">
+      <form method="post" action="{% url 'asistencia:fichar' %}" class="stack" autocomplete="off" id="fichaje-form">
         {% csrf_token %}
         <div class="field">
           <label for="id_codigo">Código del carnet</label>
@@ -38,8 +56,12 @@
           <button class="button" type="submit">Registrar</button>
         </div>
       </form>
-    {% else %}
+    </section>
+    <script src="{% static 'asistencia/vendor/jsQR-1.4.0.js' %}"></script>
+    <script src="{% static 'asistencia/fichar-camara.js' %}"></script>
+  {% else %}
+    <section class="card mt-16">
       <p class="error">Tu usuario no tiene un local asignado: pedile a administración que te asigne la sucursal base para poder fichar.</p>
-    {% endif %}
-  </section>
+    </section>
+  {% endif %}
 {% endblock %}

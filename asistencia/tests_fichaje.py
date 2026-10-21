@@ -11,7 +11,9 @@ Riesgos que cubre:
 from datetime import datetime, timedelta
 from unittest import mock
 
+from django.contrib.staticfiles import finders
 from django.core.exceptions import PermissionDenied
+from django.templatetags.static import static
 from django.urls import reverse
 from django.utils import timezone
 
@@ -139,6 +141,18 @@ class PantallaDeFichajeTests(FichajeTestCase):
         self.assertTrue(datos["registrada"])
         self.assertEqual(datos["nombre"], "Juan Perez")
         self.assertEqual(datos["tipo"], "Entrada")
+        self.assertRegex(datos["hora"], r"^\d{2}:\d{2}$")
+
+    def test_la_pantalla_trae_la_camara_con_jsqr_servido_desde_gerayse(self):
+        # Sin CDN (D7): el archivo tiene que existir en static y la pagina pedirlo de ahi.
+        for archivo in ("asistencia/vendor/jsQR-1.4.0.js", "asistencia/fichar-camara.js"):
+            self.assertIsNotNone(finders.find(archivo), archivo)
+        self._login(self.cajero)
+        response = self.client.get(reverse("asistencia:fichar"))
+        self.assertContains(response, 'id="fichaje-camara" hidden')
+        self.assertContains(response, static("asistencia/vendor/jsQR-1.4.0.js"))
+        self.assertContains(response, static("asistencia/fichar-camara.js"))
+        self.assertNotContains(response, "cdn.")
 
     def test_un_rechazo_se_muestra_sin_marca(self):
         self._login(self.cajero)

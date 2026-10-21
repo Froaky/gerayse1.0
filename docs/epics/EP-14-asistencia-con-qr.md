@@ -200,11 +200,13 @@ Criterios:
 - tests: alternancia, 16 horas, doble escaneo, medianoche, rechazos y permiso
 - se prueba en un Android y en un iPhone reales antes de cerrar la historia
 - estimado: 6 h
-- avance 2026-10-21 (en staging): modelo `Marca`, reglas en `asistencia/fichaje.py` y pantalla
-  `/asistencia/fichar/` con el codigo tipeado + Enter (lo mismo que manda un lector USB), con
-  respuesta JSON para la camara; tests en `asistencia/tests_fichaje.py`. FALTA la lectura con
-  la camara: necesita una libreria JS de QR servida desde `static/` (D7), pendiente de OK de
-  Mateo para sumarla al repo, y la prueba en un Android y un iPhone reales
+- avance 2026-10-21 (en staging): modelo `Marca`, reglas en `asistencia/fichaje.py`, pantalla
+  `/asistencia/fichar/` con codigo tipeado + Enter (sirve para un lector USB) y lectura con la
+  camara (`static/asistencia/fichar-camara.js` + jsQR 1.4.0 en `static/asistencia/vendor/`,
+  Apache-2.0, bajado de npm con integridad verificada). Probado de punta a punta en un navegador
+  con una camara simulada que mostraba un carnet real: lee, registra una sola marca y avisa si
+  no hay permiso de camara. jsQR lee los 10 carnets de prueba (nombres largos incluidos).
+  FALTA solo la prueba en un Android y un iPhone reales para cerrar la historia
 
 ### [ ] US-14.5 Corregir marcas olvidadas o mal hechas
 

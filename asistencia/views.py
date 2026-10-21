@@ -8,6 +8,7 @@ from django.db.models import Prefetch, Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.text import slugify
 from django.views.decorators.http import require_http_methods
 
@@ -376,6 +377,7 @@ def fichar_view(request):
                     "mensaje": fichaje.mensaje,
                     "nombre": fichaje.empleado.nombre if fichaje.empleado else "",
                     "tipo": fichaje.marca.get_tipo_display() if fichaje.marca else "",
+                    "hora": timezone.localtime(fichaje.marca.momento).strftime("%H:%M") if fichaje.marca else "",
                 }
             )
     return render(
