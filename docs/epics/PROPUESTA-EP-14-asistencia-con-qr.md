@@ -5,7 +5,48 @@
 > No se toca codigo ni migraciones a partir de este documento hasta que el usuario lo apruebe.
 > Las horas son estimaciones de desarrollo; el precio lo define el usuario.
 
-## Estado al 2026-10-20 y como seguir
+## Estado al 2026-10-21: VERSION SIMPLE (reemplaza a la version 1)
+
+- La version 1 (78 h: grilla de horarios, tardanza, tolerancia y horas extra) no se acepto por
+  precio. Queda abajo solo como referencia: **no es el alcance**.
+- Version simple presupuestada el 21/10 (PDF "Presupuesto Asistencia QR Simple Gerayse" en la
+  carpeta del traspaso), **33 h**:
+
+| # | Pieza | Que incluye | Horas |
+|---|---|---|---|
+| 1 | Padron de empleados | Alta/baja/edicion con empresa y local, carga inicial desde listado/CSV, baja logica. | 4 |
+| 2 | Carnets QR | Codigo opaco (sin datos personales), revocable y reimprimible; PDF de carnets. | 3 |
+| 3 | Pantalla de fichaje | Lector QR USB o camara del celular (Android y iPhone, en el navegador). La primera marca del dia es entrada y la siguiente salida, alternando (turno cortado). Hora del servidor. Anti doble escaneo. | 7 |
+| 4 | Correcciones | Administracion agrega o anula marcas con motivo, usuario y fecha; en el Excel salen como "corregida". | 3 |
+| 5 | Excel por empleado | Por mes, una hoja por empleado: dia, pares entrada/salida, horas del dia (suma de tramos; la salida despues de medianoche va al dia de la entrada) y total. | 5 |
+| 6 | Servidor propio y respaldo | App APARTE de Gerayse, con deploy y base propios: si Gerayse se cae se sigue fichando, y al reves. Un usuario por local + administracion. Respaldo diario automatico fuera del servidor. | 7 |
+| 7 | Puesta en marcha y manual | Carga de los 85, arranque definitivo (de a un local o todos juntos) y manual de usuario. | 4 |
+
+- Fuera de alcance: horarios/grilla, tardanza, tolerancia, horas extra, avisos en pantalla,
+  faltas, presentismo, resumenes por local, sueldos y hardware. Se pueden sumar despues sobre
+  esta base, cotizados aparte.
+- Mantenimiento mensual por local, obligatorio: cubre el hosting propio y los respaldos.
+  Importes fuera del repo (es publico).
+- Locales: 6 (en Gerayse hay 7 sucursales activas; falta saber cual no ficha).
+- Decision tecnica pendiente: donde vive el codigo. Recomendado: repo nuevo **privado** con un
+  Django chico; no hace falta reusar modelos de Gerayse. Confirmar con Mateo antes de crearlo.
+- Respaldo: `pg_dump` diario a un almacenamiento externo (a elegir), con retencion; probar una
+  restauracion antes de entregar.
+
+## Para retomar en otra sesion
+
+1. Esta propuesta y su entrada en `context.md` viven en `staging` (rama
+   `docs/propuesta-asistencia-qr`); `main` no las tiene hasta que Mateo lo apruebe.
+2. Antes de tocar codigo: confirmar con Mateo que Tais acepto la version simple, donde va el
+   codigo (repo nuevo) y cual local no ficha.
+3. El alcance es el del PDF simple; si algo de este documento lo contradice, manda el PDF.
+   Fuente HTML + `build.sh` en `gerayse-traspaso/gerayse-traspaso-2026-10-13/tmp/gerayse-presupuesto-asistencia-simple/`.
+4. Fuera de alcance por decision de Mateo: piloto y acompanamiento presencial. Se entrega un
+   manual de usuario de todo.
+
+# Version 1 (2026-10-20): no aceptada por precio, solo referencia
+
+## Estado de la version 1 al 2026-10-20
 
 - Tais respondio las preguntas el 20/10 (ver "Respuestas de Tais"). Con eso la base quedo en
   **61-88 h**: el turno cortado y la grilla de horarios rotativos pasaron de opcional a la base.
@@ -22,20 +63,6 @@
   de empleados). Lo que importa de ellos esta en "Como lo hacen hoy".
 - Siguiente paso: Mateo le pasa el presupuesto a Tais. Recien con su OK explicito se implementa por slices
   (rama `feat/asistencia-qr` desde `main`, despues `staging`).
-
-## Para retomar en otra sesion
-
-1. Esta propuesta y su entrada en `context.md` viven en `staging` (rama
-   `docs/propuesta-asistencia-qr`); `main` no las tiene hasta que Mateo lo apruebe.
-2. Antes de tocar codigo: confirmar con Mateo que Tais acepto el presupuesto, cual de las 7
-   sucursales de la base no ficha y los tres puntos de "Lo que queda abierto".
-3. Implementar por slices en el orden sugerido, rama `feat/asistencia-qr` desde `main`, cada
-   slice con tests, despues `staging`. Skills: `django-feature-slice`, `testing-riguroso-extremo`.
-4. El PDF entregado (fuente HTML + `build.sh`) esta fuera del repo, en
-   `gerayse-traspaso/gerayse-traspaso-2026-10-13/tmp/gerayse-presupuesto-asistencia/`. Lo que se
-   prometio ahi es el alcance: si algo de este documento lo contradice, manda el PDF.
-5. Fuera de alcance por decision de Mateo: piloto, acompanamiento presencial, faltas,
-   presentismo y volcado a Google Sheets. Al final se entrega un manual de usuario de todo.
 
 ## Origen del pedido (2026-10-20, Tais por wpp + audio)
 

@@ -1,22 +1,22 @@
 # Context
 
-Last updated: 2026-10-20
+Last updated: 2026-10-21
 
 ## Current Session
 
-### Propuesta EP-14 asistencia del personal con QR 2026-10-20
+### Propuesta EP-14 asistencia del personal con QR 2026-10-21
 
-- Pedido de Tais: presupuesto para fichar con QR (50 empleados ARMADI, 35 Vivre): hora de entrada,
-  minutos de retraso, salida y horas extra; hoy anotan en un cuaderno y el cajero lo pasa a una
-  planilla de Google.
-- `docs/epics/PROPUESTA-EP-14-asistencia-con-qr.md`: modulo dentro de Gerayse (no app aparte ni
-  escritura en su Sheet). Tais respondio el 20/10: turno cortado si, horarios rotativos semanales,
-  fichan 6 sucursales (en la base hay 7: falta saber cual no), tolerancia de 30 min acumulados por mes, extra en bloques de 30 min,
-  sin faltas/presentismo por ahora, quiere dejar las planillas. Presupuesto cerrado en 78 h + abono
-  mensual por sucursal (importes y PDF fuera del repo, en la carpeta del traspaso).
-- Abierto: quien carga la grilla semanal, si se aprueban las extra, y la marca con hora real de
-  quien llega antes que el cajero. Precio fuera del repo (es publico). No implementar sin OK de
-  Mateo. Sin cambios de codigo.
+- Pedido de Tais: fichar con QR a 85 empleados (ARMADI y Vivre) en 6 locales; hoy anotan en un
+  cuaderno y el cajero lo pasa a una planilla de Google.
+- 20/10 version 1 (78 h, dentro de Gerayse, con grilla de horarios, tardanza, tolerancia y horas
+  extra): no se acepto por precio.
+- 21/10 **version simple, 33 h**: QR que marca entrada y salida + Excel por mes con una hoja por
+  empleado (dias, horarios, horas del dia). Sin horarios, tardanzas ni avisos. App APARTE de
+  Gerayse con hosting propio y respaldo diario; mantenimiento mensual por local obligatorio.
+  Detalle y guia para retomar en `docs/epics/PROPUESTA-EP-14-asistencia-con-qr.md`.
+- Abierto: que Tais acepte, donde vive el codigo (recomendado repo nuevo privado) y cual de las 7
+  sucursales de la base no ficha. Importes y PDF fuera del repo (es publico). No implementar sin
+  OK de Mateo. Sin cambios de codigo.
 
 ### Treasury Arqueo de caja fuerte cargado en produccion 2026-10-16
 
