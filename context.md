@@ -47,8 +47,16 @@ Last updated: 2026-10-21
   empleados de otra empresa en los mensajes de DNI repetido, la baja trabada si el local cambia de
   empresa, el tope del xlsx que se salteaba, 500 con CSV/XLSX raros, DNI con formato fecha o con
   digitos Unicode, apellido en columna aparte, NUL en Postgres y el token de confirmacion.
-- Siguiente: US-14.3 (carnets con QR). Falta saber cual de las 7 sucursales no ficha.
-  Importes y PDF fuera del repo (es publico).
+- **US-14.3 hecha** (21/10): `Empleado.codigo_carnet` (`GA1` + 24 base32 al azar, unico, nunca datos
+  personales) y `CarnetAnulado` (codigo viejo, motivo, quien, cuando). Migraciones asistencia
+  0002-0004 separadas a proposito: campo null, RunPython que da un codigo a cada empleado ya
+  cargado, y recien despues unico (en Postgres no se altera la tabla en la misma transaccion que
+  actualiza filas). `anular_carnet` rechaza un doble envio (cuenta de anulaciones que vio la
+  pantalla). PDF en `asistencia/carnets.py`: 10 por A4, el texto se achica antes de cortar y un
+  recorte impide que pise el QR (un nombre largo lo volvia ilegible); verificado decodificando los
+  QR renderizados con zxing.
+- Siguiente: US-14.4 (fichar con la camara del celular). Falta saber cual de las 7 sucursales no
+  ficha. Importes y PDF fuera del repo (es publico).
 
 ### Treasury Arqueo de caja fuerte cargado en produccion 2026-10-16
 

@@ -13,4 +13,7 @@ urlpatterns = [
     path("empleados/<int:empleado_id>/editar/", views.empleado_update, name="empleado_update"),
     path("empleados/<int:empleado_id>/baja/", views.empleado_baja, name="empleado_baja"),
     path("empleados/<int:empleado_id>/reactivar/", views.empleado_reactivar, name="empleado_reactivar"),
+    path("empleados/<int:empleado_id>/carnet/", views.carnet_empleado, name="carnet_empleado"),
+    path("empleados/<int:empleado_id>/carnet/anular/", views.carnet_anular, name="carnet_anular"),
+    path("carnets/", views.carnets, name="carnets"),
 ]

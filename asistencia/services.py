@@ -4,11 +4,13 @@ El form no es el unico camino (la carga masiva tambien crea empleados), asi que
 el permiso, el alcance por empresa y las invariantes se validan aca.
 """
 
+import re
+
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.utils import timezone
 
-from .models import Empleado
+from .models import CarnetAnulado, Empleado, nuevo_codigo_carnet
 from .permissions import ensure_administrar
 
 
@@ -85,4 +87,49 @@ def reactivar_empleado(*, actor, empleado: Empleado) -> Empleado:
     empleado.dado_de_baja_en = None
     empleado.dado_de_baja_por = None
     empleado.save(update_fields=["activo", "dado_de_baja_en", "dado_de_baja_por", "actualizado_en"])
+    return empleado
+
+
+def _codigo_libre() -> str:
+    # 120 bits al azar: un choque es practicamente imposible, pero si pasara no
+    # puede reusar ni un codigo vigente ni uno anulado.
+    while True:
+        codigo = nuevo_codigo_carnet()
+        if not (
+            Empleado.objects.filter(codigo_carnet=codigo).exists()
+            or CarnetAnulado.objects.filter(codigo=codigo).exists()
+        ):
+            return codigo
+
+
+@transaction.atomic
+def anular_carnet(*, actor, empleado: Empleado, motivo: str, anulaciones_previas: int | None = None) -> Empleado:
+    """El carnet vigente deja de servir para fichar y el empleado recibe uno
+    nuevo para imprimir. Queda quien, cuando y por que (US-14.3).
+
+    `anulaciones_previas` es cuantas anulaciones veia la pantalla: si mientras
+    tanto se anulo (doble click, otra pestana), no se anula el carnet nuevo
+    que quiza ya se imprimio."""
+    _require_actor(actor)
+    ensure_administrar(actor)
+    _ensure_empresa_permitida(actor, empleado.empresa)
+    motivo = " ".join(re.sub(r"[\x00-\x1f\x7f]", " ", motivo or "").split())
+    if not motivo:
+        raise ValidationError({"motivo": "Contá por qué se anula el carnet."})
+    empleado = Empleado.objects.select_for_update(of=("self",)).get(pk=empleado.pk)
+    if not empleado.activo:
+        raise ValidationError("El empleado está dado de baja: su carnet ya no sirve para fichar.")
+    if anulaciones_previas is not None and empleado.carnets_anulados.count() != anulaciones_previas:
+        raise ValidationError(
+            "Este carnet ya se anuló recién y el vigente es otro. Si también hay que anular ese, volvé a intentarlo."
+        )
+    CarnetAnulado.objects.create(
+        empleado=empleado,
+        codigo=empleado.codigo_carnet,
+        motivo=motivo[:200],
+        anulado_por=actor,
+        anulado_en=timezone.now(),
+    )
+    empleado.codigo_carnet = _codigo_libre()
+    empleado.save(update_fields=["codigo_carnet", "actualizado_en"])
     return empleado

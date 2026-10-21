@@ -58,6 +58,31 @@ class EmpleadoFiltroForm(forms.Form):
         _estilar(self)
 
 
+class CarnetsFiltroForm(forms.Form):
+    empresa = forms.ModelChoiceField(label="Empresa", queryset=None, required=False, empty_label="Todas")
+    sucursal = forms.ModelChoiceField(label="Local habitual", queryset=None, required=False, empty_label="Todos")
+
+    def __init__(self, *args, empresas, sucursales, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["empresa"].queryset = empresas
+        self.fields["sucursal"].queryset = sucursales
+        _estilar(self)
+
+
+class AnularCarnetForm(forms.Form):
+    motivo = forms.CharField(
+        label="Motivo",
+        max_length=200,
+        help_text="Por ejemplo: lo perdió, se rompió. Queda registrado con tu usuario y la fecha.",
+    )
+    # Cuantas anulaciones tenia el carnet al abrir la pantalla (ver anular_carnet).
+    anulaciones_previas = forms.IntegerField(min_value=0, widget=forms.HiddenInput)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        _estilar(self)
+
+
 class ImportarEmpleadosForm(forms.Form):
     archivo = forms.FileField(
         label="Listado de empleados",

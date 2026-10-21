@@ -1,0 +1,31 @@
+{% extends "cashops/layout.html" %}
+{% block title %}Carnets | Gerayse{% endblock %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Carnets de asistencia</h1>
+        <p class="muted">Un PDF A4 con 10 carnets por hoja, tamaño tarjeta, para imprimir y recortar. Salen solo los empleados activos. El QR lleva un código al azar: nunca el DNI.</p>
+      </div>
+      <div class="list-actions">
+        <a class="button-secondary" href="{% url 'asistencia:empleado_list' %}">Empleados</a>
+      </div>
+    </div>
+
+    <form method="get" class="stack mt-16" target="_blank">
+      <input type="hidden" name="pdf" value="1">
+      <div class="summary-grid grid-2">
+        {% for field in filtro.visible_fields %}
+          <div class="field">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+          </div>
+        {% endfor %}
+      </div>
+      <div class="list-actions">
+        <button class="button" type="submit">Descargar carnets</button>
+      </div>
+      <small class="muted">Sin filtros sale{{ cantidad|pluralize:"n" }} {{ cantidad }} empleado{{ cantidad|pluralize }} activo{{ cantidad|pluralize }} de tus empresas seleccionadas. El carnet de una sola persona se baja desde el padrón.</small>
+    </form>
+  </section>
+{% endblock %}

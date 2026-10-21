@@ -4,17 +4,26 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
-from django.db.models import Q
+from django.db.models import Prefetch, Q
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.text import slugify
 from django.views.decorators.http import require_http_methods
 
 from .alcance import empresas_en_alcance, sucursales_en_alcance
-from .forms import EmpleadoFiltroForm, EmpleadoForm, ImportarEmpleadosForm
+from .carnets import generar_carnets_pdf
+from .forms import AnularCarnetForm, CarnetsFiltroForm, EmpleadoFiltroForm, EmpleadoForm, ImportarEmpleadosForm
 from .importacion import Estado, FilaListado, ListadoIlegible, leer_listado, procesar_listado
-from .models import Empleado
+from .models import CarnetAnulado, Empleado
 from .permissions import can_administrar, can_fichar, ensure_acceder, ensure_administrar
-from .services import actualizar_empleado, crear_empleado, dar_de_baja_empleado, reactivar_empleado
+from .services import (
+    actualizar_empleado,
+    anular_carnet,
+    crear_empleado,
+    dar_de_baja_empleado,
+    reactivar_empleado,
+)
 
 SESION_LISTADO = "asistencia_listado"
 
@@ -85,6 +94,13 @@ def empleado_list(request):
         empleados = empleados.filter(activo=False)
     elif estado != "todos":
         empleados = empleados.filter(activo=True)
+    empleados = empleados.prefetch_related(
+        Prefetch(
+            "carnets_anulados",
+            queryset=CarnetAnulado.objects.select_related("anulado_por"),
+            to_attr="anulaciones",
+        )
+    )
     return render(
         request,
         "asistencia/empleado_list.html",
@@ -258,3 +274,86 @@ def empleado_importar_confirmar(request):
     cargadas = sum(1 for f in filas if f.estado == Estado.CARGADA)
     messages.success(request, f"Se cargaron {cargadas} empleado{'s' if cargadas != 1 else ''}.")
     return _render_importacion(request, ImportarEmpleadosForm(), filas, confirmado=True)
+
+
+def _respuesta_pdf(contenido: bytes, nombre_archivo: str) -> HttpResponse:
+    response = HttpResponse(contenido, content_type="application/pdf")
+    # inline: se abre en el navegador, listo para imprimir.
+    response["Content-Disposition"] = f'inline; filename="{nombre_archivo}"'
+    return response
+
+
+@login_required
+def carnets(request):
+    ensure_administrar(request.user)
+    empresas = empresas_en_alcance(request)
+    sucursales = sucursales_en_alcance(request)
+    filtro = CarnetsFiltroForm(request.GET or None, empresas=empresas, sucursales=sucursales)
+    activos = _empleados_en_alcance(request).filter(activo=True)
+    if filtro.is_valid():
+        if filtro.cleaned_data.get("empresa"):
+            activos = activos.filter(empresa=filtro.cleaned_data["empresa"])
+        if filtro.cleaned_data.get("sucursal"):
+            activos = activos.filter(sucursal=filtro.cleaned_data["sucursal"])
+    if request.GET.get("pdf"):
+        if not filtro.is_valid() and request.GET.get("empresa", "") + request.GET.get("sucursal", ""):
+            messages.error(request, "Elegí una empresa y un local de tus empresas seleccionadas.")
+            return redirect("asistencia:carnets")
+        lista = list(activos)
+        if not lista:
+            messages.error(request, "No hay empleados activos para imprimir con ese filtro.")
+            return redirect("asistencia:carnets")
+        return _respuesta_pdf(generar_carnets_pdf(lista), "carnets-asistencia.pdf")
+    return render(
+        request,
+        "asistencia/carnets.html",
+        {"title": "Carnets", "filtro": filtro, "cantidad": activos.count()},
+    )
+
+
+@login_required
+def carnet_empleado(request, empleado_id: int):
+    ensure_administrar(request.user)
+    empleado = _empleado_en_alcance_or_404(request, empleado_id)
+    if not empleado.activo:
+        messages.error(request, f"{empleado.nombre} está dado de baja: no se imprime su carnet.")
+        return redirect("asistencia:empleado_list")
+    return _respuesta_pdf(generar_carnets_pdf([empleado]), f"carnet-{slugify(empleado.nombre) or empleado.pk}.pdf")
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def carnet_anular(request, empleado_id: int):
+    ensure_administrar(request.user)
+    empleado = _empleado_en_alcance_or_404(request, empleado_id)
+    form = AnularCarnetForm(request.POST or None, initial={"anulaciones_previas": empleado.carnets_anulados.count()})
+    if request.method == "POST" and form.is_valid():
+        try:
+            empleado = anular_carnet(
+                actor=request.user,
+                empleado=empleado,
+                motivo=form.cleaned_data["motivo"],
+                anulaciones_previas=form.cleaned_data["anulaciones_previas"],
+            )
+        except ValidationError as error:
+            _volcar_error(form, error)
+        else:
+            messages.success(
+                request,
+                f"El carnet anterior de {empleado.nombre} ya no sirve para fichar. Imprimí el nuevo con «Carnet».",
+            )
+            return redirect("asistencia:empleado_list")
+    return render(
+        request,
+        "cashops/form_page.html",
+        {
+            "title": f"Anular el carnet de {empleado.nombre}",
+            "subtitle": "El carnet actual deja de servir para fichar y se genera uno nuevo para imprimir. No se puede deshacer.",
+            "form": form,
+            "submit_label": "Anular carnet",
+            "back_url": reverse("asistencia:empleado_list"),
+            "form_action": reverse("asistencia:carnet_anular", args=[empleado.pk]),
+            "disable_htmx": True,
+        },
+        status=400 if request.method == "POST" else 200,
+    )

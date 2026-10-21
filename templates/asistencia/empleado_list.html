@@ -10,6 +10,7 @@
       </div>
       <div class="list-actions">
         <a class="button-secondary" href="{% url 'asistencia:inicio' %}">Asistencia</a>
+        <a class="button-secondary" href="{% url 'asistencia:carnets' %}">Imprimir carnets</a>
         <a class="button-secondary" href="{% url 'asistencia:empleado_importar' %}">Cargar desde un listado</a>
         <a class="button" href="{% url 'asistencia:empleado_create' %}">Nuevo empleado</a>
       </div>
@@ -57,11 +58,18 @@
               {% if not empleado.activo and empleado.dado_de_baja_en %}
                 <div class="muted mt-8">De baja desde el {{ empleado.dado_de_baja_en|date:"d/m/Y" }}{% if empleado.dado_de_baja_por %} por {{ empleado.dado_de_baja_por.get_username }}{% endif %}.</div>
               {% endif %}
+              {% with ultima=empleado.anulaciones.0 %}
+                {% if ultima %}
+                  <div class="muted mt-8">Carnet anulado {{ empleado.anulaciones|length }} vez{{ empleado.anulaciones|length|pluralize:"es" }}; la última el {{ ultima.anulado_en|date:"d/m/Y" }}{% if ultima.anulado_por %} por {{ ultima.anulado_por.get_username }}{% endif %}: {{ ultima.motivo }}</div>
+                {% endif %}
+              {% endwith %}
             </div>
             <div class="list-actions">
               <span class="badge {% if empleado.activo %}badge-success{% else %}badge-muted{% endif %}">{% if empleado.activo %}Activo{% else %}De baja{% endif %}</span>
               <a class="button-secondary" href="{% url 'asistencia:empleado_update' empleado.pk %}">Editar</a>
               {% if empleado.activo %}
+                <a class="button-secondary" href="{% url 'asistencia:carnet_empleado' empleado.pk %}" target="_blank" rel="noopener">Carnet</a>
+                <a class="button-secondary" href="{% url 'asistencia:carnet_anular' empleado.pk %}">Anular carnet</a>
                 <form method="post" action="{% url 'asistencia:empleado_baja' empleado.pk %}" onsubmit="return confirm('¿Dar de baja a {{ empleado.nombre|escapejs }}? Deja de poder fichar.');">
                   {% csrf_token %}
                   <button class="button-secondary" type="submit">Dar de baja</button>

@@ -158,7 +158,7 @@ Criterios:
   confirmar con token y revalidando); la empresa sale del local; columnas "Nombre y apellido" o
   "Apellido" + "Nombre", "DNI"/"Documento", "Local"/"Sucursal" y "Empresa" opcional
 
-### [ ] US-14.3 Carnets con QR para imprimir, anular y reimprimir
+### [x] US-14.3 Carnets con QR para imprimir, anular y reimprimir
 
 Como administracion
 Quiero generar los carnets con QR en PDF y anular el de quien lo pierde
@@ -172,6 +172,10 @@ Criterios:
 - el carnet nuevo se puede reimprimir solo
 - queda registrado quien anulo cada carnet y cuando
 - estimado: 3 h
+- hecha 2026-10-21: `asistencia/tests_carnets.py`. Codigo `GA1` + 24 base32 al azar
+  (`Empleado.codigo_carnet`); los anulados quedan en `CarnetAnulado` con el codigo viejo para que
+  el fichaje diga "carnet anulado". PDF de 10 por A4 con el codigo tambien escrito, para tipearlo
+  si la camara no lee
 
 ### [ ] US-14.4 Fichar entrada y salida con la camara del celular
 

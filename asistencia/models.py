@@ -1,13 +1,27 @@
+import base64
 import re
+import secrets
 import unicodedata
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
+from django.utils import timezone
 
 # [0-9] y no \d: \d acepta digitos Unicode (arabigos, etc.) que burlarian la unicidad.
 DNI_PATRON = re.compile(r"[0-9]{6,9}")
+
+PREFIJO_CARNET = "GA1"
+CODIGO_CARNET_PATRON = re.compile(r"GA1[A-Z2-7]{24}")
+
+
+def nuevo_codigo_carnet() -> str:
+    """Lo que va en el QR del carnet (EP-14): 120 bits al azar en base32, con un
+    prefijo para reconocer un carnet de Gerayse. Nunca datos personales. Solo
+    mayusculas y digitos 2-7: el QR sale chico y un lector USB lo tipea igual
+    con teclado en espanol o en ingles."""
+    return PREFIJO_CARNET + base64.b32encode(secrets.token_bytes(15)).decode()
 
 
 def normalizar_dni(valor) -> str:
@@ -32,6 +46,15 @@ class Empleado(models.Model):
         on_delete=models.PROTECT,
         related_name="empleados_asistencia",
         verbose_name="Local habitual",
+    )
+    # El codigo del carnet vigente. Anularlo (US-14.3) lo cambia por uno nuevo y
+    # guarda el viejo en CarnetAnulado: el carnet perdido deja de servir.
+    codigo_carnet = models.CharField(
+        "Código del carnet",
+        max_length=32,
+        unique=True,
+        default=nuevo_codigo_carnet,
+        editable=False,
     )
     # Baja logica: el empleado deja de poder fichar pero no se borra, porque sus
     # marcas tienen que seguir saliendo en los Excel de los meses trabajados.
@@ -95,3 +118,27 @@ class Empleado(models.Model):
 
     def __str__(self) -> str:
         return f"{self.nombre} (DNI {self.dni})"
+
+
+class CarnetAnulado(models.Model):
+    """Carnet que ya no sirve para fichar (perdido, roto). Guarda el codigo viejo
+    para que el fichaje diga "carnet anulado" en vez de "desconocido", y quien,
+    cuando y por que lo anulo. Nunca se borra."""
+
+    empleado = models.ForeignKey(Empleado, on_delete=models.PROTECT, related_name="carnets_anulados")
+    codigo = models.CharField(max_length=32, unique=True)
+    motivo = models.CharField(max_length=200)
+    anulado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="carnets_asistencia_anulados",
+    )
+    anulado_en = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-anulado_en", "-pk"]
+
+    def __str__(self) -> str:
+        return f"Carnet anulado de {self.empleado.nombre} ({self.anulado_en:%d/%m/%Y})"

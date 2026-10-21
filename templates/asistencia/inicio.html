@@ -20,9 +20,12 @@
     <section class="card mt-16" id="asistencia-administrar">
       <div class="row">
         <h2>Administrar</h2>
-        <a class="button" href="{% url 'asistencia:empleado_list' %}">Empleados</a>
+        <div class="list-actions">
+          <a class="button-secondary" href="{% url 'asistencia:carnets' %}">Carnets</a>
+          <a class="button" href="{% url 'asistencia:empleado_list' %}">Empleados</a>
+        </div>
       </div>
-      <p class="muted mt-8">Padrón de empleados. Los carnets con QR, la corrección de marcas y el Excel del mes se suman en las próximas entregas.</p>
+      <p class="muted mt-8">Padrón de empleados y carnets con QR. La corrección de marcas y el Excel del mes se suman en las próximas entregas.</p>
     </section>
   {% endif %}
 {% endblock %}
