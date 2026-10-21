@@ -20,7 +20,7 @@
 | 4 | Correcciones | Administracion agrega o anula marcas con motivo, usuario y fecha; en el Excel salen como "corregida". | 3 |
 | 5 | Excel por empleado | Por mes, una hoja por empleado: dia, pares entrada/salida, horas del dia (suma de tramos; la salida despues de medianoche va al dia de la entrada) y total. | 5 |
 | 6 | Servidor propio y respaldo | Servicio con deploy y base PROPIOS (otro hosting que Gerayse). Respaldo diario automatico fuera del servidor. | 7 |
-| 6b | Acceso desde Gerayse | Agregado el 21/10: se USA dentro de Gerayse (entrada en el menu, mismo usuario, sin otro login), para no abrir dos sistemas. Gerayse emite un token firmado de vida corta y el servicio lo valida. Login propio del servicio como respaldo: el PDF promete que si Gerayse se cae se puede seguir fichando entrando directo al servicio. | +4-6 (no estaba en las 33 h) |
+| 6b | Acceso desde Gerayse | Agregado el 21/10: se USA dentro de Gerayse (entrada en el menu, mismo usuario, sin otro login), para no abrir dos sistemas. Gerayse emite un token firmado de vida corta y el servicio lo valida. SIN login de respaldo: Mateo saco la promesa de seguir fichando si Gerayse se cae (21/10); si Gerayse no anda, no se ficha. | +3-4 (no estaba en las 33 h) |
 | 7 | Puesta en marcha y manual | Carga de los 85, arranque definitivo (de a un local o todos juntos) y manual de usuario. | 4 |
 
 - Fuera de alcance: horarios/grilla, tardanza, tolerancia, horas extra, avisos en pantalla,
