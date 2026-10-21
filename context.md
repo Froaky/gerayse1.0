@@ -75,8 +75,8 @@ Last updated: 2026-10-21
   - US-14.7 respaldo: comandos `respaldar_asistencia` (JSON gzip de la app, destino S3 con boto3
     importado adentro o carpeta local, 30 dias de retencion, aviso por webhook `RESPALDO_AVISO_URL`
     si falla) y `restaurar_asistencia`; tests; las instrucciones de Railway van al chat de servidor.
-  - US-14.8 lector USB: la pantalla de fichar ya acepta codigo + Enter con foco automatico; falta
-    un test de eso y la nota en la epica. Probar con un lector real queda para Mateo.
+  - US-14.8 lector USB: tests hechos (`asistencia/tests_lector.py`) y nota en la epica; solo falta
+    probar con un lector 2D real (Mateo) para marcarla [x].
   - US-14.9: manual de usuario de asistencia (cajeros y administracion). El arranque real lo
     hacen Mateo y Tais, sin piloto.
 - Pendiente de Mateo/Tais: probar la camara en un Android y un iPhone en staging; cual de las 7

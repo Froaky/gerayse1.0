@@ -272,6 +272,11 @@ Criterios:
 - registra exactamente igual que con la camara
 - se prueba con un lector 2D real antes de cerrar la historia
 - estimado: 1 h (la logica ya esta en US-14.4)
+- avance 2026-10-21 (en staging): tests en `asistencia/tests_lector.py`: el codigo con el Enter,
+  salto de linea o Tab del lector registra; con Bloq Mayus (minusculas) tambien; despues de cada
+  lectura el campo vuelve vacio y con el foco. El codigo usa solo A-Z y 2-7, que no cambian entre
+  teclado espanol, latinoamericano e ingles. Al configurar el lector: modo teclado (HID) con Enter
+  al final. FALTA solo la prueba con un lector 2D real para cerrar la historia
 
 ### [ ] US-14.9 Arranque con los empleados cargados y manual de usuario
 
