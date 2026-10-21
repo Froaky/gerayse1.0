@@ -5,7 +5,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.db.models import Prefetch, Q
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.text import slugify
@@ -13,10 +13,11 @@ from django.views.decorators.http import require_http_methods
 
 from .alcance import empresas_en_alcance, sucursales_en_alcance
 from .carnets import generar_carnets_pdf
+from .fichaje import fichar
 from .forms import AnularCarnetForm, CarnetsFiltroForm, EmpleadoFiltroForm, EmpleadoForm, ImportarEmpleadosForm
 from .importacion import Estado, FilaListado, ListadoIlegible, leer_listado, procesar_listado
 from .models import CarnetAnulado, Empleado
-from .permissions import can_administrar, can_fichar, ensure_acceder, ensure_administrar
+from .permissions import can_administrar, can_fichar, ensure_acceder, ensure_administrar, ensure_fichar
 from .services import (
     actualizar_empleado,
     anular_carnet,
@@ -356,4 +357,29 @@ def carnet_anular(request, empleado_id: int):
             "disable_htmx": True,
         },
         status=400 if request.method == "POST" else 200,
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def fichar_view(request):
+    ensure_fichar(request.user)
+    fichaje = None
+    if request.method == "POST":
+        fichaje = fichar(actor=request.user, codigo=request.POST.get("codigo", ""))
+        if request.headers.get("Accept", "").startswith("application/json"):
+            # Para la lectura con la camara: la pantalla no se recarga.
+            return JsonResponse(
+                {
+                    "resultado": fichaje.resultado,
+                    "registrada": fichaje.registrada,
+                    "mensaje": fichaje.mensaje,
+                    "nombre": fichaje.empleado.nombre if fichaje.empleado else "",
+                    "tipo": fichaje.marca.get_tipo_display() if fichaje.marca else "",
+                }
+            )
+    return render(
+        request,
+        "asistencia/fichar.html",
+        {"title": "Fichar", "fichaje": fichaje, "sucursal": request.user.sucursal_base},
     )

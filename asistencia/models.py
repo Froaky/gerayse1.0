@@ -142,3 +142,41 @@ class CarnetAnulado(models.Model):
 
     def __str__(self) -> str:
         return f"Carnet anulado de {self.empleado.nombre} ({self.anulado_en:%d/%m/%Y})"
+
+
+class Marca(models.Model):
+    """Una entrada o una salida de un empleado (EP-14). La hora de una marca
+    escaneada es la del servidor al recibirla: nadie la edita."""
+
+    class Tipo(models.TextChoices):
+        ENTRADA = "ENTRADA", "Entrada"
+        SALIDA = "SALIDA", "Salida"
+
+    class Origen(models.TextChoices):
+        ESCANEO = "ESCANEO", "Escaneo del carnet"
+        MANUAL = "MANUAL", "Carga manual"
+
+    empleado = models.ForeignKey(Empleado, on_delete=models.PROTECT, related_name="marcas")
+    tipo = models.CharField(max_length=10, choices=Tipo.choices)
+    momento = models.DateTimeField()
+    # El local donde se ficho: la sucursal base del cajero que escaneo. Un
+    # empleado puede fichar en cualquier local.
+    sucursal = models.ForeignKey("cashops.Sucursal", on_delete=models.PROTECT, related_name="marcas_asistencia")
+    origen = models.CharField(max_length=10, choices=Origen.choices, default=Origen.ESCANEO)
+    registrada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="marcas_asistencia_registradas",
+    )
+    registrada_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-momento", "-pk"]
+        indexes = [
+            models.Index(fields=["empleado", "momento"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.get_tipo_display()} de {self.empleado.nombre} ({self.momento:%d/%m/%Y %H:%M})"

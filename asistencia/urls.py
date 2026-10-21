@@ -6,6 +6,7 @@ app_name = "asistencia"
 
 urlpatterns = [
     path("", views.inicio, name="inicio"),
+    path("fichar/", views.fichar_view, name="fichar"),
     path("empleados/", views.empleado_list, name="empleado_list"),
     path("empleados/nuevo/", views.empleado_create, name="empleado_create"),
     path("empleados/importar/", views.empleado_importar, name="empleado_importar"),

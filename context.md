@@ -55,8 +55,14 @@ Last updated: 2026-10-21
   pantalla). PDF en `asistencia/carnets.py`: 10 por A4, el texto se achica antes de cortar y un
   recorte impide que pise el QR (un nombre largo lo volvia ilegible); verificado decodificando los
   QR renderizados con zxing.
-- Siguiente: US-14.4 (fichar con la camara del celular). Falta saber cual de las 7 sucursales no
-  ficha. Importes y PDF fuera del repo (es publico).
+- US-14.4 en curso (21/10): modelo `Marca` (migracion asistencia 0005), `asistencia/fichaje.py`
+  (`fichar`: hora del servidor, local = sucursal base del cajero, entrada abierta < 16 h -> salida,
+  doble escaneo < 2 min sin marca, rechazos por carnet anulado/desconocido/empleado de baja/sin
+  local; lock por empleado) y pantalla `/asistencia/fichar/` con codigo tipeado + Enter y JSON
+  para la camara. Falta la camara: sumar una libreria JS de QR a `static/` (pedir OK a Mateo) y
+  probar en Android e iPhone reales.
+- Siguiente: terminar US-14.4 (camara). Falta saber cual de las 7 sucursales no ficha. Importes y
+  PDF fuera del repo (es publico).
 
 ### Treasury Arqueo de caja fuerte cargado en produccion 2026-10-16
 

@@ -200,6 +200,11 @@ Criterios:
 - tests: alternancia, 16 horas, doble escaneo, medianoche, rechazos y permiso
 - se prueba en un Android y en un iPhone reales antes de cerrar la historia
 - estimado: 6 h
+- avance 2026-10-21 (en staging): modelo `Marca`, reglas en `asistencia/fichaje.py` y pantalla
+  `/asistencia/fichar/` con el codigo tipeado + Enter (lo mismo que manda un lector USB), con
+  respuesta JSON para la camara; tests en `asistencia/tests_fichaje.py`. FALTA la lectura con
+  la camara: necesita una libreria JS de QR servida desde `static/` (D7), pendiente de OK de
+  Mateo para sumarla al repo, y la prueba en un Android y un iPhone reales
 
 ### [ ] US-14.5 Corregir marcas olvidadas o mal hechas
 
