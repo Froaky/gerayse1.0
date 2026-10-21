@@ -4,7 +4,7 @@ Last updated: 2026-10-21
 
 ## Current Session
 
-### Propuesta EP-14 asistencia del personal con QR 2026-10-21
+### EP-14 asistencia del personal con QR: aprobada 2026-10-21
 
 - Pedido de Tais: fichar con QR a 85 empleados (ARMADI y Vivre) en 6 locales; hoy anotan en un
   cuaderno y el cajero lo pasa a una planilla de Google.
@@ -15,9 +15,12 @@ Last updated: 2026-10-21
   Gerayse (menu, mismo usuario) pero corre con hosting y base propios y respaldo diario;
   mantenimiento mensual por local obligatorio, aparte del de Gerayse.
   Detalle y guia para retomar en `docs/epics/PROPUESTA-EP-14-asistencia-con-qr.md`.
-- Abierto: que Tais acepte, donde vive el codigo (recomendado repo nuevo privado) y cual de las 7
-  sucursales de la base no ficha. Importes y PDF fuera del repo (es publico). No implementar sin
-  OK de Mateo. Sin cambios de codigo.
+- 21/10 Tais dio el OK. Backlog en `docs/epics/EP-14-asistencia-con-qr.md`: US-14.1 a US-14.9
+  (36-37 h), con lo prometido en el PDF transcripto, reglas, decisiones tecnicas y orden. Ninguna
+  historia empezada.
+- Siguiente paso: cerrar D1 (donde vive el codigo del servicio; recomendado repo nuevo privado) y
+  arrancar US-14.1. Falta saber cual de las 7 sucursales de la base no ficha. Importes y PDF
+  fuera del repo (es publico). Sin cambios de codigo todavia.
 
 ### Treasury Arqueo de caja fuerte cargado en produccion 2026-10-16
 

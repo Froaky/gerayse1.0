@@ -1,6 +1,8 @@
 # PROPUESTA EP-14 Asistencia del Personal con QR
 
-> **ESTADO: PROPUESTA PARA PRESUPUESTAR. NO IMPLEMENTAR SIN OK EXPLICITO DEL USUARIO.**
+> **ESTADO: APROBADA EL 2026-10-21 (version simple). EL ALCANCE A IMPLEMENTAR ES `EP-14-asistencia-con-qr.md`.**
+> Este documento queda como historia del presupuesto; no se implementa desde aca.
+>
 > Este documento existe para que el usuario pueda dimensionar y presupuestar el trabajo.
 > No se toca codigo ni migraciones a partir de este documento hasta que el usuario lo apruebe.
 > Las horas son estimaciones de desarrollo; el precio lo define el usuario.

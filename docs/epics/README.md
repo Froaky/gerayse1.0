@@ -21,6 +21,7 @@ Estado actual:
 - `EP-10`: situacion financiera y alertas consolidadas. Implementada hasta `US-10.14`: todo egreso bancario nuevo exige rubro/sucursal/periodo con worklist para completar historicos, y el consolidado muestra la diferencia entre deuda pendiente y banco. Cerrada 2026-07-08 (queda una nota de alcance a confirmar con el cliente en `US-10.14`).
 - `EP-11`: rentabilidad y situacion economica. Reabierta: implementada hasta US-11.7 y US-11.10; pendiente reimputar gastos historicos y excluir ventas especiales de la base general (`US-11.8`, `US-11.9`).
 - `EP-12`: empresas, contexto activo y navegacion. Implementada. Cerrada 2026-04-28.
+- `EP-14`: asistencia del personal con QR. Aprobada 2026-10-21, en backlog (`US-14.1` a `US-14.9`). Servicio aparte con hosting y respaldo propios que se usa desde Gerayse; pendiente la decision D1 (donde vive el codigo).
 
 Especialista sugerido por epica:
 - `analista-funcional-backlog` para crear, partir o completar backlog en cualquier epic.
@@ -30,6 +31,7 @@ Especialista sugerido por epica:
 - `usuarios-operativos-admin` para `EP-09`.
 - `analista-funcional-backlog` para `EP-12`, coordinando con `caja-sucursales-operativa`, `tesoreria-financiera-consolidada` y `usuarios-operativos-admin` por el alcance transversal.
 - `testing-riguroso-extremo` para cerrar historias con dinero, permisos, migraciones o reglas operativas sensibles.
+- `django-feature-slice` para las historias de `EP-14`, con `usuarios-operativos-admin` en `US-14.2` (permisos y acceso desde Gerayse).
 
 Archivos de referencia de negocio:
 - [matriz-sistema-vs-relevo.md](/C:/code/gerayse1.0/docs/epics/matriz-sistema-vs-relevo.md)
@@ -60,7 +62,7 @@ Principios de implementacion:
 
 Propuestas para presupuestar (no aprobadas, no implementar sin OK explicito):
 - [PROPUESTA-EP-13-cajeros-y-validacion-efectivo.md](/C:/Users/MateoCoca/Documents/REPOS/gerayse/docs/epics/PROPUESTA-EP-13-cajeros-y-validacion-efectivo.md): usuarios cajero por sucursal, validacion de efectivo antes de contar, permisos por accion, egreso de caja como deuda. Pedido 2026-07-08, queda fuera del orden de implementacion hasta aprobacion.
-- [PROPUESTA-EP-14-asistencia-con-qr.md](PROPUESTA-EP-14-asistencia-con-qr.md): fichaje del personal con carnet QR escaneado en la caja, tardanza, horas extra y reporte mensual con el formato de la planilla actual. Pedido 2026-10-20, para presupuestar.
+- [PROPUESTA-EP-14-asistencia-con-qr.md](PROPUESTA-EP-14-asistencia-con-qr.md): historia del presupuesto de asistencia con QR (version 1 rechazada por precio, version simple aprobada el 2026-10-21). El alcance a implementar es [EP-14-asistencia-con-qr.md](EP-14-asistencia-con-qr.md).
 
 Criterio de cierre global:
 - un mes completo de operacion debe poder reconstruirse desde la base sin editar planillas
