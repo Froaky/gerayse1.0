@@ -19,17 +19,19 @@
 | 3 | Pantalla de fichaje | Lector QR USB o camara del celular (Android y iPhone, en el navegador). La primera marca del dia es entrada y la siguiente salida, alternando (turno cortado). Hora del servidor. Anti doble escaneo. | 7 |
 | 4 | Correcciones | Administracion agrega o anula marcas con motivo, usuario y fecha; en el Excel salen como "corregida". | 3 |
 | 5 | Excel por empleado | Por mes, una hoja por empleado: dia, pares entrada/salida, horas del dia (suma de tramos; la salida despues de medianoche va al dia de la entrada) y total. | 5 |
-| 6 | Servidor propio y respaldo | App APARTE de Gerayse, con deploy y base propios: si Gerayse se cae se sigue fichando, y al reves. Un usuario por local + administracion. Respaldo diario automatico fuera del servidor. | 7 |
+| 6 | Servidor propio y respaldo | Servicio con deploy y base PROPIOS (otro hosting que Gerayse). Respaldo diario automatico fuera del servidor. | 7 |
+| 6b | Acceso desde Gerayse | Agregado el 21/10: se USA dentro de Gerayse (entrada en el menu, mismo usuario, sin otro login), para no abrir dos sistemas. Gerayse emite un token firmado de vida corta y el servicio lo valida. Login propio del servicio como respaldo: el PDF promete que si Gerayse se cae se puede seguir fichando entrando directo al servicio. | +4-6 (no estaba en las 33 h) |
 | 7 | Puesta en marcha y manual | Carga de los 85, arranque definitivo (de a un local o todos juntos) y manual de usuario. | 4 |
 
 - Fuera de alcance: horarios/grilla, tardanza, tolerancia, horas extra, avisos en pantalla,
   faltas, presentismo, resumenes por local, sueldos y hardware. Se pueden sumar despues sobre
   esta base, cotizados aparte.
-- Mantenimiento mensual por local, obligatorio: cubre el hosting propio y los respaldos.
-  Importes fuera del repo (es publico).
+- Mantenimiento mensual por local, obligatorio y APARTE del mensual de Gerayse: cubre el hosting
+  propio del servicio y los respaldos. Importes fuera del repo (es publico).
 - Locales: 6 (en Gerayse hay 7 sucursales activas; falta saber cual no ficha).
-- Decision tecnica pendiente: donde vive el codigo. Recomendado: repo nuevo **privado** con un
-  Django chico; no hace falta reusar modelos de Gerayse. Confirmar con Mateo antes de crearlo.
+- Decision tecnica pendiente: donde vive el codigo del servicio. Recomendado: repo nuevo
+  **privado** con un Django chico; en Gerayse solo va la entrada del menu y la emision del token.
+  Confirmar con Mateo antes de crearlo.
 - Respaldo: `pg_dump` diario a un almacenamiento externo (a elegir), con retencion; probar una
   restauracion antes de entregar.
 

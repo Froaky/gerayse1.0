@@ -11,8 +11,9 @@ Last updated: 2026-10-21
 - 20/10 version 1 (78 h, dentro de Gerayse, con grilla de horarios, tardanza, tolerancia y horas
   extra): no se acepto por precio.
 - 21/10 **version simple, 33 h**: QR que marca entrada y salida + Excel por mes con una hoja por
-  empleado (dias, horarios, horas del dia). Sin horarios, tardanzas ni avisos. App APARTE de
-  Gerayse con hosting propio y respaldo diario; mantenimiento mensual por local obligatorio.
+  empleado (dias, horarios, horas del dia). Sin horarios, tardanzas ni avisos. Se usa DENTRO de
+  Gerayse (menu, mismo usuario) pero corre con hosting y base propios y respaldo diario;
+  mantenimiento mensual por local obligatorio, aparte del de Gerayse.
   Detalle y guia para retomar en `docs/epics/PROPUESTA-EP-14-asistencia-con-qr.md`.
 - Abierto: que Tais acepte, donde vive el codigo (recomendado repo nuevo privado) y cual de las 7
   sucursales de la base no ficha. Importes y PDF fuera del repo (es publico). No implementar sin
