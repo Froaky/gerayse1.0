@@ -71,14 +71,19 @@ Last updated: 2026-10-21
 - **US-14.6 hecha** (21/10): Excel del mes en `/asistencia/excel/` (`asistencia/excel.py`, dependencia
   nueva `openpyxl==3.1.5`). Una hoja por empleado, todos los dias, pares entrada/salida, horas del
   dia, observacion y total. Entran los activos del alcance y los de baja con marcas en el mes.
-- Siguiente, en este orden y sin preguntar entre historias (pedido de Mateo):
-  - US-14.7 respaldo: comandos `respaldar_asistencia` (JSON gzip de la app, destino S3 con boto3
-    importado adentro o carpeta local, 30 dias de retencion, aviso por webhook `RESPALDO_AVISO_URL`
-    si falla) y `restaurar_asistencia`; tests; las instrucciones de Railway van al chat de servidor.
+- Siguiente para el chat de desarrollo: US-14.9 (manual de usuario de asistencia). Estado del resto,
+  sin preguntar entre historias (pedido de Mateo):
+  - US-14.7 respaldo: codigo y tests hechos (`asistencia/respaldo.py`, comandos
+    `respaldar_asistencia` y `restaurar_asistencia`, `asistencia/tests_respaldo.py`, boto3 nuevo en
+    requirements). Falta el chat de servidor: bucket, variables, cron y prueba real segun
+    `docs/asistencia-respaldo.md`; despues se marca [x].
   - US-14.8 lector USB: tests hechos (`asistencia/tests_lector.py`) y nota en la epica; solo falta
     probar con un lector 2D real (Mateo) para marcarla [x].
-  - US-14.9: manual de usuario de asistencia (cajeros y administracion). El arranque real lo
-    hacen Mateo y Tais, sin piloto.
+  - US-14.9: primer borrador del manual en `docs/manual-asistencia.md` (de usted). Falta
+    revisarlo contra staging y pasarlo a PDF. El arranque real lo hacen Mateo y Tais, sin piloto.
+  - Pendiente de copy: las pantallas de asistencia hablan de vos ("Escaneá", "Elegí un mes",
+    "pedile a administración", "tus empresas"); la regla del cliente es de usted. Pasarlas a usted
+    en un slice aparte, junto con los tests que comparan textos.
 - Pendiente de Mateo/Tais: probar la camara en un Android y un iPhone en staging; cual de las 7
   sucursales no ficha. Importes y PDF fuera del repo.
 

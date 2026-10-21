@@ -259,6 +259,12 @@ Criterios:
 - un comando restaura un respaldo y reconstruye empleados, carnets y marcas; esta probado con tests
 - el procedimiento (variables, cron y restauracion) queda escrito para el chat de servidor
 - estimado: 3-4 h
+- avance 2026-10-21 (en staging): `asistencia/respaldo.py` y los comandos `respaldar_asistencia`
+  y `restaurar_asistencia` (destino S3 o carpeta, 30 respaldos, aviso por webhook si falla, la
+  restauracion no pisa datos sin `--reemplazar` y reinicia los ids). Dependencia nueva
+  `boto3==1.43.100` + `botocore==1.43.100`. Tests en `asistencia/tests_respaldo.py`. Procedimiento
+  en `docs/asistencia-respaldo.md`. FALTA que el chat de servidor configure bucket, variables y
+  cron, y pruebe un respaldo y una restauracion reales para cerrar la historia
 
 ### [ ] US-14.8 Fichar con lector QR USB
 
@@ -292,6 +298,9 @@ Criterios:
 - el arranque es definitivo, de a un local o todos juntos segun elija el cliente; sin piloto
 - el respaldo diario esta andando y se probo una restauracion con datos reales
 - estimado: 4 h
+- avance 2026-10-21: manual en `docs/manual-asistencia.md` (fichar con celular, lector o codigo;
+  padron; carnets; correcciones; Excel). Falta revisarlo con las pantallas en staging, pasarlo a
+  PDF para el cliente y el arranque (carga real, permisos de cajeros, carnets impresos)
 
 ## Dependencias
 
