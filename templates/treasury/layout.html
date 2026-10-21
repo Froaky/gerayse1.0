@@ -395,6 +395,9 @@
             {% endif %}
             <span class="nav-divider"></span>
             <a class="chip" href="{% url 'cashops:dashboard' %}">Caja</a>
+            {% if request.user.is_authenticated and request.user.can_access_asistencia %}
+              <a class="chip" href="{% url 'asistencia:inicio' %}">Asistencia</a>
+            {% endif %}
           </div>
           {% if request.user.is_authenticated %}
             <div class="nav-user">

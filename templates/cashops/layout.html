@@ -382,6 +382,9 @@
             {% if request.user.is_authenticated and request.user.can_read_treasury %}
               <a class="chip" href="{% url 'treasury:dashboard' %}">Tesorería</a>
             {% endif %}
+            {% if request.user.is_authenticated and request.user.can_access_asistencia %}
+              <a class="chip" href="{% url 'asistencia:inicio' %}">Asistencia</a>
+            {% endif %}
             {% if request.user.is_authenticated and request.user.can_read_config or request.user.can_read_users %}
               <span class="nav-divider"></span>
               <details class="nav-menu">

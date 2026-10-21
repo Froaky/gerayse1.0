@@ -67,6 +67,7 @@ INSTALLED_APPS = [
     'users',
     'cashops',
     'treasury',
+    'asistencia',
 ]
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

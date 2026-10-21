@@ -36,7 +36,7 @@ jobs:
         run: python manage.py makemigrations --check --dry-run
 
       - name: Compile sources
-        run: python -m compileall cashops treasury users core config
+        run: python -m compileall cashops treasury users core asistencia config
 
       - name: Run tests
-        run: python manage.py test cashops treasury users core -v 1
+        run: python manage.py test cashops treasury users core asistencia -v 1

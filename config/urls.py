@@ -12,6 +12,7 @@ urlpatterns = [
     path('', include('users.urls')),
     path('', include('cashops.urls')),
     path('tesoreria/', include('treasury.urls')),
+    path('asistencia/', include('asistencia.urls')),
 ]
 
 if settings.DEBUG or "runserver" in sys.argv:

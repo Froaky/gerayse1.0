@@ -2,28 +2,29 @@
 
 Aprobada por el cliente el 2026-10-21 (Tais dio el OK al presupuesto "version simple").
 Sale de `PROPUESTA-EP-14-asistencia-con-qr.md`; esta epica es el alcance que se implementa.
-Desarrollo en rama `staging`; no se integra a `main` sin OK explicito de Mateo.
+Decision de Mateo del 2026-10-21: se construye DENTRO de Gerayse, como app `asistencia`, con el
+mismo deploy, la misma base y el mismo login. No hay servicio aparte.
+Desarrollo en rama `feat/asistencia-qr` -> `staging`; no se integra a `main` sin OK explicito de Mateo.
 
 ## Para retomar desde cualquier computadora
 
 1. `git fetch origin` y `git switch staging` (o `git pull` si ya estas en `staging`). Leer esta
    epica y la entrada de EP-14 en `context.md`. Con eso alcanza: no hace falta el PDF.
-2. El PDF del presupuesto NO esta en el repo porque tiene precios y el repo es publico. Todo lo
-   que el PDF promete esta transcripto en "Lo que se prometio al cliente". Si algo de esta epica
-   lo contradice, manda el PDF: preguntarle a Mateo.
-3. Antes de la primera linea de codigo hay que cerrar la decision D1 (donde vive el codigo del
-   servicio). El resto de las decisiones tecnicas ya estan tomadas abajo.
+2. El PDF del presupuesto NO esta en el repo porque tiene precios y el repo es publico. Lo que
+   promete esta transcripto en "Lo que se prometio al cliente", con la aclaracion de lo que Mateo
+   decidio hacer distinto. Ante una duda de alcance, preguntarle a Mateo.
+3. Las historias van en orden: la siguiente sin `[x]` es la que sigue.
 4. Marcar cada historia con `[x]` recien cuando tenga tests y este en `staging`, y anotar en
    `context.md` que quedo hecho, asi la proxima computadora sabe donde seguir.
-5. Fuera de alcance por decision de Mateo: piloto, acompanamiento presencial, login de respaldo,
+5. Fuera de alcance por decision de Mateo: piloto, acompanamiento presencial, servicio aparte,
    horarios, tardanzas y todo lo de "No incluye".
 
 ## Objetivo
 
 Reemplazar el cuaderno de asistencia: cada empleado tiene un carnet con QR, el cajero lo escanea
 desde Gerayse al llegar y al irse, la hora la pone el sistema y a fin de mes administracion
-descarga un Excel con los dias y horarios de cada empleado. El servicio corre con hosting y base
-de datos propios, aparte de Gerayse, con respaldo diario.
+descarga un Excel con los dias y horarios de cada empleado. Los datos de asistencia se respaldan
+todos los dias fuera del servidor.
 
 ## Lo que se prometio al cliente (PDF del 2026-10-21)
 
@@ -37,21 +38,26 @@ de datos propios, aparte de Gerayse, con respaldo diario.
   quien lo hizo y cuando; la marca sale como "Corregida"
 - Excel por mes con una hoja por empleado: dias, entradas, salidas y horas del dia, con total
 - se usa desde Gerayse, con el mismo usuario, sin abrir otro programa ni volver a iniciar sesion
-- el servicio corre en su propio servidor, con su propia base de datos y un respaldo diario fuera
-  del servidor; por eso tiene un mantenimiento mensual por local, aparte del de Gerayse
+- respaldo diario de la informacion fuera del servidor
 - carga inicial de los empleados desde el listado del cliente y manual de usuario de todo
 - arranque definitivo de a un local o todos juntos, como elija el cliente
-- NO se prometio: seguir fichando si Gerayse se cae (se saco a pedido de Mateo)
+- mantenimiento mensual por local, aparte del de Gerayse
+- NO se prometio: seguir fichando si Gerayse se cae
+
+Aclaracion: el PDF dice ademas que el servicio "corre en su propio servidor, con su propia base de
+datos". Mateo decidio el 2026-10-21 hacerlo dentro de Gerayse y dejar el PDF como esta. No
+construir un servicio, hosting ni base aparte.
 
 ## Incluye
 
-- servicio de asistencia con deploy, base y respaldo propios
-- acceso desde el menu de Gerayse con el mismo usuario
+- app `asistencia` dentro de Gerayse, con la entrada en el menu segun permisos
+- dos permisos por accion nuevos: fichar asistencia y administrar asistencia
 - padron de empleados con carga inicial desde un listado
 - carnets con QR imprimibles, anulables y reimprimibles
 - pantalla de fichaje con lector QR y con camara de celular
 - correccion auditada de marcas por administracion
 - Excel mensual por empleado
+- respaldo diario de los datos de asistencia fuera del servidor, con restauracion probada
 - carga de los empleados y manual de usuario para cajeros y administracion
 
 ## No incluye todavia
@@ -60,32 +66,34 @@ de datos propios, aparte de Gerayse, con respaldo diario.
 - avisos en pantalla, faltas, justificaciones o presentismo
 - resumenes o reportes por local dentro del sistema
 - calculo de sueldos o montos
-- login propio del servicio o fichaje con Gerayse caido
+- servicio, hosting o base de datos aparte de Gerayse
 - fichaje del empleado desde su propio celular, biometria o fotos
 - migrar al sistema lo que ya esta en las planillas
 - lectores, celulares e impresion de carnets (los pone el cliente)
 
 ## Decisiones tecnicas
 
-- D1 PENDIENTE: donde vive el codigo del servicio. Recomendado: repo nuevo privado con un Django
-  chico. Alternativa: carpeta propia en este repo (que es publico) con deploy aparte. En Gerayse,
-  en cualquier caso, solo va la entrada del menu, los permisos y la emision del token.
-- D2 hosting: servicio web y Postgres propios en Railway, en un proyecto aparte del de Gerayse,
-  con dominio propio y HTTPS (la camara del celular lo exige).
-- D3 acceso: Gerayse firma un token HMAC-SHA256 con un secreto compartido (variable de entorno en
-  los dos lados), de vida corta (60 segundos) y de un solo uso, con usuario, nombre, sucursal base
-  y permisos de asistencia. El servicio lo valida y abre su propia sesion. No hay otro login.
-- D4 respaldo: `pg_dump` diario a un almacenamiento externo compatible con S3 (a elegir al montar
-  D2), con retencion de 30 dias y aviso a soporte si un respaldo falla.
-- D5 zona horaria `America/Argentina/Buenos_Aires`, igual que Gerayse.
-- D6 lectura por camara: libreria JS de QR servida desde los estaticos del servicio, sin CDN
-  (`BarcodeDetector` no existe en Safari de iPhone).
-- D7 Excel con `openpyxl`, como dependencia del servicio (Gerayse no la necesita).
-- D8 bases separadas: el servicio no escribe en la base de Gerayse ni Gerayse en la del servicio.
+- D1 app `asistencia` en este repo, con el mismo deploy y la misma base que Gerayse.
+- D2 permisos: dos entradas nuevas en `users.PermissionModule`, por accion como las de EP-13:
+  fichar asistencia y administrar asistencia. Se asignan por rol (default) o por usuario
+  (override) desde la matriz que ya existe. Los administradores del sistema las tienen, como
+  todo permiso.
+- D3 el empleado NO es un usuario de Gerayse: es un registro propio de `asistencia`. Su empresa y
+  su local habitual apuntan a `cashops.Empresa` y `cashops.Sucursal`.
+- D4 el local de una marca es la sucursal base del cajero que escanea (`User.sucursal_base`).
+- D5 respaldo: volcado logico diario de los datos de la app `asistencia` (JSON comprimido) a un
+  almacenamiento externo compatible con S3, con retencion de 30 dias, aviso si falla y comando de
+  restauracion. El cron y el almacenamiento los configura el chat de servidor (Railway); este chat
+  deja el comando, los tests y las instrucciones.
+- D6 zona horaria `America/Argentina/Buenos_Aires`, la de Gerayse.
+- D7 lectura por camara: libreria JS de QR servida desde `static/`, sin CDN (`BarcodeDetector`
+  no existe en Safari de iPhone). La camara exige HTTPS, que Gerayse ya tiene.
+- D8 Excel con `openpyxl` (dependencia nueva en `requirements.txt`). PDF de carnets con
+  `reportlab`, que ya esta.
 
 ## Reglas de negocio
 
-- la hora de una marca escaneada es la del servidor del servicio al recibirla; nadie la edita
+- la hora de una marca escaneada es la del servidor al recibirla; nadie la edita
 - la unica forma de registrar otra hora es una marca manual de administracion, con motivo; queda
   senalada como corregida
 - ninguna marca se borra: se anula con motivo, usuario y fecha, y deja de contar
@@ -96,64 +104,53 @@ de datos propios, aparte de Gerayse, con respaldo diario.
 - un carnet anulado, un codigo desconocido o un empleado dado de baja no generan marca y la
   pantalla dice por que
 - el QR contiene solo un codigo aleatorio; nunca nombre ni DNI
-- toda marca guarda el local donde se ficho, que es la sucursal base del cajero en Gerayse
-- un empleado puede fichar en cualquier local
+- toda marca guarda el local donde se ficho; un empleado puede fichar en cualquier local
 - las horas del dia suman los tramos entrada-salida cuya entrada cae en ese dia; una salida despues
   de medianoche cuenta en el dia de la entrada; un tramo sin salida no suma y queda senalado
-- fichar y administrar asistencia son permisos por accion separados en la matriz de Gerayse; el
-  servicio rechaza en backend lo que el token no habilita
+- fichar y administrar son permisos separados; el backend rechaza lo que el permiso no habilita
+  aunque se conozca la URL
+- aislamiento por empresa (AGENTS.md seccion 8): administracion solo ve, carga, corrige y exporta
+  empleados de sus empresas permitidas y del contexto de empresa activo; los forms no ofrecen
+  empresas ni sucursales ajenas
 - datos personales minimos: nombre, DNI, empresa y local habitual
 
 ## User Stories
 
-### [ ] US-14.1 Servicio de asistencia con hosting y respaldo propios
-
-Como administracion
-Quiero que la asistencia viva en un servicio con servidor y base de datos propios, respaldados
-todos los dias
-Para que un problema en Gerayse o en el servidor no haga perder las marcas
-
-Criterios:
-- el servicio esta desplegado aparte de Gerayse, con su propia base Postgres y dominio con HTTPS
-- se genera un respaldo completo por dia fuera del servidor y se guardan los ultimos 30
-- si un respaldo falla, soporte recibe un aviso
-- una restauracion de prueba desde un respaldo reconstruye empleados, carnets y marcas
-- el procedimiento de restauracion queda escrito en el repo del servicio
-- estimado: 7 h
-
-### [ ] US-14.2 Entrar a Asistencia desde Gerayse con el mismo usuario
+### [x] US-14.1 Entrar a Asistencia desde el menu de Gerayse segun permisos
 
 Como cajero o administracion
-Quiero entrar a Asistencia desde el menu de Gerayse sin volver a iniciar sesion
-Para trabajar en un solo sistema y no perder tiempo en otra pantalla de login
+Quiero ver Asistencia en el menu de Gerayse cuando tengo permiso, sin otro inicio de sesion
+Para usar la asistencia dentro del mismo sistema
 
 Criterios:
-- la matriz de permisos de Gerayse suma dos acciones: fichar asistencia y administrar asistencia
-- la entrada "Asistencia" del menu solo aparece a quien tiene alguna de las dos
-- Gerayse emite el token de D3 y el servicio abre sesion con el usuario, su sucursal base y sus
-  permisos
-- un token vencido, adulterado o ya usado se rechaza y no abre sesion
-- el servicio no tiene login propio: entrar directo a su direccion sin token no abre sesion
-- un usuario sin permiso de administrar no ve ni puede usar padron, carnets, correcciones ni Excel
-  aunque conozca la URL
-- estimado: 3-4 h
+- la matriz de permisos suma "Fichar asistencia" y "Administrar asistencia", asignables por rol y
+  por usuario como validar efectivo
+- roles y usuarios existentes no reciben ninguna de las dos hasta que se las asignen (salvo los
+  administradores del sistema, que tienen todo)
+- la entrada "Asistencia" del menu aparece solo a quien tiene alguna de las dos
+- la pantalla de inicio de Asistencia muestra solo lo que el usuario puede hacer
+- quien no tiene ninguna de las dos recibe 403 aunque conozca la URL
+- tests de matriz, menu y acceso
+- estimado: 2 h
+- hecha 2026-10-21: `asistencia/tests.py` + regresion de la ficha de rol en `users/tests.py`
 
-### [ ] US-14.3 Padron de empleados con carga inicial desde un listado
+### [ ] US-14.2 Padron de empleados con carga inicial desde un listado
 
 Como administracion
 Quiero dar de alta, editar y dar de baja empleados, y cargar los 85 de una vez desde un listado
 Para tener a todo el personal en el sistema sin tipearlo uno por uno
 
 Criterios:
-- cada empleado tiene nombre y apellido, DNI, empresa (ARMADI o Vivre) y local habitual
+- cada empleado tiene nombre y apellido, DNI, empresa (ARMADI o Vivre) y local habitual de esa
+  empresa
 - el DNI no se repite entre empleados activos
 - la carga desde un CSV o Excel informa fila por fila que entro y que se rechazo y por que, y no
   carga a medias un empleado con datos invalidos
 - dar de baja no borra: el empleado deja de poder fichar y sus marcas siguen en los Excel
-- el listado se filtra por empresa, local y activos/baja
+- el listado se filtra por empresa, local y activos/baja, y respeta el aislamiento por empresa
 - estimado: 4 h
 
-### [ ] US-14.4 Carnets con QR para imprimir, anular y reimprimir
+### [ ] US-14.3 Carnets con QR para imprimir, anular y reimprimir
 
 Como administracion
 Quiero generar los carnets con QR en PDF y anular el de quien lo pierde
@@ -168,7 +165,7 @@ Criterios:
 - queda registrado quien anulo cada carnet y cuando
 - estimado: 3 h
 
-### [ ] US-14.5 Fichar entrada y salida con lector QR
+### [ ] US-14.4 Fichar entrada y salida con lector QR
 
 Como cajero
 Quiero escanear el carnet con el lector de la caja y ver al instante que quedo registrado
@@ -183,23 +180,11 @@ Criterios:
 - un doble escaneo dentro de 2 minutos, un carnet anulado, un codigo desconocido o un empleado
   de baja no generan marca y se explica en pantalla
 - con turno cortado, las marcas alternan entrada y salida en el mismo dia
+- un usuario sin sucursal base no puede fichar
 - tests: alternancia, 16 horas, doble escaneo, medianoche, rechazos y permiso
 - estimado: 4 h
 
-### [ ] US-14.6 Fichar con la camara del celular
-
-Como cajero
-Quiero escanear el carnet con la camara del celular, con Gerayse abierto en el navegador
-Para fichar en un local que no tiene lector
-
-Criterios:
-- la misma pantalla ofrece leer con la camara; registra exactamente igual que con el lector
-- funciona en Chrome de Android y en Safari de iPhone, sin instalar nada
-- si el navegador no da permiso de camara, la pantalla lo dice y sigue sirviendo con el lector
-- se prueba en un Android y en un iPhone reales antes de cerrar la historia
-- estimado: 3 h
-
-### [ ] US-14.7 Corregir marcas olvidadas o mal hechas
+### [ ] US-14.5 Corregir marcas olvidadas o mal hechas
 
 Como administracion
 Quiero agregar una marca con la hora real o anular una marca equivocada, con motivo
@@ -213,7 +198,7 @@ Criterios:
 - un cajero sin permiso de administrar no puede corregir
 - estimado: 3 h
 
-### [ ] US-14.8 Excel del mes por empleado
+### [ ] US-14.6 Excel del mes por empleado
 
 Como administracion
 Quiero descargar un Excel del mes con una hoja por empleado
@@ -225,8 +210,36 @@ Criterios:
   observacion ("Corregida", "Sin salida", "Sin marcas")
 - las horas del dia y el total del mes siguen las reglas (medianoche y tramos sin salida)
 - entra todo empleado activo y todo dado de baja que tenga marcas ese mes
+- solo empleados de las empresas permitidas
 - tests: turno cortado, medianoche, sin salida, marca corregida, marca anulada y mes sin marcas
 - estimado: 5 h
+
+### [ ] US-14.7 Respaldo diario de la asistencia fuera del servidor
+
+Como administracion
+Quiero que los datos de asistencia se respalden todos los dias fuera del servidor
+Para no perder empleados, carnets ni marcas si falla el servidor o la base
+
+Criterios:
+- un comando genera el respaldo de los datos de `asistencia` y lo sube al almacenamiento externo
+- se guardan los ultimos 30 respaldos; los mas viejos se borran solos
+- si el respaldo falla, el comando termina con error y avisa a soporte
+- un comando restaura un respaldo y reconstruye empleados, carnets y marcas; esta probado con tests
+- el procedimiento (variables, cron y restauracion) queda escrito para el chat de servidor
+- estimado: 3-4 h
+
+### [ ] US-14.8 Fichar con la camara del celular
+
+Como cajero
+Quiero escanear el carnet con la camara del celular, con Gerayse abierto en el navegador
+Para fichar en un local que no tiene lector
+
+Criterios:
+- la misma pantalla ofrece leer con la camara; registra exactamente igual que con el lector
+- funciona en Chrome de Android y en Safari de iPhone, sin instalar nada
+- si el navegador no da permiso de camara, la pantalla lo dice y sigue sirviendo con el lector
+- se prueba en un Android y en un iPhone reales antes de cerrar la historia
+- estimado: 3 h
 
 ### [ ] US-14.9 Arranque con los empleados cargados y manual de usuario
 
@@ -236,40 +249,45 @@ Para dejar el cuaderno desde el primer dia sin depender de alguien en el local
 
 Criterios:
 - los empleados del listado del cliente estan cargados y sin rechazos pendientes
+- los cajeros de los locales que arrancan tienen el permiso de fichar
 - el PDF de carnets de todos esta entregado para imprimir
 - el manual de usuario cubre fichar (lector y celular), padron, carnets, correcciones y Excel
 - el arranque es definitivo, de a un local o todos juntos segun elija el cliente; sin piloto
-- el mantenimiento mensual de cada local corre desde que ese local empieza a fichar
+- el respaldo diario esta andando y se probo una restauracion con datos reales
 - estimado: 4 h
 
 ## Dependencias
 
 - `EP-09` y `EP-13`: usuarios, matriz de permisos por accion y sucursal base del cajero
-  (implementadas); US-14.2 suma dos acciones a esa matriz
-- D1 cerrada antes de US-14.1
+  (implementadas); US-14.1 suma dos acciones a esa matriz
+- `EP-12`: contexto de empresa activa y empresas permitidas (implementada)
+- chat de servidor: almacenamiento externo, variables y cron del respaldo (US-14.7)
 - del cliente: el listado de empleados (nombre, DNI, empresa y local) antes de US-14.9 y los
   lectores o celulares antes del arranque
 - falta confirmar cual de las 7 sucursales activas de Gerayse no ficha: el presupuesto habla de 6
 
 ## Orden tecnico sugerido
 
-1. D1, despues US-14.1: sin servicio y respaldo no hay donde guardar nada
-2. US-14.2: es la puerta de entrada y define permisos para todo lo demas
-3. US-14.3 y US-14.4: padron y carnets; con esto el cliente ya puede imprimir
-4. US-14.5 y US-14.7: fichar y corregir; juntas son lo minimo que reemplaza al cuaderno
-5. US-14.8: el Excel, que es lo que administracion usa a fin de mes
-6. US-14.6: la camara del celular, el riesgo de compatibilidad mas alto, aislado
-7. US-14.9: carga real, manual y arranque
+El de la numeracion: cada historia usa lo de la anterior.
 
-Total estimado: 36-37 h.
+1. US-14.1: permisos y entrada; todo lo demas cuelga de aca
+2. US-14.2 y US-14.3: padron y carnets; con esto el cliente ya puede imprimir
+3. US-14.4 y US-14.5: fichar y corregir; juntas son lo minimo que reemplaza al cuaderno
+4. US-14.6: el Excel, que es lo que administracion usa a fin de mes
+5. US-14.7: el respaldo, cuando ya existen todos los datos que hay que respaldar
+6. US-14.8: la camara del celular, el riesgo de compatibilidad mas alto, aislado
+7. US-14.9: carga real, permisos de los cajeros, manual y arranque
+
+Total estimado: 31-32 h.
 
 ## Criterio de cierre
 
-- un cajero entra desde Gerayse sin otro login, escanea un carnet con lector o con celular y la
-  marca queda con la hora del servidor y su local, sin poder cambiarla
+- un cajero entra a Asistencia desde el menu de Gerayse, escanea un carnet con lector o con
+  celular y la marca queda con la hora del servidor y su local, sin poder cambiarla
 - administracion descarga el Excel de un mes y cada empleado tiene su hoja con dias, entradas,
   salidas, horas del dia y total, sin pasar nada a mano
 - toda marca corregida o anulada tiene motivo, usuario y fecha
 - existe un respaldo diario fuera del servidor y una restauracion probada
-- hay tests de alternancia, doble escaneo, medianoche, rechazos, permisos y armado del Excel
+- hay tests de permisos, aislamiento por empresa, alternancia, doble escaneo, medianoche,
+  rechazos y armado del Excel
 - el cliente dejo el cuaderno en los locales que arrancaron

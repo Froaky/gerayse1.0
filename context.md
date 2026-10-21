@@ -4,23 +4,35 @@ Last updated: 2026-10-21
 
 ## Current Session
 
-### EP-14 asistencia del personal con QR: aprobada 2026-10-21
+### EP-14 asistencia del personal con QR (aprobada 2026-10-21)
 
 - Pedido de Tais: fichar con QR a 85 empleados (ARMADI y Vivre) en 6 locales; hoy anotan en un
   cuaderno y el cajero lo pasa a una planilla de Google.
-- 20/10 version 1 (78 h, dentro de Gerayse, con grilla de horarios, tardanza, tolerancia y horas
-  extra): no se acepto por precio.
-- 21/10 **version simple, 33 h**: QR que marca entrada y salida + Excel por mes con una hoja por
-  empleado (dias, horarios, horas del dia). Sin horarios, tardanzas ni avisos. Se usa DENTRO de
-  Gerayse (menu, mismo usuario) pero corre con hosting y base propios y respaldo diario;
-  mantenimiento mensual por local obligatorio, aparte del de Gerayse.
-  Detalle y guia para retomar en `docs/epics/PROPUESTA-EP-14-asistencia-con-qr.md`.
-- 21/10 Tais dio el OK. Backlog en `docs/epics/EP-14-asistencia-con-qr.md`: US-14.1 a US-14.9
-  (36-37 h), con lo prometido en el PDF transcripto, reglas, decisiones tecnicas y orden. Ninguna
-  historia empezada.
-- Siguiente paso: cerrar D1 (donde vive el codigo del servicio; recomendado repo nuevo privado) y
-  arrancar US-14.1. Falta saber cual de las 7 sucursales de la base no ficha. Importes y PDF
-  fuera del repo (es publico). Sin cambios de codigo todavia.
+- 20/10 version 1 rechazada por precio. 21/10 version simple aprobada: QR que marca entrada y
+  salida + Excel por mes con una hoja por empleado. Sin horarios, tardanzas ni avisos.
+- 21/10 Mateo decidio hacerlo DENTRO de Gerayse (app `asistencia`, mismo deploy, base y login); el
+  PDF, que dice servidor y base propios, queda como esta. Backlog en
+  `docs/epics/EP-14-asistencia-con-qr.md`: US-14.1 a US-14.9, en orden.
+- **US-14.1 hecha** (21/10, `feat/asistencia-qr` -> `staging`): permisos por accion
+  `ASISTENCIA_FICHAR` ("asistencia_fichar") y `ASISTENCIA_ADMIN` ("asistencia_admin") en
+  `users.PermissionModule`, wrappers `can_fichar_asistencia` / `can_administrar_asistencia` /
+  `can_access_asistencia`, entradas en `PERMISSION_MODULE_META` y migracion
+  `users/0020_permisos_asistencia` (solo AlterField de choices: los roles no admin quedan en False
+  por legacy y por `ensure_permission_rows`). App `asistencia` con `permissions.py` (can_/ensure_),
+  `/asistencia/` (403 sin permiso) y chip "Asistencia" en los layouts de caja y de tesoreria. El
+  CI suma `asistencia` a compileall y test.
+- FIX incluido: `users/views.py` `_permission_rows_for_role` leia `role.permissions.all()` con el
+  prefetch de `role_detail` y no veia las filas que `ensure_permission_rows` acaba de crear: tras
+  sumar un modulo al enum, la primera apertura de cada rol existente daba KeyError (500). Ahora
+  lee `RolePermission.objects.filter(role=role)`. Regresion en `users/tests.py`.
+- Tests: `asistencia/tests.py` (21) + la regresion; suite 1131 OK (6 skipped);
+  `makemigrations --check` sin cambios. Revision adversarial (4 dimensiones): sin hallazgos
+  confirmados.
+- Riesgo conocido, preexistente: un usuario con asistencia y sin Caja cae en 403 al loguearse
+  (`LOGIN_REDIRECT_URL` va a `cashops:dashboard`). No afecta a cajeros ni a administracion;
+  tenerlo en cuenta si se crea un usuario solo para fichar.
+- Siguiente: US-14.2 (padron de empleados). Falta saber cual de las 7 sucursales no ficha.
+  Importes y PDF fuera del repo (es publico).
 
 ### Treasury Arqueo de caja fuerte cargado en produccion 2026-10-16
 

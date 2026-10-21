@@ -64,6 +64,14 @@ PERMISSION_MODULE_META = {
         "label": "Usuarios",
         "scope": "Alta, edición, roles, permisos, archivo, baja y links de primer ingreso.",
     },
+    PermissionModule.ASISTENCIA_FICHAR: {
+        "label": "Fichar asistencia",
+        "scope": "Escanear el carnet QR de un empleado para registrar su entrada o su salida, con la hora del sistema y el local del usuario.",
+    },
+    PermissionModule.ASISTENCIA_ADMIN: {
+        "label": "Administrar asistencia",
+        "scope": "Empleados, carnets con QR, corrección de marcas con motivo y Excel del mes. Va aparte de fichar: cambiar la hora de una marca no es lo mismo que escanear un carnet.",
+    },
 }
 
 
@@ -167,7 +175,11 @@ def _permission_rows_for_user(user):
 
 def _permission_rows_for_role(role):
     role.ensure_permission_rows()
-    permissions = {permission.module: permission for permission in role.permissions.all()}
+    # Se lee de la base y no de role.permissions.all(): role_detail trae el rol
+    # con prefetch_related("permissions") y ese cache no ve las filas que
+    # ensure_permission_rows acaba de crear. Con un modulo nuevo en el enum, la
+    # primera apertura de cada rol existente daba KeyError (500).
+    permissions = {permission.module: permission for permission in RolePermission.objects.filter(role=role)}
     rows = []
     for module, label in PermissionModule.choices:
         permission = permissions[module]

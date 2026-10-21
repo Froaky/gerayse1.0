@@ -33,6 +33,12 @@ class PermissionModule(models.TextChoices):
     # en produccion lo tienen solo dos personas de administracion.
     TREASURY_MOV_DELETE = "treasury_mov_del", "Anular movimientos de caja fuerte"
     USERS = "users", "Usuarios"
+    # EP-14: permisos por accion de asistencia. Fichar es lo que usa el cajero
+    # para escanear carnets; administrar cubre padron, carnets, correcciones y
+    # Excel. Van separados porque registrar la llegada de alguien y cambiarle
+    # la hora a otro no son la misma responsabilidad.
+    ASISTENCIA_FICHAR = "asistencia_fichar", "Fichar asistencia"
+    ASISTENCIA_ADMIN = "asistencia_admin", "Administrar asistencia"
 
 
 class Role(models.Model):
@@ -229,6 +235,16 @@ class User(AbstractUser):
 
     def can_write_users(self) -> bool:
         return self.has_module_permission(PermissionModule.USERS, "write")
+
+    def can_fichar_asistencia(self) -> bool:
+        return self.has_module_permission(PermissionModule.ASISTENCIA_FICHAR, "write")
+
+    def can_administrar_asistencia(self) -> bool:
+        return self.has_module_permission(PermissionModule.ASISTENCIA_ADMIN, "write")
+
+    def can_access_asistencia(self) -> bool:
+        """Ver Asistencia en el menu: alcanza con cualquiera de los dos."""
+        return self.can_fichar_asistencia() or self.can_administrar_asistencia()
 
     def __str__(self) -> str:
         if self.get_full_name():

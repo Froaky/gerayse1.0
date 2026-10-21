@@ -1,0 +1,28 @@
+{% extends "cashops/layout.html" %}
+{% block title %}Asistencia | Gerayse{% endblock %}
+{% block content %}
+  <section class="card">
+    <h1>Asistencia</h1>
+    <p class="muted">Entradas y salidas del personal con el carnet QR. Acá aparece lo que tu usuario tiene habilitado.</p>
+  </section>
+
+  {% if puede_fichar %}
+    <section class="card mt-16" id="asistencia-fichar">
+      <div class="row">
+        <h2>Fichar</h2>
+        <span class="badge-muted">Próximamente</span>
+      </div>
+      <p class="muted mt-8">Escanear el carnet de cada empleado al llegar y al irse. La hora la pone el sistema.</p>
+    </section>
+  {% endif %}
+
+  {% if puede_administrar %}
+    <section class="card mt-16" id="asistencia-administrar">
+      <div class="row">
+        <h2>Administrar</h2>
+        <span class="badge-muted">Próximamente</span>
+      </div>
+      <p class="muted mt-8">Empleados, carnets con QR, corrección de marcas y Excel del mes.</p>
+    </section>
+  {% endif %}
+{% endblock %}

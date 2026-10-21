@@ -576,6 +576,24 @@ class PersonalViewTests(TestCase):
         self.assertTrue(permission.can_read)
         self.assertFalse(permission.can_write)
 
+    def test_role_detail_opens_for_role_missing_rows_of_new_modules(self):
+        # Regresion (EP-14): un rol que existia antes de sumar un modulo al enum
+        # no tiene esa fila. La ficha la crea al abrirse y tiene que mostrarla en
+        # la misma respuesta, en vez de caerse por el prefetch (KeyError, 500).
+        RolePermission.objects.create(
+            role=self.operator_role,
+            module=PermissionModule.CASHOPS,
+            can_read=True,
+            can_write=True,
+        )
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("users:role_detail", args=[self.operator_role.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.operator_role.permissions.count(), len(PermissionModule.choices))
+        self.assertContains(response, PermissionModule.ASISTENCIA_FICHAR.label)
+
     def test_user_with_users_read_can_view_but_not_write_users(self):
         read_role = Role.objects.create(code="USERS_READ", name="Usuarios lectura")
         RolePermission.objects.create(role=read_role, module=PermissionModule.USERS, can_read=True)
