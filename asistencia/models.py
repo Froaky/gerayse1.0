@@ -171,6 +171,20 @@ class Marca(models.Model):
         related_name="marcas_asistencia_registradas",
     )
     registrada_en = models.DateTimeField(auto_now_add=True)
+    # Solo para las cargadas a mano (US-14.5): por que se agrego.
+    motivo = models.CharField(max_length=200, blank=True, default="")
+    # Anular no borra: la marca deja de contar (fichaje y Excel) pero queda con
+    # quien, cuando y por que.
+    anulada = models.BooleanField(default=False)
+    anulada_en = models.DateTimeField(null=True, blank=True)
+    anulada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="marcas_asistencia_anuladas",
+    )
+    motivo_anulacion = models.CharField(max_length=200, blank=True, default="")
 
     class Meta:
         ordering = ["-momento", "-pk"]

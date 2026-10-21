@@ -1,4 +1,5 @@
 import secrets
+from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -15,13 +16,24 @@ from django.views.decorators.http import require_http_methods
 from .alcance import empresas_en_alcance, sucursales_en_alcance
 from .carnets import generar_carnets_pdf
 from .fichaje import fichar
-from .forms import AnularCarnetForm, CarnetsFiltroForm, EmpleadoFiltroForm, EmpleadoForm, ImportarEmpleadosForm
+from .forms import (
+    AnularCarnetForm,
+    AnularMarcaForm,
+    CarnetsFiltroForm,
+    EmpleadoFiltroForm,
+    EmpleadoForm,
+    ImportarEmpleadosForm,
+    MarcaFiltroForm,
+    MarcaManualForm,
+)
 from .importacion import Estado, FilaListado, ListadoIlegible, leer_listado, procesar_listado
-from .models import CarnetAnulado, Empleado
+from .models import CarnetAnulado, Empleado, Marca
 from .permissions import can_administrar, can_fichar, ensure_acceder, ensure_administrar, ensure_fichar
 from .services import (
     actualizar_empleado,
+    agregar_marca,
     anular_carnet,
+    anular_marca,
     crear_empleado,
     dar_de_baja_empleado,
     reactivar_empleado,
@@ -384,4 +396,135 @@ def fichar_view(request):
         request,
         "asistencia/fichar.html",
         {"title": "Fichar", "fichaje": fichaje, "sucursal": request.user.sucursal_base},
+    )
+
+
+MAXIMO_MARCAS_LISTADO = 500
+
+
+def _marcas_en_alcance(request):
+    return Marca.objects.filter(empleado__in=_empleados_en_alcance(request)).select_related(
+        "empleado", "sucursal", "registrada_por", "anulada_por"
+    )
+
+
+def _url_marcas(empleado_id, fecha) -> str:
+    dia = fecha.isoformat()
+    return f"{reverse('asistencia:marca_list')}?empleado={empleado_id}&desde={dia}&hasta={dia}&anuladas=on"
+
+
+@login_required
+def marca_list(request):
+    ensure_administrar(request.user)
+    empleados = _empleados_en_alcance(request)
+    filtro = MarcaFiltroForm(request.GET or None, empleados=empleados, sucursales=sucursales_en_alcance(request))
+    marcas = _marcas_en_alcance(request)
+    hasta = timezone.localdate()
+    desde = hasta - timedelta(days=6)
+    mostrar_anuladas = False
+    if filtro.is_valid():
+        datos = filtro.cleaned_data
+        if datos.get("empleado"):
+            marcas = marcas.filter(empleado=datos["empleado"])
+        if datos.get("sucursal"):
+            marcas = marcas.filter(sucursal=datos["sucursal"])
+        desde = datos.get("desde") or desde
+        hasta = datos.get("hasta") or hasta
+        mostrar_anuladas = datos.get("anuladas")
+    marcas = marcas.filter(momento__date__gte=desde, momento__date__lte=hasta)
+    if not mostrar_anuladas:
+        marcas = marcas.filter(anulada=False)
+    total = marcas.count()
+    return render(
+        request,
+        "asistencia/marca_list.html",
+        {
+            "title": "Marcas",
+            "filtro": filtro,
+            "marcas": marcas[:MAXIMO_MARCAS_LISTADO],
+            "total": total,
+            "recortado": total > MAXIMO_MARCAS_LISTADO,
+            "maximo": MAXIMO_MARCAS_LISTADO,
+            "desde": desde,
+            "hasta": hasta,
+            # Un local de una empresa fuera del alcance no se nombra.
+            "empresas_visibles": set(empresas_en_alcance(request).values_list("pk", flat=True)),
+        },
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def marca_create(request):
+    ensure_administrar(request.user)
+    form = MarcaManualForm(
+        request.POST or None,
+        initial={"empleado": request.GET.get("empleado")} if request.GET.get("empleado") else None,
+        empleados=_empleados_en_alcance(request),
+        sucursales=sucursales_en_alcance(request),
+    )
+    if request.method == "POST" and form.is_valid():
+        datos = form.cleaned_data
+        try:
+            marca = agregar_marca(
+                actor=request.user,
+                empleado=datos["empleado"],
+                momento=datos["momento"],
+                tipo=datos["tipo"],
+                sucursal=datos["sucursal"],
+                motivo=datos["motivo"],
+            )
+        except ValidationError as error:
+            _volcar_error(form, error)
+        else:
+            messages.success(request, f"Se agregó la {marca.get_tipo_display().lower()} de {marca.empleado.nombre}: queda señalada como corregida.")
+            return redirect(_url_marcas(marca.empleado_id, timezone.localtime(marca.momento).date()))
+    return render(
+        request,
+        "cashops/form_page.html",
+        {
+            "title": "Agregar una marca",
+            "subtitle": "Para cuando alguien no fichó o llegó antes que el cajero. Queda señalada como corregida, con tu usuario y la fecha.",
+            "form": form,
+            "submit_label": "Agregar marca",
+            "back_url": reverse("asistencia:marca_list"),
+            "form_action": reverse("asistencia:marca_create"),
+            "disable_htmx": True,
+        },
+        status=400 if request.method == "POST" else 200,
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def marca_anular(request, marca_id: int):
+    ensure_administrar(request.user)
+    marca = get_object_or_404(_marcas_en_alcance(request), pk=marca_id)
+    volver = _url_marcas(marca.empleado_id, timezone.localtime(marca.momento).date())
+    if marca.anulada:
+        messages.error(request, "Esa marca ya está anulada.")
+        return redirect(volver)
+    form = AnularMarcaForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        try:
+            anular_marca(actor=request.user, marca=marca, motivo=form.cleaned_data["motivo"])
+        except ValidationError as error:
+            _volcar_error(form, error)
+        else:
+            messages.success(request, "La marca quedó anulada: ya no cuenta, pero no se borra.")
+            return redirect(volver)
+    momento = timezone.localtime(marca.momento)
+    return render(
+        request,
+        "cashops/form_page.html",
+        {
+            "title": f"Anular la {marca.get_tipo_display().lower()} de {marca.empleado.nombre}",
+            "subtitle": f"Del {momento:%d/%m/%Y} a las {momento:%H:%M}. Deja de contar para el fichaje y el Excel, y queda registrado quién la anuló y por qué.",
+            "form": form,
+            "submit_label": "Anular marca",
+            "back_url": volver,
+            "form_action": reverse("asistencia:marca_anular", args=[marca.pk]),
+            "disable_htmx": True,
+        },
+        status=400 if request.method == "POST" else 200,
     )

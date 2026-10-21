@@ -80,7 +80,8 @@ def fichar(*, actor, codigo: str) -> Fichaje:
         return Fichaje(Resultado.DE_BAJA, f"{empleado.nombre} está dado de baja: no puede fichar.", empleado=empleado)
 
     ahora = timezone.now()
-    ultima = empleado.marcas.order_by("-momento", "-pk").first()
+    # Una marca anulada no cuenta para nada: ni para alternar ni como doble escaneo.
+    ultima = empleado.marcas.filter(anulada=False).order_by("-momento", "-pk").first()
     if ultima is not None and ahora - ultima.momento < DOBLE_ESCANEO:
         segundos = max(int((ahora - ultima.momento).total_seconds()), 0)
         return Fichaje(

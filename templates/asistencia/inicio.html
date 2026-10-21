@@ -22,10 +22,11 @@
         <h2>Administrar</h2>
         <div class="list-actions">
           <a class="button-secondary" href="{% url 'asistencia:carnets' %}">Carnets</a>
+          <a class="button-secondary" href="{% url 'asistencia:marca_list' %}">Marcas</a>
           <a class="button" href="{% url 'asistencia:empleado_list' %}">Empleados</a>
         </div>
       </div>
-      <p class="muted mt-8">Padrón de empleados y carnets con QR. La corrección de marcas y el Excel del mes se suman en las próximas entregas.</p>
+      <p class="muted mt-8">Padrón de empleados, carnets con QR y corrección de marcas. El Excel del mes se suma en la próxima entrega.</p>
     </section>
   {% endif %}
 {% endblock %}

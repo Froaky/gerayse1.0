@@ -5,12 +5,13 @@ el permiso, el alcance por empresa y las invariantes se validan aca.
 """
 
 import re
+from datetime import timedelta
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.utils import timezone
 
-from .models import CarnetAnulado, Empleado, nuevo_codigo_carnet
+from .models import CarnetAnulado, Empleado, Marca, nuevo_codigo_carnet
 from .permissions import ensure_administrar
 
 
@@ -133,3 +134,59 @@ def anular_carnet(*, actor, empleado: Empleado, motivo: str, anulaciones_previas
     empleado.codigo_carnet = _codigo_libre()
     empleado.save(update_fields=["codigo_carnet", "actualizado_en"])
     return empleado
+
+
+def _limpiar_motivo(motivo: str) -> str:
+    return " ".join(re.sub(r"[\x00-\x1f\x7f]", " ", motivo or "").split())[:200]
+
+
+@transaction.atomic
+def agregar_marca(*, actor, empleado: Empleado, momento, tipo: str, sucursal, motivo: str) -> Marca:
+    """Marca cargada a mano por administracion (US-14.5): alguien se olvido el
+    carnet, se corto internet o llego antes que el cajero. Queda senalada como
+    manual, con motivo, quien y cuando."""
+    _require_actor(actor)
+    ensure_administrar(actor)
+    _ensure_empresa_permitida(actor, empleado.empresa)
+    motivo = _limpiar_motivo(motivo)
+    if not motivo:
+        raise ValidationError({"motivo": "Contá por qué se agrega la marca."})
+    if tipo not in Marca.Tipo.values:
+        raise ValidationError({"tipo": "Elegí si es una entrada o una salida."})
+    if sucursal.empresa_id is None or not sucursal.activa:
+        raise ValidationError({"sucursal": "Elegí un local activo."})
+    _ensure_empresa_permitida(actor, sucursal.empresa)
+    if momento > timezone.now() + timedelta(minutes=5):
+        raise ValidationError({"hora": "No se puede cargar una marca en el futuro."})
+    Empleado.objects.select_for_update(of=("self",)).get(pk=empleado.pk)
+    if Marca.objects.filter(empleado=empleado, tipo=tipo, momento=momento, anulada=False).exists():
+        raise ValidationError("Ya hay una marca igual para ese empleado a esa hora.")
+    return Marca.objects.create(
+        empleado=empleado,
+        tipo=tipo,
+        momento=momento,
+        sucursal=sucursal,
+        origen=Marca.Origen.MANUAL,
+        registrada_por=actor,
+        motivo=motivo,
+    )
+
+
+@transaction.atomic
+def anular_marca(*, actor, marca: Marca, motivo: str) -> Marca:
+    """La marca deja de contar pero no se borra (US-14.5)."""
+    _require_actor(actor)
+    ensure_administrar(actor)
+    _ensure_empresa_permitida(actor, marca.empleado.empresa)
+    motivo = _limpiar_motivo(motivo)
+    if not motivo:
+        raise ValidationError({"motivo": "Contá por qué se anula la marca."})
+    marca = Marca.objects.select_for_update(of=("self",)).get(pk=marca.pk)
+    if marca.anulada:
+        raise ValidationError("Esa marca ya está anulada.")
+    marca.anulada = True
+    marca.anulada_en = timezone.now()
+    marca.anulada_por = actor
+    marca.motivo_anulacion = motivo
+    marca.save(update_fields=["anulada", "anulada_en", "anulada_por", "motivo_anulacion"])
+    return marca

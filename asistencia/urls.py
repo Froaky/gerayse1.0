@@ -17,4 +17,7 @@ urlpatterns = [
     path("empleados/<int:empleado_id>/carnet/", views.carnet_empleado, name="carnet_empleado"),
     path("empleados/<int:empleado_id>/carnet/anular/", views.carnet_anular, name="carnet_anular"),
     path("carnets/", views.carnets, name="carnets"),
+    path("marcas/", views.marca_list, name="marca_list"),
+    path("marcas/nueva/", views.marca_create, name="marca_create"),
+    path("marcas/<int:marca_id>/anular/", views.marca_anular, name="marca_anular"),
 ]

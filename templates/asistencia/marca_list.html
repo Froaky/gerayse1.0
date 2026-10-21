@@ -1,0 +1,70 @@
+{% extends "cashops/layout.html" %}
+{% load l10n %}
+{% block title %}Marcas | Gerayse{% endblock %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Marcas</h1>
+        <p class="muted">Entradas y salidas de tus empresas seleccionadas, del {{ desde|date:"d/m/Y" }} al {{ hasta|date:"d/m/Y" }}. Si alguien no fichó o llegó antes que el cajero, agregá la marca con la hora real. Anular no borra: la marca deja de contar y queda registrada.</p>
+      </div>
+      <div class="list-actions">
+        <a class="button-secondary" href="{% url 'asistencia:inicio' %}">Asistencia</a>
+        <a class="button" href="{% url 'asistencia:marca_create' %}{% if filtro.is_valid and filtro.cleaned_data.empleado %}?empleado={{ filtro.cleaned_data.empleado.pk|unlocalize }}{% endif %}">Agregar marca</a>
+      </div>
+    </div>
+
+    <form method="get" class="stack mt-16">
+      <div class="summary-grid grid-2">
+        {% for field in filtro.visible_fields %}
+          <div class="field">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+          </div>
+        {% endfor %}
+      </div>
+      <div class="list-actions">
+        <button class="button" type="submit">Filtrar</button>
+        <a class="button-secondary" href="{% url 'asistencia:marca_list' %}">Limpiar</a>
+      </div>
+    </form>
+  </section>
+
+  <section class="card mt-16">
+    <div class="row">
+      <h2>Marcas del período</h2>
+      <span class="badge-muted">{{ total }} marca{{ total|pluralize }}</span>
+    </div>
+    {% if recortado %}
+      <p class="muted mt-8">Se muestran las {{ maximo }} más recientes. Filtrá por empleado o por fechas para ver el resto.</p>
+    {% endif %}
+    <div class="list mt-16">
+      {% for marca in marcas %}
+        <article class="list-item" id="marca-{{ marca.pk|unlocalize }}">
+          <div class="row">
+            <div>
+              <strong>{{ marca.momento|date:"D d/m H:i" }} · {{ marca.get_tipo_display }} · {{ marca.empleado.nombre }}</strong>
+              <div class="muted mt-8">
+                {% if marca.sucursal.empresa_id in empresas_visibles %}{{ marca.sucursal.nombre }}{% else %}otro local{% endif %}
+                · {% if marca.origen == "MANUAL" %}Corregida por {{ marca.registrada_por.get_username|default:"un usuario borrado" }}: {{ marca.motivo }}{% else %}Escaneada{% if marca.registrada_por %} por {{ marca.registrada_por.get_username }}{% endif %}{% endif %}
+              </div>
+              {% if marca.anulada %}
+                <div class="muted mt-8">Anulada el {{ marca.anulada_en|date:"d/m/Y H:i" }}{% if marca.anulada_por %} por {{ marca.anulada_por.get_username }}{% endif %}: {{ marca.motivo_anulacion }}</div>
+              {% endif %}
+            </div>
+            <div class="list-actions">
+              {% if marca.anulada %}
+                <span class="badge badge-muted">Anulada</span>
+              {% else %}
+                {% if marca.origen == "MANUAL" %}<span class="badge badge-warning">Corregida</span>{% endif %}
+                <a class="button-secondary" href="{% url 'asistencia:marca_anular' marca.pk %}">Anular</a>
+              {% endif %}
+            </div>
+          </div>
+        </article>
+      {% empty %}
+        <p class="muted">No hay marcas con estos filtros.</p>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

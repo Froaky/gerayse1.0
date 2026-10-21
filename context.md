@@ -62,8 +62,15 @@ Last updated: 2026-10-21
   con codigo tipeado + Enter y camara (`static/asistencia/fichar-camara.js` + jsQR 1.4.0 vendorizado
   en `static/asistencia/vendor/`, licencia al lado). Prueba de punta a punta con camara simulada en
   el navegador: lee, registra una marca, no duplica y avisa sin permiso.
-- Siguiente: US-14.5 (corregir marcas). Pendiente de Mateo/Tais: probar la camara en un Android y
-  un iPhone en staging; cual de las 7 sucursales no ficha. Importes y PDF fuera del repo.
+- **US-14.5 hecha** (21/10): `Marca` suma `motivo` (manual) y anulacion (`anulada`, `anulada_en`,
+  `anulada_por`, `motivo_anulacion`; migracion asistencia 0006). Servicios `agregar_marca` (motivo
+  obligatorio, local activo de una empresa permitida, nada a futuro, sin duplicar por doble envio)
+  y `anular_marca` (no borra). El fichaje ignora las anuladas. Pantalla `/asistencia/marcas/`.
+- OJO al escribir codigo desde la terminal: un heredoc de bash pasado a python convirtio `\x00` en
+  bytes reales dentro de `services.py`. Para texto con escapes usar las herramientas de archivos.
+- Siguiente: US-14.6 (Excel del mes: origen MANUAL sale "Corregida", anuladas afuera). Pendiente
+  de Mateo/Tais: probar la camara en un Android y un iPhone en staging; cual de las 7 sucursales no
+  ficha. Importes y PDF fuera del repo.
 
 ### Treasury Arqueo de caja fuerte cargado en produccion 2026-10-16
 

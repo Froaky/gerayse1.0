@@ -67,6 +67,7 @@
             <div class="list-actions">
               <span class="badge {% if empleado.activo %}badge-success{% else %}badge-muted{% endif %}">{% if empleado.activo %}Activo{% else %}De baja{% endif %}</span>
               <a class="button-secondary" href="{% url 'asistencia:empleado_update' empleado.pk %}">Editar</a>
+              <a class="button-secondary" href="{% url 'asistencia:marca_list' %}?empleado={{ empleado.pk|unlocalize }}">Marcas</a>
               {% if empleado.activo %}
                 <a class="button-secondary" href="{% url 'asistencia:carnet_empleado' empleado.pk %}" target="_blank" rel="noopener">Carnet</a>
                 <a class="button-secondary" href="{% url 'asistencia:carnet_anular' empleado.pk %}">Anular carnet</a>

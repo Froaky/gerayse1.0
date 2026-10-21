@@ -208,7 +208,7 @@ Criterios:
   no hay permiso de camara. jsQR lee los 10 carnets de prueba (nombres largos incluidos).
   FALTA solo la prueba en un Android y un iPhone reales para cerrar la historia
 
-### [ ] US-14.5 Corregir marcas olvidadas o mal hechas
+### [x] US-14.5 Corregir marcas olvidadas o mal hechas
 
 Como administracion
 Quiero agregar una marca con la hora real o anular una marca equivocada, con motivo
@@ -221,6 +221,10 @@ Criterios:
 - en el Excel la marca agregada sale como "Corregida" y la anulada no aparece
 - un cajero sin permiso de administrar no puede corregir
 - estimado: 3 h
+- hecha 2026-10-21: `asistencia/tests_marcas.py`. Pantalla `/asistencia/marcas/` (ultimos 7 dias
+  por defecto, hasta 500), agregar y anular con motivo. Las anuladas no cuentan para el fichaje.
+  "Corregida" en el Excel (origen MANUAL) y la anulada afuera quedan para US-14.6, que lee estos
+  campos
 
 ### [ ] US-14.6 Excel del mes por empleado
 

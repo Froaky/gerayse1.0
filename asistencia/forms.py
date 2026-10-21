@@ -1,10 +1,12 @@
+from datetime import datetime
 from pathlib import Path
 
 from django import forms
+from django.utils import timezone
 
 from cashops.models import Sucursal
 
-from .models import Empleado
+from .models import Empleado, Marca
 
 TAMANO_MAXIMO_LISTADO = 2 * 1024 * 1024
 EXTENSIONES_LISTADO = (".csv", ".xlsx")
@@ -14,7 +16,9 @@ def _estilar(form) -> None:
     for field in form.fields.values():
         if isinstance(field.widget, forms.Select):
             field.widget.attrs.setdefault("class", "input select")
-        elif not isinstance(field.widget, forms.ClearableFileInput):
+        elif isinstance(field.widget, forms.CheckboxInput):
+            field.widget.attrs.setdefault("class", "checkbox")
+        elif not isinstance(field.widget, (forms.ClearableFileInput, forms.HiddenInput)):
             field.widget.attrs.setdefault("class", "input")
 
 
@@ -80,6 +84,57 @@ class AnularCarnetForm(forms.Form):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        _estilar(self)
+
+
+class MarcaManualForm(forms.Form):
+    empleado = forms.ModelChoiceField(label="Empleado", queryset=None)
+    tipo = forms.ChoiceField(label="Entrada o salida", choices=Marca.Tipo.choices)
+    fecha = forms.DateField(label="Fecha", widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"))
+    hora = forms.TimeField(label="Hora", widget=forms.TimeInput(attrs={"type": "time"}, format="%H:%M"))
+    sucursal = forms.ModelChoiceField(label="Local donde fichó", queryset=None)
+    motivo = forms.CharField(
+        label="Motivo",
+        max_length=200,
+        help_text="Por ejemplo: se olvidó el carnet, llegó antes que el cajero, no había internet.",
+    )
+
+    def __init__(self, *args, empleados, sucursales, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["empleado"].queryset = empleados
+        self.fields["sucursal"].queryset = sucursales
+        _estilar(self)
+
+    def clean(self):
+        datos = super().clean()
+        if datos.get("fecha") and datos.get("hora"):
+            datos["momento"] = timezone.make_aware(datetime.combine(datos["fecha"], datos["hora"]))
+        return datos
+
+
+class AnularMarcaForm(forms.Form):
+    motivo = forms.CharField(
+        label="Motivo",
+        max_length=200,
+        help_text="Por ejemplo: escaneó el carnet de un compañero, marca repetida. La marca no se borra.",
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        _estilar(self)
+
+
+class MarcaFiltroForm(forms.Form):
+    empleado = forms.ModelChoiceField(label="Empleado", queryset=None, required=False, empty_label="Todos")
+    sucursal = forms.ModelChoiceField(label="Local", queryset=None, required=False, empty_label="Todos")
+    desde = forms.DateField(label="Desde", required=False, widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"))
+    hasta = forms.DateField(label="Hasta", required=False, widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"))
+    anuladas = forms.BooleanField(label="Mostrar anuladas", required=False)
+
+    def __init__(self, *args, empleados, sucursales, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["empleado"].queryset = empleados
+        self.fields["sucursal"].queryset = sucursales
         _estilar(self)
 
 
