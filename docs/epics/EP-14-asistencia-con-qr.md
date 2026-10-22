@@ -261,7 +261,10 @@ Criterios:
 - estimado: 3-4 h
 - avance 2026-10-21 (en staging): `asistencia/respaldo.py` y los comandos `respaldar_asistencia`
   y `restaurar_asistencia` (destino S3 o carpeta, 30 respaldos, aviso por webhook si falla, la
-  restauracion no pisa datos sin `--reemplazar` y reinicia los ids). Dependencia nueva
+  restauracion no pisa datos sin `--reemplazar` y reinicia los ids). Revision 22/10: destino mal
+  escrito da error, el nombre lleva el entorno y la limpieza solo toca los suyos (30 dias, minimo
+  30 archivos), latido opcional `RESPALDO_OK_URL`, la restauracion verifica empresas y locales,
+  deja vacios los usuarios borrados y chequea las FK antes de reiniciar los ids. Dependencia nueva
   `boto3==1.43.100` + `botocore==1.43.100`. Tests en `asistencia/tests_respaldo.py`. Procedimiento
   en `docs/asistencia-respaldo.md`. FALTA que el chat de servidor configure bucket, variables y
   cron, y pruebe un respaldo y una restauracion reales para cerrar la historia

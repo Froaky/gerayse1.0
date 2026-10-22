@@ -71,16 +71,26 @@ Last updated: 2026-10-21
 - **US-14.6 hecha** (21/10): Excel del mes en `/asistencia/excel/` (`asistencia/excel.py`, dependencia
   nueva `openpyxl==3.1.5`). Una hoja por empleado, todos los dias, pares entrada/salida, horas del
   dia, observacion y total. Entran los activos del alcance y los de baja con marcas en el mes.
-- Siguiente para el chat de desarrollo: US-14.9 (manual de usuario de asistencia). Estado del resto,
-  sin preguntar entre historias (pedido de Mateo):
-  - US-14.7 respaldo: codigo y tests hechos (`asistencia/respaldo.py`, comandos
-    `respaldar_asistencia` y `restaurar_asistencia`, `asistencia/tests_respaldo.py`, boto3 nuevo en
-    requirements). Falta el chat de servidor: bucket, variables, cron y prueba real segun
-    `docs/asistencia-respaldo.md`; despues se marca [x].
-  - US-14.8 lector USB: tests hechos (`asistencia/tests_lector.py`) y nota en la epica; solo falta
-    probar con un lector 2D real (Mateo) para marcarla [x].
-  - US-14.9: primer borrador del manual en `docs/manual-asistencia.md` (de usted). Falta
-    revisarlo contra staging y pasarlo a PDF. El arranque real lo hacen Mateo y Tais, sin piloto.
+- 22/10 revision a fondo del Excel y del respaldo (dos revisores, hallazgos reproducidos):
+  - Excel: horas a minuto (08:00:50-16:00:05 daba 7:59), nombre de hoja por largo UTF-16 y sin
+    apostrofo al final (si no, Excel no abria el libro entero), mes solo ASCII, y un dado de baja
+    cuya unica marca cierra el mes anterior no lleva hoja.
+  - Respaldo: destino mal escrito da error; nombre `asistencia-<entorno>-...` con
+    `RAILWAY_ENVIRONMENT_NAME`; limpieza por 30 dias y minimo 30 archivos, solo del entorno;
+    latido `RESPALDO_OK_URL`; la restauracion verifica empresas/locales, deja vacios usuarios
+    borrados, chequea las FK antes de reiniciar ids y no hace UPDATE previo; generar lee de a
+    tandas (60.000 marcas: 3 MB de memoria).
+  - `.gitattributes` nuevo: PDF/xlsx/imagenes binarios (reportlab escribe PDF en ASCII y el
+    autocrlf de Windows los rompia al hacer checkout).
+- Lo que queda de EP-14 no es del chat de desarrollo:
+  - US-14.7 respaldo: codigo y tests hechos. Falta el chat de servidor: bucket, variables, cron y
+    prueba real segun `docs/asistencia-respaldo.md`; despues se marca [x].
+  - US-14.8 lector USB: tests hechos (`asistencia/tests_lector.py`); solo falta probar con un
+    lector 2D real (Mateo) para marcarla [x].
+  - US-14.9: manual revisado contra las pantallas y en PDF (`docs/manual-asistencia.pdf`, se
+    regenera con `python docs/generate_manual_asistencia_pdf.py`; copia en el escritorio de Mateo,
+    `gerayse/manuales`). Falta el arranque real (carga de los 85, permisos y sucursal base de los
+    cajeros, carnets impresos), que hacen Mateo y Tais, sin piloto.
   - Copy: las pantallas de asistencia hablan de vos ("Escaneá", "Elegí un mes"), igual que caja y
     tesoreria ("No tenés permiso..."). Queda asi a proposito: el "usted" es para avisos formales al
     cliente (cartel de vencimiento) y documentos que se le entregan (el manual). No pasarlas a usted.
