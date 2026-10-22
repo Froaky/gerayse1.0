@@ -46,7 +46,9 @@ class Tramo:
     def horas(self) -> timedelta | None:
         if self.entrada is None or self.salida is None:
             return None
-        return self.salida.momento - self.entrada.momento
+        # A minuto, como se muestran la entrada y la salida: 08:00:50 a 16:00:05
+        # tiene que dar 8:00 y no 7:59.
+        return _a_minuto(self.salida.momento) - _a_minuto(self.entrada.momento)
 
     @property
     def corregido(self) -> bool:
@@ -109,15 +111,26 @@ def horas_del_dia(tramos: list[Tramo]) -> timedelta:
     return sum((t.horas for t in tramos if t.horas is not None), timedelta())
 
 
+def _a_minuto(momento: datetime) -> datetime:
+    return momento.replace(second=0, microsecond=0)
+
+
+def _recortar(texto: str, maximo: int) -> str:
+    # Excel cuenta el largo en unidades UTF-16: un emoji ocupa dos. Tampoco
+    # acepta un apostrofo al principio o al final.
+    while len(texto.encode("utf-16-le")) // 2 > maximo:
+        texto = texto[:-1]
+    return texto.strip(" '")
+
+
 def _titulo_hoja(nombre: str, usados: set) -> str:
-    # Excel: hasta 31 caracteres, sin []:*?/\ y sin repetir.
-    base = re.sub(r"[\[\]:*?/\\]", " ", ILLEGAL_CHARACTERS_RE.sub("", nombre))
-    # Tampoco puede empezar ni terminar con apostrofo.
-    base = base.strip().strip("'").strip()[:31].strip("'").strip() or "Empleado"
+    # Excel: hasta 31 caracteres, sin []:*?/\ y sin repetir. Un nombre de hoja
+    # invalido hace que Excel no abra el libro entero.
+    base = _recortar(re.sub(r"[\[\]:*?/\\]", " ", ILLEGAL_CHARACTERS_RE.sub("", nombre)).strip(" '"), 31) or "Empleado"
     titulo, numero = base, 2
     while titulo.lower() in usados:
         sufijo = f" ({numero})"
-        titulo = base[: 31 - len(sufijo)] + sufijo
+        titulo = (_recortar(base, 31 - len(sufijo)) or "Empleado") + sufijo
         numero += 1
     usados.add(titulo.lower())
     return titulo

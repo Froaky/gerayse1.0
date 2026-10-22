@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -151,10 +152,11 @@ class ExcelForm(forms.Form):
 
     def clean_mes(self):
         texto = (self.cleaned_data.get("mes") or "").strip()
-        partes = texto.split("-")
-        if len(partes) != 2 or not all(p.isdigit() for p in partes):
+        # Solo digitos ASCII: "²" pasa isdigit() pero int() no lo convierte.
+        partes = re.fullmatch(r"([0-9]{4})-([0-9]{1,2})", texto)
+        if not partes:
             raise forms.ValidationError("Elegí un mes.")
-        anio, mes = int(partes[0]), int(partes[1])
+        anio, mes = int(partes[1]), int(partes[2])
         if not (2020 <= anio <= 2100 and 1 <= mes <= 12):
             raise forms.ValidationError("Elegí un mes válido.")
         return anio, mes

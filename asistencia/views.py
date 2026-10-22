@@ -15,7 +15,7 @@ from django.views.decorators.http import require_http_methods
 
 from .alcance import empresas_en_alcance, sucursales_en_alcance
 from .carnets import generar_carnets_pdf
-from .excel import CONTENT_TYPE_XLSX, generar_excel, ventana_del_mes
+from .excel import CONTENT_TYPE_XLSX, generar_excel, jornadas_del_mes, ventana_del_mes
 from .fichaje import fichar
 from .forms import (
     AnularCarnetForm,
@@ -436,6 +436,12 @@ def excel(request):
         )
     ).order_by("nombre", "pk")
     lista = list(seleccion)
+    if not form.cleaned_data.get("empleado"):
+        # Un dado de baja cuya unica marca es la salida del dia 1 que cierra el mes
+        # anterior no tiene nada en este mes: no lleva hoja.
+        lista = [
+            e for e in lista if e.activo or any(jornadas_del_mes(e.marcas_mes, anio, mes).values())
+        ]
     if not lista:
         messages.error(request, "No hay empleados para ese mes con ese filtro.")
         return redirect("asistencia:excel")

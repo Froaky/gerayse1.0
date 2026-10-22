@@ -15,7 +15,7 @@ from django.urls import reverse
 from django.utils import timezone
 from openpyxl import load_workbook
 
-from .excel import generar_excel, jornadas_del_mes, observacion
+from .excel import _titulo_hoja, generar_excel, jornadas_del_mes, observacion
 from .models import Marca
 from .services import dar_de_baja_empleado
 from .tests_fichaje import FichajeTestCase, _momento
@@ -100,6 +100,29 @@ class ReglasDelExcelTests(ExcelTestCase):
         self.assertEqual(hoja.cell(row=FILA_DIA_1 + 30, column=1).value, "Total del mes")
         self.assertEqual(hoja.cell(row=FILA_DIA_1 + 30, column=columna_horas).value, timedelta(hours=12))
 
+    def test_las_horas_del_dia_coinciden_con_las_horas_que_se_ven(self):
+        # Los escaneos reales tienen segundos; la planilla muestra 08:00 y 16:00.
+        self._marca(_momento(2, 8) + timedelta(seconds=50), Marca.Tipo.ENTRADA)
+        self._marca(_momento(2, 16) + timedelta(seconds=5), Marca.Tipo.SALIDA)
+        self.assertEqual(self._jornadas()[_momento(2, 0).date()][0].horas, timedelta(hours=8))
+
+    def test_el_nombre_de_hoja_siempre_lo_acepta_excel(self):
+        usados = set()
+        for nombre in (
+            "Ana Maria Fernanda Gonzalez D' Angelo",  # el corte cae en "' "
+            "Juan Carlos Perez Gonzalez \U0001F600 Lopez",  # el emoji ocupa dos unidades
+            "'Citado'",
+            "''",
+        ):
+            with self.subTest(nombre=nombre):
+                titulo = _titulo_hoja(nombre, usados)
+                self.assertLessEqual(len(titulo.encode("utf-16-le")) // 2, 31)
+                self.assertFalse(titulo.startswith("'") or titulo.endswith("'"))
+                self.assertTrue(titulo)
+        repetido = _titulo_hoja("Juan Carlos Perez Gonzalez \U0001F600 Lopez", usados)
+        self.assertLessEqual(len(repetido.encode("utf-16-le")) // 2, 31)
+        self.assertTrue(repetido.endswith("(2)"))
+
     def test_un_nombre_con_igual_no_se_vuelve_formula(self):
         self.empleado.nombre = "=HYPERLINK(\"http://x\")"
         contenido = generar_excel([(self.empleado, [])], 2026, 11)
@@ -148,7 +171,19 @@ class PantallaDelExcelTests(ExcelTestCase):
 
     def test_un_mes_invalido_no_descarga(self):
         self._login(self.admin, [self.armadi])
-        self.assertEqual(self._descargar(mes="2026-13").status_code, 400)
+        for mes in ("2026-13", "2026-1²", "²026-11", "2026-11-01", "noviembre", ""):
+            with self.subTest(mes=mes):
+                self.assertEqual(self._descargar(mes=mes).status_code, 400)
+
+    def test_un_dado_de_baja_cuya_unica_marca_cierra_el_mes_anterior_no_lleva_hoja(self):
+        nocturno = self._empleado(nombre="Nocturno Baja", dni="36000111")
+        self._marca(_momento(1, 0) - timedelta(hours=2), Marca.Tipo.ENTRADA, empleado=nocturno)
+        self._marca(_momento(1, 6), Marca.Tipo.SALIDA, empleado=nocturno)
+        dar_de_baja_empleado(actor=self.admin, empleado=nocturno)
+        self._login(self.admin, [self.armadi])
+        self.assertEqual(self._hojas(self._descargar()), ["Juan Perez"])
+        # Pedido de a uno, sale igual: lo eligio quien descarga.
+        self.assertEqual(self._hojas(self._descargar(empleado=nocturno.pk)), ["Nocturno Baja"])
 
     def test_quien_solo_ficha_no_entra(self):
         self._login(self.cajero, [self.armadi])
