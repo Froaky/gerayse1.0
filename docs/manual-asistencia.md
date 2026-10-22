@@ -3,11 +3,18 @@
 Asistencia registra la entrada y la salida de cada empleado con un carnet QR, dentro de Gerayse.
 Se entra desde el botón **Asistencia** del menú, con el mismo usuario de siempre.
 
-Hay dos tipos de uso, cada uno con su permiso en la ficha de permisos del usuario:
+Hay dos tipos de uso, cada uno con su permiso:
 
 - **Fichar asistencia**: para los cajeros. Permite escanear los carnets en el local.
 - **Administrar asistencia**: para administración. Permite manejar el padrón de empleados, los
   carnets, las correcciones de marcas y el Excel del mes.
+
+Los permisos se habilitan como los demás de Gerayse: en la ficha del rol (para todo el rol) o en
+la ficha del usuario (para una persona), poniendo **Escritura: Sí** en la fila del permiso. Son
+independientes: quien ficha no corrige marcas y quien administra no ficha, salvo que tenga los dos.
+
+Cada cajero que ficha tiene que tener cargada su **Sucursal base** en la ficha del usuario: es el
+local que queda registrado en cada marca.
 
 ## 1. Fichar (cajeros)
 
@@ -41,7 +48,8 @@ Avisos posibles:
 | Ese carnet no existe en el padrón / Ese QR no es un carnet | Se escaneó otro QR o un carnet que no corresponde. |
 | Está dado de baja: no puede fichar | Consulte con administración. |
 | Ya quedó registrada hace unos segundos | No hace falta hacer nada: la marca ya está. |
-| Su usuario no tiene un local asignado | Administración tiene que asignarle un local a su usuario. |
+| Tu usuario no tiene un local asignado | Administración tiene que cargar la Sucursal base en la ficha de su usuario. |
+| El navegador no dio permiso para usar la cámara | Habilite la cámara en los permisos del sitio del navegador y vuelva a tocar **Usar la cámara**. Mientras tanto puede escribir el código del carnet. |
 
 Si un empleado se olvidó el carnet o llegó antes que el cajero, no lo fiche con otro carnet:
 avise a administración para que cargue la marca a mano (punto 4).
@@ -51,11 +59,17 @@ avise a administración para que cargue la marca a mano (punto 4).
 En **Asistencia → Empleados** está el padrón. Se puede buscar por nombre o DNI y filtrar por
 empresa, local y estado (activos, dados de baja o todos).
 
-- **Nuevo empleado**: nombre y apellido, DNI (solo números), empresa y local habitual. No se
-  puede repetir el DNI de un empleado activo.
-- **Cargar desde un listado**: suba un CSV o un Excel (.xlsx) con las columnas nombre, DNI y local.
-  El sistema muestra primero una revisión con los empleados listos para cargar y los rechazados
-  con el motivo. Nada se guarda hasta presionar **Cargar**.
+- **Nuevo empleado**: nombre y apellido, DNI (solo números; los puntos se sacan solos), empresa y
+  local habitual, y **Guardar**. No se puede repetir el DNI de un empleado activo.
+- **Cargar desde un listado**: para cargar muchos empleados de una vez.
+  1. Prepare un Excel (.xlsx) o un CSV de hasta 2 MB con una fila de títulos y un empleado por
+     fila. Los títulos pueden ser "Nombre y apellido" (o "Apellido" y "Nombre" en columnas
+     separadas), "DNI" o "Documento", "Local" o "Sucursal", y opcionalmente "Empresa". El local
+     se reconoce por su código o por su nombre.
+  2. Súbalo y presione **Revisar listado**. El sistema muestra qué filas están listas para cargar
+     y cuáles tienen un problema, con el motivo. Todavía no se guardó nada.
+  3. Presione **Cargar** para guardar las filas que están bien. Las que tenían un problema se
+     pueden corregir y subir en un archivo aparte, o cargar de a una con **Nuevo empleado**.
 - **Editar**: corrige los datos de un empleado.
 - **Dar de baja**: el empleado deja de poder fichar, pero no se borra: sus marcas siguen saliendo
   en el Excel de los meses trabajados. Se puede **reactivar** después.
@@ -63,18 +77,21 @@ empresa, local y estado (activos, dados de baja o todos).
 ## 3. Carnets
 
 - **Imprimir carnets**: en **Asistencia → Carnets** elija la empresa y/o el local y presione
-  **Descargar carnets**. Se descarga un PDF listo para imprimir con los carnets de los empleados
-  activos.
-- **Carnet de un empleado**: desde el padrón, botón **Carnet**, para imprimir uno solo.
+  **Descargar carnets**. Se descarga un PDF A4 con 10 carnets por hoja, del tamaño de una
+  tarjeta, para imprimir y recortar. Salen solo los empleados activos.
+- **Carnet de un empleado**: desde el padrón, botón **Carnet**, para imprimir uno solo (por
+  ejemplo, para un empleado nuevo).
 - **Anular carnet**: si un carnet se pierde o se rompe, desde el padrón presione **Anular carnet**
-  e indique el motivo. El carnet viejo deja de servir y se genera uno nuevo para imprimir. Si
-  alguien escanea el carnet anulado, la pantalla de fichar lo avisa.
+  e indique el motivo. El carnet viejo deja de servir y no se puede deshacer. Después imprima el
+  nuevo con el botón **Carnet**. Si alguien escanea el carnet anulado, la pantalla de fichar lo
+  avisa.
 
 El QR solo contiene un código; no lleva el nombre ni el DNI del empleado.
 
 ## 4. Corregir marcas
 
-En **Asistencia → Marcas** se ven las marcas por empleado, local y fechas.
+En **Asistencia → Marcas** se ven las marcas por empleado, local y fechas. Desde el padrón, el
+botón **Marcas** de cada empleado abre directamente las suyas.
 
 - **Agregar marca**: para un olvido o cuando el empleado llegó antes que el cajero. Indique el
   empleado, si es entrada o salida, la fecha, la hora, el local y el motivo. La marca queda
