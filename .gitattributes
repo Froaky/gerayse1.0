@@ -1,0 +1,6 @@
+# reportlab escribe PDF solo con ASCII: sin esto git los toma como texto y, con
+# core.autocrlf en Windows, les cambia los fin de linea y rompe el archivo.
+*.pdf binary
+*.xlsx binary
+*.png binary
+*.jpg binary
