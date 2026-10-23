@@ -240,6 +240,7 @@
         margin-top: 12px;
       }
       .row { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
+      .row--filtros { align-items: end; }
       .mt-8 { margin-top: 8px; }
       .mt-12 { margin-top: 12px; }
       .mt-16 { margin-top: 16px; }
@@ -689,6 +690,8 @@
           .input, .select, .textarea { min-height: 44px; }
           .row > .button:not(.button-secondary), .row > form > .button:not(.button-secondary) { width: 100%; }
           .list-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%; }
+          .row--filtros { align-items: stretch; }
+          .row--filtros > .button-secondary { width: 100%; }
           .list-actions form { display: contents; }
           .list-actions .button:not(.button-secondary) { grid-column: 1 / -1; }
           .list-actions .badge, .list-actions [class*="badge-"] { justify-self: start; }
