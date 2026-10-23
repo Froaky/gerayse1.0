@@ -43,6 +43,11 @@
         background: var(--panel);
       }
       .nav form { margin: 0; }
+      /* Todo el menu vive en un <details>: en escritorio esta siempre abierto y
+         su summary no se ve; en celular arranca plegado (ver el script al pie
+         del nav) y se abre con la barra "Menu". */
+      .nav-drawer > summary { display: none; }
+      .nav-drawer__body { display: grid; gap: 10px; }
       .nav-primary,
       .nav-user {
         display: flex;
@@ -269,10 +274,10 @@
           grid-template-columns: auto minmax(0, 1fr);
           align-items: center;
         }
-        .nav {
+        .nav { padding: 8px 12px; }
+        .nav-drawer__body {
           grid-template-columns: minmax(0, 1fr) auto;
           align-items: center;
-          padding: 8px 12px;
         }
         .nav-primary {
           justify-content: flex-start;
@@ -370,6 +375,9 @@
           <span>{% if empresa_activa %}{{ empresa_activa.nombre }}{% else %}Cajas y tesoreria{% endif %}</span>
         </div>
         <nav class="nav">
+          <details class="nav-drawer" open>
+            <summary class="nav-drawer__summary">Menú</summary>
+            <div class="nav-drawer__body">
           <div class="nav-primary">
             <a class="chip" href="{% url 'cashops:dashboard' %}">Caja</a>
             <a class="chip" href="{% url 'cashops:box_tracking' %}">Seguimiento</a>
@@ -444,7 +452,16 @@
               </form>
             </div>
           {% endif %}
+            </div>
+          </details>
         </nav>
+        <script>
+          // En celular el menu arranca plegado. Sin JavaScript queda abierto, como antes.
+          (function () {
+            var menu = document.querySelector(".nav-drawer");
+            if (menu && window.matchMedia("(max-width: 640px)").matches) menu.removeAttribute("open");
+          })();
+        </script>
       </header>
       <style>
         .nav-menu { position: relative; }
@@ -582,6 +599,86 @@
         .semaphore-metrics { gap: 10px; }
         .mt-12 { margin-top: 16px; }
         .mt-16 { margin-top: 20px; }
+
+        /* ===== Celular (hasta 640 px) =====
+           Va al final a proposito: el bloque "Prolijidad" de arriba pisa el
+           @media (max-width: 640px) anterior (los 12 px de .shell y los 14 px de
+           .card nunca se aplicaban), asi que las reglas de celular tienen que
+           venir despues de el. Escritorio no cambia: todo esta dentro del @media,
+           salvo [hidden], que en cualquier ancho tiene que ganarle al display de
+           .button-secondary (si no, "Apagar la camara" se veia siempre). */
+        [hidden] { display: none !important; }
+        @media (max-width: 640px) {
+          .shell { padding: 10px 12px 28px; }
+          .card { padding: 16px 14px; }
+          .hero { margin-bottom: 14px; }
+          .hero h1, .card h1 { font-size: 1.55rem; }
+          .hero h1::after, .card h1::after { margin-top: 8px; }
+          .grid { gap: 14px; }
+          .topbar { gap: 8px; margin-bottom: 12px; }
+          .brand { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
+          /* Menu plegable: una barra de 44 px y, abierto, una lista en flujo que
+             empuja el contenido en vez de taparlo (los desplegables de Config y
+             de empresas tambien quedan en flujo). */
+          .nav { padding: 0; gap: 0; }
+          .nav-drawer > summary {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            min-height: 44px;
+            padding: 10px 14px;
+            border: 0;
+            border-radius: 0;
+            background: transparent;
+            font-weight: 600;
+          }
+          .nav-drawer > summary::after { content: "\25BE"; font-size: 0.9em; }
+          .nav-drawer[open] > summary { border-bottom: 1px solid var(--line); }
+          .nav-drawer[open] > summary::after { content: "\25B4"; }
+          .nav-drawer__body { gap: 0; padding: 4px 0 6px; }
+          .nav-primary, .nav-user { flex-direction: column; align-items: stretch; gap: 0; }
+          .nav-user { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
+          .nav-divider { display: none; }
+          .nav form { display: contents; }
+          .nav .chip, .nav .theme-toggle {
+            width: 100%;
+            min-height: 44px;
+            justify-content: flex-start;
+            padding: 10px 14px;
+            border: 0;
+            border-left: 3px solid transparent;
+            border-radius: 0;
+            background: transparent;
+          }
+          .nav .chip:hover, .nav .theme-toggle:hover { border-left-color: var(--forest); background: var(--accent-soft); }
+          .nav .theme-toggle__label { display: inline; }
+          .nav-menu, .nav-menu__dropdown { position: static; }
+          .nav-menu__dropdown, .nav-menu__dropdown--right {
+            min-width: 0;
+            border: 0;
+            border-radius: 0;
+            box-shadow: none;
+            background: var(--panel-soft);
+            padding: 2px 0;
+          }
+          .nav-menu__item { display: flex; align-items: center; min-height: 44px; padding: 10px 14px 10px 30px; }
+          /* Botones y campos de 44 px; el boton principal, a todo el ancho; las
+             acciones de una fila, en una grilla de dos columnas. */
+          .chip, .button, .button-secondary, .button-primary, .card-link { min-height: 44px; }
+          .input, .select, .textarea { min-height: 44px; }
+          .row > .button:not(.button-secondary), .row > form > .button:not(.button-secondary) { width: 100%; }
+          .list-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%; }
+          .list-actions form { display: contents; }
+          .list-actions .button:not(.button-secondary) { grid-column: 1 / -1; }
+          .list-actions .badge, .list-actions [class*="badge-"] { justify-self: start; }
+          .action-grid { gap: 8px; }
+          .action-card { min-height: 0; padding: 12px 14px; gap: 4px; }
+          .summary-grid { gap: 8px; }
+          .summary { padding: 12px; }
+          .summary strong { font-size: 1.05rem; overflow-wrap: anywhere; }
+          .list-item { padding: 12px; }
+          .messages { right: 12px; bottom: 12px; }
+        }
       </style>
       {% include "partials/service_notice.html" %}
       {% if empresas_disponibles and not empresas_activas %}
