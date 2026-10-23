@@ -2,6 +2,23 @@
 {% load l10n %}
 {% block title %}Dashboard | Gerayse{% endblock %}
 {% block content %}
+  <style>
+    /* Solo celular. En PC no cambia nada: todo esta dentro del @media.
+       Con una caja elegida, la tarjeta de la caja va primero y, adentro, las
+       acciones (Registrar venta, Cerrar caja...) suben debajo del encabezado;
+       los filtros de "Vista actual" quedan plegados (.plegable-movil). */
+    @media (max-width: 640px) {
+      .dashboard-flow { display: flex; flex-direction: column; }
+      .dashboard-flow > .hero { order: -2; }
+      .dashboard-flow > .dashboard-caja { order: -1; }
+      .dashboard-flow > .hero .card > p { display: none; }
+      .dashboard-caja.layout-two > .card:first-child { display: flex; flex-direction: column; }
+      .dashboard-caja.layout-two > .card:first-child > .row:first-child { order: -2; }
+      .dashboard-caja.layout-two > .card:first-child > .alert,
+      .dashboard-caja.layout-two > .card:first-child > .action-grid { order: -1; }
+    }
+  </style>
+  <div class="dashboard-flow">
   <section class="hero">
     <div class="card">
       <h1>Operacion de cajas</h1>
@@ -44,6 +61,8 @@
         {% endif %}
       </div>
     </div>
+    <details class="plegable-movil" open>
+    <summary>Cambiar vista</summary>
     <div class="list-actions">
       {% if is_cashops_admin %}
         <a class="button-secondary" href="{% url 'cashops:dashboard' %}?scope=global&fecha_desde={{ dashboard_period_from|date:'Y-m-d' }}&fecha_hasta={{ dashboard_period_to|date:'Y-m-d' }}">Vista global</a>
@@ -90,6 +109,7 @@
         <button class="button" type="submit">Aplicar</button>
       </div>
     </form>
+    </details>
   </section>
 
   {% if dashboard_snapshot %}
@@ -150,7 +170,7 @@
     </section>
 
     {% if selected_box %}
-      <section class="grid layout-two" style="margin-top:16px;">
+      <section class="grid layout-two dashboard-caja" style="margin-top:16px;">
         <div class="card">
           <div class="row">
             <div>
@@ -394,7 +414,7 @@
       </div>
     </section>
   {% else %}
-    <section class="card">
+    <section class="card dashboard-caja">
       <h2>Selecciona una caja para comenzar</h2>
       <p class="muted">
         {% if is_cashops_admin %}
@@ -441,4 +461,5 @@
       </div>
     </section>
   {% endif %}
+  </div>
 {% endblock %}
