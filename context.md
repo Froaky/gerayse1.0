@@ -25,10 +25,30 @@ Last updated: 2026-10-15
   Escritorio (1366 px): mismas alturas y posiciones que antes.
 - Tests: suite completa 1109 OK (6 skipped) sobre main + S1; `makemigrations --check` sin
   cambios. Capturas antes/despues fuera del repo (scratchpad de la sesion).
-- Pendiente, a confirmar con Mateo: S2 ficha de usuario (toggles de 24 px), S3 dashboard con caja
-  (acciones a 2633 px de scroll), S4 listas con muchas acciones (y el buscador de Usuarios, que
-  tiene `align-items:end` inline y en celular queda corrido a la derecha), S5 tesoreria, S6
-  Fichar (camara primero).
+- S2 a S6 hechos el mismo dia con el OK de Mateo ("segui con S2 a S6 y subi cada uno a
+  staging"); cada slice es un commit propio mergeado a staging por separado, con la suite
+  completa en verde (1295 OK, 6 skipped) antes de cada push. Todo dentro de
+  `@media (max-width: 640px)`: en PC no cambia nada (verificado con capturas a 1366 px, mismas
+  alturas y posiciones). Bloque generico `.plegable-movil` en las dos shells: un
+  `<details open>` cuyo summary no se ve en escritorio y que un script al pie del body pliega
+  en celular (sin JS queda abierto).
+  - S2 `users/user_detail.html`: toggles Lectura/Escritura de 44 px a lo ancho (siguen siendo
+    los `button.badge` de siempre) y la descripcion de cada modulo plegada en "Que permite".
+  - S3 `cashops/dashboard.html`: envoltorio `.dashboard-flow` en flex column con `order`: con
+    caja elegida la tarjeta de la caja va primero y adentro suben las acciones (Registrar
+    venta, Cerrar caja...); sin caja, la lista de cajas abiertas; los filtros de "Vista actual"
+    quedan plegados en "Cambiar vista". Registrar venta pasa de 2633 px de scroll a la primera
+    pantalla.
+  - S4 Usuarios, Personal, Roles y Sucursales: el buscador tenia `style="align-items:end"`
+    inline y en celular quedaba corrido a la derecha; pasa a `.row--filtros` (mismo valor en
+    escritorio, a lo ancho en celular).
+  - S5 `treasury/layout.html`: `.summary-grid` en una columna y cada `.summary` con el rotulo a
+    la izquierda y el importe a la derecha, como un extracto; los filtros, a lo ancho.
+  - S6 `asistencia/fichar.html` (rama `feat/movil-asistencia` desde staging, porque la app
+    asistencia todavia no esta en main): la explicacion larga se pliega en "Como funciona" y la
+    camara entra en la primera pantalla.
+- Queda sin tocar, a proposito: la barra lateral de `base.html` (login) ya estaba bien; los
+  checkboxes del selector de empresas miden 14 px pero su fila mide 44 px.
 
 ### Treasury Arqueo de caja fuerte cargado en produccion 2026-10-16
 
