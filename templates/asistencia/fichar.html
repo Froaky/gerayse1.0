@@ -4,13 +4,29 @@
 {% block content %}
   <section class="card">
     <div class="row">
-      <div>
+      <div class="fichar-encabezado">
         <h1>Fichar</h1>
-        <p class="muted">{% if sucursal %}Local: {{ sucursal.nombre }}. {% endif %}Escaneá el carnet: la primera marca del día es la entrada y la siguiente, la salida. La hora la pone el sistema.</p>
+        <p class="muted">{% if sucursal %}Local: {{ sucursal.nombre }}. {% endif %}<span class="fichar-explicacion">Escaneá el carnet: la primera marca del día es la entrada y la siguiente, la salida. La hora la pone el sistema.</span></p>
+        {% comment %} Solo celular: la explicacion se pliega (.plegable-movil, en el layout)
+           para que la camara entre en la primera pantalla. En escritorio este bloque no
+           existe y el parrafo de arriba es el de siempre. {% endcomment %}
+        <details class="plegable-movil fichar-explicacion-movil" open>
+          <summary>Cómo funciona</summary>
+          <p class="muted">Escaneá el carnet: la primera marca del día es la entrada y la siguiente, la salida. La hora la pone el sistema.</p>
+        </details>
       </div>
       <a class="button-secondary" href="{% url 'asistencia:inicio' %}">Asistencia</a>
     </div>
   </section>
+  <style>
+    .fichar-explicacion-movil { display: none; }
+    @media (max-width: 640px) {
+      .fichar-encabezado { width: 100%; }
+      .fichar-encabezado .fichar-explicacion { display: none; }
+      .fichar-explicacion-movil { display: block; }
+      .fichar-explicacion-movil p { margin: 4px 0 0; }
+    }
+  </style>
 
   {% if fichaje %}
     <section class="card mt-16" id="resultado-fichaje" data-resultado="{{ fichaje.resultado }}"
