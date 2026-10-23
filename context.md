@@ -82,6 +82,10 @@ Last updated: 2026-10-21
     tandas (60.000 marcas: 3 MB de memoria).
   - `.gitattributes` nuevo: PDF/xlsx/imagenes binarios (reportlab escribe PDF en ASCII y el
     autocrlf de Windows los rompia al hacer checkout).
+- 22-23/10: staging no desplego nada de EP-14 por la caida e incidente de seguridad de Railway del
+  21/10 (builds pausados; Hobby volvio el 23/10). Railway indica reconectar la integracion con
+  GitHub si los deploys no arrancan. Antes de probar en staging, confirmar que el deploy de
+  `Gerayse / staging` tenga el ultimo sha (`gh api repos/Froaky/gerayse1.0/deployments`).
 - Lo que queda de EP-14 no es del chat de desarrollo:
   - US-14.7 respaldo: codigo y tests hechos. Falta el chat de servidor: bucket, variables, cron y
     prueba real segun `docs/asistencia-respaldo.md`; despues se marca [x].
