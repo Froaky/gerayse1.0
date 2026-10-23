@@ -1,5 +1,14 @@
 {% extends "cashops/layout.html" %}
 {% block content %}
+  <style>
+    /* Solo celular: los toggles de permiso pasan de chips de 24 px a botones de 44 px
+       a lo ancho. En escritorio no cambia nada. */
+    @media (max-width: 640px) {
+      .perm-row__text { width: 100%; }
+      .perm-toggles { margin-top: 4px; }
+      .perm-toggles .badge { justify-self: stretch; min-height: 44px; justify-content: center; font-size: 0.82rem; }
+    }
+  </style>
   <section class="card">
     <div class="row">
       <div>
@@ -75,12 +84,17 @@
       {% for row in access_rows %}
         <div class="list-item">
           <div class="row">
-            <div>
+            <div class="perm-row__text">
               <strong>{{ row.label }}</strong>
-              <div class="muted">{{ row.scope }}</div>
-              <small class="muted">{{ row.source }}</small>
+              {% comment %} En celular la descripcion se pliega (.plegable-movil, en el
+                 layout); en escritorio se ve siempre, como antes. {% endcomment %}
+              <details class="plegable-movil" open>
+                <summary>Qué permite</summary>
+                <div class="muted">{{ row.scope }}</div>
+                <small class="muted">{{ row.source }}</small>
+              </details>
             </div>
-            <div class="list-actions">
+            <div class="list-actions perm-toggles">
               {% if can_edit_permissions %}
                 <form method="post" action="{% url 'users:user_permission_toggle' target_user.id row.module 'read' %}">
                   {% csrf_token %}

@@ -48,6 +48,9 @@
          del nav) y se abre con la barra "Menu". */
       .nav-drawer > summary { display: none; }
       .nav-drawer__body { display: grid; gap: 10px; }
+      /* Mismo truco para cualquier bloque que en celular convenga plegar: en
+         escritorio el summary no se ve y el <details open> queda abierto. */
+      .plegable-movil > summary { display: none; }
       .nav-primary,
       .nav-user {
         display: flex;
@@ -665,6 +668,21 @@
             padding: 2px 0;
           }
           .nav-menu__item { display: flex; align-items: center; min-height: 44px; padding: 10px 14px 10px 30px; }
+          .plegable-movil > summary {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            min-height: 44px;
+            padding: 6px 0;
+            color: var(--accent-hi);
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            list-style: none;
+          }
+          .plegable-movil > summary::-webkit-details-marker { display: none; }
+          .plegable-movil > summary::after { content: "\25BE"; }
+          .plegable-movil[open] > summary::after { content: "\25B4"; }
           /* Botones y campos de 44 px; el boton principal, a todo el ancho; las
              acciones de una fila, en una grilla de dos columnas. */
           .chip, .button, .button-secondary, .button-primary, .card-link { min-height: 44px; }
@@ -699,6 +717,13 @@
       {% block content %}{% endblock %}
       <div class="footer-space"></div>
     </div>
+    <script>
+      // En celular los bloques .plegable-movil arrancan plegados (sin JS quedan abiertos).
+      (function () {
+        if (!window.matchMedia("(max-width: 640px)").matches) return;
+        document.querySelectorAll(".plegable-movil").forEach(function (d) { d.removeAttribute("open"); });
+      })();
+    </script>
     {% include "partials/htmx_error_toast.html" %}
     <script src="{% static 'js/theme.js' %}" defer></script>
   </body>
