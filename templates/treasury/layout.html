@@ -448,9 +448,14 @@
         .list-actions .badge, .list-actions [class*="badge-"] { justify-self: start; }
         .action-grid { gap: 8px; }
         .action-card { min-height: 0; padding: 12px 14px; gap: 4px; }
-        .summary-grid { gap: 8px; }
-        .summary { padding: 12px; }
-        .summary strong { font-size: 1.05rem; overflow-wrap: anywhere; }
+        /* Cifras de tesoreria en una sola columna, rotulo a la izquierda e importe a
+           la derecha, como un extracto: en dos columnas de 150 px los rotulos y las
+           aclaraciones se partian en cuatro o cinco lineas. Tambien pone a lo ancho
+           los filtros, que usan la misma grilla. */
+        .summary-grid { gap: 8px; grid-template-columns: minmax(0, 1fr); }
+        .summary { padding: 12px; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; align-items: baseline; }
+        .summary > strong { font-size: 1.05rem; overflow-wrap: anywhere; text-align: right; }
+        .summary > small { grid-column: 1 / -1; }
         .list-item { padding: 12px; }
         .messages { right: 12px; bottom: 12px; }
       }
