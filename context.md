@@ -4,6 +4,32 @@ Last updated: 2026-10-15
 
 ## Current Session
 
+### Celular usable, S1 layout comun (2026-10-23)
+
+- Pedido de Mateo (captura de la ficha de usuario en staging): Gerayse se usa incomodo en el
+  celular en todas las pantallas. Relevamiento a 375 px con Edge headless: menu de 273 px
+  (289 en tesoreria), 35 de 41 objetivos tactiles menores a 44 px, botones principales de
+  36 px sueltos a la izquierda, margenes de escritorio (el `@media (max-width: 640px)` de las
+  dos shells estaba ANTES del bloque "Prolijidad" y nunca se aplicaba: 283 px utiles de 375).
+- S1 en `feat/movil-usable` (desde `main`, para no mezclarse con EP-14): el menu entero vive en
+  un `<details class="nav-drawer">` que en escritorio esta siempre abierto con el summary oculto
+  (render identico: topbar de 55 px) y en celular arranca plegado (script inline; sin JS queda
+  abierto, como antes) y se abre como lista en flujo; Config y empresas tambien se despliegan en
+  flujo y no tapan nada. Bloque "Celular (hasta 640 px)" al final de cada `<style>`, despues de
+  "Prolijidad": 44 px en chips, botones, campos e items de menu; boton principal a todo el
+  ancho; `.list-actions` en grilla de dos columnas; margenes de 12/14 px. `[hidden] { display:
+  none !important }` en las dos shells: `.button-secondary` le ganaba al atributo y en Fichar se
+  veian "Usar la camara" y "Apagar la camara" a la vez.
+- Resultado a 375 px: topbar 273 -> 75 px; objetivos < 44 px: 35/41 -> 3/41 (la marca y los dos
+  checkboxes de empresas); alto del dashboard 4079 -> 3446 px; ficha de usuario 5379 -> 3825 px.
+  Escritorio (1366 px): mismas alturas y posiciones que antes.
+- Tests: suite completa 1109 OK (6 skipped) sobre main + S1; `makemigrations --check` sin
+  cambios. Capturas antes/despues fuera del repo (scratchpad de la sesion).
+- Pendiente, a confirmar con Mateo: S2 ficha de usuario (toggles de 24 px), S3 dashboard con caja
+  (acciones a 2633 px de scroll), S4 listas con muchas acciones (y el buscador de Usuarios, que
+  tiene `align-items:end` inline y en celular queda corrido a la derecha), S5 tesoreria, S6
+  Fichar (camara primero).
+
 ### Treasury Arqueo de caja fuerte cargado en produccion 2026-10-16
 
 - Cajas fuertes = planilla de tesoreria al 15/10: ARMADI 16.074.171,00 y MAPOGO -12.675.174,00
