@@ -8,7 +8,7 @@
       </div>
       <a class="button" href="{% url 'cashops:sucursal_create' %}">Nueva sucursal</a>
     </div>
-    <form method="get" class="row mt-16" style="align-items:end;">
+    <form method="get" class="row row--filtros mt-16">
       <div class="field" style="flex:1;">
         <label for="id_q">Buscar</label>
         <input id="id_q" class="input" type="text" name="q" value="{{ query }}" placeholder="Codigo, nombre o razon social">
