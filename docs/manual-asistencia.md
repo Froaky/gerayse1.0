@@ -19,7 +19,8 @@ local que queda registrado en cada marca.
 ## 1. Fichar (cajeros)
 
 1. Entre a **Asistencia** y presione **Fichar**. Arriba se indica el local donde está fichando:
-   es el local asignado a su usuario.
+   es el local asignado a su usuario. Quien administra asistencia elige el local en la lista de
+   arriba y presiona **Usar este local**.
 2. Escanee el carnet del empleado de una de estas formas:
    - **Con el celular o la tablet**: presione **Usar la cámara** y permita el acceso a la cámara
      cuando el navegador lo pida. Ponga el QR del carnet frente a la cámara; cada lectura se
@@ -27,9 +28,11 @@ local que queda registrado en cada marca.
    - **Con un lector QR enchufado a la computadora**: con la pantalla de fichar abierta, apunte el
      lector al carnet. El código se escribe y se registra solo; el campo queda listo para el
      siguiente carnet.
-   - **Si el QR no se lee**: escriba el código que figura debajo del nombre en el carnet y
-     presione Enter.
-3. La pantalla muestra el nombre del empleado, si fue **Entrada** o **Salida** y la hora.
+   - **Si el QR no se lee**: escriba los 6 números que figuran en el carnet, debajo de
+     "Código", y presione Enter.
+3. Con la cámara, el resultado aparece encima de la imagen, con un sonido corto: en verde
+   **Entrada** o **Salida** con el nombre y la hora; en amarillo si ya estaba registrada; en rojo
+   si no se pudo registrar. Con el lector o el código tipeado, la pantalla muestra lo mismo arriba.
 
 Cómo decide el sistema:
 
@@ -89,7 +92,7 @@ empresa, local y estado (activos, dados de baja o todos).
   nuevo con el botón **Carnet**. Si alguien escanea el carnet anulado, la pantalla de fichar lo
   avisa.
 
-El QR solo contiene un código; no lleva el nombre ni el DNI del empleado.
+El QR solo contiene el código de 6 números del carnet; no lleva el nombre ni el DNI del empleado.
 
 ## 4. Corregir marcas
 

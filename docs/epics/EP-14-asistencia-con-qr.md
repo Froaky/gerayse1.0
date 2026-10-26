@@ -100,6 +100,15 @@ construir un servicio, hosting ni base aparte.
   esta fichando (queda en la sesion; arranca en su sucursal base si tiene). El cajero sigue fijo
   en su sucursal base, sin selector (D4). El servicio revalida: solo quien administra, local
   activo de una empresa permitida. Tests en `asistencia/tests_fichar_local.py`.
+- D12 (2026-10-26, pedido de Mateo) el codigo del carnet es de 6 digitos (no empieza con 0) y va
+  escrito grande en el carnet ("483 920"): el anterior (GA1 + 24) era imposible de tipear. Nunca
+  repite un codigo vigente ni anulado. Se resigna que sea imposible de adivinar: fichar exige un
+  cajero logueado. La migracion `asistencia/0008_carnet_codigo_corto` da codigo nuevo a cada
+  empleado y deja el anterior como carnet anulado (escanear uno viejo avisa "anulado"). Tests en
+  `asistencia/tests_codigo_corto.py`.
+- D13 (2026-10-26) al escanear con la camara el resultado se ve ENCIMA del video (verde, amarillo
+  o rojo, con nombre y hora), con sonido corto y vibracion donde se puede: antes quedaba arriba,
+  fuera de la vista en el celular, y Mateo no se enteraba de que habia fichado.
 
 ## Reglas de negocio
 
