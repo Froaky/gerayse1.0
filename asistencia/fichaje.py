@@ -7,17 +7,20 @@ Reglas (epica EP-14, "Reglas de negocio"):
   cierra la entrada de la noche anterior);
 - el mismo carnet dentro de los 2 minutos no genera marca (doble escaneo);
 - carnet anulado, codigo desconocido o empleado de baja no generan marca;
-- la marca guarda el local del cajero (su sucursal base).
+- la marca guarda el local del cajero (su sucursal base). Quien administra
+  asistencia puede fichar eligiendo el local (D11): por ejemplo un admin sin
+  sucursal base.
 """
 
 from dataclasses import dataclass
 from datetime import timedelta
 
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.utils import timezone
 
 from .models import CODIGO_CARNET_PATRON, CarnetAnulado, Empleado, Marca
-from .permissions import ensure_fichar
+from .permissions import can_administrar, ensure_fichar
 
 ENTRADA_ABIERTA_MAXIMA = timedelta(hours=16)
 DOBLE_ESCANEO = timedelta(minutes=2)
@@ -50,10 +53,24 @@ def normalizar_codigo(texto) -> str:
     return "".join(str(texto or "").split()).upper()
 
 
+def _ensure_local_elegible(actor, sucursal) -> None:
+    # La vista solo ofrece locales del alcance; esto es la segunda linea: un
+    # cajero no puede mandar otro local que el suyo, ni nadie uno inactivo o de
+    # una empresa que no tiene permitida.
+    if not can_administrar(actor):
+        raise PermissionDenied("Solo quien administra asistencia puede elegir el local.")
+    if not sucursal.activa or not actor.empresas_permitidas.filter(pk=sucursal.empresa_id).exists():
+        raise PermissionDenied("Ese local no está entre los de tus empresas.")
+
+
 @transaction.atomic
-def fichar(*, actor, codigo: str) -> Fichaje:
+def fichar(*, actor, codigo: str, sucursal=None) -> Fichaje:
+    """`sucursal`: el local elegido por quien administra; si no viene, la
+    sucursal base del usuario."""
     ensure_fichar(actor)
-    sucursal = actor.sucursal_base
+    if sucursal is not None and sucursal.pk != actor.sucursal_base_id:
+        _ensure_local_elegible(actor, sucursal)
+    sucursal = sucursal or actor.sucursal_base
     if sucursal is None:
         return Fichaje(Resultado.SIN_LOCAL, "Tu usuario no tiene un local asignado: no se puede fichar.")
     codigo = normalizar_codigo(codigo)

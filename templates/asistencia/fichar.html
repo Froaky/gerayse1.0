@@ -1,12 +1,12 @@
 {% extends "cashops/layout.html" %}
-{% load static %}
+{% load static l10n %}
 {% block title %}Fichar | Gerayse{% endblock %}
 {% block content %}
   <section class="card">
     <div class="row">
       <div class="fichar-encabezado">
         <h1>Fichar</h1>
-        <p class="muted">{% if sucursal %}Local: {{ sucursal.nombre }}. {% endif %}<span class="fichar-explicacion">Escaneá el carnet: la primera marca del día es la entrada y la siguiente, la salida. La hora la pone el sistema.</span></p>
+        <p class="muted">{% if sucursal and locales is None %}Local: {{ sucursal.nombre }}. {% endif %}<span class="fichar-explicacion">Escaneá el carnet: la primera marca del día es la entrada y la siguiente, la salida. La hora la pone el sistema.</span></p>
         {% comment %} Solo celular: la explicacion se pliega (.plegable-movil, en el layout)
            para que la camara entre en la primera pantalla. En escritorio este bloque no
            existe y el parrafo de arriba es el de siempre. {% endcomment %}
@@ -17,9 +17,30 @@
       </div>
       <a class="button-secondary" href="{% url 'asistencia:inicio' %}">Asistencia</a>
     </div>
+    {% if locales is not None %}
+      {% comment %} Solo quien administra asistencia: elige el local (queda en la sesion).
+         El cajero ficha siempre en su sucursal base y no ve esto. {% endcomment %}
+      <form method="post" action="{% url 'asistencia:fichar' %}" class="fichar-local mt-12" id="fichar-local">
+        {% csrf_token %}
+        <input type="hidden" name="elegir_local" value="1">
+        <label for="id_local">Local donde estás fichando</label>
+        <div class="fichar-local-fila">
+          <select id="id_local" name="local" class="input select">
+            {% if not sucursal %}<option value="">Elegí un local</option>{% endif %}
+            {% for opcion in locales %}
+              <option value="{{ opcion.pk|unlocalize }}"{% if sucursal and opcion.pk == sucursal.pk %} selected{% endif %}>{{ opcion.codigo }} - {{ opcion.nombre }}</option>
+            {% endfor %}
+          </select>
+          <button class="button-secondary" type="submit">Usar este local</button>
+        </div>
+      </form>
+    {% endif %}
   </section>
   <style>
     .fichar-explicacion-movil { display: none; }
+    .fichar-local { display: grid; gap: 6px; }
+    .fichar-local-fila { display: flex; gap: 8px; flex-wrap: wrap; }
+    .fichar-local-fila select { flex: 1 1 240px; }
     @media (max-width: 640px) {
       .fichar-encabezado { width: 100%; }
       .fichar-encabezado .fichar-explicacion { display: none; }
@@ -77,7 +98,11 @@
     <script src="{% static 'asistencia/fichar-camara.js' %}"></script>
   {% else %}
     <section class="card mt-16">
-      <p class="error">Tu usuario no tiene un local asignado: pedile a administración que te asigne la sucursal base para poder fichar.</p>
+      {% if locales is not None %}
+        <p class="error">Elegí arriba el local donde estás fichando para usar la cámara o el código.</p>
+      {% else %}
+        <p class="error">Tu usuario no tiene un local asignado: pedile a administración que te asigne la sucursal base para poder fichar.</p>
+      {% endif %}
     </section>
   {% endif %}
 {% endblock %}

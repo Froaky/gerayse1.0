@@ -96,6 +96,10 @@ construir un servicio, hosting ni base aparte.
   arranca asi. Si se carga, no se repite entre activos de todas las empresas; sin DNI, no se
   repite el nombre entre activos de la misma empresa (evita la doble carga). Migracion
   `asistencia/0007_dni_opcional`; tests en `asistencia/tests_sin_dni.py`.
+- D11 (2026-10-26, pedido de Mateo) quien administra asistencia elige en Fichar el local donde
+  esta fichando (queda en la sesion; arranca en su sucursal base si tiene). El cajero sigue fijo
+  en su sucursal base, sin selector (D4). El servicio revalida: solo quien administra, local
+  activo de una empresa permitida. Tests en `asistencia/tests_fichar_local.py`.
 
 ## Reglas de negocio
 

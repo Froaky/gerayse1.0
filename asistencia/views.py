@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError
 from django.db.models import Prefetch, Q
 from django.http import HttpResponse, JsonResponse
@@ -16,7 +16,7 @@ from django.views.decorators.http import require_http_methods
 from .alcance import empresas_en_alcance, sucursales_en_alcance
 from .carnets import generar_carnets_pdf
 from .excel import CONTENT_TYPE_XLSX, generar_excel, jornadas_del_mes, ventana_del_mes
-from .fichaje import fichar
+from .fichaje import Fichaje, Resultado, fichar
 from .forms import (
     AnularCarnetForm,
     AnularMarcaForm,
@@ -375,13 +375,46 @@ def carnet_anular(request, empleado_id: int):
     )
 
 
+SESION_LOCAL_FICHAJE = "asistencia_local_fichaje"
+
+
+def _local_de_fichaje(request):
+    """(local, locales que puede elegir). El cajero ficha en su sucursal base,
+    fija. Quien administra asistencia elige el local (queda en la sesion) entre
+    los de su alcance; si no eligio, arranca en su sucursal base."""
+    if not can_administrar(request.user):
+        return request.user.sucursal_base, None
+    locales = sucursales_en_alcance(request).select_related("empresa")
+    elegido = request.session.get(SESION_LOCAL_FICHAJE)
+    local = locales.filter(pk=elegido).first() if elegido else None
+    if local is None and request.user.sucursal_base_id:
+        local = locales.filter(pk=request.user.sucursal_base_id).first()
+    return local, locales
+
+
 @login_required
 @require_http_methods(["GET", "POST"])
 def fichar_view(request):
     ensure_fichar(request.user)
+    local, locales = _local_de_fichaje(request)
+    if request.method == "POST" and "elegir_local" in request.POST:
+        if locales is None:
+            raise PermissionDenied("Solo quien administra asistencia puede elegir el local.")
+        pedido = request.POST.get("local", "")
+        elegido = locales.filter(pk=int(pedido)).first() if pedido.isascii() and pedido.isdigit() else None
+        if elegido is None:
+            messages.error(request, "Elegí un local de la lista.")
+        else:
+            request.session[SESION_LOCAL_FICHAJE] = elegido.pk
+            messages.success(request, f"Fichando en {elegido.nombre}.")
+        return redirect("asistencia:fichar")
     fichaje = None
-    if request.method == "POST":
-        fichaje = fichar(actor=request.user, codigo=request.POST.get("codigo", ""))
+    if request.method == "POST" and locales is not None and local is None:
+        # Quien administra y todavia no eligio local: no se cae a una sucursal
+        # base que puede estar fuera del alcance.
+        fichaje = Fichaje(Resultado.SIN_LOCAL, "Elegí el local donde estás fichando.")
+    elif request.method == "POST":
+        fichaje = fichar(actor=request.user, codigo=request.POST.get("codigo", ""), sucursal=local)
         if request.headers.get("Accept", "").startswith("application/json"):
             # Para la lectura con la camara: la pantalla no se recarga.
             return JsonResponse(
@@ -397,7 +430,7 @@ def fichar_view(request):
     return render(
         request,
         "asistencia/fichar.html",
-        {"title": "Fichar", "fichaje": fichaje, "sucursal": request.user.sucursal_base},
+        {"title": "Fichar", "fichaje": fichaje, "sucursal": local, "locales": locales},
     )
 
 
