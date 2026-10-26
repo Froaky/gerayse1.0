@@ -170,6 +170,9 @@ Last updated: 2026-10-21
     claude.ai/artifact/HAz4ZLjfVFfDQ3CLqRJM6V) y en `docs/manual-asistencia-administracion.html` y
     `docs/manual-asistencia-cajeros.html`; HTML + PDF en el escritorio de Mateo
     (`gerayse/manuales`). El PDF se imprime de la pagina con Edge headless (`--print-to-pdf`).
+  - **Manual de marca (26/10):** todo documento (informe, manual, presupuesto) sale de
+    `docs/marca/` (hoja `gerayse-documento.css`, plantillas, `armar.py` para HTML + PDF + Artifact)
+    siguiendo la skill `documentos-gerayse`. Los dos manuales de asistencia ya estan con esa hoja.
   - Copy: las pantallas de asistencia hablan de vos ("Escaneá", "Elegí un mes"), igual que caja y
     tesoreria ("No tenés permiso..."), y los manuales tambien. El "usted" queda para avisos
     formales al cliente en pantalla (cartel de vencimiento). No pasar las pantallas a usted.
