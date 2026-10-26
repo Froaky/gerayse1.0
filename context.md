@@ -151,6 +151,9 @@ Last updated: 2026-10-21
     `asistencia/0007_dni_opcional`. Sin DNI no se repite el nombre en la empresa. El listado real
     sin DNI pasa la carga real: 75 de 75 listas. Archivo final: `Personal para cargar en
     Gerayse.xlsx` en el escritorio de Mateo.
+  - 26/10 en staging: cargados los 75 (0 rechazos) y el PDF de carnets sale con 75 en 8 hojas.
+    Mateo como admin no podia fichar (sin sucursal base): EP-14 D11, quien administra elige el
+    local en Fichar; el cajero sigue fijo en su sucursal base.
   - Copy: las pantallas de asistencia hablan de vos ("Escaneá", "Elegí un mes"), igual que caja y
     tesoreria ("No tenés permiso..."). Queda asi a proposito: el "usted" es para avisos formales al
     cliente (cartel de vencimiento) y documentos que se le entregan (el manual). No pasarlas a usted.
