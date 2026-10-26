@@ -137,10 +137,8 @@ Last updated: 2026-10-21
     prueba real segun `docs/asistencia-respaldo.md`; despues se marca [x].
   - US-14.8 lector USB: tests hechos (`asistencia/tests_lector.py`); solo falta probar con un
     lector 2D real (Mateo) para marcarla [x].
-  - US-14.9: manual revisado contra las pantallas y en PDF (`docs/manual-asistencia.pdf`, se
-    regenera con `python docs/generate_manual_asistencia_pdf.py`; copia en el escritorio de Mateo,
-    `gerayse/manuales`). Falta el arranque real (carga de los 85, permisos y sucursal base de los
-    cajeros, carnets impresos), que hacen Mateo y Tais, sin piloto.
+  - US-14.9: manuales (ver la nota del 26/10 sobre el formato). Falta el arranque real (carga,
+    permisos y sucursal base de los cajeros, carnets impresos), que hacen Mateo y Tais, sin piloto.
   - 26/10 llego el listado del personal: 75 empleados en las 7 sucursales (EB1-03 11, PP-OV-06 3,
     EB2-04 6, TERM-01 11, YH-05 4, CENT-02 11, VIV-01 29), SIN DNI. Se armo el archivo en el
     formato de "Cargar desde un listado" con la columna DNI vacia para que la complete el cliente
@@ -162,12 +160,19 @@ Last updated: 2026-10-21
     que faltan para 85 y la empresa de Rodrigo Correa), imprimir carnets y mandar el manual. Del
     chat de servidor: respaldo diario (`docs/asistencia-respaldo.md`) y rotar secretos.
   - 26/10 (en staging, no en main): pantalla "Por local" (D15), cajero fijo en su local salvo
-    "Otros locales donde ficha asistencia" en su ficha (D14, migracion users/0021) y manual de
-    administracion para Tais (`docs/manual-asistencia-administracion.pdf`, copia en el
-    escritorio de Mateo). PDFs: `python docs/generate_manual_asistencia_pdf.py [origen.md]`.
+    "Otros locales donde ficha asistencia" en su ficha (D14, migracion users/0021). En main desde
+    el 26/10 12:30 (285d438).
+  - **Manuales (26/10, corregido a pedido de Mateo):** van con el formato del "Manual para la
+    administracion" de julio (traspaso, `anexos/documentos-de-la-cuenta-claude/`): pagina HTML con
+    encabezado, indice, secciones numeradas, pasos, notas Tip/Ojo, antes/ahora, checklist,
+    preguntas frecuentes, dia de ejemplo y problemas; **de vos y en tono calido**. Publicados como
+    Artifact (administracion: claude.ai/artifact/BCc1i1Ss5NpusFY1RXgqgi; cajeros:
+    claude.ai/artifact/HAz4ZLjfVFfDQ3CLqRJM6V) y en `docs/manual-asistencia-administracion.html` y
+    `docs/manual-asistencia-cajeros.html`; HTML + PDF en el escritorio de Mateo
+    (`gerayse/manuales`). El PDF se imprime de la pagina con Edge headless (`--print-to-pdf`).
   - Copy: las pantallas de asistencia hablan de vos ("Escaneá", "Elegí un mes"), igual que caja y
-    tesoreria ("No tenés permiso..."). Queda asi a proposito: el "usted" es para avisos formales al
-    cliente (cartel de vencimiento) y documentos que se le entregan (el manual). No pasarlas a usted.
+    tesoreria ("No tenés permiso..."), y los manuales tambien. El "usted" queda para avisos
+    formales al cliente en pantalla (cartel de vencimiento). No pasar las pantallas a usted.
 - Pendiente de Mateo/Tais: probar la camara en un Android y un iPhone en staging; cual de las 7
   sucursales no ficha. Importes y PDF fuera del repo.
 

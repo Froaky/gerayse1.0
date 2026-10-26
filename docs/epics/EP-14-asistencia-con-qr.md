@@ -118,8 +118,8 @@ construir un servicio, hosting ni base aparte.
 - D15 (2026-10-26, pedido de Mateo) pantalla "Por local" (`/asistencia/por-local/`,
   `asistencia/por_local.py`): por dia y local, quien esta trabajando (desde que hora y cuanto
   lleva), quien salio y sus horas, corregidas, sin salida y quienes del local no ficharon. Misma
-  regla de tramos que el Excel. Manual de administracion para Tais en
-  `docs/manual-asistencia-administracion.md` (+ PDF).
+  regla de tramos que el Excel. Manuales con el formato del de julio (de vos):
+  `docs/manual-asistencia-administracion.html` y `docs/manual-asistencia-cajeros.html`.
 
 ## Reglas de negocio
 
@@ -330,9 +330,9 @@ Criterios:
 - el arranque es definitivo, de a un local o todos juntos segun elija el cliente; sin piloto
 - el respaldo diario esta andando y se probo una restauracion con datos reales
 - estimado: 4 h
-- avance 2026-10-21: manual en `docs/manual-asistencia.md` (fichar con celular, lector o codigo;
-  padron; carnets; correcciones; Excel). Falta revisarlo con las pantallas en staging, pasarlo a
-  PDF para el cliente y el arranque (carga real, permisos de cajeros, carnets impresos)
+- avance 2026-10-26: manuales de administracion y de cajeros con el formato del manual de julio
+  (`docs/manual-asistencia-administracion.html`, `docs/manual-asistencia-cajeros.html`). Falta el
+  arranque (carga real, permisos de cajeros, carnets impresos)
 
 ## Dependencias
 
