@@ -9,6 +9,10 @@ Qué hace:
   3. Lo imprime a PDF con Edge o Chrome sin cabeza, esperando a que carguen las
      fuentes de Google Fonts. Sin ese tiempo de espera el PDF sale con Georgia y
      Segoe UI en vez de Fraunces y Public Sans.
+  4. Con --artefacto deja además `<nombre>.artefacto.html`: la misma página sin
+     doctype, <html>, <head> ni <body> (el visor de Artifacts pone los suyos), con
+     el cuerpo envuelto en un <div> que lleva la clase del body (doc o manual).
+     Es el archivo que se publica con la herramienta Artifact para pasar un link.
 
 Solo usa la biblioteca estándar. Hace falta Edge o Chrome instalado.
 """
@@ -60,6 +64,27 @@ def autocontenido(origen: Path) -> str:
     return contenido
 
 
+CABEZA = re.compile(r"<head>(.*?)</head>", re.IGNORECASE | re.DOTALL)
+CUERPO = re.compile(r"<body([^>]*)>(.*?)</body>", re.IGNORECASE | re.DOTALL)
+PARTES_CABEZA = re.compile(r"<title>.*?</title>|<link[^>]+>|<style>.*?</style>", re.IGNORECASE | re.DOTALL)
+CLASE = re.compile(r"""class=["']([^"']+)["']""")
+
+
+def artefacto(contenido: str) -> str:
+    cabeza = CABEZA.search(contenido)
+    cuerpo = CUERPO.search(contenido)
+    if not cabeza or not cuerpo:
+        sys.exit("No encuentro <head> y <body> en el documento.")
+    partes = PARTES_CABEZA.findall(cabeza.group(1))
+    clase = CLASE.search(cuerpo.group(1))
+    envoltorio = f'<div class="{clase.group(1)}">' if clase else "<div>"
+    titulo = [p for p in partes if p.lower().startswith("<title")]
+    resto = [p for p in partes if not p.lower().startswith("<title")]
+    return "\n".join(
+        titulo + ['<meta name="claude:viewport-fit-sides" content="cover">'] + resto + [envoltorio, cuerpo.group(2).strip(), "</div>", ""]
+    )
+
+
 def imprimir(exe: str, html_path: Path, pdf_path: Path) -> None:
     orden = [
         exe,
@@ -82,6 +107,7 @@ def main() -> None:
     parser.add_argument("--destino", type=Path, default=None, help="carpeta de salida (por defecto, la del HTML)")
     parser.add_argument("--nombre", default=None, help="nombre de los archivos de salida (por defecto, el <title>)")
     parser.add_argument("--sin-pdf", action="store_true", help="solo el HTML autocontenido")
+    parser.add_argument("--artefacto", action="store_true", help="deja también la versión para publicar como Artifact")
     args = parser.parse_args()
 
     origen: Path = args.html
@@ -100,6 +126,11 @@ def main() -> None:
         sys.exit("El destino pisaría el original: elegí otra carpeta o otro --nombre.")
     salida_html.write_text(contenido, encoding="utf-8")
     print(f"HTML  {salida_html}")
+
+    if args.artefacto:
+        salida_artefacto = destino / f"{nombre}.artefacto.html"
+        salida_artefacto.write_text(artefacto(contenido), encoding="utf-8")
+        print(f"ARTF  {salida_artefacto}")
 
     if not args.sin_pdf:
         salida_pdf = destino / f"{nombre}.pdf"

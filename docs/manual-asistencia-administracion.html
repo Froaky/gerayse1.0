@@ -3,198 +3,37 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Asistencia para la administración</title>
-<meta name="claude:viewport-fit-sides" content="cover">
+<title>Asistencia: manual para la administración</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&family=Spline+Sans+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="marca/gerayse-documento.css">
 <style>
-  /* Mismo diseño que el "Manual para la administración" de julio 2026: masthead, índice al costado,
-     secciones numeradas, pasos, notas, antes/ahora, checklist, preguntas y día de ejemplo. */
-  :root{
-    --bg:#f7f9f7; --surface:#ffffff; --surface-2:#f0f4f1;
-    --text:#1a2420; --muted:#5b6a63; --line:#e1e8e3;
-    --forest:#0f8a56; --forest-deep:#0c6f45; --forest-soft:#e7f5ee; --on-forest:#ffffff;
-    --amber:#a9791b; --amber-soft:#fbf3e0;
-    --danger:#c0453f; --danger-soft:#fbe9e8;
-    --radius:12px; --shadow:0 10px 30px rgba(16,40,28,.08);
-    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-    --serif:"Iowan Old Style",Georgia,"Times New Roman",serif;
-    --mono:ui-monospace,"Cascadia Code",Menlo,Consolas,monospace;
-    --readw:44rem;
-  }
-  @media (prefers-color-scheme:dark){
-    :root:not([data-theme="light"]){
-      --bg:#0f1315; --surface:#161b1e; --surface-2:#1c2225;
-      --text:#e9efec; --muted:#8b968f; --line:#28302f;
-      --forest:#2ecb83; --forest-deep:#22c47e; --forest-soft:#12251c; --on-forest:#06130d;
-      --amber:#d9a441; --amber-soft:#2a2312;
-      --danger:#e2635c; --danger-soft:#2a1615;
-      --shadow:0 14px 34px rgba(0,0,0,.5);
-      color-scheme:dark;
-    }
-  }
-  :root[data-theme="dark"]{
-    --bg:#0f1315; --surface:#161b1e; --surface-2:#1c2225; --text:#e9efec; --muted:#8b968f; --line:#28302f;
-    --forest:#2ecb83; --forest-deep:#22c47e; --forest-soft:#12251c; --on-forest:#06130d; --amber:#d9a441; --amber-soft:#2a2312;
-    --danger:#e2635c; --danger-soft:#2a1615; --shadow:0 14px 34px rgba(0,0,0,.5); color-scheme:dark;
-  }
-  *{box-sizing:border-box}
-  html{scroll-behavior:smooth}
-  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.62;-webkit-font-smoothing:antialiased}
-  a{color:var(--forest-deep)}
-
-  .masthead{border-bottom:1px solid var(--line);background:
-      radial-gradient(900px 300px at 8% -40%, color-mix(in srgb, var(--forest) 12%, transparent), transparent 60%), var(--surface)}
-  .masthead__in{max-width:74rem;margin:0 auto;padding-block:clamp(26px,4vw,46px);
-    padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px))}
-  .brandline{display:flex;align-items:center;gap:10px;margin-bottom:16px}
-  .brandmark{width:34px;height:34px;border-radius:8px;display:grid;place-items:center;font-family:var(--serif);font-weight:700;color:var(--on-forest);background:linear-gradient(150deg,var(--forest),var(--forest-deep))}
-  .brandline b{font-family:var(--serif);letter-spacing:.02em}
-  .brandline span{color:var(--muted);font-size:.85rem}
-  h1{font-family:var(--serif);font-weight:700;font-size:clamp(1.8rem,4.4vw,2.7rem);line-height:1.08;margin:.2em 0 .1em;text-wrap:balance}
-  .subtitle{font-size:1.08rem;color:var(--muted);margin:0 0 18px;max-width:52ch}
-  .metabar{display:flex;flex-wrap:wrap;gap:8px}
-  .pill{font-size:.78rem;padding:5px 11px;border-radius:999px;border:1px solid var(--line);background:var(--surface-2);color:var(--muted)}
-  .pill--live{background:var(--forest-soft);border-color:color-mix(in srgb,var(--forest) 40%,transparent);color:var(--forest-deep);font-weight:600}
-  .pill--live::before{content:"●";margin-right:6px;color:var(--forest)}
-
-  .layout{max-width:74rem;margin:0 auto;padding-block:clamp(20px,3vw,34px) 90px;
-    padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));
-    display:grid;grid-template-columns:15rem minmax(0,1fr);gap:clamp(22px,4vw,52px);align-items:start}
-  @media (max-width:900px){ .layout{grid-template-columns:1fr;gap:18px} }
-
-  .side{position:sticky;top:calc(18px + env(safe-area-inset-top, 0px))}
-  .toc{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
-  .toc>summary{list-style:none;cursor:pointer;padding:12px 16px;font-family:var(--serif);font-weight:700;font-size:1rem;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
-  .toc>summary::-webkit-details-marker{display:none}
-  .toc>summary::after{content:"▾";color:var(--muted);font-size:.8rem}
-  .toc nav{padding:8px}
-  .toc ol{list-style:none;margin:0;padding:0;counter-reset:toc}
-  .toc li{counter-increment:toc}
-  .toc a{display:flex;gap:9px;padding:7px 9px;border-radius:8px;color:var(--muted);text-decoration:none;font-size:.9rem;line-height:1.3}
-  .toc a::before{content:counter(toc);font-variant-numeric:tabular-nums;color:var(--forest);font-weight:700;min-width:1.1em;text-align:right}
-  .toc a:hover{background:var(--surface-2);color:var(--text)}
-  .toc a.active{background:var(--forest-soft);color:var(--forest-deep);font-weight:600}
-  @media (max-width:900px){ .side{position:static} .toc{position:sticky;top:calc(8px + env(safe-area-inset-top, 0px));z-index:5} }
-  @media (min-width:901px){ .toc>summary{cursor:default} .toc>summary::after{display:none} }
-
-  main{min-width:0;max-width:var(--readw)}
-  section{scroll-margin-top:18px;margin-bottom:44px}
-  section>h2{font-family:var(--serif);font-weight:700;font-size:clamp(1.35rem,3vw,1.7rem);line-height:1.15;margin:0 0 4px;padding-top:6px;display:flex;align-items:baseline;gap:.5rem;text-wrap:balance}
-  section>h2 .num{font-size:.85rem;color:var(--forest);font-variant-numeric:tabular-nums;font-family:var(--mono);font-weight:600}
-  .anchor{opacity:0;color:var(--muted);text-decoration:none;font-weight:400;transition:opacity .15s}
-  h2:hover .anchor{opacity:.6}
-  h3{font-family:var(--serif);font-weight:700;font-size:1.12rem;margin:26px 0 6px}
-  p{margin:.55em 0}
-  .lead{font-size:1.12rem;color:var(--text)}
-  ul,ol{padding-left:1.3em;margin:.5em 0}
-  li{margin:.3em 0}
-
-  .cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0}
-  @media (max-width:560px){ .cols{grid-template-columns:1fr} }
-  .card{border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;background:var(--surface);min-width:0}
-  .card h4{margin:0 0 8px;font-size:.95rem;font-family:var(--sans);letter-spacing:.02em}
-  .card--old{background:var(--danger-soft);border-color:color-mix(in srgb,var(--danger) 30%,transparent)}
-  .card--old h4{color:var(--danger)}
-  .card--new{background:var(--forest-soft);border-color:color-mix(in srgb,var(--forest) 35%,transparent)}
-  .card--new h4{color:var(--forest-deep)}
-  .card ul,.card ol{margin:0;padding-left:1.2em}
-
-  .steps{list-style:none;padding:0;margin:16px 0;counter-reset:step}
-  .steps>li{counter-increment:step;position:relative;padding:14px 16px 14px 56px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);margin:10px 0}
-  .steps>li::before{content:counter(step);position:absolute;left:14px;top:14px;width:28px;height:28px;border-radius:50%;background:var(--forest);color:var(--on-forest);display:grid;place-items:center;font-weight:700;font-size:.9rem}
-  .steps>li>strong:first-child{display:block;margin-bottom:2px}
-
-  .note{border-left:4px solid var(--forest);background:var(--surface-2);border-radius:0 10px 10px 0;padding:12px 16px;margin:14px 0}
-  .note--warn{border-left-color:var(--amber);background:var(--amber-soft)}
-  .note b{color:var(--text)}
-
-  .badge{display:inline-flex;align-items:center;gap:6px;font-size:.8rem;font-weight:600;padding:3px 10px;border-radius:6px;white-space:nowrap}
-  .badge--ok{background:var(--forest-soft);color:var(--forest-deep)}
-  .badge--warn{background:var(--amber-soft);color:var(--amber)}
-  .badge--bad{background:var(--danger-soft);color:var(--danger)}
-
-  .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius);margin:14px 0}
-  table{border-collapse:collapse;width:100%;font-size:.88rem;min-width:520px}
-  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
-  th{background:var(--surface-2);font-weight:600;color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.03em}
-  td{font-variant-numeric:tabular-nums}
-  tr:last-child td{border-bottom:none}
-
-  pre{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:.85rem;line-height:1.5;color:var(--text)}
-
-  .check{list-style:none;padding:0;margin:14px 0}
-  .check li{padding:9px 12px 9px 40px;position:relative;border:1px solid var(--line);border-radius:9px;margin:8px 0;background:var(--surface)}
-  .check li::before{content:"";position:absolute;left:12px;top:11px;width:16px;height:16px;border:2px solid var(--forest);border-radius:4px}
-
-  .faq{border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;background:var(--surface)}
-  .faq details{border-bottom:1px solid var(--line)}
-  .faq details:last-child{border-bottom:none}
-  .faq summary{cursor:pointer;padding:13px 16px;font-weight:600;list-style:none;display:flex;justify-content:space-between;gap:12px}
-  .faq summary::-webkit-details-marker{display:none}
-  .faq summary::after{content:"+";color:var(--forest);font-weight:700;font-size:1.1rem}
-  .faq details[open] summary::after{content:"–"}
-  .faq .ans{padding:0 16px 14px;color:var(--muted)}
-  .faq .ans p{margin:.2em 0}
-
-  .tl{list-style:none;padding:0;margin:14px 0;border-left:2px solid var(--line);margin-left:8px}
-  .tl li{position:relative;padding:4px 0 16px 22px}
-  .tl li::before{content:"";position:absolute;left:-7px;top:8px;width:12px;height:12px;border-radius:50%;background:var(--forest);border:2px solid var(--surface)}
-  .tl time{font-family:var(--mono);font-size:.82rem;color:var(--forest-deep);font-weight:600}
-
-  .top{position:fixed;right:calc(18px + env(safe-area-inset-right, 0px));bottom:calc(18px + env(safe-area-inset-bottom, 0px));z-index:20;background:var(--forest);color:var(--on-forest);border:none;border-radius:999px;padding:11px 16px;font-size:.85rem;font-weight:600;cursor:pointer;box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}
-  .top.show{opacity:1;pointer-events:auto}
-  .top:hover{transform:translateY(-2px)}
-
-  footer{max-width:var(--readw);color:var(--muted);font-size:.85rem;border-top:1px solid var(--line);padding-top:18px;margin-top:20px}
-  :focus-visible{outline:2px solid var(--forest);outline-offset:2px}
-  @media (prefers-reduced-motion:reduce){ html{scroll-behavior:auto} .top{transition:none} }
-
-  @page{ margin: 15mm 14mm 16mm; }
-  @media print{
-    :root{ --bg:#fff; --surface:#fff; --surface-2:#f1f5f2; --text:#161f1b; --muted:#4b5a53; --line:#d3ded8;
-      --forest:#0c6f45; --forest-deep:#0a5638; --forest-soft:#eaf6f0; --on-forest:#fff; --amber:#8a6314; --amber-soft:#faf1dc;
-      --danger:#b23c37; --danger-soft:#fbe9e8; --shadow:none; }
-    .top{display:none!important}
-    .layout{display:block;max-width:none;padding:0}
-    .side{position:static;margin:0 0 22px}
-    .toc{position:static!important;box-shadow:none}
-    .toc a{padding:1px 9px}
-    body{font-size:12.5px;line-height:1.5}
-    .masthead__in{padding-block:0 18px}
-    section{margin-bottom:26px}
-    .toc>summary{cursor:default}
-    .toc>summary::after{display:none}
-    .toc a{color:var(--forest-deep)}
-    main{max-width:none}
-    body{background:#fff}
-    h2,h3{break-after:avoid}
-    .cols,.steps>li,.card,.faq,.tablewrap,.note,.check li{break-inside:avoid;page-break-inside:avoid}
-    .masthead{background:#fff}
-  }
+  @page { @bottom-left { content: "Gerayse · Asistencia: manual para la administración"; } }
 </style>
+</head>
+<body class="manual">
 
 <header class="masthead">
   <div class="masthead__in">
-    <div class="brandline">
-      <span class="brandmark">G</span>
-      <b>Gerayse</b><span>· cajas, turnos y tesorería</span>
-    </div>
-    <h1>Asistencia del personal: manual para la administración</h1>
-    <p class="subtitle">Carnets con QR, fichaje con el celular o con lector, cómo va cada local en el día, correcciones y el Excel de fin de mes: qué cambió y cómo manejarlo en el día a día.</p>
-    <div class="metabar">
-      <span class="pill pill--live">Sistema activo (en producción)</span>
-      <span class="pill">Para: administración</span>
-      <span class="pill">Actualizado: 26 de octubre de 2026</span>
+    <div class="marca-linea"><span class="marca marca--m">G</span><b>Gerayse</b><span>Administración, tesorería y control de gestión</span></div>
+    <p class="eyebrow">Manual de uso · Asistencia · Administración</p>
+    <h1>Asistencia del personal</h1>
+    <p class="bajada">Carnets con QR, fichaje con el celular o con lector, cómo va cada local durante el día, correcciones y el Excel de fin de mes: qué cambió y cómo lo manejás.</p>
+    <div class="pastillas">
+      <span class="pastilla pastilla--viva">Sistema activo</span>
+      <span class="pastilla">Para: administración</span>
+      <span class="pastilla">Actualizado: 26 de octubre de 2026</span>
     </div>
   </div>
 </header>
 
 <div class="layout">
-  <aside class="side">
-    <details class="toc" open>
-      <summary>Índice</summary>
-      <nav aria-label="Índice del manual">
+  <aside class="lateral">
+    <details class="indice" open>
+      <summary>Contenido</summary>
+      <nav aria-label="Contenido del manual">
         <ol>
-          <li><a href="#resumen">En una frase</a></li>
           <li><a href="#que-cambia">Qué cambia en el día a día</a></li>
           <li><a href="#permisos">Permisos y locales</a></li>
           <li><a href="#personal">Cargar el personal</a></li>
@@ -204,202 +43,217 @@
           <li><a href="#correcciones">Corregir marcas</a></li>
           <li><a href="#excel">El Excel del mes</a></li>
           <li><a href="#cajero">El cajero: qué ve</a></li>
-          <li><a href="#no-cambia">Lo que NO cambia</a></li>
-          <li><a href="#checklist">Checklist para arrancar</a></li>
+          <li><a href="#no-cambia">Lo que no cambia</a></li>
+          <li><a href="#checklist">Para arrancar</a></li>
           <li><a href="#faq">Preguntas frecuentes</a></li>
           <li><a href="#ejemplo">Un día de operación</a></li>
-          <li><a href="#problemas">Problemas y soluciones</a></li>
-          <li><a href="#responsabilidades">Responsabilidades</a></li>
-          <li><a href="#contacto">Contacto y ayuda</a></li>
+          <li><a href="#problemas">Si algo falla</a></li>
+          <li><a href="#responsabilidades">Quién hace qué</a></li>
+          <li><a href="#contacto">Si necesitás ayuda</a></li>
         </ol>
       </nav>
     </details>
   </aside>
 
   <main>
-    <section id="resumen">
-      <h2><span class="num">01</span> En una frase <a class="anchor" href="#resumen">#</a></h2>
-      <p class="lead">Cada empleado tiene un carnet con QR. Al llegar y al irse lo escanea el cajero del local, con el celular o con un lector, y la hora la pone el sistema. Vos ves en el momento quién está trabajando en cada local, corregís lo que haga falta y a fin de mes bajás el Excel con los días y las horas de cada uno, sin pasar nada a mano.</p>
-    </section>
+    <div class="resumen">
+      <strong>En una línea:</strong> cada empleado tiene un carnet con QR. Al llegar y al irse, el cajero del local lo escanea con el celular o con un lector, y la hora la pone el sistema. Vos ves en el momento quién está trabajando en cada local, corregís lo que haga falta y a fin de mes bajás el Excel con los días y las horas de cada uno. Nada se pasa a mano.
+    </div>
 
     <section id="que-cambia">
-      <h2><span class="num">02</span> Qué cambia en el día a día <a class="anchor" href="#que-cambia">#</a></h2>
-      <div class="cols">
-        <div class="card card--old">
-          <h4>✗ Antes</h4>
-          <ol>
+      <h2><span class="n">1</span>Qué cambia en el día a día</h2>
+      <div class="dos">
+        <div class="tarjeta tarjeta--antes">
+          <h4>Antes</h4>
+          <ul>
             <li>Cada uno anotaba su entrada y su salida a mano.</li>
-            <li>La hora la escribía la persona, y se podía corregir.</li>
+            <li>La hora la escribía la persona, y se podía cambiar.</li>
             <li>A fin de mes había que pasar todo a una planilla.</li>
             <li>Para saber quién estaba en un local había que llamar.</li>
-          </ol>
+          </ul>
         </div>
-        <div class="card card--new">
-          <h4>✓ Ahora</h4>
-          <ol>
+        <div class="tarjeta tarjeta--ahora">
+          <h4>Ahora</h4>
+          <ul>
             <li>El empleado muestra su carnet y el cajero lo escanea.</li>
-            <li>La hora <strong>la pone el sistema</strong>: nadie la cambia desde el local.</li>
-            <li>Ves <strong>en el momento</strong> quién está trabajando en cada local.</li>
-            <li>A fin de mes bajás el <strong>Excel con todo armado</strong>.</li>
-            <li>Si hay que corregir algo, se corrige con motivo y queda registrado quién lo hizo.</li>
-          </ol>
+            <li>La hora <b>la pone el sistema</b>: nadie la cambia desde el local.</li>
+            <li>Ves <b>en el momento</b> quién está trabajando en cada local.</li>
+            <li>A fin de mes bajás el <b>Excel ya armado</b>.</li>
+            <li>Si hay que corregir algo, se corrige con motivo y queda quién lo hizo.</li>
+          </ul>
         </div>
       </div>
     </section>
 
     <section id="permisos">
-      <h2><span class="num">03</span> Permisos y locales <a class="anchor" href="#permisos">#</a></h2>
-      <p>La asistencia tiene dos permisos y cada cajero tiene su local. Todo eso <strong>lo configura sistemas</strong>: vos no tenés que tocar usuarios. Acá está cómo funciona, para que sepas qué pedir.</p>
+      <h2><span class="n">2</span>Permisos y locales</h2>
+      <p>La asistencia tiene dos permisos, y cada cajero tiene su local. Todo eso <b>lo configura sistemas</b>: vos no tocás usuarios. Acá va cómo funciona, para que sepas qué pedir.</p>
 
-      <h3>Permiso 1: “Administrar asistencia”</h3>
-      <p>Es el tuyo. Te deja ver cómo va cada local, manejar el padrón de empleados, imprimir los carnets, corregir marcas y bajar el Excel del mes. Con este permiso te aparece <strong>Asistencia</strong> en el menú con todas las pantallas de administración.</p>
-      <div class="note"><b>Tip:</b> si vos también vas a fichar (por ejemplo, para probar o para cubrir un local), pedile a sistemas que te dé además “Fichar asistencia”.</div>
+      <h3>Permiso «Administrar asistencia»</h3>
+      <p>Es el tuyo. Te deja ver cómo va cada local, manejar el padrón de empleados, imprimir los carnets, corregir marcas y bajar el Excel del mes. Con este permiso te aparece <b>Asistencia</b> en el menú, con todas las pantallas de administración.</p>
+      <div class="nota"><span class="nota__titulo">Tip</span><p>Si vos también vas a fichar (para probar, o para cubrir un local), pedile a sistemas que te dé además «Fichar asistencia».</p></div>
 
-      <h3>Permiso 2: “Fichar asistencia”</h3>
-      <p>Es el de los cajeros: les deja abrir la pantalla <strong>Fichar</strong> y escanear los carnets. Nada más. Para que un cajero pueda fichar, sistemas le configura:</p>
-      <ol class="steps">
-        <li><strong>El permiso “Fichar asistencia”</strong>Sin él, no le aparece Asistencia en el menú.</li>
-        <li><strong>Su local</strong>Es el local que queda anotado en cada marca que escanee. Sin local, la pantalla le avisa “Tu usuario no tiene un local asignado: pedile a sistemas…”.</li>
+      <h3>Permiso «Fichar asistencia»</h3>
+      <p>Es el de los cajeros: les deja abrir la pantalla <b>Fichar</b> y escanear los carnets. Nada más. Para que un cajero pueda fichar, sistemas le configura dos cosas:</p>
+      <ol class="pasos">
+        <li><div><b>El permiso «Fichar asistencia»</b>Sin él, no le aparece Asistencia en el menú.</div></li>
+        <li><div><b>Su local</b>Es el que queda anotado en cada marca que escanee. Sin local, la pantalla le avisa: «Tu usuario no tiene un local asignado: pedile a sistemas que te lo cargue».</div></li>
       </ol>
-      <div class="note"><b>Recordá:</b> si un cajero no puede fichar o no ve Asistencia, que se lo pida a <b>sistemas</b>, no a vos. La pantalla ya se lo dice así.</div>
+      <div class="nota nota--gris"><span class="nota__titulo">Recordá</span><p>Si un cajero no puede fichar o no ve Asistencia, que se lo pida a <b>sistemas</b>, no a vos. La pantalla ya se lo dice así.</p></div>
 
-      <h3>¿Un cajero ficha en más de un local?</h3>
-      <p>Normalmente cada cajero ficha <strong>solo en su local</strong>: no puede elegir otro, así ninguna marca queda anotada en un local equivocado. Si una persona cubre más de un local (por ejemplo, la panadería que está dentro de otro local), pedile a sistemas que le habilite esos locales. Desde ahí, al fichar le aparece arriba una lista para elegir el local donde está, solo entre los suyos.</p>
-      <div class="note">Vos, como administradora, elegís en <strong>Fichar</strong> cualquier local de tus empresas.</div>
+      <h3>Un cajero que ficha en más de un local</h3>
+      <p>Normalmente cada cajero ficha <b>solo en su local</b>: no puede elegir otro, así ninguna marca queda anotada en un local equivocado. Si una persona cubre más de uno (por ejemplo, la panadería que está dentro de otro local), pedile a sistemas que le habilite esos locales. Desde ahí, al fichar le aparece arriba una lista para elegir dónde está, solo entre los suyos.</p>
+      <p>Vos, con «Administrar asistencia», elegís en <b>Fichar</b> cualquier local de tus empresas.</p>
     </section>
 
     <section id="personal">
-      <h2><span class="num">04</span> Cargar el personal <a class="anchor" href="#personal">#</a></h2>
-      <p>En <strong>Asistencia → Empleados</strong> está el padrón: nombre, empresa y local habitual de cada uno. El empleado <strong>no</strong> es un usuario de Gerayse: no entra al sistema, solo tiene su carnet.</p>
+      <h2><span class="n">3</span>Cargar el personal</h2>
+      <p>En <b>Asistencia → Empleados</b> está el padrón: nombre, empresa y local habitual de cada uno. El empleado <b>no</b> es un usuario de Gerayse: no entra al sistema, solo tiene su carnet.</p>
 
       <h3>Todos de una vez, desde un Excel</h3>
-      <ol class="steps">
-        <li><strong>Prepará el Excel</strong>Una fila por persona con las columnas <strong>Apellido</strong>, <strong>Nombre</strong> y <strong>Local</strong> (el código o el nombre del local). El <strong>DNI</strong> es opcional.</li>
-        <li><strong>Empleados → Cargar desde un listado</strong>Subí el archivo y tocá <strong>Revisar listado</strong>. Todavía no se guarda nada.</li>
-        <li><strong>Mirá la revisión</strong>Cada fila sale como <span class="badge badge--ok">Lista</span> o <span class="badge badge--bad">Rechazada</span> con el motivo (por ejemplo, un local que no existe).</li>
-        <li><strong>Tocá Cargar</strong>Se cargan las filas listas. Las rechazadas las corregís y las subís en otro archivo, o las cargás de a una.</li>
+      <ol class="pasos">
+        <li><div><b>Prepará el Excel</b>Una fila por persona, con las columnas <b>Apellido</b>, <b>Nombre</b> y <b>Local</b> (el código o el nombre del local). El <b>DNI</b> es opcional.</div></li>
+        <li><div><b>Empleados → Cargar desde un listado</b>Subí el archivo y tocá <span class="boton boton--borde">Revisar listado</span>. Todavía no se guarda nada.</div></li>
+        <li><div><b>Mirá la revisión</b>Cada fila sale como <span class="chip chip--ok">Lista</span> o <span class="chip chip--peligro">Rechazada</span>, con el motivo (por ejemplo, un local que no existe).</div></li>
+        <li><div><b>Tocá <span class="boton">Cargar</span></b>Se cargan las filas listas. Las rechazadas las corregís y las subís en otro archivo, o las cargás de a una.</div></li>
       </ol>
-      <div class="note"><b>Tranquila:</b> si subís dos veces el mismo listado, no se duplica nadie. La segunda vez esas filas salen rechazadas porque ya están.</div>
+      <div class="nota nota--ok"><span class="nota__titulo">Tranquila</span><p>Si subís dos veces el mismo listado, no se duplica nadie: la segunda vez esas filas salen rechazadas porque ya están.</p></div>
 
-      <h3>Uno solo</h3>
-      <p><strong>Nuevo empleado</strong>: nombre y apellido, empresa, local habitual y, si lo tenés, el DNI. Después tocá <strong>Carnet</strong> para imprimirle el suyo.</p>
-      <div class="note note--warn"><b>Sobre el DNI:</b> no es obligatorio, pero ayuda. Sin DNI, Gerayse no deja cargar dos veces el mismo nombre en la misma empresa (así no se duplica nadie). Si hay dos personas que se llaman igual, cargales el DNI a las dos. El DNI se agrega cuando quieras con <strong>Editar</strong>.</div>
+      <h3>De a uno</h3>
+      <p><b>Nuevo empleado</b>: nombre y apellido, empresa, local habitual y, si lo tenés, el DNI. Después tocá <span class="boton boton--borde">Carnet</span> para imprimirle el suyo.</p>
+      <div class="nota nota--aviso"><span class="nota__titulo">Sobre el DNI</span><p>No es obligatorio, pero ayuda. Sin DNI, Gerayse no deja cargar dos veces el mismo nombre en la misma empresa, así nadie queda duplicado. Si hay dos personas que se llaman igual, cargales el DNI a las dos. Se agrega cuando quieras con <b>Editar</b>.</p></div>
 
       <h3>Si alguien deja de trabajar</h3>
-      <p><strong>Dar de baja</strong>: deja de poder fichar, pero no se borra. Sus marcas siguen saliendo en el Excel de los meses que trabajó. Si vuelve, lo <strong>reactivás</strong>.</p>
+      <p><b>Dar de baja</b>: deja de poder fichar, pero no se borra. Sus marcas siguen saliendo en el Excel de los meses que trabajó. Si vuelve, lo <b>reactivás</b>.</p>
     </section>
 
     <section id="carnets">
-      <h2><span class="num">05</span> Carnets <a class="anchor" href="#carnets">#</a></h2>
-      <ol class="steps">
-        <li><strong>Asistencia → Carnets</strong>Elegí una empresa o un local, o dejalo en “Todas” para imprimir los de todos.</li>
-        <li><strong>Descargar carnets</strong>Sale un PDF A4 con 10 carnets por hoja, del tamaño de una tarjeta. Imprimilo y recortá por el borde.</li>
-        <li><strong>Entregá cada carnet</strong>Cada carnet tiene el nombre, el local, el QR y un <strong>código de 6 números</strong>.</li>
+      <h2><span class="n">4</span>Carnets</h2>
+      <ol class="pasos">
+        <li><div><b>Asistencia → Carnets</b>Elegí una empresa o un local, o dejalo en «Todas» para imprimir los de todos.</div></li>
+        <li><div><b>Tocá <span class="boton">Descargar carnets</span></b>Sale un PDF A4 con 10 carnets por hoja, del tamaño de una tarjeta. Imprimilo y recortá por el borde.</div></li>
+        <li><div><b>Entregá cada carnet</b>Lleva el nombre, el local, el QR y un <b>código de 6 números</b>.</div></li>
       </ol>
-      <pre>CARNET DE ASISTENCIA                 EMPRESA
-María López                          ▓▓▓▓▓▓
-Local Centro                         ▓▓ QR ▓
-Código                               ▓▓▓▓▓▓
-483 920</pre>
-      <div class="note">El código de 6 números sirve para cuando la cámara no lee el QR: el cajero lo tipea y listo. El carnet <b>no lleva el DNI</b> ni ningún dato personal adentro del QR.</div>
+      <div class="captura">
+        <div class="captura__barra"><span><b>Carnet de asistencia</b></span><span>Empresa</span></div>
+        <div class="captura__cuerpo">
+          <p><b>María López</b><br>Local Centro</p>
+          <p><span class="rotulo">Código</span><br><span class="cifra">483 920</span> &nbsp; <span class="chip">QR</span></p>
+        </div>
+      </div>
+      <p class="leyenda">Así es un carnet. Datos inventados.</p>
+      <div class="nota"><span class="nota__titulo">Tip</span><p>El código de 6 números sirve para cuando la cámara no lee el QR: el cajero lo tipea y listo. El carnet <b>no lleva el DNI</b> ni ningún dato personal adentro del QR.</p></div>
       <h3>Carnet perdido o roto</h3>
-      <ol class="steps">
-        <li><strong>Empleados → Anular carnet</strong>Escribí el motivo (por ejemplo, “lo perdió”).</li>
-        <li><strong>Tocá Carnet</strong>Se imprime el nuevo, con otro código.</li>
+      <ol class="pasos">
+        <li><div><b>Empleados → Anular carnet</b>Escribí el motivo (por ejemplo, «lo perdió»).</div></li>
+        <li><div><b>Tocá <span class="boton boton--borde">Carnet</span></b>Se imprime el nuevo, con otro código.</div></li>
       </ol>
-      <div class="note note--warn">El carnet viejo <b>deja de servir</b> en el momento. Si alguien lo escanea, la pantalla avisa “Ese carnet está anulado”. Un código anulado nunca se le asigna a otra persona.</div>
+      <div class="nota nota--aviso"><span class="nota__titulo">Ojo</span><p>El carnet viejo <b>deja de servir</b> en el momento. Si alguien lo escanea, la pantalla avisa «Ese carnet está anulado». Un código anulado nunca se le asigna a otra persona.</p></div>
     </section>
 
     <section id="fichar">
-      <h2><span class="num">06</span> Cómo se ficha <a class="anchor" href="#fichar">#</a></h2>
-      <ol class="steps">
-        <li><strong>El cajero abre Asistencia → Fichar</strong>En el celular o la tablet del local, o en la computadora de la caja. Arriba ve su local.</li>
-        <li><strong>Escanea el carnet</strong>Con <strong>Usar la cámara</strong> (cada lectura se registra sola), con un lector QR enchufado, o tipeando los 6 números.</li>
-        <li><strong>El sistema decide si es entrada o salida</strong>La primera marca es la entrada y la siguiente, la salida. En un turno cortado se ficha cada vez que llega y cada vez que se va.</li>
-        <li><strong>Encima de la imagen aparece el resultado</strong>Con un pitido corto: <span class="badge badge--ok">Entrada · 08:02 · María López</span> <span class="badge badge--warn">Ya registrada</span> <span class="badge badge--bad">No se registró</span></li>
+      <h2><span class="n">5</span>Cómo se ficha</h2>
+      <ol class="pasos">
+        <li><div><b>El cajero abre Asistencia → Fichar</b>En el celular o la tablet del local, o en la computadora de la caja. Arriba ve su local.</div></li>
+        <li><div><b>Escanea el carnet</b>Con <span class="boton">Usar la cámara</span> (cada lectura se registra sola), con un lector QR enchufado, o tipeando los 6 números.</div></li>
+        <li><div><b>El sistema decide si es entrada o salida</b>La primera marca del día es la entrada y la siguiente, la salida. En un turno cortado se ficha cada vez que llega y cada vez que se va.</div></li>
+        <li><div><b>Encima de la imagen aparece el resultado</b>Con un pitido corto: <span class="chip chip--ok">Entrada · 08:02 · María López</span> <span class="chip chip--aviso">Ya registrada</span> <span class="chip chip--peligro">No se registró</span></div></li>
       </ol>
       <h3>Reglas que conviene saber</h3>
       <ul>
-        <li>La <strong>hora es la del sistema</strong> cuando llega el escaneo. Nadie la cambia desde el local.</li>
-        <li>Si el mismo carnet se escanea <strong>otra vez dentro de los 2 minutos</strong>, no se anota de nuevo: sale en amarillo “Ya registrada”.</li>
-        <li>Una salida <strong>después de medianoche</strong> cierra la entrada de la noche y cuenta en el día de la entrada.</li>
-        <li>Si alguien entró y pasaron <strong>más de 16 horas</strong> sin salida, el próximo escaneo es una entrada nueva y el día anterior queda “Sin salida” para que lo corrijas.</li>
-        <li>Cada marca guarda <strong>el local donde se fichó</strong>. Un empleado puede fichar en cualquier local.</li>
+        <li>La <b>hora es la del sistema</b> cuando llega el escaneo. Nadie la cambia desde el local.</li>
+        <li>Si el mismo carnet se escanea <b>otra vez dentro de los 2 minutos</b>, no se anota de nuevo: sale en amarillo «Ya registrada».</li>
+        <li>Una salida <b>después de medianoche</b> cierra la entrada de la noche y cuenta en el día de la entrada.</li>
+        <li>Si alguien entró y pasaron <b>más de 16 horas</b> sin salida, el próximo escaneo es una entrada nueva, y el día anterior queda «Sin salida» para que lo corrijas.</li>
+        <li>Cada marca guarda <b>el local donde se fichó</b>. Un empleado puede fichar en cualquier local.</li>
       </ul>
     </section>
 
     <section id="por-local">
-      <h2><span class="num">07</span> Cómo va cada local <a class="anchor" href="#por-local">#</a></h2>
-      <p>En <strong>Asistencia → Por local</strong> ves el día de hoy, local por local. Es la pantalla para mirar durante el día.</p>
-      <pre>Trabajando ahora: 7          Ficharon hoy: 9
-
-Local Centro                 3 trabajando · 4 ficharon
-  María López      08:02 – …        Trabajando desde 08:02 · lleva 3:15
-  Juan Pérez       07:00 – 11:00    Salió 11:00 · Horas 4:00
-  Ana Gómez        06:00 – …        Trabajando desde 06:00 · Corregida
-  ▸ 2 de este local sin marcas hoy</pre>
+      <h2><span class="n">6</span>Cómo va cada local</h2>
+      <p>En <b>Asistencia → Por local</b> ves el día de hoy, local por local. Es la pantalla para mirar durante el día.</p>
+      <div class="captura">
+        <div class="captura__barra"><span><b>Por local</b></span><span>Hoy</span></div>
+        <div class="captura__cuerpo">
+          <div class="kpis kpis--2">
+            <div class="kpi"><span class="rotulo">Trabajando ahora</span><span class="cifra">7</span></div>
+            <div class="kpi"><span class="rotulo">Ficharon hoy</span><span class="cifra">9</span></div>
+          </div>
+          <table>
+            <thead><tr><th>Local Centro</th><th>Marcas</th><th>Estado</th></tr></thead>
+            <tbody>
+              <tr><td class="k">María López</td><td class="cifra">08:02 – …</td><td><span class="chip chip--ok">Trabajando desde 08:02 · lleva 3:15</span></td></tr>
+              <tr><td class="k">Juan Pérez</td><td class="cifra">07:00 – 11:00</td><td><span class="chip">Salió 11:00 · Horas 4:00</span></td></tr>
+              <tr><td class="k">Ana Gómez</td><td class="cifra">06:00 – …</td><td><span class="chip chip--ok">Trabajando desde 06:00</span> <span class="chip chip--aviso">Corregida</span></td></tr>
+              <tr><td colspan="3">2 de este local sin marcas hoy</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <p class="leyenda">La pantalla Por local. Datos inventados.</p>
       <ul>
-        <li><span class="badge badge--ok">Trabajando desde</span> la hora de entrada, con lo que lleva.</li>
-        <li><span class="badge">Salió</span> a tal hora, con las horas del día.</li>
-        <li><span class="badge badge--warn">Corregida</span> si alguna marca se cargó a mano.</li>
-        <li><span class="badge badge--bad">Sin salida</span> en un día pasado, si alguien entró y no fichó la salida.</li>
-        <li>Al final de cada local, <strong>“sin marcas hoy”</strong>: quiénes tienen ese local como habitual y todavía no ficharon. Tocá la línea para ver los nombres.</li>
+        <li><span class="chip chip--ok">Trabajando desde</span> la hora de entrada, con lo que lleva.</li>
+        <li><span class="chip">Salió</span> a tal hora, con las horas del día.</li>
+        <li><span class="chip chip--aviso">Corregida</span> si alguna marca se cargó a mano.</li>
+        <li><span class="chip chip--peligro">Sin salida</span> en un día pasado, si alguien entró y no fichó la salida.</li>
+        <li>Al final de cada local, <b>«sin marcas hoy»</b>: quiénes tienen ese local como habitual y todavía no ficharon. Tocá la línea para ver los nombres.</li>
       </ul>
-      <p>Para ver otro día, elegí la fecha en <strong>Día</strong> y tocá <strong>Ver</strong>. Para un solo local, elegilo en <strong>Local</strong>. <strong>Hoy</strong> te vuelve al día de hoy. Cada persona tiene un botón <strong>Marcas</strong> para ver sus marcas de ese día.</p>
-      <div class="note"><b>Las horas</b> se cuentan igual que en el Excel: de cada entrada a su salida. Cada uno aparece en el local donde fichó, aunque su local habitual sea otro.</div>
+      <p>Para ver otro día, elegí la fecha en <b>Día</b> y tocá <span class="boton boton--borde">Ver</span>. Para un solo local, elegilo en <b>Local</b>. <span class="boton boton--borde">Hoy</span> te vuelve al día de hoy. Cada persona tiene un botón <b>Marcas</b> para ver las suyas de ese día.</p>
+      <div class="nota nota--gris"><span class="nota__titulo">Recordá</span><p>Las horas se cuentan igual que en el Excel: de cada entrada a su salida. Cada uno aparece en el local donde fichó, aunque su local habitual sea otro.</p></div>
     </section>
 
     <section id="correcciones">
-      <h2><span class="num">08</span> Corregir marcas <a class="anchor" href="#correcciones">#</a></h2>
-      <p>En <strong>Asistencia → Marcas</strong> buscás por empleado, local y fechas. Las correcciones las hacés vos; el cajero no puede.</p>
-      <div class="cols">
-        <div class="card card--new">
-          <h4>✓ Agregar una marca</h4>
-          <p>Para cuando alguien se olvidó el carnet, llegó antes que el cajero o no había internet. Indicás empleado, entrada o salida, fecha, hora, local y <strong>motivo</strong>. Queda marcada como <strong>Corregida</strong>, con tu usuario.</p>
+      <h2><span class="n">7</span>Corregir marcas</h2>
+      <p>En <b>Asistencia → Marcas</b> buscás por empleado, local y fechas. Las correcciones las hacés vos; el cajero no puede.</p>
+      <div class="dos">
+        <div class="tarjeta tarjeta--si">
+          <h4>Agregar una marca</h4>
+          <p>Para cuando alguien se olvidó el carnet, llegó antes que el cajero o no había internet. Indicás empleado, entrada o salida, fecha, hora, local y <b>motivo</b>. Queda marcada como <b>Corregida</b>, con tu usuario.</p>
         </div>
-        <div class="card card--old">
-          <h4>✗ Anular una marca</h4>
-          <p>Para una marca equivocada, por ejemplo si escanearon el carnet de un compañero. Ponés el motivo. <strong>No se borra</strong>: deja de contar y se ve con “Mostrar anuladas”.</p>
+        <div class="tarjeta tarjeta--aviso">
+          <h4>Anular una marca</h4>
+          <p>Para una marca equivocada, por ejemplo si escanearon el carnet de un compañero. Ponés el motivo. <b>No se borra</b>: deja de contar y se ve con «Mostrar anuladas».</p>
         </div>
       </div>
-      <div class="note"><b>¿Una hora mal?</b> No se edita: se anula la marca equivocada y se agrega la correcta con motivo. Así siempre queda claro qué pasó.</div>
-      <div class="note note--warn">No se pueden cargar marcas a futuro ni repetir una que ya está.</div>
+      <div class="nota"><span class="nota__titulo">Una hora mal</span><p>No se edita: se anula la marca equivocada y se agrega la correcta con motivo. Así siempre queda claro qué pasó.</p></div>
+      <div class="nota nota--aviso"><span class="nota__titulo">Ojo</span><p>No se pueden cargar marcas a futuro ni repetir una que ya está.</p></div>
     </section>
 
     <section id="excel">
-      <h2><span class="num">09</span> El Excel del mes <a class="anchor" href="#excel">#</a></h2>
-      <ol class="steps">
-        <li><strong>Asistencia → Excel del mes</strong>Elegí el mes. Si querés, una empresa o un solo empleado.</li>
-        <li><strong>Descargar Excel</strong>Hay una hoja por empleado con todos los días del mes.</li>
+      <h2><span class="n">8</span>El Excel del mes</h2>
+      <ol class="pasos">
+        <li><div><b>Asistencia → Excel del mes</b>Elegí el mes. Si querés, una empresa o un solo empleado.</div></li>
+        <li><div><b>Tocá <span class="boton">Descargar Excel</span></b>Hay una hoja por empleado con todos los días del mes.</div></li>
       </ol>
-      <div class="tablewrap">
+      <div class="tabla-scroll">
         <table>
           <thead><tr><th>Día</th><th>Entrada 1</th><th>Salida 1</th><th>Entrada 2</th><th>Salida 2</th><th>Horas del día</th><th>Observación</th></tr></thead>
           <tbody>
-            <tr><td>lun 02/11</td><td>08:00</td><td>12:00</td><td>16:00</td><td>20:00</td><td>8:00</td><td></td></tr>
-            <tr><td>mar 03/11</td><td>06:00</td><td>14:00</td><td></td><td></td><td>8:00</td><td>Corregida</td></tr>
-            <tr><td>mié 04/11</td><td>08:05</td><td></td><td></td><td></td><td>0:00</td><td>Sin salida</td></tr>
-            <tr><td>jue 05/11</td><td></td><td></td><td></td><td></td><td></td><td>Sin marcas</td></tr>
+            <tr><td class="k">lun 02/11</td><td class="cifra">08:00</td><td class="cifra">12:00</td><td class="cifra">16:00</td><td class="cifra">20:00</td><td class="cifra">8:00</td><td></td></tr>
+            <tr><td class="k">mar 03/11</td><td class="cifra">06:00</td><td class="cifra">14:00</td><td></td><td></td><td class="cifra">8:00</td><td>Corregida</td></tr>
+            <tr><td class="k">mié 04/11</td><td class="cifra">08:05</td><td></td><td></td><td></td><td class="cifra">0:00</td><td>Sin salida</td></tr>
+            <tr><td class="k">jue 05/11</td><td></td><td></td><td></td><td></td><td></td><td>Sin marcas</td></tr>
           </tbody>
         </table>
       </div>
-      <div class="note">Al final de cada hoja está el <b>total del mes</b>. Las marcas anuladas no aparecen. Los dados de baja salen solo si trabajaron ese mes. Si corregís una marca, volvé a bajar el Excel.</div>
+      <p class="leyenda">Una hoja del Excel. Datos inventados.</p>
+      <div class="nota nota--gris"><span class="nota__titulo">Recordá</span><p>Al final de cada hoja está el <b>total del mes</b>. Las marcas anuladas no aparecen. Los dados de baja salen solo si trabajaron ese mes. Si corregís una marca, volvé a bajar el Excel.</p></div>
     </section>
 
     <section id="cajero">
-      <h2><span class="num">10</span> El cajero: qué puede y qué ve <a class="anchor" href="#cajero">#</a></h2>
+      <h2><span class="n">9</span>El cajero: qué puede y qué ve</h2>
       <ul>
-        <li>Ve solo la pantalla <strong>Fichar</strong>, con <strong>su local fijo</strong> (o los suyos, si le habilitaste otros).</li>
+        <li>Ve solo la pantalla <b>Fichar</b>, con <b>su local fijo</b> (o los suyos, si le habilitaron otros).</li>
         <li>Escanea los carnets y ve el resultado de cada uno.</li>
-        <li><strong>No</strong> ve el padrón, ni las marcas, ni cómo van los locales, ni el Excel.</li>
-        <li><strong>No</strong> puede corregir ni anular marcas: si hubo un error, te avisa a vos.</li>
+        <li><b>No</b> ve el padrón, ni las marcas, ni cómo van los locales, ni el Excel.</li>
+        <li><b>No</b> puede corregir ni anular marcas: si hubo un error, te avisa a vos.</li>
         <li>Aunque conozca la dirección de otra pantalla, el sistema lo rechaza igual.</li>
       </ul>
-      <div class="note"><b>En criollo:</b> el cajero escanea, vos administrás. Cada uno con lo suyo.</div>
+      <div class="nota"><span class="nota__titulo">En criollo</span><p>El cajero escanea, vos administrás. Cada uno con lo suyo.</p></div>
     </section>
 
     <section id="no-cambia">
-      <h2><span class="num">11</span> Lo que NO cambia <a class="anchor" href="#no-cambia">#</a></h2>
+      <h2><span class="n">10</span>Lo que no cambia</h2>
       <ul>
         <li>Las cajas, las validaciones de efectivo y la tesorería siguen igual: la asistencia no toca la plata.</li>
         <li>Cada cajero entra con su usuario de siempre.</li>
@@ -408,63 +262,67 @@ Local Centro                 3 trabajando · 4 ficharon
     </section>
 
     <section id="checklist">
-      <h2><span class="num">12</span> Checklist para arrancar <a class="anchor" href="#checklist">#</a></h2>
-      <ul class="check">
-        <li>Sistemas te dio el permiso “Administrar asistencia” (y “Fichar asistencia” si vas a fichar).</li>
-        <li>Cargaste el personal desde el Excel y revisaste que no quedaran filas rechazadas.</li>
+      <h2><span class="n">11</span>Para arrancar</h2>
+      <ul class="checklist">
+        <li>Sistemas te dio el permiso «Administrar asistencia» (y «Fichar asistencia» si vas a fichar).</li>
+        <li>Cargaste el personal desde el Excel y no quedaron filas rechazadas.</li>
         <li>Imprimiste, recortaste y repartiste los carnets.</li>
-        <li>Sistemas configuró a cada cajero con “Fichar asistencia” y su local.</li>
+        <li>Sistemas configuró a cada cajero con «Fichar asistencia» y su local.</li>
         <li>Le avisaste a sistemas quiénes cubren más de un local, para que se los habilite.</li>
         <li>Probaste fichar con un carnet en cada local (celular, tablet o lector).</li>
-        <li>El primer día miraste <strong>Por local</strong> para ver que todos estén fichando.</li>
+        <li>El primer día miraste <b>Por local</b> para ver que todos estén fichando.</li>
         <li>Sabés agregar una marca olvidada y bajar el Excel del mes.</li>
       </ul>
     </section>
 
     <section id="faq">
-      <h2><span class="num">13</span> Preguntas frecuentes <a class="anchor" href="#faq">#</a></h2>
-      <div class="faq">
-        <details><summary>¿Qué pasa si escanean dos veces seguidas el mismo carnet?</summary><div class="ans"><p>Nada: dentro de los 2 minutos no se anota otra marca. La pantalla muestra en amarillo “Ya registrada”.</p></div></details>
-        <details><summary>¿Se puede cambiar la hora de una marca?</summary><div class="ans"><p>No se edita. Se anula la equivocada y se agrega la correcta con motivo. Queda como “Corregida”, con tu usuario.</p></div></details>
-        <details><summary>¿Y si un empleado trabaja en dos locales?</summary><div class="ans"><p>Tiene un solo carnet y puede fichar en cualquier local. Cada marca guarda dónde fichó, y en Por local aparece en ese local.</p></div></details>
-        <details><summary>¿El QR tiene datos personales?</summary><div class="ans"><p>No. Solo el código de 6 números del carnet. Ni el nombre ni el DNI.</p></div></details>
-        <details><summary>¿Y si se corta internet en el local?</summary><div class="ans"><p>Ese escaneo no se registra y la pantalla lo avisa en rojo. Cuando vuelve, se escanea de nuevo. Si se perdió, la agregás vos con el motivo “no había internet”.</p></div></details>
-        <details><summary>¿Alguien que salió después de medianoche cuenta en qué día?</summary><div class="ans"><p>En el día de la entrada. Por ejemplo, entra el lunes a las 22:00 y sale el martes a las 02:00: son 4 horas del lunes.</p></div></details>
-        <details><summary>¿Los dados de baja aparecen en el Excel?</summary><div class="ans"><p>Sí, en los meses en que tuvieron marcas. Así no se pierde lo que trabajaron.</p></div></details>
-      </div>
+      <h2><span class="n">12</span>Preguntas frecuentes</h2>
+      <details class="faq"><summary>¿Qué pasa si escanean dos veces seguidas el mismo carnet?</summary><div><p>Nada: dentro de los 2 minutos no se anota otra marca. La pantalla muestra en amarillo «Ya registrada».</p></div></details>
+      <details class="faq"><summary>¿Se puede cambiar la hora de una marca?</summary><div><p>No se edita. Se anula la equivocada y se agrega la correcta con motivo. Queda como «Corregida», con tu usuario.</p></div></details>
+      <details class="faq"><summary>¿Y si un empleado trabaja en dos locales?</summary><div><p>Tiene un solo carnet y puede fichar en cualquier local. Cada marca guarda dónde fichó, y en Por local aparece en ese local.</p></div></details>
+      <details class="faq"><summary>¿El QR tiene datos personales?</summary><div><p>No. Solo el código de 6 números del carnet. Ni el nombre ni el DNI.</p></div></details>
+      <details class="faq"><summary>¿Y si se corta internet en el local?</summary><div><p>Ese escaneo no se registra y la pantalla lo avisa en rojo. Cuando vuelve, se escanea de nuevo. Si se perdió, la agregás vos con el motivo «no había internet».</p></div></details>
+      <details class="faq"><summary>¿Alguien que sale después de medianoche cuenta en qué día?</summary><div><p>En el día de la entrada. Por ejemplo, entra el lunes a las 22:00 y sale el martes a las 02:00: son 4 horas del lunes.</p></div></details>
+      <details class="faq"><summary>¿Los dados de baja aparecen en el Excel?</summary><div><p>Sí, en los meses en que tuvieron marcas. Así no se pierde lo que trabajaron.</p></div></details>
     </section>
 
     <section id="ejemplo">
-      <h2><span class="num">14</span> Un día de operación (ejemplo) <a class="anchor" href="#ejemplo">#</a></h2>
-      <ol class="tl">
-        <li><time>07:55</time> — Juan, cajero del Local Centro, abre <strong>Fichar</strong> en el celular del local y toca <strong>Usar la cámara</strong>.</li>
-        <li><time>08:02</time> — Llega María y muestra su carnet. Sale en verde: <strong>Entrada · 08:02 · María López</strong>.</li>
-        <li><time>08:03</time> — Por las dudas lo vuelven a escanear: sale en amarillo “Ya registrada”. No se duplica.</li>
-        <li><time>09:30</time> — Vos mirás <strong>Por local</strong>: 7 trabajando; en el Local Centro, Pedro todavía “sin marcas”.</li>
-        <li><time>09:40</time> — Pedro llegó pero se olvidó el carnet: Juan tipea sus 6 números y queda la entrada.</li>
-        <li><time>16:05</time> — María se va y escanea: <strong>Salida · 16:05</strong>. En Por local figura “Salió 16:05 · Horas 8:03”.</li>
-        <li><time>Fin de mes</time> — Bajás el <strong>Excel del mes</strong> con todos los días y el total de cada uno.</li>
-      </ol>
+      <h2><span class="n">13</span>Un día de operación</h2>
+      <p class="chico">Un ejemplo, con nombres inventados.</p>
+      <div class="dia">
+        <div><time>07:55</time><div><p>Juan, cajero del Local Centro, abre <b>Fichar</b> en el celular del local y toca <span class="boton">Usar la cámara</span>.</p></div></div>
+        <div><time>08:02</time><div><p>Llega María y muestra su carnet. Sale en verde: <span class="chip chip--ok">Entrada · 08:02 · María López</span>.</p></div></div>
+        <div><time>08:03</time><div><p>Por las dudas lo vuelven a escanear: sale en amarillo «Ya registrada». No se duplica.</p></div></div>
+        <div><time>09:30</time><div><p>Vos mirás <b>Por local</b>: 7 trabajando; en el Local Centro, Pedro todavía «sin marcas».</p></div></div>
+        <div><time>09:40</time><div><p>Pedro llegó pero se olvidó el carnet: Juan tipea sus 6 números y queda la entrada.</p></div></div>
+        <div><time>16:05</time><div><p>María se va y escanea: <span class="chip chip--ok">Salida · 16:05</span>. En Por local figura «Salió 16:05 · Horas 8:03».</p></div></div>
+        <div><time>Fin de mes</time><div><p>Bajás el <b>Excel del mes</b> con todos los días y el total de cada uno.</p></div></div>
+      </div>
     </section>
 
     <section id="problemas">
-      <h2><span class="num">15</span> Problemas comunes y soluciones <a class="anchor" href="#problemas">#</a></h2>
-      <div class="faq">
-        <details><summary>El cajero ve “Tu usuario no tiene un local asignado”</summary><div class="ans"><p>Le falta su local. Lo resuelve <strong>sistemas</strong>: que se lo pida a ellos.</p></div></details>
-        <details><summary>El cajero no ve Asistencia en el menú</summary><div class="ans"><p>Le falta el permiso “Fichar asistencia”. Lo da <strong>sistemas</strong>: que se lo pida a ellos.</p></div></details>
-        <details><summary>La cámara no abre o dice que no dio permiso</summary><div class="ans"><p>En el navegador del celular, en los permisos del sitio, habilitá la cámara y volvé a tocar <strong>Usar la cámara</strong>. Mientras tanto se pueden tipear los 6 números.</p></div></details>
-        <details><summary>Sale “Ese carnet está anulado”</summary><div class="ans"><p>Ese empleado tiene un carnet nuevo. Si no lo tiene, imprimíselo desde Empleados → <strong>Carnet</strong>.</p></div></details>
-        <details><summary>Sale “Está dado de baja”</summary><div class="ans"><p>Si volvió a trabajar, reactivalo en Empleados.</p></div></details>
-        <details><summary>No me deja cargar un empleado: “Ya hay un empleado activo con ese nombre”</summary><div class="ans"><p>Ya está cargado. Si es otra persona que se llama igual, cargales el DNI a los dos.</p></div></details>
-        <details><summary>En Por local aparece “Sin salida”</summary><div class="ans"><p>Preguntá en el local a qué hora se fue y agregá la salida en Marcas, con el motivo.</p></div></details>
-        <details><summary>El QR no se lee</summary><div class="ans"><p>Que se tipeen los 6 números. Si pasa seguido con un carnet, está gastado: reimprimilo.</p></div></details>
+      <h2><span class="n">14</span>Si algo falla</h2>
+      <div class="tabla-scroll">
+        <table>
+          <thead><tr><th>Qué pasa</th><th>Por qué</th><th>Qué hacer</th></tr></thead>
+          <tbody>
+            <tr><td class="k">El cajero ve «Tu usuario no tiene un local asignado»</td><td>Le falta su local.</td><td>Lo resuelve <b>sistemas</b>: que se lo pida a ellos.</td></tr>
+            <tr><td class="k">El cajero no ve Asistencia en el menú</td><td>Le falta el permiso «Fichar asistencia».</td><td>Lo da <b>sistemas</b>: que se lo pida a ellos.</td></tr>
+            <tr><td class="k">La cámara no abre o dice que no dio permiso</td><td>El navegador del celular no tiene permiso para la cámara.</td><td>En los permisos del sitio, habilitá la cámara y volvé a tocar <b>Usar la cámara</b>. Mientras tanto se pueden tipear los 6 números.</td></tr>
+            <tr><td class="k">Sale «Ese carnet está anulado»</td><td>Ese empleado tiene un carnet nuevo.</td><td>Si no lo tiene, imprimíselo desde Empleados → <b>Carnet</b>.</td></tr>
+            <tr><td class="k">Sale «Está dado de baja»</td><td>La persona está dada de baja en el padrón.</td><td>Si volvió a trabajar, reactivala en Empleados.</td></tr>
+            <tr><td class="k">«Ya hay un empleado activo con ese nombre»</td><td>Ya está cargado, o es otra persona que se llama igual.</td><td>Si es otra persona, cargales el DNI a las dos.</td></tr>
+            <tr><td class="k">En Por local aparece «Sin salida»</td><td>Alguien entró y no fichó la salida.</td><td>Preguntá en el local a qué hora se fue y agregá la salida en Marcas, con el motivo.</td></tr>
+            <tr><td class="k">El QR no se lee</td><td>Poca luz, o el carnet está gastado.</td><td>Que se tipeen los 6 números. Si pasa seguido con un carnet, reimprimilo.</td></tr>
+          </tbody>
+        </table>
       </div>
     </section>
 
     <section id="responsabilidades">
-      <h2><span class="num">16</span> Responsabilidades <a class="anchor" href="#responsabilidades">#</a></h2>
-      <div class="cols">
-        <div class="card">
+      <h2><span class="n">15</span>Quién hace qué</h2>
+      <div class="dos">
+        <div class="tarjeta">
           <h4>Vos (administración)</h4>
           <ul>
             <li>Cargar el personal y dar de baja a quien se va.</li>
@@ -474,7 +332,7 @@ Local Centro                 3 trabajando · 4 ficharon
             <li>Bajar el Excel a fin de mes.</li>
           </ul>
         </div>
-        <div class="card">
+        <div class="tarjeta">
           <h4>Cajeros y empleados</h4>
           <ul>
             <li>Cajero: abrir Fichar al empezar y escanear a cada uno al llegar y al irse.</li>
@@ -486,57 +344,67 @@ Local Centro                 3 trabajando · 4 ficharon
     </section>
 
     <section id="contacto">
-      <h2><span class="num">17</span> Contacto y ayuda <a class="anchor" href="#contacto">#</a></h2>
+      <h2><span class="n">16</span>Si necesitás ayuda</h2>
       <ul>
         <li>Ante la duda, probá con un carnet de prueba antes de hacerlo con todos.</li>
         <li>Si ves un error, anotá qué hiciste, en qué local y a qué hora.</li>
-        <li>Escribí al equipo técnico con esos detalles.</li>
+        <li>Lo de permisos, locales y usuarios se le pide a sistemas con esos datos.</li>
       </ul>
-      <div class="note"><b>Lo importante:</b> ninguna marca se borra. Si algo salió mal, se corrige con motivo y queda todo registrado.</div>
+      <div class="nota nota--ok"><span class="nota__titulo">Tranquila</span><p>Ninguna marca se borra. Si algo salió mal, se corrige con motivo y queda todo registrado.</p></div>
     </section>
-
-    <footer>
-      Gerayse · Asistencia del personal: manual para la administración · actualizado el 26 de octubre de 2026.<br>
-      Guardá este documento a mano: es para consultarlo cuando lo necesites.
-    </footer>
   </main>
 </div>
 
-<button class="top" id="btnTop" aria-label="Volver arriba">↑ Arriba</button>
+<footer class="manual-pie">
+  <div class="pie"><span>Gerayse · Asistencia: manual para la administración</span><span>Actualizado el 26 de octubre de 2026</span></div>
+</footer>
+
+<button class="arriba" id="arriba" type="button" aria-label="Volver arriba">↑ Arriba</button>
 
 <script>
-(function(){
-  var links = Array.prototype.slice.call(document.querySelectorAll('.toc a'));
-  var map = {};
-  links.forEach(function(a){ map[a.getAttribute('href').slice(1)] = a; });
-  var sections = Array.prototype.slice.call(document.querySelectorAll('main section'));
-  if ('IntersectionObserver' in window){
-    var current = null;
-    var io = new IntersectionObserver(function(entries){
-      entries.forEach(function(e){
-        if(e.isIntersecting){
-          if(current) current.classList.remove('active');
-          var a = map[e.target.id];
-          if(a){ a.classList.add('active'); current = a; }
+  (function () {
+    var enlaces = Array.prototype.slice.call(document.querySelectorAll('.indice a[href^="#"]'));
+    var porId = {};
+    enlaces.forEach(function (a) { porId[a.getAttribute('href').slice(1)] = a; });
+    if ('IntersectionObserver' in window && enlaces.length) {
+      var obs = new IntersectionObserver(function (entradas) {
+        entradas.forEach(function (e) {
+          if (!e.isIntersecting) return;
+          enlaces.forEach(function (a) { a.classList.remove('activo'); });
+          var a = porId[e.target.id];
+          if (a) a.classList.add('activo');
+        });
+      }, { rootMargin: '-20% 0px -70% 0px' });
+      document.querySelectorAll('main section[id]').forEach(function (s) { obs.observe(s); });
+    }
+    // En el celular, el índice se cierra al elegir una sección.
+    enlaces.forEach(function (a) {
+      a.addEventListener('click', function () {
+        if (window.matchMedia('(max-width: 900px)').matches) {
+          var d = document.querySelector('.indice');
+          if (d) d.open = false;
         }
       });
-    }, {rootMargin:'-10% 0px -70% 0px', threshold:0});
-    sections.forEach(function(s){ io.observe(s); });
-  }
-  links.forEach(function(a){
-    a.addEventListener('click', function(){
-      if(window.matchMedia('(max-width:900px)').matches){
-        var d = document.querySelector('.toc');
-        if(d) d.open = false;
-      }
     });
-  });
-  var btn = document.getElementById('btnTop');
-  window.addEventListener('scroll', function(){
-    if(window.scrollY > 500) btn.classList.add('show'); else btn.classList.remove('show');
-  }, {passive:true});
-  btn.addEventListener('click', function(){ window.scrollTo({top:0, behavior:'smooth'}); });
-})();
+    var arriba = document.getElementById('arriba');
+    if (arriba) {
+      window.addEventListener('scroll', function () {
+        arriba.classList.toggle('ver', window.scrollY > 500);
+      }, { passive: true });
+      arriba.addEventListener('click', function () { window.scrollTo({ top: 0, behavior: 'smooth' }); });
+    }
+    // Al imprimir, las preguntas salen abiertas.
+    var abiertas = [];
+    window.addEventListener('beforeprint', function () {
+      abiertas = Array.prototype.filter.call(document.querySelectorAll('details.faq'), function (d) { return !d.open; });
+      abiertas.forEach(function (d) { d.open = true; });
+    });
+    window.addEventListener('afterprint', function () {
+      abiertas.forEach(function (d) { d.open = false; });
+      abiertas = [];
+    });
+  })();
 </script>
 
+</body>
 </html>

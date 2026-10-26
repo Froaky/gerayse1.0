@@ -6,9 +6,9 @@
    cada pieza mostrada, es docs/marca/manual-de-marca.html.
 
    Dos modos, mismas piezas:
-     body.doc     documento A4: se lee en pantalla y se imprime (informes,
+     .doc     documento A4: se lee en pantalla y se imprime (informes,
                   presupuestos, manuales para imprimir).
-     body.manual  manual web con el formato de julio: encabezado, índice al
+     .manual  manual web con el formato de julio: encabezado, índice al
                   costado, secciones numeradas, preguntas frecuentes.
 
    Los tamaños de las piezas van en em, así escalan con el cuerpo de cada modo
@@ -232,18 +232,25 @@ td.ok, .ok { color: var(--ok); font-weight: 600; }
 
 /* ---------- 9. Pasos ---------- */
 .pasos { list-style: none; counter-reset: paso; padding: 0; margin: 0.6em 0 1.1em; display: grid; gap: 0.7em; }
-.pasos > li { counter-increment: paso; display: grid; grid-template-columns: 1.6em 1fr; gap: 0.6em; margin: 0; }
+/* El número va en posición absoluta y no en una grilla: así el texto del paso puede
+   tener negritas y botones adentro sin que cada uno se vuelva una celda aparte. */
+.pasos > li { counter-increment: paso; position: relative; padding-left: 2.2em; margin: 0; }
 .pasos > li::before {
   content: counter(paso);
+  position: absolute; left: 0; top: 0.12em;
   display: inline-flex; align-items: center; justify-content: center;
-  width: 1.45em; height: 1.45em; border-radius: 50%; margin-top: 0.1em;
+  width: 1.45em; height: 1.45em; border-radius: 50%;
   background: var(--verde); color: var(--on-verde);
   font-weight: 700; font-size: 0.82em;
 }
-.pasos b { display: block; color: var(--ink); font-weight: 700; }
+.pasos > li > b:first-child, .pasos > li > div > b:first-child { display: block; color: var(--ink); font-weight: 700; }
 .pasos > li > div > :last-child { margin-bottom: 0; }
 
-/* ---------- 10. Ruta, pastillas y botones ---------- */
+/* ---------- 10. Ruta, pastillas, chips y botones ---------- */
+.chip { display: inline-block; padding: 0.12em 0.6em; border-radius: 3px; border: 1px solid var(--line-strong); background: var(--panel); color: var(--text); font-weight: 600; font-size: 0.88em; white-space: nowrap; }
+.chip--ok { color: var(--ok); background: var(--ok-bg); border-color: var(--ok-line); }
+.chip--aviso { color: var(--aviso); background: var(--aviso-bg); border-color: var(--aviso-line); }
+.chip--peligro { color: var(--peligro); background: var(--peligro-bg); border-color: var(--peligro-line); }
 .ruta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35em; font-size: 0.88em; margin: 0.4em 0 0.8em; }
 .ruta .rotulo { margin-right: 0.3em; }
 .ruta .sep { color: var(--muted); }
@@ -284,10 +291,10 @@ kbd { font-size: 0.88em; border: 1px solid var(--line-strong); border-bottom-wid
 
 /* ---------- 13. Checklist, preguntas, línea de tiempo ---------- */
 .checklist { list-style: none; padding: 0; margin: 0.4em 0 1em; display: grid; gap: 0.45em; }
-.checklist li { display: grid; grid-template-columns: 1.1em 1fr; gap: 0.55em; align-items: start; margin: 0; }
-.checklist li::before { content: ""; width: 0.95em; height: 0.95em; border: 1.5px solid var(--line-strong); border-radius: 3px; margin-top: 0.3em; background: var(--paper); }
+.checklist li { position: relative; padding-left: 1.7em; margin: 0; }
+.checklist li::before { content: ""; position: absolute; left: 0; top: 0.3em; width: 0.95em; height: 0.95em; border: 1.5px solid var(--line-strong); border-radius: 3px; background: var(--paper); }
 .checklist li.hecho::before { background: var(--verde); border-color: var(--verde); }
-.faq { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 0 1em; margin: 0 0 0.55em; }
+.faq { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 0 1em; margin: 0 0 0.55em; break-inside: avoid; }
 .faq summary { list-style: none; cursor: pointer; font-weight: 600; color: var(--ink); padding: 0.75em 0; display: flex; justify-content: space-between; gap: 1em; }
 .faq summary::-webkit-details-marker { display: none; }
 .faq summary::after { content: "+"; color: var(--green); font-weight: 700; flex: 0 0 auto; }
@@ -296,15 +303,15 @@ kbd { font-size: 0.88em; border: 1px solid var(--line-strong); border-bottom-wid
 .faq > div { padding: 0.7em 0 0.9em; }
 .faq > div > :last-child { margin-bottom: 0; }
 .dia { display: grid; gap: 0.5em; margin: 0.5em 0 1em; }
-.dia > div { display: grid; grid-template-columns: 4.5em 1fr; gap: 0.8em; align-items: baseline; }
-.dia time { font-family: var(--mono); font-size: 0.86em; font-weight: 600; color: var(--green); }
+.dia > div { display: grid; grid-template-columns: 5.6em 1fr; gap: 0.8em; align-items: baseline; }
+.dia time { font-family: var(--mono); font-size: 0.86em; font-weight: 600; color: var(--green); white-space: nowrap; }
 .dia > div > div > :last-child { margin-bottom: 0; }
 
 /* ---------- 14. Pie ---------- */
 .pie { margin-top: 2.4em; padding-top: 0.7em; border-top: 1px solid var(--line); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.4em 1em; font-size: 0.84em; color: var(--muted); }
 
 /* ============================================================================
-   MODO DOCUMENTO (body.doc): A4, se lee en pantalla y se imprime igual.
+   MODO DOCUMENTO (.doc): A4, se lee en pantalla y se imprime igual.
    ============================================================================ */
 @page {
   size: A4;
@@ -315,9 +322,9 @@ kbd { font-size: 0.88em; border: 1px solid var(--line-strong); border-bottom-wid
 /* Cada documento pone su nombre en el pie con, en su propio <style>:
      @page { @bottom-left { content: "Gerayse · Nombre del documento"; } }  */
 
-body.doc { font-size: 10.2pt; }
+.doc { font-size: 10.2pt; }
 @media screen {
-  body.doc {
+  .doc {
     font-size: 15px;
     max-width: 48rem; margin: 0 auto;
     padding-block: 2.6rem 4rem;
@@ -326,17 +333,17 @@ body.doc { font-size: 10.2pt; }
   }
 }
 @media print {
-  body.doc { max-width: none; margin: 0; padding: 0; }
+  .doc { max-width: none; margin: 0; padding: 0; }
   a { color: inherit; text-decoration: none; }
   .no-imprimir { display: none !important; }
 }
 
 /* ============================================================================
-   MODO MANUAL WEB (body.manual): el formato del manual de julio.
+   MODO MANUAL WEB (.manual): el formato del manual de julio.
    ============================================================================ */
-body.manual { font-size: 1rem; line-height: 1.62; }
-body.manual h1 { font-size: clamp(1.8rem, 4.4vw, 2.6rem); line-height: 1.08; margin: 0.2em 0 0.15em; }
-body.manual .bajada { font-size: 1.08em; color: var(--muted); margin: 0 0 1.1em; max-width: 52ch; }
+.manual { font-size: 1rem; line-height: 1.62; }
+.manual h1 { font-size: clamp(1.8rem, 4.4vw, 2.6rem); line-height: 1.08; margin: 0.2em 0 0.15em; }
+.manual .bajada { font-size: 1.08em; color: var(--muted); margin: 0 0 1.1em; max-width: 52ch; }
 .masthead {
   border-bottom: 1px solid var(--line);
   background: radial-gradient(900px 300px at 8% -40%, color-mix(in srgb, var(--senal) 10%, transparent), transparent 60%), var(--panel);
@@ -375,15 +382,33 @@ body.manual .bajada { font-size: 1.08em; color: var(--muted); margin: 0 0 1.1em;
   .indice > summary { cursor: pointer; }
   .indice > summary::after { display: inline; }
 }
-body.manual section { scroll-margin-top: 18px; margin-bottom: 44px; }
-body.manual h2 { font-size: clamp(1.3rem, 3vw, 1.6rem); margin: 0 0 12px; padding-top: 6px; }
-body.manual h2 .n { font-size: 0.62em; }
-body.manual h3 { font-size: 1.12em; margin-top: 1.5em; }
+.manual section { scroll-margin-top: 18px; margin-bottom: 44px; }
+.manual h2 { font-size: clamp(1.3rem, 3vw, 1.6rem); margin: 0 0 12px; padding-top: 6px; }
+.manual h2 .n { font-size: 0.62em; }
+.manual h3 { font-size: 1.12em; margin-top: 1.5em; }
 .manual-pie { max-width: 74rem; margin: 0 auto; padding: 0 max(16px, env(safe-area-inset-left, 0px)) 40px; }
-@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+.arriba {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right, 0px));
+  bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  border: 1px solid var(--line-strong); border-radius: 999px;
+  background: var(--panel); color: var(--text);
+  font: inherit; font-size: 0.86rem; padding: 0.5em 0.9em; cursor: pointer;
+  opacity: 0; pointer-events: none; transition: opacity 0.15s;
+}
+.arriba.ver { opacity: 1; pointer-events: auto; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .arriba { transition: none; } }
 @media print {
-  body.manual .lateral, body.manual .masthead::before { display: none; }
+  .manual { font-size: 10.5pt; line-height: 1.5; }
+  .manual h1 { font-size: 24pt; }
+  .manual h2 { font-size: 15pt; }
+  .manual section { margin-bottom: 1.8em; }
+  /* El pie de la página web no se imprime: el de cada hoja lo pone @page. */
+  .manual .lateral, .manual .masthead::before, .manual-pie, .arriba { display: none; }
   .layout { display: block; padding: 0; }
   .masthead { background: none; border: 0; }
-  .masthead__in, .layout { padding-left: 0; padding-right: 0; }
+  .masthead__in, .layout, .manual-pie { padding-left: 0; padding-right: 0; }
+  /* Las preguntas se imprimen abiertas (el script del manual también las abre al imprimir). */
+  .faq::details-content { content-visibility: visible; }
+  .faq summary::after { display: none; }
 }

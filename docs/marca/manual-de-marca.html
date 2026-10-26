@@ -42,7 +42,6 @@
   .bueno--oscuro .marca { background: #f3efe4; color: #12563a; }
   .bueno--oscuro b { color: #f3efe4; }
   .bueno--oscuro span { color: #b9c9bf; }
-  .estado { display: inline-block; padding: 0.15em 0.6em; border-radius: 3px; font-weight: 600; font-size: 0.9em; border: 1px solid; }
   .tema { border: 1px solid var(--line); border-radius: 4px; padding: 0.8em 1em; break-inside: avoid; }
   .tema .puntos { display: flex; gap: 0.4em; margin: 0.4em 0 0.3em; }
   .tema .puntos i { width: 1.6em; height: 1.6em; border-radius: 3px; border: 1px solid rgba(0, 0, 0, 0.12); }
@@ -143,9 +142,9 @@
   <table>
     <thead><tr><th>Estado</th><th>Tinta</th><th>Fondo</th><th>Borde</th><th>Así se ve</th></tr></thead>
     <tbody>
-      <tr><td class="k">Bien / confirmado</td><td><code>#2f6b52</code></td><td><code>#e4f1e9</code></td><td><code>#a9cdb6</code></td><td><span class="estado" style="color:var(--ok);background:var(--ok-bg);border-color:var(--ok-line)">Pagada</span></td></tr>
-      <tr><td class="k">Aviso / a revisar</td><td><code>#8a5f12</code></td><td><code>#f9efd9</code></td><td><code>#e0c48a</code></td><td><span class="estado" style="color:var(--aviso);background:var(--aviso-bg);border-color:var(--aviso-line)">Se suman</span></td></tr>
-      <tr><td class="k">Peligro / falta</td><td><code>#a83232</code></td><td><code>#fbe9e8</code></td><td><code>#e8b3ae</code></td><td><span class="estado" style="color:var(--peligro);background:var(--peligro-bg);border-color:var(--peligro-line)">Ninguna</span></td></tr>
+      <tr><td class="k">Bien / confirmado</td><td><code>#2f6b52</code></td><td><code>#e4f1e9</code></td><td><code>#a9cdb6</code></td><td><span class="chip chip--ok">Pagada</span></td></tr>
+      <tr><td class="k">Aviso / a revisar</td><td><code>#8a5f12</code></td><td><code>#f9efd9</code></td><td><code>#e0c48a</code></td><td><span class="chip chip--aviso">Se suman</span></td></tr>
+      <tr><td class="k">Peligro / falta</td><td><code>#a83232</code></td><td><code>#fbe9e8</code></td><td><code>#e8b3ae</code></td><td><span class="chip chip--peligro">Ninguna</span></td></tr>
     </tbody>
   </table>
   <p>La plata en negativo va en rojo y con el signo delante: <span class="cifra peligro">$ -1.189.225,58</span>. Un desvío a favor va en verde solo si el texto aclara que es bueno.</p>
@@ -291,8 +290,8 @@
     <div class="kpi kpi--alt"><span class="rotulo">Todos del mismo mes</span><span class="cifra">junio 2026</span><span class="pista">del 01/06 al 30/06</span></div>
   </div>
 
-  <h3>Pasos, ruta y botones</h3>
-  <p>Los pasos llevan número en círculo verde y un título en negrita. La ruta dice dónde está algo en el sistema, con pastillas; la pastilla verde es el lugar donde se termina. Un botón del sistema se nombra como se ve: <span class="boton">Descargar PDF</span>, <span class="boton boton--borde">Vincular a pago</span>.</p>
+  <h3>Pasos, ruta, botones y chips</h3>
+  <p>Los pasos llevan número en círculo verde y un título en negrita. La ruta dice dónde está algo en el sistema, con pastillas; la pastilla verde es el lugar donde se termina. Un botón del sistema se nombra como se ve: <span class="boton">Descargar PDF</span>, <span class="boton boton--borde">Vincular a pago</span>. Los carteles que muestra la pantalla se citan como chips, con el color del estado: <span class="chip chip--ok">Entrada · 08:02 · María López</span> <span class="chip chip--aviso">Ya registrada</span> <span class="chip chip--peligro">No se registró</span> <span class="chip">Salió 16:05</span>.</p>
   <div class="ruta"><span class="rotulo">Dónde verlo</span><span class="pill pill--on">Tesorería</span><span class="sep"></span><span class="pill">Bancos</span><span class="sep"></span><span class="pill">Cuenta: ARMADI SRL · MACRO</span><span class="sep"></span><span class="pill">Desde 01/08/2026</span></div>
   <ol class="pasos">
     <li><div><b>Entrá a Tesorería → Bancos</b>Es el listado de todos los movimientos de las cuentas bancarias.</div></li>

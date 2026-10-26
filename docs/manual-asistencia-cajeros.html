@@ -3,198 +3,37 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Asistencia para cajeros</title>
-<meta name="claude:viewport-fit-sides" content="cover">
+<title>Asistencia: manual para cajeros</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&family=Spline+Sans+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="marca/gerayse-documento.css">
 <style>
-  /* Mismo diseño que el "Manual para la administración" de julio 2026: masthead, índice al costado,
-     secciones numeradas, pasos, notas, antes/ahora, checklist, preguntas y día de ejemplo. */
-  :root{
-    --bg:#f7f9f7; --surface:#ffffff; --surface-2:#f0f4f1;
-    --text:#1a2420; --muted:#5b6a63; --line:#e1e8e3;
-    --forest:#0f8a56; --forest-deep:#0c6f45; --forest-soft:#e7f5ee; --on-forest:#ffffff;
-    --amber:#a9791b; --amber-soft:#fbf3e0;
-    --danger:#c0453f; --danger-soft:#fbe9e8;
-    --radius:12px; --shadow:0 10px 30px rgba(16,40,28,.08);
-    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-    --serif:"Iowan Old Style",Georgia,"Times New Roman",serif;
-    --mono:ui-monospace,"Cascadia Code",Menlo,Consolas,monospace;
-    --readw:44rem;
-  }
-  @media (prefers-color-scheme:dark){
-    :root:not([data-theme="light"]){
-      --bg:#0f1315; --surface:#161b1e; --surface-2:#1c2225;
-      --text:#e9efec; --muted:#8b968f; --line:#28302f;
-      --forest:#2ecb83; --forest-deep:#22c47e; --forest-soft:#12251c; --on-forest:#06130d;
-      --amber:#d9a441; --amber-soft:#2a2312;
-      --danger:#e2635c; --danger-soft:#2a1615;
-      --shadow:0 14px 34px rgba(0,0,0,.5);
-      color-scheme:dark;
-    }
-  }
-  :root[data-theme="dark"]{
-    --bg:#0f1315; --surface:#161b1e; --surface-2:#1c2225; --text:#e9efec; --muted:#8b968f; --line:#28302f;
-    --forest:#2ecb83; --forest-deep:#22c47e; --forest-soft:#12251c; --on-forest:#06130d; --amber:#d9a441; --amber-soft:#2a2312;
-    --danger:#e2635c; --danger-soft:#2a1615; --shadow:0 14px 34px rgba(0,0,0,.5); color-scheme:dark;
-  }
-  *{box-sizing:border-box}
-  html{scroll-behavior:smooth}
-  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.62;-webkit-font-smoothing:antialiased}
-  a{color:var(--forest-deep)}
-
-  .masthead{border-bottom:1px solid var(--line);background:
-      radial-gradient(900px 300px at 8% -40%, color-mix(in srgb, var(--forest) 12%, transparent), transparent 60%), var(--surface)}
-  .masthead__in{max-width:74rem;margin:0 auto;padding-block:clamp(26px,4vw,46px);
-    padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px))}
-  .brandline{display:flex;align-items:center;gap:10px;margin-bottom:16px}
-  .brandmark{width:34px;height:34px;border-radius:8px;display:grid;place-items:center;font-family:var(--serif);font-weight:700;color:var(--on-forest);background:linear-gradient(150deg,var(--forest),var(--forest-deep))}
-  .brandline b{font-family:var(--serif);letter-spacing:.02em}
-  .brandline span{color:var(--muted);font-size:.85rem}
-  h1{font-family:var(--serif);font-weight:700;font-size:clamp(1.8rem,4.4vw,2.7rem);line-height:1.08;margin:.2em 0 .1em;text-wrap:balance}
-  .subtitle{font-size:1.08rem;color:var(--muted);margin:0 0 18px;max-width:52ch}
-  .metabar{display:flex;flex-wrap:wrap;gap:8px}
-  .pill{font-size:.78rem;padding:5px 11px;border-radius:999px;border:1px solid var(--line);background:var(--surface-2);color:var(--muted)}
-  .pill--live{background:var(--forest-soft);border-color:color-mix(in srgb,var(--forest) 40%,transparent);color:var(--forest-deep);font-weight:600}
-  .pill--live::before{content:"●";margin-right:6px;color:var(--forest)}
-
-  .layout{max-width:74rem;margin:0 auto;padding-block:clamp(20px,3vw,34px) 90px;
-    padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));
-    display:grid;grid-template-columns:15rem minmax(0,1fr);gap:clamp(22px,4vw,52px);align-items:start}
-  @media (max-width:900px){ .layout{grid-template-columns:1fr;gap:18px} }
-
-  .side{position:sticky;top:calc(18px + env(safe-area-inset-top, 0px))}
-  .toc{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
-  .toc>summary{list-style:none;cursor:pointer;padding:12px 16px;font-family:var(--serif);font-weight:700;font-size:1rem;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
-  .toc>summary::-webkit-details-marker{display:none}
-  .toc>summary::after{content:"▾";color:var(--muted);font-size:.8rem}
-  .toc nav{padding:8px}
-  .toc ol{list-style:none;margin:0;padding:0;counter-reset:toc}
-  .toc li{counter-increment:toc}
-  .toc a{display:flex;gap:9px;padding:7px 9px;border-radius:8px;color:var(--muted);text-decoration:none;font-size:.9rem;line-height:1.3}
-  .toc a::before{content:counter(toc);font-variant-numeric:tabular-nums;color:var(--forest);font-weight:700;min-width:1.1em;text-align:right}
-  .toc a:hover{background:var(--surface-2);color:var(--text)}
-  .toc a.active{background:var(--forest-soft);color:var(--forest-deep);font-weight:600}
-  @media (max-width:900px){ .side{position:static} .toc{position:sticky;top:calc(8px + env(safe-area-inset-top, 0px));z-index:5} }
-  @media (min-width:901px){ .toc>summary{cursor:default} .toc>summary::after{display:none} }
-
-  main{min-width:0;max-width:var(--readw)}
-  section{scroll-margin-top:18px;margin-bottom:44px}
-  section>h2{font-family:var(--serif);font-weight:700;font-size:clamp(1.35rem,3vw,1.7rem);line-height:1.15;margin:0 0 4px;padding-top:6px;display:flex;align-items:baseline;gap:.5rem;text-wrap:balance}
-  section>h2 .num{font-size:.85rem;color:var(--forest);font-variant-numeric:tabular-nums;font-family:var(--mono);font-weight:600}
-  .anchor{opacity:0;color:var(--muted);text-decoration:none;font-weight:400;transition:opacity .15s}
-  h2:hover .anchor{opacity:.6}
-  h3{font-family:var(--serif);font-weight:700;font-size:1.12rem;margin:26px 0 6px}
-  p{margin:.55em 0}
-  .lead{font-size:1.12rem;color:var(--text)}
-  ul,ol{padding-left:1.3em;margin:.5em 0}
-  li{margin:.3em 0}
-
-  .cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0}
-  @media (max-width:560px){ .cols{grid-template-columns:1fr} }
-  .card{border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;background:var(--surface);min-width:0}
-  .card h4{margin:0 0 8px;font-size:.95rem;font-family:var(--sans);letter-spacing:.02em}
-  .card--old{background:var(--danger-soft);border-color:color-mix(in srgb,var(--danger) 30%,transparent)}
-  .card--old h4{color:var(--danger)}
-  .card--new{background:var(--forest-soft);border-color:color-mix(in srgb,var(--forest) 35%,transparent)}
-  .card--new h4{color:var(--forest-deep)}
-  .card ul,.card ol{margin:0;padding-left:1.2em}
-
-  .steps{list-style:none;padding:0;margin:16px 0;counter-reset:step}
-  .steps>li{counter-increment:step;position:relative;padding:14px 16px 14px 56px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);margin:10px 0}
-  .steps>li::before{content:counter(step);position:absolute;left:14px;top:14px;width:28px;height:28px;border-radius:50%;background:var(--forest);color:var(--on-forest);display:grid;place-items:center;font-weight:700;font-size:.9rem}
-  .steps>li>strong:first-child{display:block;margin-bottom:2px}
-
-  .note{border-left:4px solid var(--forest);background:var(--surface-2);border-radius:0 10px 10px 0;padding:12px 16px;margin:14px 0}
-  .note--warn{border-left-color:var(--amber);background:var(--amber-soft)}
-  .note b{color:var(--text)}
-
-  .badge{display:inline-flex;align-items:center;gap:6px;font-size:.8rem;font-weight:600;padding:3px 10px;border-radius:6px;white-space:nowrap}
-  .badge--ok{background:var(--forest-soft);color:var(--forest-deep)}
-  .badge--warn{background:var(--amber-soft);color:var(--amber)}
-  .badge--bad{background:var(--danger-soft);color:var(--danger)}
-
-  .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius);margin:14px 0}
-  table{border-collapse:collapse;width:100%;font-size:.88rem;min-width:520px}
-  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
-  th{background:var(--surface-2);font-weight:600;color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.03em}
-  td{font-variant-numeric:tabular-nums}
-  tr:last-child td{border-bottom:none}
-
-  pre{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:.85rem;line-height:1.5;color:var(--text)}
-
-  .check{list-style:none;padding:0;margin:14px 0}
-  .check li{padding:9px 12px 9px 40px;position:relative;border:1px solid var(--line);border-radius:9px;margin:8px 0;background:var(--surface)}
-  .check li::before{content:"";position:absolute;left:12px;top:11px;width:16px;height:16px;border:2px solid var(--forest);border-radius:4px}
-
-  .faq{border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;background:var(--surface)}
-  .faq details{border-bottom:1px solid var(--line)}
-  .faq details:last-child{border-bottom:none}
-  .faq summary{cursor:pointer;padding:13px 16px;font-weight:600;list-style:none;display:flex;justify-content:space-between;gap:12px}
-  .faq summary::-webkit-details-marker{display:none}
-  .faq summary::after{content:"+";color:var(--forest);font-weight:700;font-size:1.1rem}
-  .faq details[open] summary::after{content:"–"}
-  .faq .ans{padding:0 16px 14px;color:var(--muted)}
-  .faq .ans p{margin:.2em 0}
-
-  .tl{list-style:none;padding:0;margin:14px 0;border-left:2px solid var(--line);margin-left:8px}
-  .tl li{position:relative;padding:4px 0 16px 22px}
-  .tl li::before{content:"";position:absolute;left:-7px;top:8px;width:12px;height:12px;border-radius:50%;background:var(--forest);border:2px solid var(--surface)}
-  .tl time{font-family:var(--mono);font-size:.82rem;color:var(--forest-deep);font-weight:600}
-
-  .top{position:fixed;right:calc(18px + env(safe-area-inset-right, 0px));bottom:calc(18px + env(safe-area-inset-bottom, 0px));z-index:20;background:var(--forest);color:var(--on-forest);border:none;border-radius:999px;padding:11px 16px;font-size:.85rem;font-weight:600;cursor:pointer;box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}
-  .top.show{opacity:1;pointer-events:auto}
-  .top:hover{transform:translateY(-2px)}
-
-  footer{max-width:var(--readw);color:var(--muted);font-size:.85rem;border-top:1px solid var(--line);padding-top:18px;margin-top:20px}
-  :focus-visible{outline:2px solid var(--forest);outline-offset:2px}
-  @media (prefers-reduced-motion:reduce){ html{scroll-behavior:auto} .top{transition:none} }
-
-  @page{ margin: 15mm 14mm 16mm; }
-  @media print{
-    :root{ --bg:#fff; --surface:#fff; --surface-2:#f1f5f2; --text:#161f1b; --muted:#4b5a53; --line:#d3ded8;
-      --forest:#0c6f45; --forest-deep:#0a5638; --forest-soft:#eaf6f0; --on-forest:#fff; --amber:#8a6314; --amber-soft:#faf1dc;
-      --danger:#b23c37; --danger-soft:#fbe9e8; --shadow:none; }
-    .top{display:none!important}
-    .layout{display:block;max-width:none;padding:0}
-    .side{position:static;margin:0 0 22px}
-    .toc{position:static!important;box-shadow:none}
-    .toc a{padding:1px 9px}
-    body{font-size:12.5px;line-height:1.5}
-    .masthead__in{padding-block:0 18px}
-    section{margin-bottom:26px}
-    .toc>summary{cursor:default}
-    .toc>summary::after{display:none}
-    .toc a{color:var(--forest-deep)}
-    main{max-width:none}
-    body{background:#fff}
-    h2,h3{break-after:avoid}
-    .cols,.steps>li,.card,.faq,.tablewrap,.note,.check li{break-inside:avoid;page-break-inside:avoid}
-    .masthead{background:#fff}
-  }
+  @page { @bottom-left { content: "Gerayse · Asistencia: manual para cajeros"; } }
 </style>
+</head>
+<body class="manual">
 
 <header class="masthead">
   <div class="masthead__in">
-    <div class="brandline">
-      <span class="brandmark">G</span>
-      <b>Gerayse</b><span>· cajas, turnos y tesorería</span>
-    </div>
-    <h1>Asistencia del personal: manual para cajeros</h1>
-    <p class="subtitle">Cómo fichar la entrada y la salida de tus compañeros con el carnet QR: con el celular, con un lector o tipeando el código.</p>
-    <div class="metabar">
-      <span class="pill pill--live">Sistema activo (en producción)</span>
-      <span class="pill">Para: cajeros de cada local</span>
-      <span class="pill">Actualizado: 26 de octubre de 2026</span>
+    <div class="marca-linea"><span class="marca marca--m">G</span><b>Gerayse</b><span>Administración, tesorería y control de gestión</span></div>
+    <p class="eyebrow">Manual de uso · Asistencia · Cajeros</p>
+    <h1>Fichar la asistencia</h1>
+    <p class="bajada">Cómo fichar la entrada y la salida de tus compañeros con el carnet QR: con el celular, con un lector o tipeando el código.</p>
+    <div class="pastillas">
+      <span class="pastilla pastilla--viva">Sistema activo</span>
+      <span class="pastilla">Para: cajeros de cada local</span>
+      <span class="pastilla">Actualizado: 26 de octubre de 2026</span>
     </div>
   </div>
 </header>
 
 <div class="layout">
-  <aside class="side">
-    <details class="toc" open>
-      <summary>Índice</summary>
-      <nav aria-label="Índice del manual">
+  <aside class="lateral">
+    <details class="indice" open>
+      <summary>Contenido</summary>
+      <nav aria-label="Contenido del manual">
         <ol>
-          <li><a href="#resumen">En una frase</a></li>
           <li><a href="#que-cambia">Qué cambia</a></li>
           <li><a href="#antes">Antes de empezar</a></li>
           <li><a href="#fichar">Fichar paso a paso</a></li>
@@ -202,32 +41,31 @@
           <li><a href="#local">Tu local</a></li>
           <li><a href="#casos">Casos de todos los días</a></li>
           <li><a href="#faq">Preguntas frecuentes</a></li>
-          <li><a href="#problemas">Problemas y soluciones</a></li>
+          <li><a href="#problemas">Si algo falla</a></li>
         </ol>
       </nav>
     </details>
   </aside>
 
   <main>
-    <section id="resumen">
-      <h2><span class="num">01</span> En una frase <a class="anchor" href="#resumen">#</a></h2>
-      <p class="lead">Cuando un compañero llega o se va, escaneás su carnet en la pantalla <strong>Fichar</strong>. El sistema anota si es entrada o salida, la hora y el local. Vos no tenés que escribir nada.</p>
-    </section>
+    <div class="resumen">
+      <strong>En una línea:</strong> cuando un compañero llega o se va, escaneás su carnet en la pantalla <b>Fichar</b>. El sistema anota si es entrada o salida, la hora y el local. Vos no escribís nada.
+    </div>
 
     <section id="que-cambia">
-      <h2><span class="num">02</span> Qué cambia <a class="anchor" href="#que-cambia">#</a></h2>
-      <div class="cols">
-        <div class="card card--old">
-          <h4>✗ Antes</h4>
+      <h2><span class="n">1</span>Qué cambia</h2>
+      <div class="dos">
+        <div class="tarjeta tarjeta--antes">
+          <h4>Antes</h4>
           <ul>
             <li>Cada uno anotaba su hora a mano.</li>
             <li>Había que acordarse de pasar todo.</li>
           </ul>
         </div>
-        <div class="card card--new">
-          <h4>✓ Ahora</h4>
+        <div class="tarjeta tarjeta--ahora">
+          <h4>Ahora</h4>
           <ul>
-            <li>Cada uno tiene su <strong>carnet con QR</strong>.</li>
+            <li>Cada uno tiene su <b>carnet con QR</b>.</li>
             <li>Lo escaneás y listo: la hora la pone el sistema.</li>
             <li>Administración ve todo en el momento.</li>
           </ul>
@@ -236,66 +74,66 @@
     </section>
 
     <section id="antes">
-      <h2><span class="num">03</span> Antes de empezar <a class="anchor" href="#antes">#</a></h2>
-      <ul>
-        <li>Entrás a Gerayse con <strong>tu usuario de siempre</strong>.</li>
-        <li>En el menú tenés que ver <strong>Asistencia</strong>. Si no está, pedile a <strong>sistemas</strong> el permiso “Fichar asistencia”.</li>
-        <li>Para usar la cámara, el celular o la tablet del local necesita internet y que el navegador tenga permiso para la cámara. La primera vez te lo pregunta: tocá <strong>Permitir</strong>.</li>
+      <h2><span class="n">2</span>Antes de empezar</h2>
+      <ul class="checklist">
+        <li>Entrás a Gerayse con <b>tu usuario de siempre</b>.</li>
+        <li>En el menú ves <b>Asistencia</b>. Si no está, pedile a <b>sistemas</b> el permiso «Fichar asistencia».</li>
+        <li>El celular o la tablet del local tiene internet y el navegador tiene permiso para usar la cámara. La primera vez te lo pregunta: tocá <b>Permitir</b>.</li>
       </ul>
     </section>
 
     <section id="fichar">
-      <h2><span class="num">04</span> Fichar paso a paso <a class="anchor" href="#fichar">#</a></h2>
-      <ol class="steps">
-        <li><strong>Abrí Asistencia → Fichar</strong>Arriba dice en qué local estás fichando.</li>
-        <li><strong>Tocá Usar la cámara</strong>Se abre la cámara de atrás del celular.</li>
-        <li><strong>Apuntá al QR del carnet</strong>No hace falta tocar nada más: cada lectura se registra sola y la cámara queda lista para el siguiente.</li>
-        <li><strong>Mirá el cartel encima de la imagen</strong>Suena un pitido corto y aparece, por ejemplo, <span class="badge badge--ok">Entrada · 08:02 · María López</span></li>
-        <li><strong>Al terminar, tocá Apagar la cámara</strong>Si bloqueás el celular o cambiás de pestaña, se apaga sola.</li>
+      <h2><span class="n">3</span>Fichar paso a paso</h2>
+      <ol class="pasos">
+        <li><div><b>Abrí Asistencia → Fichar</b>Arriba dice en qué local estás fichando.</div></li>
+        <li><div><b>Tocá <span class="boton">Usar la cámara</span></b>Se abre la cámara de atrás del celular.</div></li>
+        <li><div><b>Apuntá al QR del carnet</b>No hace falta tocar nada más: cada lectura se registra sola y la cámara queda lista para el siguiente.</div></li>
+        <li><div><b>Mirá el cartel encima de la imagen</b>Suena un pitido corto y aparece, por ejemplo, <span class="chip chip--ok">Entrada · 08:02 · María López</span>.</div></li>
+        <li><div><b>Al terminar, tocá <span class="boton boton--borde">Apagar la cámara</span></b>Si bloqueás el celular o cambiás de pestaña, se apaga sola.</div></li>
       </ol>
       <h3>Otras formas de fichar</h3>
-      <div class="cols">
-        <div class="card">
+      <div class="dos">
+        <div class="tarjeta">
           <h4>Con un lector QR</h4>
           <p>Si el local tiene un lector enchufado a la computadora, abrí Fichar y apuntá el lector al carnet. El código se escribe y se registra solo.</p>
         </div>
-        <div class="card">
+        <div class="tarjeta">
           <h4>Tipeando el código</h4>
-          <p>Si el QR no se lee, escribí los <strong>6 números</strong> que dice el carnet abajo de “Código” y tocá <strong>Registrar</strong> (o Enter).</p>
+          <p>Si el QR no se lee, escribí los <b>6 números</b> que dice el carnet abajo de «Código» y tocá <span class="boton">Registrar</span> (o Enter).</p>
         </div>
       </div>
-      <div class="note"><b>Entrada o salida, lo decide el sistema:</b> la primera vez que escaneás a alguien es su entrada y la siguiente, su salida. En un turno cortado se ficha cada vez que llega y cada vez que se va.</div>
+      <div class="nota"><span class="nota__titulo">Entrada o salida lo decide el sistema</span><p>La primera vez que escaneás a alguien en el día es su entrada y la siguiente, su salida. En un turno cortado se ficha cada vez que llega y cada vez que se va.</p></div>
     </section>
 
     <section id="resultado">
-      <h2><span class="num">05</span> Qué te muestra la pantalla <a class="anchor" href="#resultado">#</a></h2>
-      <div class="tablewrap">
+      <h2><span class="n">4</span>Qué te muestra la pantalla</h2>
+      <div class="tabla-scroll">
         <table>
           <thead><tr><th>Cartel</th><th>Qué significa</th><th>Qué hacer</th></tr></thead>
           <tbody>
-            <tr><td><span class="badge badge--ok">Entrada · hora</span></td><td>Quedó anotada la entrada.</td><td>Nada, seguí con el próximo.</td></tr>
-            <tr><td><span class="badge badge--ok">Salida · hora</span></td><td>Quedó anotada la salida.</td><td>Nada.</td></tr>
-            <tr><td><span class="badge badge--warn">Ya registrada</span></td><td>Ese carnet ya se escaneó hace menos de 2 minutos.</td><td>Nada: no se anota dos veces.</td></tr>
-            <tr><td><span class="badge badge--bad">Carnet anulado</span></td><td>Es un carnet viejo, que ya no sirve.</td><td>Que use su carnet nuevo. Si no lo tiene, avisale a administración.</td></tr>
-            <tr><td><span class="badge badge--bad">No existe en el padrón</span></td><td>El QR no es un carnet de asistencia o no está cargado.</td><td>Avisale a administración.</td></tr>
-            <tr><td><span class="badge badge--bad">Dado de baja</span></td><td>Esa persona no está activa.</td><td>Avisale a administración.</td></tr>
-            <tr><td><span class="badge badge--bad">No se registró</span></td><td>Se cortó internet o hubo un problema.</td><td>Volvé a escanear. Si sigue, tipeá el código.</td></tr>
+            <tr><td><span class="chip chip--ok">Entrada · hora</span></td><td>Quedó anotada la entrada.</td><td>Nada, seguí con el próximo.</td></tr>
+            <tr><td><span class="chip chip--ok">Salida · hora</span></td><td>Quedó anotada la salida.</td><td>Nada.</td></tr>
+            <tr><td><span class="chip chip--aviso">Ya registrada</span></td><td>Ese carnet ya se escaneó hace menos de 2 minutos.</td><td>Nada: no se anota dos veces.</td></tr>
+            <tr><td><span class="chip chip--peligro">Carnet anulado</span></td><td>Es un carnet viejo, que ya no sirve.</td><td>Que use su carnet nuevo. Si no lo tiene, avisale a administración.</td></tr>
+            <tr><td><span class="chip chip--peligro">No existe en el padrón</span></td><td>El QR no es un carnet de asistencia, o la persona no está cargada.</td><td>Avisale a administración.</td></tr>
+            <tr><td><span class="chip chip--peligro">Dado de baja</span></td><td>Esa persona no está activa.</td><td>Avisale a administración.</td></tr>
+            <tr><td><span class="chip chip--peligro">No se registró</span></td><td>Se cortó internet o hubo un problema.</td><td>Volvé a escanear. Si sigue, tipeá el código.</td></tr>
           </tbody>
         </table>
       </div>
     </section>
 
     <section id="local">
-      <h2><span class="num">06</span> Tu local <a class="anchor" href="#local">#</a></h2>
-      <p>Cada marca queda anotada en <strong>tu local</strong>, el que dice arriba en Fichar. No lo podés cambiar: así ninguna marca queda en un local equivocado.</p>
-      <div class="note">Si cubrís más de un local, <strong>sistemas</strong> te los habilita y te aparece arriba una lista para elegir dónde estás. Elegí el local y tocá <strong>Usar este local</strong> antes de escanear.</div>
-      <div class="note note--warn">Un compañero de otro local puede fichar en el tuyo: la marca queda anotada donde fichó.</div>
+      <h2><span class="n">5</span>Tu local</h2>
+      <p>Cada marca queda anotada en <b>tu local</b>, el que dice arriba en Fichar. No lo podés cambiar: así ninguna marca queda en un local equivocado.</p>
+      <div class="nota"><span class="nota__titulo">Si cubrís más de un local</span><p><b>Sistemas</b> te los habilita y te aparece arriba una lista para elegir dónde estás. Elegí el local y tocá <span class="boton boton--borde">Usar este local</span> antes de escanear.</p></div>
+      <div class="nota nota--gris"><span class="nota__titulo">Recordá</span><p>Un compañero de otro local puede fichar en el tuyo: la marca queda anotada donde fichó.</p></div>
     </section>
 
     <section id="casos">
-      <h2><span class="num">07</span> Casos de todos los días <a class="anchor" href="#casos">#</a></h2>
+      <h2><span class="n">6</span>Casos de todos los días</h2>
       <h3>Se olvidó el carnet</h3>
-      <p>Si sabe su código de 6 números, tipealo. Si no, <strong>no lo fiches con otro carnet</strong>: avisale a administración la hora real y ellos la cargan.</p>
+      <p>Si sabe su código de 6 números, tipealo. Si no, <b>no lo fiches con otro carnet</b>: avisale a administración la hora real y ellos la cargan.</p>
       <h3>Llegó antes que vos</h3>
       <p>Escaneá cuando llegues y avisale a administración a qué hora entró de verdad. Ellos cargan la entrada con la hora real.</p>
       <h3>Escaneaste el carnet de otra persona por error</h3>
@@ -305,69 +143,82 @@
     </section>
 
     <section id="faq">
-      <h2><span class="num">08</span> Preguntas frecuentes <a class="anchor" href="#faq">#</a></h2>
-      <div class="faq">
-        <details><summary>¿Puedo cambiar la hora de una marca?</summary><div class="ans"><p>No. La hora la pone el sistema. Si hubo un error, avisale a administración.</p></div></details>
-        <details><summary>¿Tengo que elegir si es entrada o salida?</summary><div class="ans"><p>No, el sistema lo sabe solo: la primera es entrada y la siguiente, salida.</p></div></details>
-        <details><summary>¿Qué pasa si lo escaneo dos veces?</summary><div class="ans"><p>Dentro de los 2 minutos no se anota de nuevo: sale en amarillo “Ya registrada”.</p></div></details>
-        <details><summary>¿El carnet tiene datos personales?</summary><div class="ans"><p>No. El QR solo tiene el código de 6 números.</p></div></details>
-        <details><summary>¿No suena el pitido?</summary><div class="ans"><p>Sacá el celular de silencio y subí el volumen. Igual el cartel de color aparece encima de la imagen.</p></div></details>
-      </div>
+      <h2><span class="n">7</span>Preguntas frecuentes</h2>
+      <details class="faq"><summary>¿Puedo cambiar la hora de una marca?</summary><div><p>No. La hora la pone el sistema. Si hubo un error, avisale a administración.</p></div></details>
+      <details class="faq"><summary>¿Tengo que elegir si es entrada o salida?</summary><div><p>No, el sistema lo sabe solo: la primera es entrada y la siguiente, salida.</p></div></details>
+      <details class="faq"><summary>¿Qué pasa si lo escaneo dos veces?</summary><div><p>Dentro de los 2 minutos no se anota de nuevo: sale en amarillo «Ya registrada».</p></div></details>
+      <details class="faq"><summary>¿El carnet tiene datos personales?</summary><div><p>No. El QR solo tiene el código de 6 números.</p></div></details>
+      <details class="faq"><summary>¿No suena el pitido?</summary><div><p>Sacá el celular de silencio y subí el volumen. Igual el cartel de color aparece encima de la imagen.</p></div></details>
     </section>
 
     <section id="problemas">
-      <h2><span class="num">09</span> Problemas comunes y soluciones <a class="anchor" href="#problemas">#</a></h2>
-      <div class="faq">
-        <details><summary>Dice “Tu usuario no tiene un local asignado”</summary><div class="ans"><p>Pedile a <strong>sistemas</strong> que te asigne tu local. Mientras tanto no podés fichar.</p></div></details>
-        <details><summary>La cámara no abre o dice que no dio permiso</summary><div class="ans"><p>En el navegador, entrá a los permisos del sitio, habilitá la cámara y volvé a tocar <strong>Usar la cámara</strong>. Mientras tanto, tipeá los 6 números.</p></div></details>
-        <details><summary>No aparece Asistencia en el menú</summary><div class="ans"><p>Te falta el permiso “Fichar asistencia”. Pedíselo a <strong>sistemas</strong>.</p></div></details>
-        <details><summary>El QR no se lee</summary><div class="ans"><p>Acercá o alejá un poco el carnet, con buena luz. Si no, tipeá los 6 números. Si pasa siempre con el mismo carnet, avisá para que lo reimpriman.</p></div></details>
+      <h2><span class="n">8</span>Si algo falla</h2>
+      <div class="tabla-scroll">
+        <table>
+          <thead><tr><th>Qué pasa</th><th>Qué hacer</th></tr></thead>
+          <tbody>
+            <tr><td class="k">Dice «Tu usuario no tiene un local asignado»</td><td>Pedile a <b>sistemas</b> que te asigne tu local. Mientras tanto no podés fichar.</td></tr>
+            <tr><td class="k">La cámara no abre o dice que no dio permiso</td><td>En el navegador, entrá a los permisos del sitio, habilitá la cámara y volvé a tocar <b>Usar la cámara</b>. Mientras tanto, tipeá los 6 números.</td></tr>
+            <tr><td class="k">No aparece Asistencia en el menú</td><td>Te falta el permiso «Fichar asistencia». Pedíselo a <b>sistemas</b>.</td></tr>
+            <tr><td class="k">El QR no se lee</td><td>Acercá o alejá un poco el carnet, con buena luz. Si no, tipeá los 6 números. Si pasa siempre con el mismo carnet, avisá para que lo reimpriman.</td></tr>
+          </tbody>
+        </table>
       </div>
-      <div class="note"><b>Lo importante:</b> ante cualquier error, avisale a administración con el nombre, la hora y qué pasó. Todo se puede corregir.</div>
+      <div class="nota nota--ok"><span class="nota__titulo">Tranquila</span><p>Ante cualquier error, avisale a administración con el nombre, la hora y qué pasó. Nada se borra y todo se corrige con motivo.</p></div>
     </section>
-
-    <footer>
-      Gerayse · Asistencia del personal: manual para cajeros · actualizado el 26 de octubre de 2026.<br>
-      Guardá este documento a mano: es para consultarlo cuando lo necesites.
-    </footer>
   </main>
 </div>
 
-<button class="top" id="btnTop" aria-label="Volver arriba">↑ Arriba</button>
+<footer class="manual-pie">
+  <div class="pie"><span>Gerayse · Asistencia: manual para cajeros</span><span>Actualizado el 26 de octubre de 2026</span></div>
+</footer>
+
+<button class="arriba" id="arriba" type="button" aria-label="Volver arriba">↑ Arriba</button>
 
 <script>
-(function(){
-  var links = Array.prototype.slice.call(document.querySelectorAll('.toc a'));
-  var map = {};
-  links.forEach(function(a){ map[a.getAttribute('href').slice(1)] = a; });
-  var sections = Array.prototype.slice.call(document.querySelectorAll('main section'));
-  if ('IntersectionObserver' in window){
-    var current = null;
-    var io = new IntersectionObserver(function(entries){
-      entries.forEach(function(e){
-        if(e.isIntersecting){
-          if(current) current.classList.remove('active');
-          var a = map[e.target.id];
-          if(a){ a.classList.add('active'); current = a; }
+  (function () {
+    var enlaces = Array.prototype.slice.call(document.querySelectorAll('.indice a[href^="#"]'));
+    var porId = {};
+    enlaces.forEach(function (a) { porId[a.getAttribute('href').slice(1)] = a; });
+    if ('IntersectionObserver' in window && enlaces.length) {
+      var obs = new IntersectionObserver(function (entradas) {
+        entradas.forEach(function (e) {
+          if (!e.isIntersecting) return;
+          enlaces.forEach(function (a) { a.classList.remove('activo'); });
+          var a = porId[e.target.id];
+          if (a) a.classList.add('activo');
+        });
+      }, { rootMargin: '-20% 0px -70% 0px' });
+      document.querySelectorAll('main section[id]').forEach(function (s) { obs.observe(s); });
+    }
+    // En el celular, el índice se cierra al elegir una sección.
+    enlaces.forEach(function (a) {
+      a.addEventListener('click', function () {
+        if (window.matchMedia('(max-width: 900px)').matches) {
+          var d = document.querySelector('.indice');
+          if (d) d.open = false;
         }
       });
-    }, {rootMargin:'-10% 0px -70% 0px', threshold:0});
-    sections.forEach(function(s){ io.observe(s); });
-  }
-  links.forEach(function(a){
-    a.addEventListener('click', function(){
-      if(window.matchMedia('(max-width:900px)').matches){
-        var d = document.querySelector('.toc');
-        if(d) d.open = false;
-      }
     });
-  });
-  var btn = document.getElementById('btnTop');
-  window.addEventListener('scroll', function(){
-    if(window.scrollY > 500) btn.classList.add('show'); else btn.classList.remove('show');
-  }, {passive:true});
-  btn.addEventListener('click', function(){ window.scrollTo({top:0, behavior:'smooth'}); });
-})();
+    var arriba = document.getElementById('arriba');
+    if (arriba) {
+      window.addEventListener('scroll', function () {
+        arriba.classList.toggle('ver', window.scrollY > 500);
+      }, { passive: true });
+      arriba.addEventListener('click', function () { window.scrollTo({ top: 0, behavior: 'smooth' }); });
+    }
+    // Al imprimir, las preguntas salen abiertas.
+    var abiertas = [];
+    window.addEventListener('beforeprint', function () {
+      abiertas = Array.prototype.filter.call(document.querySelectorAll('details.faq'), function (d) { return !d.open; });
+      abiertas.forEach(function (d) { d.open = true; });
+    });
+    window.addEventListener('afterprint', function () {
+      abiertas.forEach(function (d) { d.open = false; });
+      abiertas = [];
+    });
+  })();
 </script>
 
+</body>
 </html>
