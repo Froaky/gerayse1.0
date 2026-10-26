@@ -92,6 +92,10 @@ construir un servicio, hosting ni base aparte.
   `reportlab`, que ya esta.
 - D9 (2026-10-21) de momento se ficha con el celular: la camara es la forma principal desde el
   arranque (US-14.4). El lector USB queda para cuando los locales lo compren (US-14.8).
+- D10 (2026-10-26, pedido de Mateo) el DNI es opcional: el listado del cliente llego sin DNI y se
+  arranca asi. Si se carga, no se repite entre activos de todas las empresas; sin DNI, no se
+  repite el nombre entre activos de la misma empresa (evita la doble carga). Migracion
+  `asistencia/0007_dni_opcional`; tests en `asistencia/tests_sin_dni.py`.
 
 ## Reglas de negocio
 
@@ -114,9 +118,10 @@ construir un servicio, hosting ni base aparte.
 - aislamiento por empresa (AGENTS.md seccion 8): administracion solo ve, carga, corrige y exporta
   empleados de sus empresas permitidas y del contexto de empresa activo; los forms no ofrecen
   empresas ni sucursales ajenas
-- datos personales minimos: nombre, DNI, empresa y local habitual
-- el DNI es unico entre activos de TODAS las empresas, pero ningun mensaje muestra el nombre de un
-  empleado de una empresa fuera del alcance de quien carga
+- datos personales minimos: nombre, DNI (opcional, D10), empresa y local habitual
+- el DNI, si esta cargado, es unico entre activos de TODAS las empresas, pero ningun mensaje
+  muestra el nombre de un empleado de una empresa fuera del alcance de quien carga; sin DNI, el
+  nombre no se repite entre activos de la misma empresa
 - un archivo subido nunca da 500: lo que no se puede leer se informa en pantalla
 
 ## User Stories

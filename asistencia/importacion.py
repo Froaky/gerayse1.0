@@ -62,7 +62,8 @@ COLUMNAS = {
     "local": {"LOCAL", "SUCURSAL", "LOCAL HABITUAL"},
     "empresa": {"EMPRESA"},
 }
-REQUERIDAS = ("nombre", "dni", "local")
+# El DNI es opcional (26/10/2026): la columna puede faltar o venir vacia.
+REQUERIDAS = ("nombre", "local")
 NOMBRE_MAXIMO = Empleado._meta.get_field("nombre").max_length
 
 
@@ -121,7 +122,7 @@ def leer_listado(archivo) -> list[FilaListado]:
             FilaListado(
                 fila=numero,
                 nombre=nombre,
-                dni=celdas["dni"],
+                dni=celdas.get("dni", ""),
                 local=celdas["local"],
                 empresa=celdas.get("empresa", ""),
                 error_lectura=" ".join(errores),
@@ -196,7 +197,7 @@ def _buscar_titulos(filas) -> tuple[int, dict]:
                     break
         if all(columna in columnas for columna in REQUERIDAS):
             return indice, columnas
-    raise ListadoIlegible("No encuentro la fila de títulos con las columnas nombre, DNI y local.")
+    raise ListadoIlegible("No encuentro la fila de títulos con las columnas nombre y local.")
 
 
 def _celda(valores, indice):
@@ -228,7 +229,7 @@ def procesar_listado(filas: list[FilaListado], *, actor, sucursales, guardar: bo
         por_nombre[normalizar(sucursal.nombre)] = sucursal
         empresas_visibles.add(sucursal.empresa_id)
 
-    dnis = {normalizar_dni(f.dni) for f in filas}
+    dnis = {normalizar_dni(f.dni) for f in filas} - {""}
     activos = {}
     dados_de_baja = {}
     for empleado in Empleado.objects.filter(dni__in=dnis):
@@ -236,8 +237,17 @@ def procesar_listado(filas: list[FilaListado], *, actor, sucursales, guardar: bo
             activos[empleado.dni] = empleado
         elif empleado.empresa_id in empresas_visibles:
             dados_de_baja.setdefault(empleado.dni, empleado)
+    # Sin DNI, lo que evita cargar dos veces a la misma persona es el nombre
+    # dentro de la empresa (como en Empleado.clean).
+    nombres_activos = {
+        (empresa_id, nombre.casefold())
+        for empresa_id, nombre in Empleado.objects.filter(activo=True, empresa_id__in=empresas_visibles).values_list(
+            "empresa_id", "nombre"
+        )
+    }
 
     vistos = {}
+    nombres_vistos = {}
     for fila in filas:
         motivos = [fila.error_lectura] if fila.error_lectura else []
         nombre = " ".join(_CONTROL.sub(" ", fila.nombre).split())
@@ -246,8 +256,11 @@ def procesar_listado(filas: list[FilaListado], *, actor, sucursales, guardar: bo
             motivos.append("Falta el nombre.")
         elif len(nombre) > NOMBRE_MAXIMO:
             motivos.append(f"El nombre tiene más de {NOMBRE_MAXIMO} caracteres.")
-        if not DNI_PATRON.fullmatch(dni):
-            motivos.append(f"DNI inválido: '{fila.dni}'." if fila.dni else "Falta el DNI.")
+        if dni and not DNI_PATRON.fullmatch(dni):
+            motivos.append(f"DNI inválido: '{fila.dni}'.")
+        elif fila.dni.strip() and not dni:
+            # "-" o "." solos: alguien quiso poner algo, no es un DNI vacio.
+            motivos.append(f"DNI inválido: '{fila.dni}'.")
         sucursal = None
         if not fila.local.strip():
             motivos.append("Falta el local.")
@@ -260,7 +273,15 @@ def procesar_listado(filas: list[FilaListado], *, actor, sucursales, guardar: bo
                 fila.local_resuelto = f"{sucursal.codigo} - {sucursal.nombre} ({sucursal.empresa.nombre})"
         if sucursal is not None and fila.empresa.strip() and normalizar(fila.empresa) != normalizar(sucursal.empresa.nombre):
             motivos.append(f"La empresa '{fila.empresa}' no coincide con la del local ({sucursal.empresa.nombre}).")
-        if not motivos:
+        persona = (sucursal.empresa_id, nombre.casefold()) if sucursal is not None else None
+        if not motivos and not dni:
+            if persona in nombres_vistos:
+                motivos.append(
+                    f"Nombre repetido: ya está en la fila {nombres_vistos[persona]}. Si son dos personas, cargales el DNI."
+                )
+            elif persona in nombres_activos:
+                motivos.append("Ya hay un empleado activo con ese nombre en esa empresa. Si es otra persona, cargale el DNI.")
+        elif not motivos:
             activo = activos.get(dni)
             dado_de_baja = dados_de_baja.get(dni)
             if dni in vistos:
@@ -279,7 +300,9 @@ def procesar_listado(filas: list[FilaListado], *, actor, sucursales, guardar: bo
             fila.estado = Estado.RECHAZADA
             fila.motivo = " ".join(motivos)
             continue
-        vistos[dni] = fila.fila
+        if dni:
+            vistos[dni] = fila.fila
+        nombres_vistos.setdefault(persona, fila.fila)
         if not guardar:
             fila.estado = Estado.LISTA
             continue

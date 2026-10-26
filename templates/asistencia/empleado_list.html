@@ -54,7 +54,7 @@
           <div class="row">
             <div>
               <strong>{{ empleado.nombre }}</strong>
-              <div class="muted mt-8">DNI {{ empleado.dni }} · {{ empleado.empresa.nombre }} · {% if empleado.sucursal.empresa_id == empleado.empresa_id %}{{ empleado.sucursal.nombre }}{% else %}local de otra empresa: corregilo{% endif %}</div>
+              <div class="muted mt-8">DNI {{ empleado.dni|default:"sin cargar" }} · {{ empleado.empresa.nombre }} · {% if empleado.sucursal.empresa_id == empleado.empresa_id %}{{ empleado.sucursal.nombre }}{% else %}local de otra empresa: corregilo{% endif %}</div>
               {% if not empleado.activo and empleado.dado_de_baja_en %}
                 <div class="muted mt-8">De baja desde el {{ empleado.dado_de_baja_en|date:"d/m/Y" }}{% if empleado.dado_de_baja_por %} por {{ empleado.dado_de_baja_por.get_username }}{% endif %}.</div>
               {% endif %}

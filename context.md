@@ -147,6 +147,10 @@ Last updated: 2026-10-21
     (fuera del repo: datos personales, en el escritorio de Mateo). Probado con la carga real y DNI
     inventados: 75 de 75 listas. Una persona figura en ARMADI y en MAPOGO: como el DNI no se repite
     entre activos, lleva un solo carnet y ficha en los dos locales; falta saber en que empresa va.
+  - 26/10 Mateo decidio arrancar sin DNI (EP-14 D10): DNI opcional, migracion
+    `asistencia/0007_dni_opcional`. Sin DNI no se repite el nombre en la empresa. El listado real
+    sin DNI pasa la carga real: 75 de 75 listas. Archivo final: `Personal para cargar en
+    Gerayse.xlsx` en el escritorio de Mateo.
   - Copy: las pantallas de asistencia hablan de vos ("Escaneá", "Elegí un mes"), igual que caja y
     tesoreria ("No tenés permiso..."). Queda asi a proposito: el "usted" es para avisos formales al
     cliente (cartel de vencimiento) y documentos que se le entregan (el manual). No pasarlas a usted.

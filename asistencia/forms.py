@@ -43,7 +43,7 @@ class EmpleadoForm(forms.ModelForm):
                 pk__in=[*sucursales.values_list("pk", flat=True), actual.pk]
             )
         self.fields["sucursal"].queryset = sucursales.select_related("empresa").order_by("nombre")
-        self.fields["dni"].help_text = "Solo números; los puntos se sacan solos."
+        self.fields["dni"].help_text = "Opcional. Solo números; los puntos se sacan solos. Evita cargar dos veces a la misma persona."
         _estilar(self)
 
 
@@ -165,7 +165,7 @@ class ExcelForm(forms.Form):
 class ImportarEmpleadosForm(forms.Form):
     archivo = forms.FileField(
         label="Listado de empleados",
-        help_text="CSV o Excel (.xlsx) con las columnas nombre, DNI y local. La empresa sale del local.",
+        help_text="CSV o Excel (.xlsx) con las columnas nombre y local, y DNI si lo tiene. La empresa sale del local.",
     )
 
     def clean_archivo(self):
