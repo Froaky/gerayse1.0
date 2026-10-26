@@ -36,7 +36,7 @@
         <ol>
           <li><a href="#que-cambia">Qué cambia en el día a día</a></li>
           <li><a href="#permisos">Permisos y locales</a></li>
-          <li><a href="#personal">Cargar el personal</a></li>
+          <li><a href="#personal">El personal</a></li>
           <li><a href="#carnets">Carnets</a></li>
           <li><a href="#fichar">Cómo se ficha</a></li>
           <li><a href="#por-local">Cómo va cada local</a></li>
@@ -107,21 +107,25 @@
     </section>
 
     <section id="personal">
-      <h2><span class="n">3</span>Cargar el personal</h2>
+      <h2><span class="n">3</span>El personal</h2>
       <p>En <b>Asistencia → Empleados</b> está el padrón: nombre, empresa y local habitual de cada uno. El empleado <b>no</b> es un usuario de Gerayse: no entra al sistema, solo tiene su carnet.</p>
+      <div class="nota nota--ok"><span class="nota__titulo">Ya está cargado</span><p>El listado del personal lo cargó <b>sistemas</b> antes de arrancar. Vos solo revisá en Empleados que estén todos, y agregá a los que falten o a los que entren después.</p></div>
 
-      <h3>Todos de una vez, desde un Excel</h3>
+      <h3>Agregar a alguien que entra</h3>
+      <ol class="pasos">
+        <li><div><b>Empleados → Nuevo empleado</b>Completá nombre y apellido, empresa, local habitual y, si lo tenés, el DNI. Tocá <span class="boton">Guardar</span>.</div></li>
+        <li><div><b>Dale su carnet</b>Con <span class="boton boton--borde">Carnet</span> lo imprimís, o con <span class="boton boton--borde">Carnet celular</span> se lo mandás por WhatsApp.</div></li>
+      </ol>
+      <div class="nota nota--aviso"><span class="nota__titulo">Sobre el DNI</span><p>No es obligatorio, pero ayuda. Sin DNI, Gerayse no deja cargar dos veces el mismo nombre en la misma empresa, así nadie queda duplicado. Si hay dos personas que se llaman igual, cargales el DNI a las dos. Se agrega cuando quieras con <b>Editar</b>.</p></div>
+
+      <h3>Si entran varios juntos, desde un Excel</h3>
       <ol class="pasos">
         <li><div><b>Prepará el Excel</b>Una fila por persona, con las columnas <b>Apellido</b>, <b>Nombre</b> y <b>Local</b> (el código o el nombre del local). El <b>DNI</b> es opcional.</div></li>
         <li><div><b>Empleados → Cargar desde un listado</b>Subí el archivo y tocá <span class="boton boton--borde">Revisar listado</span>. Todavía no se guarda nada.</div></li>
         <li><div><b>Mirá la revisión</b>Cada fila sale como <span class="chip chip--ok">Lista</span> o <span class="chip chip--peligro">Rechazada</span>, con el motivo (por ejemplo, un local que no existe).</div></li>
         <li><div><b>Tocá <span class="boton">Cargar</span></b>Se cargan las filas listas. Las rechazadas las corregís y las subís en otro archivo, o las cargás de a una.</div></li>
       </ol>
-      <div class="nota nota--ok"><span class="nota__titulo">Tranquila</span><p>Si subís dos veces el mismo listado, no se duplica nadie: la segunda vez esas filas salen rechazadas porque ya están.</p></div>
-
-      <h3>De a uno</h3>
-      <p><b>Nuevo empleado</b>: nombre y apellido, empresa, local habitual y, si lo tenés, el DNI. Después tocá <span class="boton boton--borde">Carnet</span> para imprimirle el suyo.</p>
-      <div class="nota nota--aviso"><span class="nota__titulo">Sobre el DNI</span><p>No es obligatorio, pero ayuda. Sin DNI, Gerayse no deja cargar dos veces el mismo nombre en la misma empresa, así nadie queda duplicado. Si hay dos personas que se llaman igual, cargales el DNI a las dos. Se agrega cuando quieras con <b>Editar</b>.</p></div>
+      <div class="nota nota--ok"><span class="nota__titulo">Tranquila</span><p>Si subís un listado con gente que ya está, no se duplica nadie: esas filas salen rechazadas porque ya están.</p></div>
 
       <h3>Si alguien deja de trabajar</h3>
       <p><b>Dar de baja</b>: deja de poder fichar, pero no se borra. Sus marcas siguen saliendo en el Excel de los meses que trabajó. Si vuelve, lo <b>reactivás</b>.</p>
@@ -273,7 +277,7 @@
       <h2><span class="n">11</span>Para arrancar</h2>
       <ul class="checklist">
         <li>Sistemas te dio el permiso «Administrar asistencia» (y «Fichar asistencia» si vas a fichar).</li>
-        <li>Cargaste el personal desde el Excel y no quedaron filas rechazadas.</li>
+        <li>Revisaste en Empleados que esté todo el personal (lo cargó sistemas) y agregaste a los que falten.</li>
         <li>Imprimiste, recortaste y repartiste los carnets (o se los mandaste al celular).</li>
         <li>Sistemas configuró a cada cajero con «Fichar asistencia» y su local.</li>
         <li>Le avisaste a sistemas quiénes cubren más de un local, para que se los habilite.</li>
@@ -334,7 +338,7 @@
         <div class="tarjeta">
           <h4>Vos (administración)</h4>
           <ul>
-            <li>Cargar el personal y dar de baja a quien se va.</li>
+            <li>Agregar a los que entran y dar de baja a quien se va.</li>
             <li>Imprimir y reponer los carnets, o mandarlos al celular.</li>
             <li>Avisarle a sistemas cuando entra un cajero nuevo o alguien cubre otro local.</li>
             <li>Mirar Por local y corregir olvidos.</li>
