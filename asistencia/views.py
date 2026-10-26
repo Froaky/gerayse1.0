@@ -27,10 +27,12 @@ from .forms import (
     ImportarEmpleadosForm,
     MarcaFiltroForm,
     MarcaManualForm,
+    PorLocalForm,
 )
 from .importacion import Estado, FilaListado, ListadoIlegible, leer_listado, procesar_listado
 from .models import CarnetAnulado, Empleado, Marca
 from .permissions import can_administrar, can_fichar, ensure_acceder, ensure_administrar, ensure_fichar
+from .por_local import asistencia_del_dia
 from .services import (
     actualizar_empleado,
     agregar_marca,
@@ -379,12 +381,18 @@ SESION_LOCAL_FICHAJE = "asistencia_local_fichaje"
 
 
 def _local_de_fichaje(request):
-    """(local, locales que puede elegir). El cajero ficha en su sucursal base,
-    fija. Quien administra asistencia elige el local (queda en la sesion) entre
-    los de su alcance; si no eligio, arranca en su sucursal base."""
-    if not can_administrar(request.user):
-        return request.user.sucursal_base, None
-    locales = sucursales_en_alcance(request).select_related("empresa")
+    """(local, locales que puede elegir; None = local fijo, sin selector).
+    - Quien administra asistencia elige entre todos los locales de su alcance.
+    - El cajero con un solo local (su sucursal base) ficha ahi, fijo.
+    - El cajero con otros locales asignados en su ficha elige entre los suyos.
+    Lo elegido queda en la sesion; si no eligio, arranca en su sucursal base."""
+    if can_administrar(request.user):
+        locales = sucursales_en_alcance(request).select_related("empresa")
+    else:
+        propios = request.user.locales_de_fichaje().filter(empresa__in=empresas_en_alcance(request))
+        if propios.count() <= 1:
+            return propios.first() or request.user.sucursal_base, None
+        locales = propios.select_related("empresa")
     elegido = request.session.get(SESION_LOCAL_FICHAJE)
     local = locales.filter(pk=elegido).first() if elegido else None
     if local is None and request.user.sucursal_base_id:
@@ -399,7 +407,7 @@ def fichar_view(request):
     local, locales = _local_de_fichaje(request)
     if request.method == "POST" and "elegir_local" in request.POST:
         if locales is None:
-            raise PermissionDenied("Solo quien administra asistencia puede elegir el local.")
+            raise PermissionDenied("Tu usuario ficha siempre en su local.")
         pedido = request.POST.get("local", "")
         elegido = locales.filter(pk=int(pedido)).first() if pedido.isascii() and pedido.isdigit() else None
         if elegido is None:
@@ -431,6 +439,34 @@ def fichar_view(request):
         request,
         "asistencia/fichar.html",
         {"title": "Fichar", "fichaje": fichaje, "sucursal": local, "locales": locales},
+    )
+
+
+@login_required
+def por_local(request):
+    """Como va la asistencia de un dia en cada local (EP-14 D15)."""
+    ensure_administrar(request.user)
+    locales = sucursales_en_alcance(request).select_related("empresa")
+    hoy = timezone.localdate()
+    form = PorLocalForm(request.GET or None, locales=locales, initial={"fecha": hoy})
+    fecha, elegidos = hoy, locales
+    if form.is_bound and form.is_valid():
+        fecha = form.cleaned_data.get("fecha") or hoy
+        if form.cleaned_data.get("local"):
+            elegidos = locales.filter(pk=form.cleaned_data["local"].pk)
+    resumenes = asistencia_del_dia(fecha, elegidos, empresas_en_alcance(request).values_list("pk", flat=True))
+    return render(
+        request,
+        "asistencia/por_local.html",
+        {
+            "title": "Asistencia por local",
+            "form": form,
+            "fecha": fecha,
+            "es_hoy": fecha == hoy,
+            "resumenes": resumenes,
+            "trabajando": sum(r.trabajando for r in resumenes),
+            "ficharon": sum(len(r.filas) for r in resumenes),
+        },
     )
 
 

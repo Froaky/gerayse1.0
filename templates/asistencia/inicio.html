@@ -21,13 +21,14 @@
       <div class="row">
         <h2>Administrar</h2>
         <div class="list-actions">
+          <a class="button-secondary" href="{% url 'asistencia:por_local' %}">Por local</a>
           <a class="button-secondary" href="{% url 'asistencia:carnets' %}">Carnets</a>
           <a class="button-secondary" href="{% url 'asistencia:marca_list' %}">Marcas</a>
           <a class="button-secondary" href="{% url 'asistencia:excel' %}">Excel del mes</a>
           <a class="button" href="{% url 'asistencia:empleado_list' %}">Empleados</a>
         </div>
       </div>
-      <p class="muted mt-8">Padrón de empleados, carnets con QR, corrección de marcas y Excel del mes.</p>
+      <p class="muted mt-8">Cómo va cada local, padrón de empleados, carnets con QR, corrección de marcas y Excel del mes.</p>
     </section>
   {% endif %}
 {% endblock %}

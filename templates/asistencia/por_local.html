@@ -1,0 +1,89 @@
+{% extends "cashops/layout.html" %}
+{% load l10n %}
+{% block title %}Asistencia por local | Gerayse{% endblock %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Asistencia por local</h1>
+        <p class="muted">{% if es_hoy %}Hoy{% else %}{{ fecha|date:"l d/m/Y"|capfirst }}{% endif %}: quién está trabajando, quién ya salió y quién de cada local no fichó. Las horas se cuentan por tramo de entrada y salida, igual que en el Excel del mes.</p>
+      </div>
+      <div class="list-actions">
+        <a class="button-secondary" href="{% url 'asistencia:inicio' %}">Asistencia</a>
+        <a class="button-secondary" href="{% url 'asistencia:marca_list' %}?desde={{ fecha|date:'Y-m-d' }}&amp;hasta={{ fecha|date:'Y-m-d' }}">Marcas del día</a>
+      </div>
+    </div>
+    <form method="get" class="stack mt-16" id="por-local-filtro">
+      <div class="summary-grid grid-2">
+        {% for field in form.visible_fields %}
+          <div class="field">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% for error in field.errors %}<div class="error">{{ error }}</div>{% endfor %}
+          </div>
+        {% endfor %}
+      </div>
+      <div class="list-actions">
+        <button class="button" type="submit">Ver</button>
+        <a class="button-secondary" href="{% url 'asistencia:por_local' %}">Hoy</a>
+      </div>
+    </form>
+    <div class="summary-grid grid-2 mt-16">
+      {% if es_hoy %}
+        <div class="summary"><span class="muted">Trabajando ahora</span><strong id="total-trabajando">{{ trabajando }}</strong></div>
+      {% endif %}
+      <div class="summary"><span class="muted">Ficharon {% if es_hoy %}hoy{% else %}ese día{% endif %}</span><strong id="total-ficharon">{{ ficharon }}</strong></div>
+    </div>
+  </section>
+
+  {% for resumen in resumenes %}
+    <section class="card mt-16" id="local-{{ resumen.sucursal.pk|unlocalize }}">
+      <div class="row">
+        <h2>{{ resumen.sucursal.nombre }}</h2>
+        <div class="list-actions">
+          {% if es_hoy %}<span class="badge badge-success">{{ resumen.trabajando }} trabajando</span>{% endif %}
+          <span class="badge badge-muted">{{ resumen.filas|length }} {% if resumen.filas|length == 1 %}fichó{% else %}ficharon{% endif %}</span>
+        </div>
+      </div>
+      <div class="list mt-16">
+        {% for fila in resumen.filas %}
+          <article class="list-item">
+            <div class="row">
+              <div>
+                <strong>{{ fila.nombre }}</strong>
+                <div class="muted mt-8">
+                  {% for tramo in fila.tramos %}{% if not forloop.first %} · {% endif %}{% if tramo.entrada %}{{ tramo.entrada.momento|time:"H:i" }}{% else %}¿?{% endif %} – {% if tramo.salida %}{{ tramo.salida.momento|time:"H:i" }}{% else %}…{% endif %}{% endfor %}
+                  · {% if fila.trabajando_desde %}Lleva {{ fila.lleva_texto }} (en curso){% else %}Horas: {{ fila.horas_texto }}{% endif %}
+                </div>
+              </div>
+              <div class="list-actions">
+                {% if fila.trabajando_desde %}
+                  <span class="badge badge-success">Trabajando desde {{ fila.trabajando_desde|time:"H:i" }}</span>
+                {% elif fila.sin_salida %}
+                  <span class="badge badge-danger">Sin salida</span>
+                {% elif fila.ultima_salida %}
+                  <span class="badge badge-muted">Salió {{ fila.ultima_salida|time:"H:i" }}</span>
+                {% endif %}
+                {% if fila.salida_sin_entrada %}<span class="badge badge-danger">Salida sin entrada</span>{% endif %}
+                {% if fila.corregida %}<span class="badge badge-warning">Corregida</span>{% endif %}
+                {% if fila.empleado_id %}
+                  <a class="button-secondary" href="{% url 'asistencia:marca_list' %}?empleado={{ fila.empleado_id|unlocalize }}&amp;desde={{ fecha|date:'Y-m-d' }}&amp;hasta={{ fecha|date:'Y-m-d' }}">Marcas</a>
+                {% endif %}
+              </div>
+            </div>
+          </article>
+        {% empty %}
+          <p class="muted">Nadie fichó en este local {% if es_hoy %}todavía{% else %}ese día{% endif %}.</p>
+        {% endfor %}
+      </div>
+      {% if resumen.sin_marcas %}
+        <details class="mt-16">
+          <summary>{{ resumen.sin_marcas|length }} de este local sin marcas {% if es_hoy %}hoy{% else %}ese día{% endif %}</summary>
+          <p class="muted mt-8">{% for empleado in resumen.sin_marcas %}{{ empleado.nombre }}{% if not forloop.last %} · {% endif %}{% endfor %}</p>
+        </details>
+      {% endif %}
+    </section>
+  {% empty %}
+    <section class="card mt-16"><p class="muted">No hay locales de tus empresas seleccionadas.</p></section>
+  {% endfor %}
+{% endblock %}

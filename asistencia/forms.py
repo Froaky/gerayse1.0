@@ -139,6 +139,16 @@ class MarcaFiltroForm(forms.Form):
         _estilar(self)
 
 
+class PorLocalForm(forms.Form):
+    fecha = forms.DateField(label="Día", required=False, widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"))
+    local = forms.ModelChoiceField(label="Local", queryset=None, required=False, empty_label="Todos")
+
+    def __init__(self, *args, locales, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["local"].queryset = locales
+        _estilar(self)
+
+
 class ExcelForm(forms.Form):
     mes = forms.CharField(label="Mes", widget=forms.TextInput(attrs={"type": "month"}))
     empresa = forms.ModelChoiceField(label="Empresa", queryset=None, required=False, empty_label="Todas")
