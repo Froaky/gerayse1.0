@@ -106,6 +106,47 @@ class ElegirLocalAlFicharTests(FichajeTestCase):
                     fichar(actor=actor, codigo=self.empleado.codigo_carnet, sucursal=sucursal)
         self.assertFalse(Marca.objects.exists())
 
+    def test_un_cajero_con_otros_locales_elige_solo_entre_los_suyos(self):
+        self.cajero.sucursales_asistencia.set([self.centro])
+        self._login(self.cajero, [self.armadi])
+        response = self.client.get(reverse("asistencia:fichar"))
+        self.assertContains(response, 'id="fichar-local"')
+        self.assertEqual(set(response.context["locales"]), {self.centro, self.terminal})
+        # Arranca en su sucursal base y puede pasar al otro local suyo.
+        self.assertEqual(response.context["sucursal"], self.terminal)
+        self._elegir(self.centro.pk)
+        self._fichar_por_pantalla()
+        self.assertEqual(Marca.objects.get().sucursal, self.centro)
+
+    def test_un_cajero_no_elige_un_local_que_no_es_suyo(self):
+        self.cajero.sucursales_asistencia.set([self.centro])
+        otro = type(self.centro).objects.create(empresa=self.armadi, nombre="Otro", codigo="OTR-03", razon_social="Armadi SRL")
+        self._login(self.cajero, [self.armadi])
+        self._elegir(otro.pk)
+        self.assertNotIn(SESION_LOCAL_FICHAJE, self.client.session)
+        with self.assertRaises(PermissionDenied):
+            fichar(actor=self.cajero, codigo=self.empleado.codigo_carnet, sucursal=otro)
+        self.assertEqual(fichar(actor=self.cajero, codigo=self.empleado.codigo_carnet, sucursal=self.centro).marca.sucursal, self.centro)
+
+    def test_la_ficha_del_usuario_trae_el_campo_de_otros_locales(self):
+        from users.forms import PersonalForm, UserAccessForm
+
+        for formulario in (PersonalForm, UserAccessForm):
+            with self.subTest(formulario=formulario.__name__):
+                campo = formulario(instance=self.cajero).fields["sucursales_asistencia"]
+                self.assertEqual(campo.label, "Otros locales donde ficha asistencia")
+        form = UserAccessForm(
+            {"role": self.operator_role.pk, "usuario_fijo": "on", "sucursal_base": self.terminal.pk,
+             "empresa_principal": self.armadi.pk, "empresas_permitidas": [self.armadi.pk],
+             "sucursales_asistencia": [self.centro.pk], "is_active": "on"},
+            instance=self.cajero,
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        form.save()
+        self.assertEqual(list(self.cajero.sucursales_asistencia.all()), [self.centro])
+        # No habilita cargar deuda de rebote.
+        self.assertFalse(self.cajero.sucursales_deuda.exists())
+
     def test_el_servicio_acepta_el_local_elegido_por_quien_administra(self):
         fichaje = fichar(actor=self.admin, codigo=self.empleado.codigo_carnet, sucursal=self.vivre)
         self.assertEqual(fichaje.resultado, Resultado.REGISTRADA)

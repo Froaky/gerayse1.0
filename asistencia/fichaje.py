@@ -9,7 +9,8 @@ Reglas (epica EP-14, "Reglas de negocio"):
 - carnet anulado, codigo desconocido o empleado de baja no generan marca;
 - la marca guarda el local del cajero (su sucursal base). Quien administra
   asistencia puede fichar eligiendo el local (D11): por ejemplo un admin sin
-  sucursal base.
+  sucursal base. Un cajero con otros locales asignados en su ficha elige entre
+  los suyos (D14).
 """
 
 import re
@@ -57,12 +58,14 @@ def normalizar_codigo(texto) -> str:
 
 def _ensure_local_elegible(actor, sucursal) -> None:
     # La vista solo ofrece locales del alcance; esto es la segunda linea: un
-    # cajero no puede mandar otro local que el suyo, ni nadie uno inactivo o de
-    # una empresa que no tiene permitida.
-    if not can_administrar(actor):
-        raise PermissionDenied("Solo quien administra asistencia puede elegir el local.")
+    # cajero solo puede mandar uno de sus locales asignados, y nadie uno
+    # inactivo o de una empresa que no tiene permitida.
     if not sucursal.activa or not actor.empresas_permitidas.filter(pk=sucursal.empresa_id).exists():
         raise PermissionDenied("Ese local no está entre los de tus empresas.")
+    if can_administrar(actor):
+        return
+    if not actor.locales_de_fichaje().filter(pk=sucursal.pk).exists():
+        raise PermissionDenied("Ese local no está entre los tuyos para fichar.")
 
 
 @transaction.atomic

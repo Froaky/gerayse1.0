@@ -112,6 +112,15 @@ class User(AbstractUser):
         related_name="usuarios_carga_deuda",
         verbose_name="Sucursales adicionales para cargar deuda",
     )
+    # EP-14: locales EXTRA (ademas de la base) donde el usuario puede fichar
+    # asistencia. Vacio = ficha solo en su sucursal base, sin poder elegir otra.
+    # Va aparte de sucursales_deuda para no habilitar deuda de rebote.
+    sucursales_asistencia = models.ManyToManyField(
+        "cashops.Sucursal",
+        blank=True,
+        related_name="usuarios_fichaje_asistencia",
+        verbose_name="Otros locales donde ficha asistencia",
+    )
 
     class Meta:
         verbose_name = "user"
@@ -211,6 +220,16 @@ class User(AbstractUser):
         from cashops.models import Sucursal
 
         ids = set(self.sucursales_deuda.values_list("pk", flat=True))
+        if self.sucursal_base_id:
+            ids.add(self.sucursal_base_id)
+        return Sucursal.objects.filter(pk__in=ids, activa=True).order_by("nombre")
+
+    def locales_de_fichaje(self):
+        """Locales activos donde el usuario ficha asistencia: su sucursal base mas
+        los otros que tenga asignados. Con uno solo, el local queda fijo."""
+        from cashops.models import Sucursal
+
+        ids = set(self.sucursales_asistencia.values_list("pk", flat=True))
         if self.sucursal_base_id:
             ids.add(self.sucursal_base_id)
         return Sucursal.objects.filter(pk__in=ids, activa=True).order_by("nombre")
