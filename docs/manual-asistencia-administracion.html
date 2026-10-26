@@ -196,7 +196,7 @@
         <ol>
           <li><a href="#resumen">En una frase</a></li>
           <li><a href="#que-cambia">Qué cambia en el día a día</a></li>
-          <li><a href="#permisos">Permisos que asignás vos</a></li>
+          <li><a href="#permisos">Permisos y locales</a></li>
           <li><a href="#personal">Cargar el personal</a></li>
           <li><a href="#carnets">Carnets</a></li>
           <li><a href="#fichar">Cómo se ficha</a></li>
@@ -248,35 +248,23 @@
     </section>
 
     <section id="permisos">
-      <h2><span class="num">03</span> Permisos que asignás vos <a class="anchor" href="#permisos">#</a></h2>
-      <p>La asistencia tiene dos permisos. Se dan por persona o por rol, en la ficha del usuario, como todos los permisos de Gerayse. No hace falta crear roles nuevos.</p>
+      <h2><span class="num">03</span> Permisos y locales <a class="anchor" href="#permisos">#</a></h2>
+      <p>La asistencia tiene dos permisos y cada cajero tiene su local. Todo eso <strong>lo configura sistemas</strong>: vos no tenés que tocar usuarios. Acá está cómo funciona, para que sepas qué pedir.</p>
 
       <h3>Permiso 1: “Administrar asistencia”</h3>
-      <p>Es el tuyo. Te deja ver cómo va cada local, manejar el padrón de empleados, imprimir los carnets, corregir marcas y bajar el Excel del mes.</p>
-      <ol class="steps">
-        <li><strong>Entrá a Config → Usuarios</strong>(o Roles, si querés darlo a todo un rol).</li>
-        <li><strong>Elegí la persona</strong>Por ejemplo, vos.</li>
-        <li><strong>Buscá “Administrar asistencia”</strong>Poné <strong>Escritura</strong> en Sí. Listo: en el menú te aparece <strong>Asistencia</strong> con todas las pantallas de administración.</li>
-      </ol>
-      <div class="note"><b>Tip:</b> si vos también vas a fichar (por ejemplo, para probar o para cubrir un local), date además “Fichar asistencia”.</div>
+      <p>Es el tuyo. Te deja ver cómo va cada local, manejar el padrón de empleados, imprimir los carnets, corregir marcas y bajar el Excel del mes. Con este permiso te aparece <strong>Asistencia</strong> en el menú con todas las pantallas de administración.</p>
+      <div class="note"><b>Tip:</b> si vos también vas a fichar (por ejemplo, para probar o para cubrir un local), pedile a sistemas que te dé además “Fichar asistencia”.</div>
 
       <h3>Permiso 2: “Fichar asistencia”</h3>
-      <p>Es el de los cajeros: les deja abrir la pantalla <strong>Fichar</strong> y escanear los carnets. Nada más.</p>
+      <p>Es el de los cajeros: les deja abrir la pantalla <strong>Fichar</strong> y escanear los carnets. Nada más. Para que un cajero pueda fichar, sistemas le configura:</p>
       <ol class="steps">
-        <li><strong>Config → Usuarios, elegí al cajero</strong>Buscá “Fichar asistencia” y poné <strong>Escritura</strong> en Sí.</li>
-        <li><strong>Asignale su local</strong>En el acceso del usuario, tildá <strong>Usuario fijo</strong> y elegí su <strong>Sucursal base</strong>. Ese es el local que queda anotado en cada marca que escanee.</li>
-        <li><strong>Guardá</strong>La próxima vez que entre, le aparece <strong>Asistencia → Fichar</strong> con su local fijo arriba.</li>
+        <li><strong>El permiso “Fichar asistencia”</strong>Sin él, no le aparece Asistencia en el menú.</li>
+        <li><strong>Su local</strong>Es el local que queda anotado en cada marca que escanee. Sin local, la pantalla le avisa “Tu usuario no tiene un local asignado: pedile a sistemas…”.</li>
       </ol>
-      <div class="note"><b>Recordá:</b> sin <b>Sucursal base</b> el cajero no puede fichar: la pantalla le avisa “Tu usuario no tiene un local asignado”.</div>
+      <div class="note"><b>Recordá:</b> si un cajero no puede fichar o no ve Asistencia, que se lo pida a <b>sistemas</b>, no a vos. La pantalla ya se lo dice así.</div>
 
       <h3>¿Un cajero ficha en más de un local?</h3>
-      <p>Normalmente cada cajero ficha <strong>solo en su local</strong>: no puede elegir otro, así ninguna marca queda anotada en un local equivocado. Si una persona cubre más de un local (por ejemplo, la panadería que está dentro de otro local), le habilitás esos locales a esa persona puntual:</p>
-      <ol class="steps">
-        <li><strong>Config → Usuarios, editá a esa persona</strong>En su acceso, buscá <strong>“Otros locales donde ficha asistencia”</strong>.</li>
-        <li><strong>Tildá los locales que cubre</strong>Su sucursal base ya cuenta; marcá solo los otros.</li>
-        <li><strong>Guardá</strong>Desde ahí, al fichar le aparece arriba una lista para elegir el local donde está, solo entre los suyos.</li>
-      </ol>
-      <div class="note note--warn"><b>Ojo:</b> no lo confundas con “Sucursales adicionales para cargar deuda”. Son cosas distintas: una habilita fichar en otro local y la otra habilita cargar gastos como deuda. Marcar una no habilita la otra.</div>
+      <p>Normalmente cada cajero ficha <strong>solo en su local</strong>: no puede elegir otro, así ninguna marca queda anotada en un local equivocado. Si una persona cubre más de un local (por ejemplo, la panadería que está dentro de otro local), pedile a sistemas que le habilite esos locales. Desde ahí, al fichar le aparece arriba una lista para elegir el local donde está, solo entre los suyos.</p>
       <div class="note">Vos, como administradora, elegís en <strong>Fichar</strong> cualquier local de tus empresas.</div>
     </section>
 
@@ -422,11 +410,11 @@ Local Centro                 3 trabajando · 4 ficharon
     <section id="checklist">
       <h2><span class="num">12</span> Checklist para arrancar <a class="anchor" href="#checklist">#</a></h2>
       <ul class="check">
-        <li>Tenés el permiso “Administrar asistencia” (y “Fichar asistencia” si vas a fichar).</li>
+        <li>Sistemas te dio el permiso “Administrar asistencia” (y “Fichar asistencia” si vas a fichar).</li>
         <li>Cargaste el personal desde el Excel y revisaste que no quedaran filas rechazadas.</li>
         <li>Imprimiste, recortaste y repartiste los carnets.</li>
-        <li>Cada cajero tiene “Fichar asistencia”, “Usuario fijo” y su “Sucursal base”.</li>
-        <li>A los que cubren más de un local les marcaste “Otros locales donde ficha asistencia”.</li>
+        <li>Sistemas configuró a cada cajero con “Fichar asistencia” y su local.</li>
+        <li>Le avisaste a sistemas quiénes cubren más de un local, para que se los habilite.</li>
         <li>Probaste fichar con un carnet en cada local (celular, tablet o lector).</li>
         <li>El primer día miraste <strong>Por local</strong> para ver que todos estén fichando.</li>
         <li>Sabés agregar una marca olvidada y bajar el Excel del mes.</li>
@@ -462,8 +450,8 @@ Local Centro                 3 trabajando · 4 ficharon
     <section id="problemas">
       <h2><span class="num">15</span> Problemas comunes y soluciones <a class="anchor" href="#problemas">#</a></h2>
       <div class="faq">
-        <details><summary>El cajero ve “Tu usuario no tiene un local asignado”</summary><div class="ans"><p>En su ficha, tildá <strong>Usuario fijo</strong> y elegí su <strong>Sucursal base</strong>.</p></div></details>
-        <details><summary>El cajero no ve Asistencia en el menú</summary><div class="ans"><p>Le falta el permiso “Fichar asistencia” con Escritura en Sí.</p></div></details>
+        <details><summary>El cajero ve “Tu usuario no tiene un local asignado”</summary><div class="ans"><p>Le falta su local. Lo resuelve <strong>sistemas</strong>: que se lo pida a ellos.</p></div></details>
+        <details><summary>El cajero no ve Asistencia en el menú</summary><div class="ans"><p>Le falta el permiso “Fichar asistencia”. Lo da <strong>sistemas</strong>: que se lo pida a ellos.</p></div></details>
         <details><summary>La cámara no abre o dice que no dio permiso</summary><div class="ans"><p>En el navegador del celular, en los permisos del sitio, habilitá la cámara y volvé a tocar <strong>Usar la cámara</strong>. Mientras tanto se pueden tipear los 6 números.</p></div></details>
         <details><summary>Sale “Ese carnet está anulado”</summary><div class="ans"><p>Ese empleado tiene un carnet nuevo. Si no lo tiene, imprimíselo desde Empleados → <strong>Carnet</strong>.</p></div></details>
         <details><summary>Sale “Está dado de baja”</summary><div class="ans"><p>Si volvió a trabajar, reactivalo en Empleados.</p></div></details>
@@ -481,7 +469,7 @@ Local Centro                 3 trabajando · 4 ficharon
           <ul>
             <li>Cargar el personal y dar de baja a quien se va.</li>
             <li>Imprimir y reponer los carnets.</li>
-            <li>Asignar los permisos y el local de cada cajero.</li>
+            <li>Avisarle a sistemas cuando entra un cajero nuevo o alguien cubre otro local.</li>
             <li>Mirar Por local y corregir olvidos.</li>
             <li>Bajar el Excel a fin de mes.</li>
           </ul>
