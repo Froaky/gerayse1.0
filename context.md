@@ -166,6 +166,12 @@ Last updated: 2026-10-21
     mandarlo por WhatsApp y mostrarlo en la pantalla. Los carnets se bajan de a uno con "Carnet"
     (impreso) o "Carnet celular"; "Imprimir carnets" baja todos juntos. En main desde el 26/10
     15:43 (7abf33d, OK de Mateo), junto con el manual de marca.
+  - **26/10 (16:30 aprox.) listado cargado en PRODUCCION** (pedido de Mateo, logueado el en el panel): 75
+    cargadas, 0 rechazadas (VIV-01 29, TERM-01 11, CENT-02 11, EB1-03 11, EB2-04 6, YH-05 4,
+    PP-OV-06 3); el PDF de carnets sale con 8 hojas. Los codigos de produccion son otros que los de
+    staging: los carnets de staging no sirven. El manual de administracion dice ahora que la
+    primera carga la hizo sistemas y que Tais agrega a los nuevos. Siguen pendientes los 10 que
+    faltan para 85 y la empresa de Rodrigo Correa.
   - **Manuales (26/10, corregido a pedido de Mateo):** van con el formato del "Manual para la
     administracion" de julio (traspaso, `anexos/documentos-de-la-cuenta-claude/`): pagina HTML con
     encabezado, indice, secciones numeradas, pasos, notas Tip/Ojo, antes/ahora, checklist,
