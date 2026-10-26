@@ -164,7 +164,8 @@ Last updated: 2026-10-21
     el 26/10 12:30 (285d438).
   - 26/10 boton "Carnet celular" en el padron (EP-14 D16): PDF vertical de un empleado para
     mandarlo por WhatsApp y mostrarlo en la pantalla. Los carnets se bajan de a uno con "Carnet"
-    (impreso) o "Carnet celular"; "Imprimir carnets" baja todos juntos.
+    (impreso) o "Carnet celular"; "Imprimir carnets" baja todos juntos. En main desde el 26/10
+    15:43 (7abf33d, OK de Mateo), junto con el manual de marca.
   - **Manuales (26/10, corregido a pedido de Mateo):** van con el formato del "Manual para la
     administracion" de julio (traspaso, `anexos/documentos-de-la-cuenta-claude/`): pagina HTML con
     encabezado, indice, secciones numeradas, pasos, notas Tip/Ojo, antes/ahora, checklist,
