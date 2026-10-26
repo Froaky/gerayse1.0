@@ -154,6 +154,13 @@ Last updated: 2026-10-21
   - 26/10 en staging: cargados los 75 (0 rechazos) y el PDF de carnets sale con 75 en 8 hojas.
     Mateo como admin no podia fichar (sin sucursal base): EP-14 D11, quien administra elige el
     local en Fichar; el cajero sigue fijo en su sucursal base.
+  - 26/10 codigo de carnet de 6 digitos (D12) y aviso encima del video al escanear (D13). Mateo
+    lo probo en staging con el celular.
+  - **26/10 12:05 EP-14 + celular en PRODUCCION** (main = bf1e73a, OK explicito de Mateo; deploy
+    de production y demo OK a las 12:06). Falta el arranque: permisos (Administrar a Mateo,
+    Fichar + sucursal base a los cajeros), subir el listado de 75 (preguntar a Tais por los 10
+    que faltan para 85 y la empresa de Rodrigo Correa), imprimir carnets y mandar el manual. Del
+    chat de servidor: respaldo diario (`docs/asistencia-respaldo.md`) y rotar secretos.
   - Copy: las pantallas de asistencia hablan de vos ("Escaneá", "Elegí un mes"), igual que caja y
     tesoreria ("No tenés permiso..."). Queda asi a proposito: el "usted" es para avisos formales al
     cliente (cartel de vencimiento) y documentos que se le entregan (el manual). No pasarlas a usted.
