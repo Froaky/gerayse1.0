@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Nombre del manual</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&family=Spline+Sans+Mono:wght@500;600&display=swap">
+<!-- Si el manual no queda en docs/, ajustá la ruta. armar.py mete la hoja adentro al entregar. -->
+<link rel="stylesheet" href="marca/gerayse-documento.css">
+<style>
+  @page { @bottom-left { content: "Gerayse · Nombre del manual"; } }
+</style>
+</head>
+<body class="manual">
+
+<!--
+  PLANTILLA DE MANUAL WEB (el formato del manual de julio): encabezado, índice al
+  costado, secciones numeradas, pasos, notas Tip / Ojo / Recordá / Tranquila,
+  antes / ahora, checklist para arrancar, preguntas frecuentes, un día de ejemplo,
+  problemas y soluciones, contacto. De vos y en tono cálido; ejemplos inventados.
+  Referencia de cada pieza: docs/marca/manual-de-marca.html, secciones 6 y 7.
+-->
+<header class="masthead">
+  <div class="masthead__in">
+    <div class="marca-linea"><span class="marca marca--m">G</span><b>Gerayse</b><span>Administración, tesorería y control de gestión</span></div>
+    <p class="eyebrow">Manual de uso · Área</p>
+    <h1>Título que dice de qué trata</h1>
+    <p class="bajada">Una o dos oraciones: qué vas a poder hacer después de leer esto.</p>
+    <div class="pastillas">
+      <span class="pastilla pastilla--viva">Sistema activo</span>
+      <span class="pastilla">Para: administración</span>
+      <span class="pastilla">Actualizado: octubre 2026</span>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="lateral">
+    <details class="indice" open>
+      <summary>Contenido</summary>
+      <nav>
+        <ol>
+          <li><a href="#s1">Qué cambia</a></li>
+          <li><a href="#s2">Paso a paso</a></li>
+          <li><a href="#s3">Para arrancar</a></li>
+          <li><a href="#s4">Preguntas frecuentes</a></li>
+          <li><a href="#s5">Un día de ejemplo</a></li>
+          <li><a href="#s6">Si algo falla</a></li>
+        </ol>
+      </nav>
+    </details>
+  </aside>
+
+  <main>
+    <div class="resumen"><strong>En una línea:</strong> lo que hay que saber si no se lee nada más.</div>
+
+    <section id="s1">
+      <h2><span class="n">1</span>Qué cambia</h2>
+      <p>Texto corrido, de vos. Lo que aparece en pantalla, como aparece: <b>Tesorería → Bancos</b>.</p>
+      <div class="dos">
+        <div class="tarjeta tarjeta--antes"><h4>Antes</h4><p>Cómo se hacía.</p></div>
+        <div class="tarjeta tarjeta--ahora"><h4>Ahora</h4><p>Cómo se hace.</p></div>
+      </div>
+      <div class="nota nota--ok"><span class="nota__titulo">Tranquila</span><p>Nada de esto borra información.</p></div>
+    </section>
+
+    <section id="s2">
+      <h2><span class="n">2</span>Paso a paso</h2>
+      <ol class="pasos">
+        <li><div><b>Primer paso</b>Qué hacer y qué se ve.</div></li>
+        <li><div><b>Apretá <span class="boton">Guardar</span></b>Qué pasa después.</div></li>
+      </ol>
+      <div class="nota nota--aviso"><span class="nota__titulo">Ojo</span><p>Lo que conviene revisar dos veces.</p></div>
+    </section>
+
+    <section id="s3">
+      <h2><span class="n">3</span>Para arrancar</h2>
+      <ul class="checklist">
+        <li>Primera cosa que hay que tener lista.</li>
+        <li>Segunda cosa.</li>
+      </ul>
+    </section>
+
+    <section id="s4">
+      <h2><span class="n">4</span>Preguntas frecuentes</h2>
+      <details class="faq"><summary>¿Pregunta tal cual la harían?</summary><div><p>Respuesta corta y concreta.</p></div></details>
+      <details class="faq"><summary>¿Otra pregunta?</summary><div><p>Respuesta.</p></div></details>
+    </section>
+
+    <section id="s5">
+      <h2><span class="n">5</span>Un día de ejemplo</h2>
+      <div class="dia">
+        <div><time>07:45</time><div><p>María abre el local y ficha con el QR de la puerta.</p></div></div>
+        <div><time>13:10</time><div><p>Juan llega al turno tarde; el sistema lo marca y sigue.</p></div></div>
+      </div>
+    </section>
+
+    <section id="s6">
+      <h2><span class="n">6</span>Si algo falla</h2>
+      <table>
+        <thead><tr><th>Qué ves</th><th>Qué hacer</th></tr></thead>
+        <tbody>
+          <tr><td class="k">Un cartel rojo</td><td>Qué significa y cómo se resuelve.</td></tr>
+        </tbody>
+      </table>
+      <p class="chico">Lo del sistema se le pide a sistemas: mandá una captura y el número de la operación.</p>
+    </section>
+  </main>
+</div>
+
+<footer class="manual-pie">
+  <div class="pie"><span>Gerayse · Nombre del manual</span><span>Octubre 2026</span></div>
+</footer>
+
+<script>
+  // Marca en el índice la sección que se está leyendo. Si no hay JS, el índice sigue siendo una lista de enlaces.
+  (function () {
+    var enlaces = document.querySelectorAll('.indice a[href^="#"]');
+    if (!('IntersectionObserver' in window) || !enlaces.length) return;
+    var porId = {};
+    enlaces.forEach(function (a) { porId[a.getAttribute('href').slice(1)] = a; });
+    var obs = new IntersectionObserver(function (entradas) {
+      entradas.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        enlaces.forEach(function (a) { a.classList.remove('activo'); });
+        var a = porId[e.target.id];
+        if (a) a.classList.add('activo');
+      });
+    }, { rootMargin: '-20% 0px -70% 0px' });
+    document.querySelectorAll('main section[id]').forEach(function (s) { obs.observe(s); });
+  })();
+</script>
+
+</body>
+</html>

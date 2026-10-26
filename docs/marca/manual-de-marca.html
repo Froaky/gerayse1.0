@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Manual de marca Gerayse</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&family=Spline+Sans+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="gerayse-documento.css">
+<style>
+  /* Este manual está hecho con la hoja que describe. Lo de abajo es solo para
+     mostrar muestras de color, tipografía y usos incorrectos del isotipo. */
+  @page { @bottom-left { content: "Gerayse · Manual de marca · v1.0"; } }
+  .muestras { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.7em; margin: 0.6em 0 1em; }
+  .muestras--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  @media (max-width: 640px) { .muestras, .muestras--3 { grid-template-columns: 1fr 1fr; } }
+  .muestra { border: 1px solid var(--line); border-radius: 4px; overflow: hidden; break-inside: avoid; }
+  .muestra i { display: block; height: 3.4em; }
+  .muestra div { padding: 0.5em 0.7em 0.6em; font-size: 0.84em; line-height: 1.4; }
+  .muestra b { display: block; color: var(--ink); }
+  .muestra code { background: none; padding: 0; color: var(--muted); font-size: 0.95em; }
+  .especimen { display: grid; grid-template-columns: 10em minmax(0, 1fr); gap: 1em; align-items: baseline; padding: 0.7em 0; border-bottom: 1px solid var(--line); }
+  .especimen .rotulo { padding-top: 0.2em; }
+  .especimen .grande { font-size: 2.2em; line-height: 1.1; color: var(--ink); }
+  .especimen .serif { font-family: var(--serif); font-weight: 600; }
+  .especimen .mono { font-weight: 600; }
+  .malos { display: flex; flex-wrap: wrap; gap: 1.4em; margin: 0.6em 0 1em; }
+  .malo { text-align: center; font-size: 0.8em; color: var(--muted); width: 7em; }
+  .malo .marca { margin-bottom: 0.5em; font-size: 1.9em; }
+  .malo--estirada .marca { transform: scaleX(1.45); margin-left: 0.45em; margin-right: 0.45em; }
+  .malo--sombra .marca { box-shadow: 0 6px 14px rgba(0, 0, 0, 0.35); }
+  .malo--azul .marca { background: #2b5cab; color: #ffffff; }
+  .malo--sans .marca { font-family: var(--sans); font-weight: 800; }
+  .malo--fondo { background: var(--bosque); padding: 0.5em; border-radius: 4px; width: auto; }
+  .malo--fondo .marca { margin-bottom: 0; }
+  .malo--fondo span { display: block; color: #cfe6da; margin-top: 0.5em; }
+  .buenos { display: flex; flex-wrap: wrap; gap: 1.6em; align-items: center; margin: 0.6em 0 1em; }
+  .bueno { display: flex; align-items: center; gap: 0.6em; }
+  .bueno .marca { font-size: 2.4em; }
+  .bueno--oscuro { background: var(--bosque); padding: 0.7em 1em; border-radius: 4px; }
+  .bueno--oscuro .marca { background: #f3efe4; color: #12563a; }
+  .bueno--oscuro b { color: #f3efe4; }
+  .bueno--oscuro span { color: #b9c9bf; }
+  .estado { display: inline-block; padding: 0.15em 0.6em; border-radius: 3px; font-weight: 600; font-size: 0.9em; border: 1px solid; }
+  .tema { border: 1px solid var(--line); border-radius: 4px; padding: 0.8em 1em; break-inside: avoid; }
+  .tema .puntos { display: flex; gap: 0.4em; margin: 0.4em 0 0.3em; }
+  .tema .puntos i { width: 1.6em; height: 1.6em; border-radius: 3px; border: 1px solid rgba(0, 0, 0, 0.12); }
+</style>
+</head>
+<body class="doc">
+
+<header class="portada">
+  <span class="marca" aria-label="Isotipo de Gerayse">G</span>
+  <p class="eyebrow">Manual de marca · Identidad visual</p>
+  <h1>Un solo diseño para todo lo que sale de Gerayse</h1>
+  <p class="bajada">Informes, manuales, presupuestos y reportes: mismas tipografías, mismos colores, mismas piezas. Este manual es la referencia y, a la vez, la muestra: está armado con la hoja de estilos que describe.</p>
+  <p class="firma"><b>Sistema Gerayse</b><span class="sep"></span>Versión 1.0<span class="sep"></span>26 de octubre de 2026<span class="sep"></span>Fuente: <code>docs/marca/</code> del repositorio</p>
+</header>
+
+<div class="resumen">
+  <strong>En una línea:</strong> Fraunces para los títulos, Public Sans para el texto, Spline Sans Mono para las cifras; verde bosque sobre papel blanco; la G verde señal como única marca. La hoja de estilos es <code>gerayse-documento.css</code>, para arrancar hay dos plantillas y para entregar está <code>armar.py</code>, que deja el HTML autocontenido y el PDF.
+</div>
+
+<section id="s1">
+  <h2><span class="n">1</span>Qué es la marca</h2>
+  <p class="intro">Gerayse es el sistema de administración, tesorería y control de gestión de locales gastronómicos: cajas, turnos, bancos, deudas, asistencia. Lo usan la administración y los cajeros, y lo que sale de él lo leen dueños y contadores.</p>
+  <p>La marca es de contaduría: sobria, exacta y con calor en el trato. Verde bosque sobre papel. Un documento de Gerayse tiene que parecer hecho por un estudio contable prolijo, no por una startup. Tres palabras para chequear cualquier pieza: <b>precisa, sobria, cercana</b>.</p>
+  <div class="dos">
+    <div class="tarjeta tarjeta--si">
+      <h4>Así es Gerayse</h4>
+      <ul>
+        <li>Papel blanco, tinta verde-negra, reglas finas de 1 px.</li>
+        <li>Un título serif con carácter y todo lo demás en una sans limpia.</li>
+        <li>Las cifras en mono, alineadas a la derecha, siempre legibles.</li>
+        <li>Un solo acento de color, y es el verde.</li>
+        <li>Texto que va al grano: la respuesta corta primero.</li>
+      </ul>
+    </div>
+    <div class="tarjeta tarjeta--no">
+      <h4>Así no</h4>
+      <ul>
+        <li>Verde neón en fondos grandes, degradés llamativos, sombras.</li>
+        <li>Ilustraciones, íconos de colores, emojis como viñetas.</li>
+        <li>Más de una tipografía por rol o una serif en el texto corrido.</li>
+        <li>Fondos de color en los documentos impresos (el manila es de la pantalla).</li>
+        <li>Adjetivos, signos de admiración, promesas.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="s2">
+  <h2><span class="n">2</span>El isotipo y el nombre</h2>
+  <p>La marca es una <b>G</b> en Fraunces negrita sobre un cuadrado verde señal, con las esquinas apenas redondeadas. No tiene otra versión: no hay logotipo con dibujo ni variante horizontal. Al lado va el nombre, <b>Gerayse</b>, en Fraunces semibold; debajo, si hace falta, la bajada en gris: <i>Administración, tesorería y control de gestión</i>.</p>
+  <div class="buenos">
+    <div class="bueno"><span class="marca">G</span><div class="marca-linea" style="flex-direction:column;align-items:flex-start;gap:0"><b>Gerayse</b><span>Administración, tesorería y control de gestión</span></div></div>
+    <div class="bueno bueno--oscuro"><span class="marca">G</span><div class="marca-linea" style="flex-direction:column;align-items:flex-start;gap:0"><b>Gerayse</b><span>Sobre verde oscuro, la G va en papel</span></div></div>
+  </div>
+  <table>
+    <thead><tr><th>Dónde</th><th>Tamaño</th><th>Esquinas</th><th>Clase</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Tapa o encabezado de un documento</td><td>40 pt</td><td>3 pt</td><td><code>.marca</code></td></tr>
+      <tr><td class="k">Encabezado de un manual web</td><td>34 px</td><td>8 px</td><td><code>.marca .marca--m</code></td></tr>
+      <tr><td class="k">Pie de página, listados, favicon</td><td>17 px</td><td>4 px</td><td><code>.marca .marca--s</code></td></tr>
+    </tbody>
+  </table>
+  <h3>Quién firma</h3>
+  <p>En informes y manuales el que habla es el sistema: la firma es <b>Sistema Gerayse</b> con la fecha de los datos o del documento. Los presupuestos sí llevan nombre propio en «Preparado por», porque son un compromiso entre personas. En los avisos que ve el cliente en pantalla no aparece ningún nombre.</p>
+  <h3>Usos incorrectos</h3>
+  <div class="malos">
+    <div class="malo malo--estirada"><span class="marca">G</span>Estirada</div>
+    <div class="malo malo--sombra"><span class="marca">G</span>Con sombra</div>
+    <div class="malo malo--azul"><span class="marca">G</span>En otro color</div>
+    <div class="malo malo--sans"><span class="marca">G</span>Con otra letra</div>
+    <div class="malo malo--fondo"><span class="marca">G</span><span>Verde sobre verde</span></div>
+  </div>
+</section>
+
+<section id="s3">
+  <h2><span class="n">3</span>Color</h2>
+  <p class="intro">Una paleta corta: tres verdes con tareas distintas, tres grises de tinta y cuatro tonos de papel. Los estados tienen su propio trío. Todos están declarados como variables al principio de <code>gerayse-documento.css</code>.</p>
+  <h3>Tintas y verdes</h3>
+  <div class="muestras">
+    <div class="muestra"><i style="background:#1b3a2e"></i><div><b>Verde bosque</b><code>#1b3a2e · --ink / --bosque</code>Títulos, cabeceras de tabla, botones, círculos de sección.</div></div>
+    <div class="muestra"><i style="background:#2f6b52"></i><div><b>Verde</b><code>#2f6b52 · --green</code>Subtítulos, bordes de notas, enlaces, números de paso, subrayado del título.</div></div>
+    <div class="muestra"><i style="background:#22c47e"></i><div><b>Verde señal</b><code>#22c47e · --senal</code>Solo el isotipo y el puntito de «activo». Nunca texto ni fondos.</div></div>
+    <div class="muestra"><i style="background:#e4f1e9"></i><div><b>Lavado verde</b><code>#e4f1e9 · --lavado</code>Filas de total, notas de confirmación, resaltado suave.</div></div>
+    <div class="muestra"><i style="background:#23282b"></i><div><b>Texto</b><code>#23282b · --text</code>Todo el texto corrido. No es negro puro.</div></div>
+    <div class="muestra"><i style="background:#41504a"></i><div><b>Texto suave</b><code>#41504a · --text-soft</code>Bajadas y explicaciones largas.</div></div>
+    <div class="muestra"><i style="background:#6b757a"></i><div><b>Gris</b><code>#6b757a · --muted</code>Rótulos, leyendas, pies, firmas.</div></div>
+    <div class="muestra"><i style="background:#08130d"></i><div><b>Tinta sobre señal</b><code>#08130d · --on-senal</code>La G sobre el verde señal.</div></div>
+  </div>
+  <h3>Papel y reglas</h3>
+  <div class="muestras">
+    <div class="muestra"><i style="background:#ffffff"></i><div><b>Papel</b><code>#ffffff · --paper</code>El fondo de todo documento. Siempre blanco.</div></div>
+    <div class="muestra"><i style="background:#f7f9f8"></i><div><b>Panel</b><code>#f7f9f8 · --panel</code>Tarjetas de cifras, filas pares, cajas de preguntas.</div></div>
+    <div class="muestra"><i style="background:#f0f3f1"></i><div><b>Panel 2</b><code>#f0f3f1 · --panel-2</code>Resumen, notas, filas de grupo, código.</div></div>
+    <div class="muestra"><i style="background:#dfe4e2"></i><div><b>Regla / regla fuerte</b><code>#dfe4e2 / #c9d2ce</code>Líneas de tabla y separadores; la fuerte bajo los títulos y en los pies.</div></div>
+  </div>
+  <h3>Estados</h3>
+  <p>Fondo lavado, borde del mismo tono y tinta oscura saturada. El color nunca avisa solo: siempre va con la palabra («Ninguna», «Vencida», «Pagada»).</p>
+  <table>
+    <thead><tr><th>Estado</th><th>Tinta</th><th>Fondo</th><th>Borde</th><th>Así se ve</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Bien / confirmado</td><td><code>#2f6b52</code></td><td><code>#e4f1e9</code></td><td><code>#a9cdb6</code></td><td><span class="estado" style="color:var(--ok);background:var(--ok-bg);border-color:var(--ok-line)">Pagada</span></td></tr>
+      <tr><td class="k">Aviso / a revisar</td><td><code>#8a5f12</code></td><td><code>#f9efd9</code></td><td><code>#e0c48a</code></td><td><span class="estado" style="color:var(--aviso);background:var(--aviso-bg);border-color:var(--aviso-line)">Se suman</span></td></tr>
+      <tr><td class="k">Peligro / falta</td><td><code>#a83232</code></td><td><code>#fbe9e8</code></td><td><code>#e8b3ae</code></td><td><span class="estado" style="color:var(--peligro);background:var(--peligro-bg);border-color:var(--peligro-line)">Ninguna</span></td></tr>
+    </tbody>
+  </table>
+  <p>La plata en negativo va en rojo y con el signo delante: <span class="cifra peligro">$ -1.189.225,58</span>. Un desvío a favor va en verde solo si el texto aclara que es bueno.</p>
+  <h3>La pantalla del sistema tiene sus propios temas</h3>
+  <p>Gerayse en pantalla usa la misma familia de verdes con dos temas, definidos en <code>templates/partials/theme_tokens.html</code>: el oscuro (grafito y verde señal) y el claro (papel de contaduría, manila). Los documentos no heredan ninguno de los dos fondos: <b>se imprimen sobre blanco</b>. El informe de carga del 6 de octubre, con canvas manila y tapa verde oscuro, fue la excepción y no se repite.</p>
+  <div class="dos">
+    <div class="tema">
+      <b>Pantalla · tema oscuro</b>
+      <div class="puntos"><i style="background:#0f1315"></i><i style="background:#171c1f"></i><i style="background:#e9efec"></i><i style="background:#22c47e"></i></div>
+      <span class="chico">Grafito, paneles, tinta clara, verde señal como primario.</span>
+    </div>
+    <div class="tema">
+      <b>Pantalla · tema claro</b>
+      <div class="puntos"><i style="background:#efeadd"></i><i style="background:#fdfbf7"></i><i style="background:#14201a"></i><i style="background:#1a6b47"></i></div>
+      <span class="chico">Manila, papel casi blanco, verde-negro, verde inglés.</span>
+    </div>
+  </div>
+</section>
+
+<section id="s4">
+  <h2><span class="n">4</span>Tipografía</h2>
+  <p class="intro">Tres familias, cada una con un solo trabajo. Las tres son de Google Fonts y están embebidas en el repositorio (<code>treasury/reportes/fuentes/</code>) para los reportes que genera el sistema.</p>
+  <div class="especimen"><span class="rotulo">Fraunces · títulos</span><span class="grande serif">Reportes PDF</span></div>
+  <div class="especimen"><span class="rotulo">Public Sans · texto</span><span style="font-size:1.15em">Cómo sacar en PDF la situación económica, la financiera y el desglose de deudas de cada empresa.</span></div>
+  <div class="especimen"><span class="rotulo">Spline Sans Mono · cifras</span><span class="grande mono cifra" style="font-size:1.6em">$ 143.304.290,00</span></div>
+  <table>
+    <thead><tr><th>Familia</th><th>Pesos</th><th>Para qué</th><th>Nunca</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Fraunces</td><td>600 (títulos), 700 (la G)</td><td>Título del documento, títulos de sección, título de reporte, nombre de la marca.</td><td>Texto corrido, tablas, rótulos.</td></tr>
+      <tr><td class="k">Public Sans</td><td>400 texto, 500 datos, 600 negrita, 700 rótulos</td><td>Todo lo demás: párrafos, tablas, notas, pies, rótulos en mayúscula.</td><td>Títulos grandes.</td></tr>
+      <tr><td class="k">Spline Sans Mono</td><td>500, 600</td><td>Importes, cantidades, porcentajes, fechas en tablas, códigos, referencias bancarias.</td><td>Texto corrido o títulos.</td></tr>
+    </tbody>
+  </table>
+  <h3>Escala</h3>
+  <div class="cols">
+    <div>
+      <h4>Impreso (A4, cuerpo 10,2 pt)</h4>
+      <table>
+        <tbody>
+          <tr><td class="k">Título de tapa</td><td class="cifra">32 pt</td></tr>
+          <tr><td class="k">Título del documento</td><td class="cifra">26 pt</td></tr>
+          <tr><td class="k">Título de sección (h2)</td><td class="cifra">13,6 pt</td></tr>
+          <tr><td class="k">Subtítulo (h3)</td><td class="cifra">11 pt</td></tr>
+          <tr><td class="k">Bajada</td><td class="cifra">11,6 pt</td></tr>
+          <tr><td class="k">Texto</td><td class="cifra">10,2 pt</td></tr>
+          <tr><td class="k">Tablas</td><td class="cifra">9,5 pt</td></tr>
+          <tr><td class="k">Leyendas y pies</td><td class="cifra">8,4 pt</td></tr>
+          <tr><td class="k">Rótulos en mayúscula</td><td class="cifra">7,8 pt · +0,14 em</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <h4>Web (cuerpo 16 px)</h4>
+      <table>
+        <tbody>
+          <tr><td class="k">Título del manual</td><td class="cifra">29 – 42 px</td></tr>
+          <tr><td class="k">Título de sección (h2)</td><td class="cifra">21 – 26 px</td></tr>
+          <tr><td class="k">Subtítulo (h3)</td><td class="cifra">18 px</td></tr>
+          <tr><td class="k">Bajada</td><td class="cifra">17 px</td></tr>
+          <tr><td class="k">Texto</td><td class="cifra">16 px · 1,62</td></tr>
+          <tr><td class="k">Tablas</td><td class="cifra">15 px</td></tr>
+          <tr><td class="k">Leyendas y pastillas</td><td class="cifra">13 px</td></tr>
+          <tr><td class="k">Ancho de lectura</td><td class="cifra">44 rem</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <h3>Cómo se escriben los datos</h3>
+  <ul>
+    <li><b>Plata:</b> <span class="cifra">$ 1.234.567,89</span>. Espacio después del signo, punto de miles, coma decimal, siempre dos decimales. En tablas, alineada a la derecha y en mono.</li>
+    <li><b>Fechas:</b> <span class="cifra">26/10/2026</span> en tablas y rótulos; «26 de octubre de 2026» en el texto.</li>
+    <li><b>Porcentajes:</b> <span class="cifra">26,55 %</span>, con espacio antes del signo.</li>
+    <li><b>Cantidades:</b> <span class="cifra">1.755</span> facturas; nunca «1755».</li>
+    <li>Números tabulares (<code>font-variant-numeric: tabular-nums</code>) en toda columna de cifras.</li>
+  </ul>
+  <div class="nota nota--aviso">
+    <span class="nota__titulo">Ojo con las fuentes al imprimir</span>
+    <p>Si el PDF se imprime antes de que carguen las fuentes de Google, Chrome usa Georgia y Segoe UI y el documento sale parecido pero no igual. Pasó con varios PDF de agosto. <code>armar.py</code> espera diez segundos de tiempo virtual antes de imprimir; si imprimís a mano, esperá a que la página termine de cargar.</p>
+  </div>
+</section>
+
+<section id="s5">
+  <h2><span class="n">5</span>La página</h2>
+  <p class="intro">Todo documento impreso es A4 con márgenes de 16 mm (18 abajo). El pie lo pone la hoja sola en cada página: a la izquierda «Gerayse · nombre del documento», a la derecha «Página X de Y».</p>
+  <h3>El encabezado, de arriba hacia abajo</h3>
+  <ol class="pasos">
+    <li><div><b>La G</b>Sola, a 40 pt, arriba a la izquierda.</div></li>
+    <li><div><b>El rótulo</b>Tipo de documento y área, en mayúsculas verdes: <span class="eyebrow" style="display:inline;margin:0">Manual de uso · Tesorería</span>.</div></li>
+    <li><div><b>El título</b>En Fraunces, con una línea verde corta debajo. Dice de qué trata, no el nombre del módulo: «Asignar transferencias a deudas», no «Módulo de pagos».</div></li>
+    <li><div><b>La bajada</b>Una o dos oraciones en gris que cuentan qué se va a encontrar.</div></li>
+    <li><div><b>La firma</b>«Sistema Gerayse · mes y año · Nuevo: …» o «Datos al … · Verificado sobre …».</div></li>
+    <li><div><b>En una línea</b>El resumen en una caja gris con borde verde: lo que hay que saber si no se lee nada más.</div></li>
+  </ol>
+  <h3>Los cuatro documentos</h3>
+  <table>
+    <thead><tr><th>Documento</th><th>Rótulo</th><th>Portada</th><th>Secciones típicas</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Informe<span class="sub">Explica un dato o un problema</span></td><td>Informe · Tesorería · tema</td><td>Compacta, con firma «Datos al …»</td><td>La respuesta corta (con tarjetas) · Por qué pasó · Qué se está perdiendo · Qué hay que hacer</td></tr>
+      <tr><td class="k">Manual de uso<span class="sub">Enseña a usar una pantalla</span></td><td>Manual de uso · área</td><td>Compacta, con «Nuevo: …»</td><td>Dónde está · Paso a paso · Qué vas a ver en pantalla · Si algo no cierra · Resumen para tener a mano</td></tr>
+      <tr><td class="k">Presupuesto<span class="sub">Propone un desarrollo</span></td><td>Presupuesto · Sistema Gerayse</td><td>Tapa entera: preparado para / por, fecha, estado, validez, resumen con importe</td><td>Qué incluye · Cómo sale · Presupuesto · Condiciones</td></tr>
+      <tr><td class="k">Reporte del sistema<span class="sub">Lo genera Gerayse (ReportLab)</span></td><td>—</td><td>Encabezado con razón social y título a la derecha</td><td>Tarjetas de cifras · Tablas · Notas al pie</td></tr>
+    </tbody>
+  </table>
+  <h3>Cómo se ve el encabezado de un reporte del sistema</h3>
+  <div class="encabezado-reporte">
+    <div class="encabezado-reporte__linea"><span class="encabezado-reporte__razon">Café Bruma S.R.L.</span><span class="encabezado-reporte__titulo">Situación económica</span></div>
+    <div class="encabezado-reporte__meta"><span>CUIT: <b>30-99000001-7</b></span><span>Alcance: <b>General (todas las sucursales)</b></span><span>Período: <b>01/09/2026 al 30/09/2026</b></span><span>Emitido: <b>14/10/2026 19:54</b></span></div>
+  </div>
+  <p class="leyenda">Encabezado de reporte, con datos inventados.</p>
+</section>
+
+<section id="s6">
+  <h2><span class="n">6</span>Las piezas</h2>
+  <p class="intro">Cada pieza existe en la hoja de estilos con su clase. Se usan tal cual; si un documento necesita algo que no está acá, se agrega a la hoja, no al documento.</p>
+
+  <h3>Resumen y notas</h3>
+  <div class="resumen"><strong>En una línea:</strong> la caja de resumen va una sola vez, después de la firma. Clase <code>.resumen</code>.</div>
+  <div class="nota"><span class="nota__titulo">Tip</span><p>La nota común: fondo gris, borde verde. Para un dato útil que no es obligatorio. Clase <code>.nota</code>.</p></div>
+  <div class="nota nota--ok"><span class="nota__titulo">Tranquila</span><p>Para confirmar que nada se pierde o que algo ya está resuelto. Clase <code>.nota .nota--ok</code>.</p></div>
+  <div class="nota nota--aviso"><span class="nota__titulo">Ojo</span><p>Para lo que conviene no hacer o revisar dos veces. Clase <code>.nota .nota--aviso</code>.</p></div>
+  <div class="nota nota--peligro"><span class="nota__titulo">No lo hagas</span><p>Para lo que rompe algo o duplica plata. Clase <code>.nota .nota--peligro</code>. Se usa poco.</p></div>
+  <div class="nota nota--gris"><span class="nota__titulo">Recordá</span><p>Para un dato de contexto, sin urgencia. Clase <code>.nota .nota--gris</code>.</p></div>
+
+  <h3>Tablas</h3>
+  <p>Cabecera verde bosque con texto blanco, filas pares en panel, cifras en mono a la derecha, fila de grupo en panel 2 y fila de total en lavado verde con borde superior. La primera columna, cuando nombra algo, va en negrita verde (<code>td.k</code>).</p>
+  <table>
+    <thead><tr><th>Proveedor</th><th>Comprobante</th><th>Vence</th><th class="cifra">Importe</th><th class="cifra">Saldo</th></tr></thead>
+    <tbody>
+      <tr class="grupo"><td colspan="5">Septiembre 2026 · 3 facturas</td></tr>
+      <tr><td class="k">Distribuidora Los Andes S.R.L.</td><td>FC A 0004-00007846</td><td class="cifra">23/10/2026</td><td class="cifra">$ 2.435.927,40</td><td class="cifra">$ 2.435.927,40</td></tr>
+      <tr><td class="k">Fiambres y Quesos Don Aurelio</td><td>FC A 0004-00006619</td><td class="cifra">04/10/2026 *</td><td class="cifra">$ 799.093,49</td><td class="cifra">$ 0,00</td></tr>
+      <tr><td class="k">Panificados del Valle</td><td>FC A 0001-00001203</td><td class="cifra peligro">Vencida</td><td class="cifra">$ 120.000,00</td><td class="cifra">$ 120.000,00</td></tr>
+      <tr class="total"><td colspan="3">Total</td><td class="cifra">$ 3.355.020,89</td><td class="cifra">$ 2.555.927,40</td></tr>
+    </tbody>
+  </table>
+  <p class="leyenda">Tabla de ejemplo con datos inventados. El asterisco en «Vence» marca lo que ya pasó.</p>
+
+  <h3>Tarjetas de cifras</h3>
+  <p>Para la respuesta corta de un informe o el encabezado de un reporte: rótulo gris, cifra en mono, pista debajo. Tres por fila en A4; dos o cuatro con <code>.kpis--2</code> y <code>.kpis--4</code>.</p>
+  <div class="kpis">
+    <div class="kpi"><span class="rotulo">Movimientos pendientes</span><span class="cifra">379</span><span class="pista">eran 405 cuando sacaste la captura</span></div>
+    <div class="kpi"><span class="rotulo">Importe</span><span class="cifra">$ 75.283.430,01</span><span class="pista">era $ 80.981.887,10</span></div>
+    <div class="kpi kpi--alt"><span class="rotulo">Todos del mismo mes</span><span class="cifra">junio 2026</span><span class="pista">del 01/06 al 30/06</span></div>
+  </div>
+
+  <h3>Pasos, ruta y botones</h3>
+  <p>Los pasos llevan número en círculo verde y un título en negrita. La ruta dice dónde está algo en el sistema, con pastillas; la pastilla verde es el lugar donde se termina. Un botón del sistema se nombra como se ve: <span class="boton">Descargar PDF</span>, <span class="boton boton--borde">Vincular a pago</span>.</p>
+  <div class="ruta"><span class="rotulo">Dónde verlo</span><span class="pill pill--on">Tesorería</span><span class="sep"></span><span class="pill">Bancos</span><span class="sep"></span><span class="pill">Cuenta: ARMADI SRL · MACRO</span><span class="sep"></span><span class="pill">Desde 01/08/2026</span></div>
+  <ol class="pasos">
+    <li><div><b>Entrá a Tesorería → Bancos</b>Es el listado de todos los movimientos de las cuentas bancarias.</div></li>
+    <li><div><b>Buscá la transferencia y abrila</b>Podés buscar por concepto, referencia o importe.</div></li>
+    <li><div><b>Apretá <span class="boton">Pagar una deuda</span></b>Es el botón principal del detalle.</div></li>
+  </ol>
+
+  <h3>Comparaciones y listas</h3>
+  <div class="dos">
+    <div class="tarjeta tarjeta--si"><h4>Sí</h4><ul><li>Transferencia ya cargada → Bancos → abrir → <b>Pagar una deuda</b>.</li><li>Marcar varias facturas en el mismo reparto.</li></ul></div>
+    <div class="tarjeta tarjeta--no"><h4>No</h4><ul><li>Pagar desde la factura una transferencia que ya estaba en Bancos.</li><li>Asignarle a una factura más de lo que debe.</li></ul></div>
+  </div>
+  <div class="dos">
+    <div class="tarjeta tarjeta--antes"><h4>Antes</h4><p>Un pago semanal de cuenta corriente obligaba a inventar seis movimientos en el banco.</p></div>
+    <div class="tarjeta tarjeta--ahora"><h4>Ahora</h4><p>Una sola transferencia se reparte entre las facturas que pagó.</p></div>
+  </div>
+  <ul class="checklist">
+    <li class="hecho">Cargar la razón social y el CUIT de cada empresa.</li>
+    <li>Asignarle empresa a la cuenta «ARMADI SRL · MACRO».</li>
+    <li>Ponerle sucursal a las facturas que no tienen.</li>
+  </ul>
+
+  <h3>Capturas de pantalla</h3>
+  <p>Van en un marco fino, sin sombra, con una leyenda abajo que aclara que los datos son inventados. Nunca una captura con datos reales de un cliente. Si no hay captura, el marco sirve para dibujar la pantalla con texto.</p>
+  <div class="captura">
+    <div class="captura__barra"><span><b>Pantalla del reparto</b></span><span>Tesorería · Bancos</span></div>
+    <div class="captura__cuerpo">
+      <div class="kpis kpis--2" style="margin:0 0 .6em"><div class="kpi"><span class="rotulo">Importe de la transferencia</span><span class="cifra">$ 1.500.000,00</span></div><div class="kpi"><span class="rotulo">Queda por asignar</span><span class="cifra">$ 0,00</span></div></div>
+      <span class="boton">Pagar las facturas marcadas</span>
+    </div>
+  </div>
+  <p class="leyenda">Pantalla del reparto. Datos inventados.</p>
+
+  <h3>Preguntas frecuentes</h3>
+  <p>Solo en los manuales web, desplegables. En papel se escriben como pregunta en negrita y respuesta debajo.</p>
+  <details class="faq"><summary>¿Se puede repartir una transferencia en dos veces?</summary><div><p>Sí. Lo que no asignaste queda disponible y aparece como «Quedan $ … sin asignar» en el detalle.</p></div></details>
+  <details class="faq"><summary>¿Qué pasa si me equivoqué de factura?</summary><div><p>Anulás ese pago desde el pago mismo. El saldo vuelve a la factura y el importe vuelve a quedar disponible.</p></div></details>
+</section>
+
+<section id="s7">
+  <h2><span class="n">7</span>El manual web</h2>
+  <p class="intro">Los manuales para la administración y los cajeros no se imprimen: se mandan como página (y como PDF de respaldo). Tienen el formato del manual de julio, con las mismas piezas de este documento y la tipografía y los colores de la marca.</p>
+  <ol class="pasos">
+    <li><div><b>Encabezado</b>La G con el nombre y la bajada, las pastillas (<span class="pastilla pastilla--viva">Sistema activo</span> <span class="pastilla">Para: administración</span> <span class="pastilla">Actualizado: octubre 2026</span>), el título y la bajada.</div></li>
+    <li><div><b>Índice al costado</b>Fijo mientras se lee; en el celular se vuelve un desplegable arriba.</div></li>
+    <li><div><b>Secciones numeradas</b>Las mismas de un manual impreso, más: un checklist para arrancar, preguntas frecuentes desplegables, un día de operación de ejemplo con horarios, problemas y soluciones, responsabilidades y contacto.</div></li>
+    <li><div><b>Notas con nombre</b>Tip, Ojo, Recordá, Tranquila. Son las mismas cuatro notas de la sección 6.</div></li>
+    <li><div><b>Tema oscuro solo</b>La hoja sigue el tema del teléfono o la computadora con los colores del tema oscuro del sistema. No hay nada que configurar.</div></li>
+  </ol>
+  <p>La plantilla es <code>docs/marca/plantilla-manual-web.html</code>. Los manuales de asistencia (<code>docs/manual-asistencia-*.html</code>) tienen esta estructura con una paleta anterior; cuando se los vuelva a tocar, pasan a esta hoja.</p>
+</section>
+
+<section id="s8">
+  <h2><span class="n">8</span>Voz y tono</h2>
+  <p class="intro">Gerayse habla de vos, con calor y sin vueltas. La respuesta corta va primero; después, el porqué. Se nombra lo que la persona ve en pantalla, no cómo está hecho el sistema.</p>
+  <table>
+    <thead><tr><th>Pieza</th><th>Trato</th><th>Tono</th><th>Ejemplo</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Manual de uso</td><td>De vos</td><td>Cálido y concreto. Ejemplos con nombres inventados (María, Juan, Café Bruma).</td><td>«Tranquila, no se pierde nada: el pago se anula con motivo y queda registrado quién y cuándo.»</td></tr>
+      <tr><td class="k">Informe</td><td>De vos</td><td>Sobrio. Cifras exactas, sin adjetivos, sin culpas.</td><td>«Es un tema de fechas, no de descuido.»</td></tr>
+      <tr><td class="k">Presupuesto</td><td>De vos</td><td>Formal y cercano. Importes exactos, forma de pago concreta, validez.</td><td>«Si hacen falta más, se suman al presupuesto; si se usan menos, quedan a cuenta.»</td></tr>
+      <tr><td class="k">Pantalla operativa</td><td>De vos</td><td>Corto, en imperativo.</td><td>«Escaneá el código», «Elegí un mes».</td></tr>
+      <tr><td class="k">Aviso formal al cliente</td><td>De usted</td><td>Impersonal: habla el sistema, no una persona.</td><td>«Regularice el saldo del mes para mantener el servicio de alojamiento.»</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li>En manuales, informes y avisos no aparece ningún nombre propio del lado del sistema. Firma «Sistema Gerayse».</li>
+    <li>Sin signos de admiración, sin «¡Listo!», sin promesas («nunca falla»).</li>
+    <li>Las capturas y los ejemplos llevan datos inventados y lo dicen: «Datos inventados».</li>
+    <li>Lo que el sistema no hace se dice tal cual: «Lo que todavía no está».</li>
+    <li>Se escribe como se habla con alguien que sabe de su trabajo pero no de sistemas: «la plata queda esperando», no «el saldo residual persiste».</li>
+  </ul>
+</section>
+
+<section id="s9">
+  <h2><span class="n">9</span>Cómo arrancar un documento nuevo</h2>
+  <ol class="pasos">
+    <li><div><b>Copiá la plantilla</b><code>docs/marca/plantilla-documento.html</code> para algo que se imprime (informe, presupuesto, manual en papel) o <code>docs/marca/plantilla-manual-web.html</code> para un manual web. Dejala en <code>docs/</code> con un nombre en minúsculas y guiones.</div></li>
+    <li><div><b>Completá el encabezado</b>Título en <code>&lt;title&gt;</code>, rótulo, título, bajada, firma y el nombre del documento en el pie (<code>@page</code> en el <code>&lt;style&gt;</code> de la página).</div></li>
+    <li><div><b>Escribí con las piezas</b>Resumen, secciones numeradas, pasos, tablas, tarjetas, notas. Si falta una pieza, se agrega a <code>gerayse-documento.css</code> y a este manual.</div></li>
+    <li><div><b>Miralo en el navegador</b>Abrí el HTML; se ve igual que impreso. Esperá a que carguen las fuentes.</div></li>
+    <li><div><b>Armá la entrega</b><code>python docs/marca/armar.py docs/mi-documento.html --destino "…/gerayse/informes"</code> deja el HTML autocontenido y el PDF, con el nombre del título. Los manuales van a <code>gerayse/manuales</code>, los presupuestos a <code>gerayse/presupuestos</code>, los informes a <code>gerayse/informes</code>.</div></li>
+  </ol>
+  <h3>Antes de mandarlo</h3>
+  <ul class="checklist">
+    <li>El PDF tiene Fraunces en los títulos y Public Sans en el texto (no Georgia ni Segoe).</li>
+    <li>El pie dice «Gerayse · nombre del documento» y numera las páginas.</li>
+    <li>Toda la plata está en mono, con «$ », punto de miles y coma decimal.</li>
+    <li>Ninguna tabla corta una fila entre dos páginas; ningún título queda solo al pie de una página.</li>
+    <li>Las capturas y los ejemplos son inventados y lo dicen.</li>
+    <li>No aparece ningún nombre propio del lado del sistema (salvo «Preparado por» en un presupuesto).</li>
+    <li>El resumen «En una línea» alcanza para entender el documento sin leer el resto.</li>
+  </ul>
+</section>
+
+<section id="s10">
+  <h2><span class="n">10</span>Lo que no se hace</h2>
+  <ul>
+    <li>Fondos de color en documentos: ni manila, ni tapas verdes, ni franjas. El papel es blanco.</li>
+    <li>Otra tipografía. Si Fraunces no carga, se espera; no se cambia por Georgia «porque es parecida».</li>
+    <li>Verde señal en texto, en fondos o en botones. Es el color de la G y de un puntito, nada más.</li>
+    <li>Sombras, degradés y bordes redondeados grandes en papel. La estructura la dan las reglas de 1 px.</li>
+    <li>Emojis, íconos de colores o viñetas dibujadas. Las viñetas son el punto verde del navegador.</li>
+    <li>Color como único aviso de estado. Siempre con la palabra al lado.</li>
+    <li>Texto justificado, mayúsculas en frases enteras, subrayados que no son enlaces.</li>
+    <li>Datos reales de un cliente en ejemplos, capturas o documentos que se comparten como muestra.</li>
+    <li>Piezas nuevas definidas adentro de un documento. Van a la hoja de estilos, así el próximo documento las tiene.</li>
+  </ul>
+</section>
+
+<footer class="pie">
+  <span>Gerayse · Manual de marca · v1.0</span>
+  <span>Hoja de estilos: <code>docs/marca/gerayse-documento.css</code></span>
+</footer>
+
+</body>
+</html>

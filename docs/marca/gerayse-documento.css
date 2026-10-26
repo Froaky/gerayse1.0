@@ -1,0 +1,389 @@
+/* ============================================================================
+   gerayse-documento.css — la hoja de estilos única de los documentos de Gerayse.
+
+   Todo lo que sale de Gerayse (informes, manuales, presupuestos, reportes) se
+   arma con esta hoja, así sale con un solo diseño. La referencia visual, con
+   cada pieza mostrada, es docs/marca/manual-de-marca.html.
+
+   Dos modos, mismas piezas:
+     body.doc     documento A4: se lee en pantalla y se imprime (informes,
+                  presupuestos, manuales para imprimir).
+     body.manual  manual web con el formato de julio: encabezado, índice al
+                  costado, secciones numeradas, preguntas frecuentes.
+
+   Los tamaños de las piezas van en em, así escalan con el cuerpo de cada modo
+   (10,2 pt impreso, 1 rem en pantalla).
+   ============================================================================ */
+
+/* ---------- 1. Tokens ---------- */
+:root {
+  /* Tintas */
+  --ink:        #1b3a2e;   /* verde bosque: títulos y rellenos de marca */
+  --green:      #2f6b52;   /* verde: acentos, subtítulos, enlaces, bordes */
+  --senal:      #22c47e;   /* verde señal: solo el isotipo y marcas chicas */
+  --on-senal:   #08130d;   /* la G sobre el verde señal */
+  --text:       #23282b;
+  --text-soft:  #41504a;
+  --muted:      #6b757a;
+
+  /* Papel */
+  --paper:      #ffffff;
+  --panel:      #f7f9f8;
+  --panel-2:    #f0f3f1;
+  --lavado:     #e4f1e9;   /* lavado verde: totales, resaltado suave */
+  --line:       #dfe4e2;
+  --line-strong:#c9d2ce;
+
+  /* Rellenos de marca y la tinta que va encima */
+  --bosque:     #1b3a2e;   --on-bosque: #ffffff;
+  --verde:      #2f6b52;   --on-verde:  #ffffff;
+
+  /* Estados: tinta, fondo lavado, borde */
+  --ok:      #2f6b52;  --ok-bg:      #e4f1e9;  --ok-line:      #a9cdb6;
+  --aviso:   #8a5f12;  --aviso-bg:   #f9efd9;  --aviso-line:   #e0c48a;
+  --peligro: #a83232;  --peligro-bg: #fbe9e8;  --peligro-line: #e8b3ae;
+
+  /* Tipografía */
+  --serif: "Fraunces", Georgia, "Times New Roman", serif;
+  --sans:  "Public Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono:  "Spline Sans Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
+
+  --ancho-lectura: 44rem;
+  --radio: 10px;
+}
+
+/* Tema oscuro, solo en pantalla (el papel siempre se imprime claro).
+   Son los valores del tema oscuro del sistema (templates/partials/theme_tokens.html). */
+@media screen and (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ink: #e9efec; --green: #46d492; --text: #e9efec; --text-soft: #c4ccc7; --muted: #8b968f;
+    --paper: #0f1315; --panel: #171c1f; --panel-2: #1e2427; --lavado: #12251c;
+    --line: #262d30; --line-strong: #333c40;
+    --bosque: #22c47e; --on-bosque: #08130d; --verde: #1aa568; --on-verde: #08130d;
+    --ok: #46d492; --ok-bg: #12251c; --ok-line: #1f5a3f;
+    --aviso: #d9a441; --aviso-bg: #2a2312; --aviso-line: #5c4a20;
+    --peligro: #e2635c; --peligro-bg: #2a1615; --peligro-line: #5c2f2c;
+  }
+}
+@media screen {
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ink: #e9efec; --green: #46d492; --text: #e9efec; --text-soft: #c4ccc7; --muted: #8b968f;
+    --paper: #0f1315; --panel: #171c1f; --panel-2: #1e2427; --lavado: #12251c;
+    --line: #262d30; --line-strong: #333c40;
+    --bosque: #22c47e; --on-bosque: #08130d; --verde: #1aa568; --on-verde: #08130d;
+    --ok: #46d492; --ok-bg: #12251c; --ok-line: #1f5a3f;
+    --aviso: #d9a441; --aviso-bg: #2a2312; --aviso-line: #5c4a20;
+    --peligro: #e2635c; --peligro-bg: #2a1615; --peligro-line: #5c2f2c;
+  }
+}
+
+/* ---------- 2. Base ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--text);
+  font-family: var(--sans);
+  line-height: 1.55;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+h1, h2, h3 { font-family: var(--serif); font-weight: 600; color: var(--ink); letter-spacing: -0.01em; text-wrap: balance; margin: 0; }
+p { margin: 0 0 0.65em; }
+strong, b { font-weight: 600; }
+em { font-style: italic; }
+a { color: var(--green); }
+ul, ol { margin: 0 0 0.8em; padding-left: 1.2em; }
+li { margin: 0 0 0.25em; }
+li::marker { color: var(--green); }
+hr { border: 0; border-top: 1px solid var(--line); margin: 1.4em 0; }
+img { max-width: 100%; }
+code, kbd, .mono { font-family: var(--mono); }
+code { font-size: 0.92em; background: var(--panel-2); padding: 0 0.3em; border-radius: 2px; color: var(--text); }
+pre { font-family: var(--mono); font-size: 0.88em; line-height: 1.5; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 0.8em 1em; overflow-x: auto; }
+pre code { background: none; padding: 0; }
+.cifra { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rotulo { font-size: 0.74em; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.eyebrow { font-size: 0.78em; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--green); margin: 0 0 0.6em; }
+.chico, .leyenda { font-size: 0.84em; color: var(--muted); }
+.leyenda { margin: 0.3em 0 1em; }
+.r { text-align: right; }
+.c { text-align: center; }
+.junto { break-inside: avoid; }
+.salto { break-before: page; }
+:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+
+/* ---------- 3. Marca ---------- */
+.marca {
+  display: inline-grid; place-items: center;
+  width: 2.6em; height: 2.6em; border-radius: 0.2em;
+  background: var(--senal); color: var(--on-senal);
+  font-family: var(--serif); font-weight: 700; font-size: 1.5em; line-height: 1;
+  text-decoration: none;
+}
+.marca--m { font-size: 1.15em; border-radius: 0.3em; }
+.marca--s { font-size: 0.72em; border-radius: 0.25em; }
+.marca-linea { display: flex; align-items: center; gap: 10px; }
+.marca-linea b { font-family: var(--serif); font-weight: 600; color: var(--ink); letter-spacing: 0.01em; }
+.marca-linea span:not(.marca) { color: var(--muted); font-size: 0.86em; }
+
+/* ---------- 4. Portada y encabezado del documento ---------- */
+.portada { margin-bottom: 1.6em; }
+.portada .marca { margin-bottom: 1.4em; }
+.portada h1 { font-size: 2.55em; line-height: 1.1; margin: 0 0 0.35em; }
+.portada h1::after { content: ""; display: block; width: 1.55em; height: 0.11em; background: var(--green); margin-top: 0.42em; border-radius: 1px; }
+.portada--tapa { padding-top: 6em; break-after: page; }
+.portada--tapa h1 { font-size: 3.1em; }
+.portada--tapa h1::after { display: none; }
+.bajada { font-size: 1.14em; line-height: 1.5; color: var(--text-soft); margin: 0 0 0.9em; max-width: 60ch; }
+.firma { font-size: 0.86em; color: var(--muted); margin: 0 0 1.4em; }
+.firma b { color: var(--text); font-weight: 600; }
+.firma .sep::before { content: "·"; margin: 0 0.5em; }
+.datos { display: flex; flex-wrap: wrap; gap: 0.6em 2.4em; margin: 1.6em 0 1.4em; padding: 0.9em 0; border-top: 1px solid var(--line-strong); border-bottom: 1px solid var(--line-strong); }
+.datos > div { display: flex; flex-direction: column; gap: 0.25em; }
+.datos .v { font-size: 0.96em; font-weight: 600; color: var(--text); }
+
+/* Encabezado de reporte del sistema: razón social a la izquierda, título a la derecha */
+.encabezado-reporte { border: 1px solid var(--line); border-top: 3px solid var(--bosque); padding: 0.8em 1.1em; background: var(--paper); }
+.encabezado-reporte__linea { display: flex; justify-content: space-between; align-items: baseline; gap: 1em; flex-wrap: wrap; }
+.encabezado-reporte__razon { font-weight: 700; color: var(--ink); letter-spacing: 0.04em; text-transform: uppercase; }
+.encabezado-reporte__titulo { font-family: var(--serif); font-weight: 600; font-size: 1.3em; color: var(--green); }
+.encabezado-reporte__meta { margin-top: 0.5em; padding-top: 0.5em; border-top: 1px solid var(--line); font-size: 0.86em; color: var(--muted); display: flex; flex-wrap: wrap; gap: 0.2em 1.4em; }
+.encabezado-reporte__meta b { color: var(--text); font-weight: 500; }
+
+/* ---------- 5. Secciones ---------- */
+section { margin: 0 0 1.6em; }
+h2 {
+  display: flex; align-items: center; gap: 0.55em;
+  font-size: 1.33em; line-height: 1.2;
+  margin: 1.6em 0 0.9em; padding-bottom: 0.45em; border-bottom: 1px solid var(--line-strong);
+  break-after: avoid;
+}
+h2 .n, .n {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  width: 1.25em; height: 1.25em; border-radius: 50%;
+  background: var(--bosque); color: var(--on-bosque);
+  font-family: var(--sans); font-weight: 700; font-size: 0.68em; letter-spacing: 0;
+}
+h3 { font-size: 1.08em; color: var(--green); margin: 1.3em 0 0.55em; break-after: avoid; }
+h4 { font-family: var(--sans); font-size: 0.76em; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--green); margin: 1em 0 0.3em; break-after: avoid; }
+.intro { font-size: 1.06em; margin-bottom: 0.9em; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1.8em; }
+.cols > * { min-width: 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+
+/* ---------- 6. Resumen y notas ---------- */
+.resumen {
+  background: var(--panel-2); border-left: 3px solid var(--green);
+  padding: 0.85em 1.1em 0.9em; margin: 1.2em 0 1.6em;
+  font-size: 1.06em; line-height: 1.55;
+  break-inside: avoid;
+}
+.resumen strong { color: var(--ink); font-weight: 700; }
+.nota {
+  background: var(--panel-2); border-left: 3px solid var(--green);
+  padding: 0.75em 1em 0.8em; margin: 0.9em 0 1.1em;
+  break-inside: avoid;
+}
+.nota strong { color: var(--ink); font-weight: 700; }
+.nota > :last-child { margin-bottom: 0; }
+.nota__titulo { display: block; font-size: 0.74em; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--green); margin-bottom: 0.3em; }
+.nota--ok { background: var(--ok-bg); border-left-color: var(--ok-line); }
+.nota--ok .nota__titulo { color: var(--ok); }
+.nota--aviso { background: var(--aviso-bg); border-left-color: var(--aviso-line); }
+.nota--aviso .nota__titulo, .nota--aviso strong { color: var(--aviso); }
+.nota--peligro { background: var(--peligro-bg); border-left-color: var(--peligro-line); }
+.nota--peligro .nota__titulo, .nota--peligro strong { color: var(--peligro); }
+.nota--gris { border-left-color: var(--line-strong); }
+.nota--gris .nota__titulo { color: var(--muted); }
+
+/* ---------- 7. Tablas ---------- */
+.tabla-scroll { overflow-x: auto; margin: 0.6em 0 0.9em; }
+.tabla-scroll table { margin: 0; }
+table { width: 100%; border-collapse: collapse; font-size: 0.93em; line-height: 1.45; margin: 0.6em 0 0.9em; }
+th { background: var(--bosque); color: var(--on-bosque); text-align: left; font-weight: 600; font-size: 0.92em; padding: 0.55em 0.75em; }
+td { padding: 0.6em 0.75em; vertical-align: top; border-bottom: 1px solid var(--line); }
+tbody tr:nth-child(even) td { background: var(--panel); }
+tr { break-inside: avoid; }
+td.k { font-weight: 600; color: var(--ink); }
+td .sub { display: block; font-size: 0.9em; color: var(--muted); font-weight: 400; margin-top: 0.15em; }
+td b { color: var(--ink); }
+td.cifra, th.cifra { text-align: right; }
+td.cifra { font-size: 0.96em; }
+tr.grupo td { background: var(--panel-2); color: var(--ink); font-weight: 600; font-size: 0.92em; }
+tr.total td { background: var(--lavado); border-top: 1.5px solid var(--bosque); font-weight: 700; color: var(--ink); }
+tr.total td.cifra { font-family: var(--mono); }
+td.peligro, .peligro { color: var(--peligro); font-weight: 600; }
+td.ok, .ok { color: var(--ok); font-weight: 600; }
+
+/* ---------- 8. Tarjetas de cifras (KPI) ---------- */
+.kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.7em; margin: 0.8em 0 1em; }
+.kpis--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.kpis--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 640px) { .kpis, .kpis--2, .kpis--4 { grid-template-columns: 1fr 1fr; } }
+.kpi { background: var(--panel); border-left: 3px solid var(--bosque); padding: 0.8em 1em 0.85em; min-width: 0; break-inside: avoid; }
+.kpi--alt { border-left-color: var(--senal); }
+.kpi .rotulo { display: block; margin-bottom: 0.35em; }
+.kpi .cifra { display: block; font-weight: 600; font-size: 1.28em; color: var(--ink); line-height: 1.2; }
+.kpi .pista { display: block; font-size: 0.82em; color: var(--muted); margin-top: 0.35em; line-height: 1.4; }
+
+/* ---------- 9. Pasos ---------- */
+.pasos { list-style: none; counter-reset: paso; padding: 0; margin: 0.6em 0 1.1em; display: grid; gap: 0.7em; }
+.pasos > li { counter-increment: paso; display: grid; grid-template-columns: 1.6em 1fr; gap: 0.6em; margin: 0; }
+.pasos > li::before {
+  content: counter(paso);
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.45em; height: 1.45em; border-radius: 50%; margin-top: 0.1em;
+  background: var(--verde); color: var(--on-verde);
+  font-weight: 700; font-size: 0.82em;
+}
+.pasos b { display: block; color: var(--ink); font-weight: 700; }
+.pasos > li > div > :last-child { margin-bottom: 0; }
+
+/* ---------- 10. Ruta, pastillas y botones ---------- */
+.ruta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35em; font-size: 0.88em; margin: 0.4em 0 0.8em; }
+.ruta .rotulo { margin-right: 0.3em; }
+.ruta .sep { color: var(--muted); }
+.ruta .sep::before { content: "›"; }
+.pill { display: inline-block; border: 1px solid var(--line-strong); border-radius: 999px; padding: 0.15em 0.7em; background: var(--paper); font-weight: 600; font-size: 0.95em; color: var(--text); white-space: nowrap; }
+.pill--on { background: var(--bosque); color: var(--on-bosque); border-color: var(--bosque); }
+.pastillas { display: flex; flex-wrap: wrap; gap: 0.45em; }
+.pastilla { font-size: 0.8em; padding: 0.3em 0.75em; border-radius: 999px; border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); }
+.pastilla--viva { background: var(--lavado); border-color: var(--ok-line); color: var(--green); font-weight: 600; }
+.pastilla--viva::before { content: "●"; margin-right: 0.4em; color: var(--senal); }
+.boton { display: inline-block; background: var(--bosque); color: var(--on-bosque); border-radius: 3px; padding: 0.1em 0.6em; font-weight: 600; font-size: 0.92em; white-space: nowrap; vertical-align: baseline; }
+.boton--borde { background: var(--paper); color: var(--text); border: 1px solid var(--line-strong); }
+.boton--peligro { background: var(--peligro); color: #fff; }
+kbd { font-size: 0.88em; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 3px; padding: 0 0.4em; background: var(--panel); }
+
+/* ---------- 11. Tarjetas y comparaciones ---------- */
+.dos { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8em; margin: 0.8em 0 1.1em; }
+@media (max-width: 640px) { .dos { grid-template-columns: 1fr; } }
+.tarjeta { border: 1px solid var(--line); border-top: 3px solid var(--bosque); background: var(--paper); padding: 0.8em 1em 0.9em; min-width: 0; break-inside: avoid; }
+.tarjeta h4 { margin: 0 0 0.5em; }
+.tarjeta > :last-child { margin-bottom: 0; }
+.tarjeta--si { border-top-color: var(--green); }
+.tarjeta--si h4 { color: var(--ok); }
+.tarjeta--no { border-top-color: var(--peligro); }
+.tarjeta--no h4 { color: var(--peligro); }
+.tarjeta--aviso { border-top-color: var(--aviso-line); }
+.tarjeta--aviso h4 { color: var(--aviso); }
+.tarjeta--antes { border-top-color: var(--line-strong); background: var(--panel); }
+.tarjeta--antes h4 { color: var(--muted); }
+.tarjeta--ahora { border-top-color: var(--senal); }
+.tarjeta ul { margin-bottom: 0; }
+
+/* ---------- 12. Capturas de pantalla ---------- */
+.captura { border: 1px solid var(--line-strong); border-radius: 4px; overflow: hidden; background: var(--panel); margin: 0.6em 0 0.2em; break-inside: avoid; }
+.captura img { display: block; width: 100%; }
+.captura__barra { display: flex; justify-content: space-between; align-items: center; padding: 0.45em 0.8em; border-bottom: 1px solid var(--line); font-size: 0.8em; color: var(--muted); background: var(--paper); }
+.captura__cuerpo { padding: 0.9em 1em; font-size: 0.9em; }
+
+/* ---------- 13. Checklist, preguntas, línea de tiempo ---------- */
+.checklist { list-style: none; padding: 0; margin: 0.4em 0 1em; display: grid; gap: 0.45em; }
+.checklist li { display: grid; grid-template-columns: 1.1em 1fr; gap: 0.55em; align-items: start; margin: 0; }
+.checklist li::before { content: ""; width: 0.95em; height: 0.95em; border: 1.5px solid var(--line-strong); border-radius: 3px; margin-top: 0.3em; background: var(--paper); }
+.checklist li.hecho::before { background: var(--verde); border-color: var(--verde); }
+.faq { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 0 1em; margin: 0 0 0.55em; }
+.faq summary { list-style: none; cursor: pointer; font-weight: 600; color: var(--ink); padding: 0.75em 0; display: flex; justify-content: space-between; gap: 1em; }
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after { content: "+"; color: var(--green); font-weight: 700; flex: 0 0 auto; }
+.faq[open] summary::after { content: "–"; }
+.faq[open] summary { border-bottom: 1px solid var(--line); }
+.faq > div { padding: 0.7em 0 0.9em; }
+.faq > div > :last-child { margin-bottom: 0; }
+.dia { display: grid; gap: 0.5em; margin: 0.5em 0 1em; }
+.dia > div { display: grid; grid-template-columns: 4.5em 1fr; gap: 0.8em; align-items: baseline; }
+.dia time { font-family: var(--mono); font-size: 0.86em; font-weight: 600; color: var(--green); }
+.dia > div > div > :last-child { margin-bottom: 0; }
+
+/* ---------- 14. Pie ---------- */
+.pie { margin-top: 2.4em; padding-top: 0.7em; border-top: 1px solid var(--line); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.4em 1em; font-size: 0.84em; color: var(--muted); }
+
+/* ============================================================================
+   MODO DOCUMENTO (body.doc): A4, se lee en pantalla y se imprime igual.
+   ============================================================================ */
+@page {
+  size: A4;
+  margin: 16mm 16mm 18mm;
+  @bottom-left  { content: "Gerayse"; font: 8pt "Public Sans", "Segoe UI", sans-serif; color: #6b757a; }
+  @bottom-right { content: "Página " counter(page) " de " counter(pages); font: 8pt "Public Sans", "Segoe UI", sans-serif; color: #6b757a; }
+}
+/* Cada documento pone su nombre en el pie con, en su propio <style>:
+     @page { @bottom-left { content: "Gerayse · Nombre del documento"; } }  */
+
+body.doc { font-size: 10.2pt; }
+@media screen {
+  body.doc {
+    font-size: 15px;
+    max-width: 48rem; margin: 0 auto;
+    padding-block: 2.6rem 4rem;
+    padding-left: max(24px, env(safe-area-inset-left, 0px));
+    padding-right: max(24px, env(safe-area-inset-right, 0px));
+  }
+}
+@media print {
+  body.doc { max-width: none; margin: 0; padding: 0; }
+  a { color: inherit; text-decoration: none; }
+  .no-imprimir { display: none !important; }
+}
+
+/* ============================================================================
+   MODO MANUAL WEB (body.manual): el formato del manual de julio.
+   ============================================================================ */
+body.manual { font-size: 1rem; line-height: 1.62; }
+body.manual h1 { font-size: clamp(1.8rem, 4.4vw, 2.6rem); line-height: 1.08; margin: 0.2em 0 0.15em; }
+body.manual .bajada { font-size: 1.08em; color: var(--muted); margin: 0 0 1.1em; max-width: 52ch; }
+.masthead {
+  border-bottom: 1px solid var(--line);
+  background: radial-gradient(900px 300px at 8% -40%, color-mix(in srgb, var(--senal) 10%, transparent), transparent 60%), var(--panel);
+}
+.masthead__in {
+  max-width: 74rem; margin: 0 auto;
+  padding-block: clamp(26px, 4vw, 46px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.masthead .marca-linea { margin-bottom: 16px; }
+.layout {
+  max-width: 74rem; margin: 0 auto;
+  padding-block: clamp(20px, 3vw, 34px) 90px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; grid-template-columns: 15rem minmax(0, 1fr); gap: clamp(22px, 4vw, 52px); align-items: start;
+}
+.layout > main { min-width: 0; max-width: var(--ancho-lectura); }
+.lateral { position: sticky; top: 18px; }
+.indice { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radio); }
+.indice > summary { list-style: none; cursor: default; padding: 12px 16px; font-family: var(--serif); font-weight: 600; color: var(--ink); border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; }
+.indice > summary::-webkit-details-marker { display: none; }
+.indice > summary::after { content: "▾"; color: var(--muted); font-size: 0.8rem; display: none; }
+.indice nav { padding: 8px; }
+.indice ol { list-style: none; margin: 0; padding: 0; counter-reset: toc; }
+.indice li { counter-increment: toc; margin: 0; }
+.indice a { display: flex; gap: 9px; padding: 7px 9px; border-radius: 8px; color: var(--muted); text-decoration: none; font-size: 0.9rem; line-height: 1.3; }
+.indice a::before { content: counter(toc); font-variant-numeric: tabular-nums; color: var(--green); font-weight: 700; min-width: 1.1em; text-align: right; }
+.indice a:hover { background: var(--panel-2); color: var(--text); }
+.indice a.activo { background: var(--lavado); color: var(--green); font-weight: 600; }
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; gap: 18px; }
+  .lateral { position: static; }
+  .indice { position: sticky; top: 8px; z-index: 5; }
+  .indice > summary { cursor: pointer; }
+  .indice > summary::after { display: inline; }
+}
+body.manual section { scroll-margin-top: 18px; margin-bottom: 44px; }
+body.manual h2 { font-size: clamp(1.3rem, 3vw, 1.6rem); margin: 0 0 12px; padding-top: 6px; }
+body.manual h2 .n { font-size: 0.62em; }
+body.manual h3 { font-size: 1.12em; margin-top: 1.5em; }
+.manual-pie { max-width: 74rem; margin: 0 auto; padding: 0 max(16px, env(safe-area-inset-left, 0px)) 40px; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+@media print {
+  body.manual .lateral, body.manual .masthead::before { display: none; }
+  .layout { display: block; padding: 0; }
+  .masthead { background: none; border: 0; }
+  .masthead__in, .layout { padding-left: 0; padding-right: 0; }
+}

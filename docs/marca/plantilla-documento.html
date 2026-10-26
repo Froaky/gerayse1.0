@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- El <title> es el nombre del archivo que arma armar.py: "Asistencia - Manual para cajeros", "Presupuesto Reportes Gerayse"... -->
+<title>Nombre del documento</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&family=Spline+Sans+Mono:wght@500;600&display=swap">
+<!-- Si el documento no queda en docs/, ajustá la ruta. armar.py mete la hoja adentro al entregar. -->
+<link rel="stylesheet" href="marca/gerayse-documento.css">
+<style>
+  /* Lo único propio de cada documento: el nombre en el pie de cada página. */
+  @page { @bottom-left { content: "Gerayse · Nombre del documento"; } }
+</style>
+</head>
+<body class="doc">
+
+<!--
+  PLANTILLA DE DOCUMENTO A4 (informe, manual para imprimir, presupuesto).
+  Referencia de cada pieza: docs/marca/manual-de-marca.html, sección 6.
+
+  Portada compacta (informes y manuales): <header class="portada">
+  Tapa entera (presupuestos):             <header class="portada portada--tapa"> y agregá el bloque .datos
+-->
+<header class="portada">
+  <span class="marca" aria-label="Gerayse">G</span>
+  <p class="eyebrow">Manual de uso · Tesorería</p>
+  <h1>Título que dice de qué trata</h1>
+  <p class="bajada">Una o dos oraciones que cuentan qué se va a encontrar en el documento y para quién es.</p>
+  <p class="firma"><b>Sistema Gerayse</b><span class="sep"></span>Octubre 2026<span class="sep"></span><b>Nuevo:</b> qué cambió</p>
+
+  <!-- Solo en presupuestos (con .portada--tapa):
+  <div class="datos">
+    <div><span class="rotulo">Preparado para</span><span class="v">Razón social</span></div>
+    <div><span class="rotulo">Preparado por</span><span class="v">Nombre</span></div>
+    <div><span class="rotulo">Fecha</span><span class="v">Octubre 2026</span></div>
+    <div><span class="rotulo">Estado</span><span class="v">Presupuesto</span></div>
+    <div><span class="rotulo">Validez</span><span class="v">30 días</span></div>
+  </div>
+  -->
+</header>
+
+<div class="resumen">
+  <strong>En una línea:</strong> lo que hay que saber si no se lee nada más. Con la ruta y el botón si es un manual: entrá a <b>Tesorería → Bancos</b> y apretá <span class="boton">Pagar una deuda</span>.
+</div>
+
+<section>
+  <h2><span class="n">1</span>La respuesta corta</h2>
+  <p class="intro">Primero el dato, después el porqué.</p>
+  <div class="kpis">
+    <div class="kpi"><span class="rotulo">Rótulo</span><span class="cifra">$ 0,00</span><span class="pista">qué es esta cifra</span></div>
+    <div class="kpi"><span class="rotulo">Rótulo</span><span class="cifra">0</span><span class="pista">qué es esta cifra</span></div>
+    <div class="kpi kpi--alt"><span class="rotulo">Rótulo</span><span class="cifra">mes 2026</span><span class="pista">qué es esta cifra</span></div>
+  </div>
+  <p>Texto corrido. Las palabras clave en <b>negrita</b>; lo que aparece en pantalla, como aparece: <b>Tesorería → Bancos</b>.</p>
+  <div class="nota"><span class="nota__titulo">Tip</span><p>Una nota útil pero no obligatoria. Variantes: <code>.nota--ok</code>, <code>.nota--aviso</code>, <code>.nota--peligro</code>, <code>.nota--gris</code>.</p></div>
+</section>
+
+<section>
+  <h2><span class="n">2</span>Paso a paso</h2>
+  <div class="ruta"><span class="rotulo">Dónde verlo</span><span class="pill pill--on">Tesorería</span><span class="sep"></span><span class="pill">Bancos</span></div>
+  <ol class="pasos">
+    <li><div><b>Primer paso</b>Qué hacer y qué se ve.</div></li>
+    <li><div><b>Segundo paso</b>Qué hacer y qué se ve.</div></li>
+    <li><div><b>Apretá <span class="boton">Guardar</span></b>Qué pasa después.</div></li>
+  </ol>
+  <h3>Un subtítulo</h3>
+  <table>
+    <thead><tr><th>Concepto</th><th>Detalle</th><th class="cifra">Importe</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Fila</td><td>Qué es</td><td class="cifra">$ 0,00</td></tr>
+      <tr><td class="k">Fila</td><td>Qué es</td><td class="cifra">$ 0,00</td></tr>
+      <tr class="total"><td colspan="2">Total</td><td class="cifra">$ 0,00</td></tr>
+    </tbody>
+  </table>
+  <p class="leyenda">Datos inventados.</p>
+</section>
+
+<section>
+  <h2><span class="n">3</span>Resumen para tener a mano</h2>
+  <div class="dos">
+    <div class="tarjeta tarjeta--si"><h4>Sí</h4><ul><li>Lo que conviene hacer.</li></ul></div>
+    <div class="tarjeta tarjeta--no"><h4>No</h4><ul><li>Lo que no hay que hacer.</li></ul></div>
+  </div>
+  <div class="nota nota--gris"><p><strong>Si algo no cierra, no lo fuerces.</strong> Nada de esto borra información. Si ves algo que no cuadra, avisá con el número de la operación y lo revisamos.</p></div>
+</section>
+
+</body>
+</html>
