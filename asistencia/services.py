@@ -96,15 +96,8 @@ def reactivar_empleado(*, actor, empleado: Empleado) -> Empleado:
 
 
 def _codigo_libre() -> str:
-    # 120 bits al azar: un choque es practicamente imposible, pero si pasara no
-    # puede reusar ni un codigo vigente ni uno anulado.
-    while True:
-        codigo = nuevo_codigo_carnet()
-        if not (
-            Empleado.objects.filter(codigo_carnet=codigo).exists()
-            or CarnetAnulado.objects.filter(codigo=codigo).exists()
-        ):
-            return codigo
+    # nuevo_codigo_carnet ya descarta los codigos vigentes y los anulados.
+    return nuevo_codigo_carnet()
 
 
 @transaction.atomic

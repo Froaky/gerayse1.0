@@ -37,9 +37,9 @@ class LectorUSBTests(FichajeTestCase):
         self.assertIn("autofocus", campo.group(0))
         self.assertNotIn("value=", campo.group(0))
 
-    def test_el_codigo_solo_usa_letras_y_numeros_que_no_cambian_con_el_teclado(self):
-        # Mayusculas A-Z y digitos 2-7: iguales en teclado espanol, latinoamericano e ingles.
+    def test_el_codigo_solo_usa_digitos_que_no_cambian_con_el_teclado(self):
+        # Solo 0-9: iguales en teclado espanol, latinoamericano e ingles.
         for _ in range(50):
             codigo = nuevo_codigo_carnet()
             self.assertIsNotNone(CODIGO_CARNET_PATRON.fullmatch(codigo), codigo)
-            self.assertTrue(set(codigo) <= set("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567") | {"1"})
+            self.assertTrue(set(codigo) <= set("0123456789"))

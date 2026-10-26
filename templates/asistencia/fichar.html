@@ -38,6 +38,18 @@
   </section>
   <style>
     .fichar-explicacion-movil { display: none; }
+    .camara-visor { position: relative; width: 100%; max-width: 520px; border-radius: 12px; overflow: hidden; background: #000; border: 4px solid transparent; transition: border-color 0.15s; }
+    .camara-visor video { display: block; width: 100%; }
+    .camara-visor.leyendo { border-color: #e8eef0; }
+    .camara-visor.ok { border-color: #22c47e; }
+    .camara-visor.aviso { border-color: #e0a526; }
+    .camara-visor.error { border-color: #e05555; }
+    .camara-resultado { position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 16px; color: #fff; text-align: center; }
+    .camara-resultado.ok { background: rgba(21, 110, 70, 0.92); }
+    .camara-resultado.aviso { background: rgba(138, 95, 18, 0.92); }
+    .camara-resultado.error { background: rgba(168, 50, 50, 0.92); }
+    .camara-resultado strong { display: block; font-size: 1.9rem; line-height: 1.15; }
+    .camara-resultado span { display: block; font-size: 1.1rem; margin-top: 4px; }
     .fichar-local { display: grid; gap: 6px; }
     .fichar-local-fila { display: flex; gap: 8px; flex-wrap: wrap; }
     .fichar-local-fila select { flex: 1 1 240px; }
@@ -75,8 +87,13 @@
       </div>
       <p class="error mt-8" id="camara-aviso" hidden></p>
       <div class="mt-16" id="camara-marco" hidden>
-        <video id="camara-video" playsinline muted autoplay style="width: 100%; max-width: 520px; border-radius: 12px; background: #000;"></video>
-        <p class="muted mt-8">Poné el QR del carnet frente a la cámara. Cada lectura se registra sola.</p>
+        {% comment %} El resultado de cada lectura se ve ENCIMA del video: en el celular la
+           camara ocupa la pantalla y un cartel en otro lado queda fuera de la vista. {% endcomment %}
+        <div class="camara-visor" id="camara-visor">
+          <video id="camara-video" playsinline muted autoplay></video>
+          <div class="camara-resultado" id="camara-resultado" role="status" aria-live="assertive" hidden></div>
+        </div>
+        <p class="muted mt-8" id="camara-estado">Poné el QR del carnet frente a la cámara. Cada lectura se registra sola.</p>
       </div>
     </section>
 
@@ -86,8 +103,8 @@
         <div class="field">
           <label for="id_codigo">Código del carnet</label>
           <input id="id_codigo" class="input" type="text" name="codigo" autofocus required
-            inputmode="text" autocapitalize="characters" spellcheck="false" style="font-size: 1.3rem;">
-          <small class="muted">Con un lector QR el código se escribe solo. Si el QR no se lee, tipeá el código que está abajo del nombre en el carnet y Enter.</small>
+            inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="6 números" style="font-size: 1.3rem; letter-spacing: 0.15em;">
+          <small class="muted">Con un lector QR el código se escribe solo. Si el QR no se lee, tipeá los 6 números que están abajo del nombre en el carnet y Enter.</small>
         </div>
         <div class="row mt-8" style="justify-content:flex-end;">
           <button class="button" type="submit">Registrar</button>

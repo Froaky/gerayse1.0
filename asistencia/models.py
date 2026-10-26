@@ -1,4 +1,3 @@
-import base64
 import re
 import secrets
 import unicodedata
@@ -12,16 +11,25 @@ from django.utils import timezone
 # [0-9] y no \d: \d acepta digitos Unicode (arabigos, etc.) que burlarian la unicidad.
 DNI_PATRON = re.compile(r"[0-9]{6,9}")
 
-PREFIJO_CARNET = "GA1"
-CODIGO_CARNET_PATRON = re.compile(r"GA1[A-Z2-7]{24}")
+# Desde el 26/10/2026 (EP-14 D12, pedido de Mateo) el codigo es de 6 digitos:
+# se tipea a mano cuando la camara no lee. Los carnets anteriores (GA1 + 24 en
+# base32) quedaron como anulados: se reconocen para avisar "carnet anulado".
+CODIGO_CARNET_PATRON = re.compile(r"[1-9][0-9]{5}")
+CODIGO_CARNET_ANTERIOR = re.compile(r"GA1[A-Z2-7]{24}")
 
 
 def nuevo_codigo_carnet() -> str:
-    """Lo que va en el QR del carnet (EP-14): 120 bits al azar en base32, con un
-    prefijo para reconocer un carnet de Gerayse. Nunca datos personales. Solo
-    mayusculas y digitos 2-7: el QR sale chico y un lector USB lo tipea igual
-    con teclado en espanol o en ingles."""
-    return PREFIJO_CARNET + base64.b32encode(secrets.token_bytes(15)).decode()
+    """Lo que va en el QR del carnet: 6 digitos al azar que no empiezan con 0.
+    Nunca datos personales. No repite ningun codigo vigente ni anulado: un
+    carnet perdido nunca pasa a servirle a otra persona."""
+    for _ in range(200):
+        codigo = str(100000 + secrets.randbelow(900000))
+        if not (
+            Empleado.objects.filter(codigo_carnet=codigo).exists()
+            or CarnetAnulado.objects.filter(codigo=codigo).exists()
+        ):
+            return codigo
+    raise RuntimeError("No se encontró un código de carnet libre.")
 
 
 def normalizar_dni(valor) -> str:

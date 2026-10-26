@@ -12,6 +12,7 @@ Reglas (epica EP-14, "Reglas de negocio"):
   sucursal base.
 """
 
+import re
 from dataclasses import dataclass
 from datetime import timedelta
 
@@ -19,7 +20,7 @@ from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.utils import timezone
 
-from .models import CODIGO_CARNET_PATRON, CarnetAnulado, Empleado, Marca
+from .models import CODIGO_CARNET_ANTERIOR, CODIGO_CARNET_PATRON, CarnetAnulado, Empleado, Marca
 from .permissions import can_administrar, ensure_fichar
 
 ENTRADA_ABIERTA_MAXIMA = timedelta(hours=16)
@@ -48,9 +49,10 @@ class Fichaje:
 
 
 def normalizar_codigo(texto) -> str:
-    # Lo que manda la camara o un lector USB: sin espacios ni saltos, en
-    # mayusculas (un lector con Bloq Mayus al reves manda minusculas).
-    return "".join(str(texto or "").split()).upper()
+    # Lo que manda la camara o un lector USB, o lo que se tipea: sin espacios,
+    # saltos, puntos ni guiones ("483 920", "483-920"), en mayusculas (un lector
+    # con Bloq Mayus al reves manda minusculas en los codigos anteriores).
+    return re.sub(r"[\s.\-]", "", str(texto or "")).upper()
 
 
 def _ensure_local_elegible(actor, sucursal) -> None:
@@ -74,7 +76,9 @@ def fichar(*, actor, codigo: str, sucursal=None) -> Fichaje:
     if sucursal is None:
         return Fichaje(Resultado.SIN_LOCAL, "Tu usuario no tiene un local asignado: no se puede fichar.")
     codigo = normalizar_codigo(codigo)
-    if not CODIGO_CARNET_PATRON.fullmatch(codigo):
+    # Un codigo con el formato anterior se busca igual: si es de un carnet que
+    # quedo anulado, el aviso dice que use el carnet nuevo.
+    if not (CODIGO_CARNET_PATRON.fullmatch(codigo) or CODIGO_CARNET_ANTERIOR.fullmatch(codigo)):
         return Fichaje(Resultado.DESCONOCIDO, "Ese QR no es un carnet de asistencia.")
     # El lock serializa dos escaneos del mismo carnet que llegan juntos: el
     # segundo ve la marca del primero y cae en el doble escaneo.

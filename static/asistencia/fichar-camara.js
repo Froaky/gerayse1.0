@@ -5,6 +5,10 @@
  * iPhone no trae BarcodeDetector) y lo manda al mismo POST de la pantalla, que
  * responde JSON. La pantalla no se recarga y queda lista para el proximo
  * carnet. Las reglas (hora, entrada/salida, doble escaneo) son del servidor.
+ *
+ * Cada lectura avisa en el lugar donde se esta mirando: un cartel encima del
+ * video, un sonido corto y, donde se puede (Android), una vibracion. Safari de
+ * iPhone no vibra desde una pagina: ahi el sonido y el cartel son el aviso.
  */
 (function () {
   "use strict";
@@ -19,9 +23,18 @@
   var marco = document.getElementById("camara-marco");
   var video = document.getElementById("camara-video");
   var aviso = document.getElementById("camara-aviso");
+  var visor = document.getElementById("camara-visor");
+  var cartel = document.getElementById("camara-resultado");
+  var estado = document.getElementById("camara-estado");
+  var TEXTO_ESTADO = estado ? estado.textContent : "";
+  var MOSTRAR_CARTEL = 3500;
+  var temporizadorCartel = null;
+  var audio = null;
   var lienzo = document.createElement("canvas");
   var contexto = lienzo.getContext("2d", { willReadFrequently: true });
-  var PATRON = /^GA1[A-Z2-7]{24}$/;
+  // 6 digitos; el formato anterior se manda igual para que el servidor avise
+  // si es un carnet anulado.
+  var PATRON = /^([1-9][0-9]{5}|GA1[A-Z2-7]{24})$/;
   var ANCHO_ANALISIS = 640;
   var PAUSA_DESPUES_DE_LEER = 2500;
   var MISMO_CODIGO_IGNORADO = 6000;
@@ -52,7 +65,95 @@
     return "No se pudo abrir la cámara. Podés tipear el código del carnet.";
   }
 
+  function prepararAudio() {
+    // Se crea dentro del toque en "Usar la camara": iPhone solo deja sonar
+    // audio que arranco un gesto del usuario.
+    var Contexto = window.AudioContext || window.webkitAudioContext;
+    if (!Contexto) {
+      return;
+    }
+    try {
+      audio = audio || new Contexto();
+      if (audio.state === "suspended") {
+        audio.resume();
+      }
+    } catch (error) {
+      audio = null;
+    }
+  }
+
+  function sonar(tipo) {
+    if (!audio) {
+      return;
+    }
+    // Registrada: un pitido agudo. Repetida: uno medio. Error: dos graves.
+    var tonos = tipo === "ok" ? [[880, 0, 0.15]] : tipo === "aviso" ? [[620, 0, 0.18]] : [[260, 0, 0.14], [260, 0.2, 0.14]];
+    try {
+      tonos.forEach(function (tono) {
+        var oscilador = audio.createOscillator();
+        var volumen = audio.createGain();
+        var inicio = audio.currentTime + tono[1];
+        oscilador.frequency.value = tono[0];
+        volumen.gain.setValueAtTime(0.25, inicio);
+        volumen.gain.exponentialRampToValueAtTime(0.001, inicio + tono[2]);
+        oscilador.connect(volumen);
+        volumen.connect(audio.destination);
+        oscilador.start(inicio);
+        oscilador.stop(inicio + tono[2] + 0.02);
+      });
+    } catch (error) {
+      // Sin sonido no se pierde la marca: queda el cartel.
+    }
+  }
+
+  function vibrar(tipo) {
+    if (navigator.vibrate) {
+      navigator.vibrate(tipo === "ok" ? 150 : [90, 60, 90]);
+    }
+  }
+
+  function marcarVisor(clase) {
+    if (visor) {
+      visor.className = "camara-visor" + (clase ? " " + clase : "");
+    }
+  }
+
+  function mostrarCartel(datos, tipo) {
+    if (!cartel) {
+      return;
+    }
+    cartel.textContent = "";
+    var principal = document.createElement("strong");
+    principal.textContent = datos.registrada ? datos.tipo + " · " + datos.hora : tipo === "aviso" ? "Ya registrada" : "No se registró";
+    cartel.appendChild(principal);
+    var detalle = document.createElement("span");
+    detalle.textContent = datos.registrada ? datos.nombre : datos.mensaje;
+    cartel.appendChild(detalle);
+    cartel.className = "camara-resultado " + tipo;
+    cartel.hidden = false;
+    marcarVisor(tipo);
+    if (temporizadorCartel) {
+      window.clearTimeout(temporizadorCartel);
+    }
+    temporizadorCartel = window.setTimeout(function () {
+      cartel.hidden = true;
+      marcarVisor("");
+      ponerEstado(TEXTO_ESTADO);
+    }, MOSTRAR_CARTEL);
+  }
+
+  function ponerEstado(texto) {
+    if (estado) {
+      estado.textContent = texto;
+    }
+  }
+
   function pintarResultado(datos) {
+    var tipoAviso = datos.registrada ? "ok" : datos.resultado === "repetida" ? "aviso" : "error";
+    mostrarCartel(datos, tipoAviso);
+    sonar(tipoAviso);
+    vibrar(tipoAviso);
+    ponerEstado(datos.registrada ? "Listo. Podés escanear el próximo carnet." : TEXTO_ESTADO);
     var viejo = document.getElementById("resultado-fichaje");
     var seccion = document.createElement("section");
     seccion.id = "resultado-fichaje";
@@ -85,13 +186,13 @@
     } else {
       raiz.parentNode.insertBefore(seccion, raiz);
     }
-    if (datos.registrada && navigator.vibrate) {
-      navigator.vibrate(120);
-    }
   }
 
   function enviar(codigo) {
     enviando = true;
+    // Aviso inmediato, antes de que conteste el servidor.
+    marcarVisor("leyendo");
+    ponerEstado("Leyendo el carnet…");
     var cuerpo = new FormData(formulario);
     cuerpo.set("codigo", codigo);
     fetch(formulario.action, {
@@ -133,7 +234,7 @@
       var imagen = contexto.getImageData(0, 0, lienzo.width, lienzo.height);
       var leido = window.jsQR(imagen.data, imagen.width, imagen.height, { inversionAttempts: "dontInvert" });
       if (leido && leido.data) {
-        var codigo = leido.data.replace(/\s+/g, "").toUpperCase();
+        var codigo = leido.data.replace(/[\s.\-]+/g, "").toUpperCase();
         var ahora = Date.now();
         var repetido = codigo === ultimoCodigo && ahora - ultimoMomento < MISMO_CODIGO_IGNORADO;
         if (!repetido) {
@@ -162,6 +263,10 @@
       flujo = null;
     }
     video.srcObject = null;
+    if (cartel) {
+      cartel.hidden = true;
+    }
+    marcarVisor("");
     marco.hidden = true;
     botonApagar.hidden = true;
     botonPrender.hidden = false;
@@ -169,6 +274,7 @@
 
   function prender() {
     mostrarAviso("");
+    prepararAudio();
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       mostrarAviso(mensajeDeError(null));
       return;
@@ -186,6 +292,11 @@
         marco.hidden = false;
         botonPrender.hidden = true;
         botonApagar.hidden = false;
+        ponerEstado(TEXTO_ESTADO);
+        // Que el video (y el cartel encima) quede a la vista en el celular.
+        if (visor && visor.scrollIntoView) {
+          visor.scrollIntoView({ block: "center", behavior: "smooth" });
+        }
         analizar();
       })
       .catch(function (error) {

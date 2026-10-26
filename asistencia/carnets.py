@@ -2,8 +2,8 @@
 
 A4 con 10 carnets tamano tarjeta (85,6 x 54 mm, el de una tarjeta de credito),
 con borde para recortar. Cada carnet lleva el nombre, la empresa, el local
-habitual y el QR con el codigo del carnet vigente. El codigo tambien va escrito
-chico: si la camara no lee, el cajero lo puede tipear. Nunca el DNI.
+habitual y el QR con el codigo del carnet vigente (6 digitos). El codigo tambien
+va escrito grande: si la camara no lee, el cajero lo tipea. Nunca el DNI.
 """
 
 from io import BytesIO
@@ -154,9 +154,13 @@ def _dibujar_carnet(lienzo, x, y, empleado) -> None:
         for renglon in renglones:
             lienzo.drawString(x + 4 * mm, cursor, renglon)
             cursor -= tamano * 1.25
-    lienzo.setFillColor(GRIS)
-    lienzo.setFont("Courier", 6)
+    # El codigo de 6 digitos, grande y en dos grupos ("483 920"): se tipea a mano
+    # cuando la camara no lee.
     codigo = contenido_qr(empleado)
-    lienzo.drawString(x + 4 * mm, y + 6.5 * mm, codigo[:14])
-    lienzo.drawString(x + 4 * mm, y + 3.8 * mm, codigo[14:])
+    lienzo.setFillColor(GRIS)
+    lienzo.setFont("Helvetica", 6)
+    lienzo.drawString(x + 4 * mm, y + 9 * mm, "Código")
+    lienzo.setFillColor(TINTA)
+    lienzo.setFont("Courier-Bold", 13)
+    lienzo.drawString(x + 4 * mm, y + 4 * mm, f"{codigo[:3]} {codigo[3:]}" if len(codigo) == 6 else codigo)
     lienzo.restoreState()
