@@ -35,7 +35,9 @@ class Empleado(models.Model):
     sistema, solo tiene un carnet que escanea el cajero."""
 
     nombre = models.CharField("Nombre y apellido", max_length=160)
-    dni = models.CharField("DNI", max_length=12)
+    # Opcional desde el 26/10/2026: el listado del cliente llego sin DNI. Si se
+    # carga, no se repite entre activos; si no, no se repite el nombre en la empresa.
+    dni = models.CharField("DNI", max_length=12, blank=True)
     empresa = models.ForeignKey(
         "cashops.Empresa",
         on_delete=models.PROTECT,
@@ -82,9 +84,10 @@ class Empleado(models.Model):
         constraints = [
             # Una persona, un carnet: el DNI no se repite entre activos. Uno dado
             # de baja no bloquea, asi se puede volver a cargar a quien reingresa.
+            # Los que no tienen DNI cargado no cuentan.
             models.UniqueConstraint(
                 fields=["dni"],
-                condition=Q(activo=True),
+                condition=Q(activo=True) & ~Q(dni=""),
                 name="asistencia_dni_unico_entre_activos",
                 violation_error_message="Ya hay un empleado activo con ese DNI.",
             ),
@@ -100,7 +103,7 @@ class Empleado(models.Model):
         errors = {}
         if not self.nombre:
             errors["nombre"] = "El nombre y apellido es obligatorio."
-        if not DNI_PATRON.fullmatch(self.dni):
+        if self.dni and not DNI_PATRON.fullmatch(self.dni):
             errors["dni"] = "El DNI tiene que tener solo números, entre 6 y 9."
         # Tambien rechaza un local sin empresa (legacy): el local habitual tiene
         # que ser de la empresa del empleado, sin excepcion.
@@ -110,14 +113,30 @@ class Empleado(models.Model):
         # quien carga no tiene permitida (AGENTS.md seccion 8).
         if "dni" not in errors and self.activo and self._dni_ocupado():
             errors["dni"] = "Ya hay un empleado activo con ese DNI."
+        if not errors and self.activo and not self.dni and self._nombre_ocupado():
+            errors["nombre"] = (
+                "Ya hay un empleado activo con ese nombre en esta empresa. Si es otra persona, cargale el DNI."
+            )
         if errors:
             raise ValidationError(errors)
 
     def _dni_ocupado(self) -> bool:
-        return Empleado.objects.filter(activo=True, dni=normalizar_dni(self.dni)).exclude(pk=self.pk).exists()
+        dni = normalizar_dni(self.dni)
+        if not dni:
+            return False
+        return Empleado.objects.filter(activo=True, dni=dni).exclude(pk=self.pk).exists()
+
+    def _nombre_ocupado(self) -> bool:
+        # Sin DNI, el nombre es lo unico que evita cargar dos veces a la misma
+        # persona (por ejemplo, subir el mismo listado dos veces).
+        return (
+            Empleado.objects.filter(activo=True, empresa_id=self.empresa_id, nombre__iexact=self.nombre)
+            .exclude(pk=self.pk)
+            .exists()
+        )
 
     def __str__(self) -> str:
-        return f"{self.nombre} (DNI {self.dni})"
+        return f"{self.nombre} (DNI {self.dni})" if self.dni else self.nombre
 
 
 class CarnetAnulado(models.Model):

@@ -84,6 +84,10 @@ def reactivar_empleado(*, actor, empleado: Empleado) -> Empleado:
     # Como en la baja, no se revalida el local: eso se corrige editando.
     if empleado._dni_ocupado():
         raise ValidationError({"dni": "Ya hay un empleado activo con ese DNI."})
+    if not empleado.dni and empleado._nombre_ocupado():
+        raise ValidationError(
+            {"nombre": "Ya hay un empleado activo con ese nombre en esta empresa. Si es otra persona, cargale el DNI."}
+        )
     empleado.activo = True
     empleado.dado_de_baja_en = None
     empleado.dado_de_baja_por = None
