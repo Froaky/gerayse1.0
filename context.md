@@ -141,6 +141,12 @@ Last updated: 2026-10-21
     regenera con `python docs/generate_manual_asistencia_pdf.py`; copia en el escritorio de Mateo,
     `gerayse/manuales`). Falta el arranque real (carga de los 85, permisos y sucursal base de los
     cajeros, carnets impresos), que hacen Mateo y Tais, sin piloto.
+  - 26/10 llego el listado del personal: 75 empleados en las 7 sucursales (EB1-03 11, PP-OV-06 3,
+    EB2-04 6, TERM-01 11, YH-05 4, CENT-02 11, VIV-01 29), SIN DNI. Se armo el archivo en el
+    formato de "Cargar desde un listado" con la columna DNI vacia para que la complete el cliente
+    (fuera del repo: datos personales, en el escritorio de Mateo). Probado con la carga real y DNI
+    inventados: 75 de 75 listas. Una persona figura en ARMADI y en MAPOGO: como el DNI no se repite
+    entre activos, lleva un solo carnet y ficha en los dos locales; falta saber en que empresa va.
   - Copy: las pantallas de asistencia hablan de vos ("Escaneá", "Elegí un mes"), igual que caja y
     tesoreria ("No tenés permiso..."). Queda asi a proposito: el "usted" es para avisos formales al
     cliente (cartel de vencimiento) y documentos que se le entregan (el manual). No pasarlas a usted.
