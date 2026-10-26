@@ -59,12 +59,15 @@ avise a administración para que cargue la marca a mano (punto 4).
 En **Asistencia → Empleados** está el padrón. Se puede buscar por nombre o DNI y filtrar por
 empresa, local y estado (activos, dados de baja o todos).
 
-- **Nuevo empleado**: nombre y apellido, DNI (solo números; los puntos se sacan solos), empresa y
-  local habitual, y **Guardar**. No se puede repetir el DNI de un empleado activo.
+- **Nuevo empleado**: nombre y apellido, empresa, local habitual y, si lo tiene, DNI (solo
+  números; los puntos se sacan solos), y **Guardar**. Si carga el DNI, no se puede repetir entre
+  empleados activos. Sin DNI, no se puede repetir el nombre dentro de la misma empresa: si hay dos
+  personas con el mismo nombre, cargue el DNI de las dos. El DNI se puede agregar después con
+  **Editar**.
 - **Cargar desde un listado**: para cargar muchos empleados de una vez.
   1. Prepare un Excel (.xlsx) o un CSV de hasta 2 MB con una fila de títulos y un empleado por
      fila. Los títulos pueden ser "Nombre y apellido" (o "Apellido" y "Nombre" en columnas
-     separadas), "DNI" o "Documento", "Local" o "Sucursal", y opcionalmente "Empresa". El local
+     separadas), "Local" o "Sucursal", y opcionalmente "DNI" (o "Documento") y "Empresa". El local
      se reconoce por su código o por su nombre.
   2. Súbalo y presione **Revisar listado**. El sistema muestra qué filas están listas para cargar
      y cuáles tienen un problema, con el motivo. Todavía no se guardó nada.
