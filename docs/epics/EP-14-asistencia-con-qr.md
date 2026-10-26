@@ -109,6 +109,17 @@ construir un servicio, hosting ni base aparte.
 - D13 (2026-10-26) al escanear con la camara el resultado se ve ENCIMA del video (verde, amarillo
   o rojo, con nombre y hora), con sonido corto y vibracion donde se puede: antes quedaba arriba,
   fuera de la vista en el celular, y Mateo no se enteraba de que habia fichado.
+- D14 (2026-10-26, pedido de Mateo) el cajero con permiso de fichar ve solo su local, fijo, salvo
+  que tenga mas de un local asignado: campo nuevo del usuario "Otros locales donde ficha
+  asistencia" (`users.User.sucursales_asistencia`, migracion `users/0021`); con eso elige entre
+  su sucursal base y esos, y ningun otro. Va aparte de "Sucursales adicionales para cargar deuda"
+  para no habilitar deuda de rebote. Quien administra sigue eligiendo entre todos los de su
+  alcance (D11).
+- D15 (2026-10-26, pedido de Mateo) pantalla "Por local" (`/asistencia/por-local/`,
+  `asistencia/por_local.py`): por dia y local, quien esta trabajando (desde que hora y cuanto
+  lleva), quien salio y sus horas, corregidas, sin salida y quienes del local no ficharon. Misma
+  regla de tramos que el Excel. Manual de administracion para Tais en
+  `docs/manual-asistencia-administracion.md` (+ PDF).
 
 ## Reglas de negocio
 

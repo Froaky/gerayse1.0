@@ -1,10 +1,12 @@
-"""Genera docs/manual-asistencia.pdf desde docs/manual-asistencia.md (EP-14 US-14.9).
+"""Genera el PDF de un manual de asistencia desde su Markdown (EP-14 US-14.9).
 
-Entiende el Markdown que usa el manual: titulos (#, ##), parrafos, listas con
-guion o numeradas (con sangria de dos espacios por nivel y lineas de
-continuacion), tablas con barras, **negrita** y `codigo`.
+Entiende el Markdown que usan los manuales: titulos (#, ##), parrafos, listas
+con guion o numeradas (con sangria de dos espacios por nivel y lineas de
+continuacion), tablas de dos columnas con barras, **negrita** y `codigo`.
 
-Uso: python docs/generate_manual_asistencia_pdf.py [destino.pdf]
+Uso: python docs/generate_manual_asistencia_pdf.py [origen.md [destino.pdf]]
+Sin argumentos: docs/manual-asistencia.md -> docs/manual-asistencia.pdf. Sin
+destino, el PDF queda al lado del Markdown con el mismo nombre.
 """
 
 from __future__ import annotations
@@ -190,7 +192,10 @@ def _agrupar_titulos(story: list) -> list:
 
 
 def main() -> None:
-    destino = Path(sys.argv[1]) if len(sys.argv) > 1 else TARGET
+    origen = Path(sys.argv[1]) if len(sys.argv) > 1 else SOURCE
+    destino = Path(sys.argv[2]) if len(sys.argv) > 2 else (TARGET if origen == SOURCE else origen.with_suffix(".pdf"))
+    texto = origen.read_text(encoding="utf-8")
+    titulo = next((linea[2:].strip() for linea in texto.splitlines() if linea.startswith("# ")), "Manual de usuario")
     doc = SimpleDocTemplate(
         str(destino),
         pagesize=A4,
@@ -198,10 +203,10 @@ def main() -> None:
         rightMargin=2 * cm,
         topMargin=1.8 * cm,
         bottomMargin=1.6 * cm,
-        title="Manual de usuario - Asistencia del personal con QR",
+        title=titulo,
         author="Gerayse",
     )
-    doc.build(_agrupar_titulos(armar(SOURCE.read_text(encoding="utf-8"))))
+    doc.build(_agrupar_titulos(armar(texto)))
     print(f"PDF generado en: {destino}")
 
 

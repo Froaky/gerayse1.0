@@ -161,6 +161,10 @@ Last updated: 2026-10-21
     Fichar + sucursal base a los cajeros), subir el listado de 75 (preguntar a Tais por los 10
     que faltan para 85 y la empresa de Rodrigo Correa), imprimir carnets y mandar el manual. Del
     chat de servidor: respaldo diario (`docs/asistencia-respaldo.md`) y rotar secretos.
+  - 26/10 (en staging, no en main): pantalla "Por local" (D15), cajero fijo en su local salvo
+    "Otros locales donde ficha asistencia" en su ficha (D14, migracion users/0021) y manual de
+    administracion para Tais (`docs/manual-asistencia-administracion.pdf`, copia en el
+    escritorio de Mateo). PDFs: `python docs/generate_manual_asistencia_pdf.py [origen.md]`.
   - Copy: las pantallas de asistencia hablan de vos ("Escaneá", "Elegí un mes"), igual que caja y
     tesoreria ("No tenés permiso..."). Queda asi a proposito: el "usted" es para avisos formales al
     cliente (cartel de vencimiento) y documentos que se le entregan (el manual). No pasarlas a usted.

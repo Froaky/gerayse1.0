@@ -14,13 +14,18 @@ la ficha del usuario (para una persona), poniendo **Escritura: Sí** en la fila 
 independientes: quien ficha no corrige marcas y quien administra no ficha, salvo que tenga los dos.
 
 Cada cajero que ficha tiene que tener cargada su **Sucursal base** en la ficha del usuario: es el
-local que queda registrado en cada marca.
+local que queda registrado en cada marca, y el único donde puede fichar. Si trabaja en más de un
+local, marque los otros en **Otros locales donde ficha asistencia**: al fichar elige entre esos.
+
+Quien administra tiene además el manual de administración, con la pantalla **Por local** para ver
+cómo va cada local en el día.
 
 ## 1. Fichar (cajeros)
 
 1. Entre a **Asistencia** y presione **Fichar**. Arriba se indica el local donde está fichando:
-   es el local asignado a su usuario. Quien administra asistencia elige el local en la lista de
-   arriba y presiona **Usar este local**.
+   es el local asignado a su usuario, y no se puede cambiar. Si su usuario tiene más de un local
+   asignado (o administra asistencia), elija el local en la lista de arriba y presione **Usar
+   este local**.
 2. Escanee el carnet del empleado de una de estas formas:
    - **Con el celular o la tablet**: presione **Usar la cámara** y permita el acceso a la cámara
      cuando el navegador lo pida. Ponga el QR del carnet frente a la cámara; cada lectura se
