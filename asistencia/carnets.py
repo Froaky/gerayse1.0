@@ -4,6 +4,10 @@ A4 con 10 carnets tamano tarjeta (85,6 x 54 mm, el de una tarjeta de credito),
 con borde para recortar. Cada carnet lleva el nombre, la empresa, el local
 habitual y el QR con el codigo del carnet vigente (6 digitos). El codigo tambien
 va escrito grande: si la camara no lee, el cajero lo tipea. Nunca el DNI.
+
+Tambien la version para el celular (EP-14 D16): el carnet de un empleado en una
+hoja vertical con el QR grande, para mandarlo por WhatsApp y mostrarlo en la
+pantalla del celular. Mismo codigo y mismos colores que el impreso.
 """
 
 from io import BytesIO
@@ -162,5 +166,74 @@ def _dibujar_carnet(lienzo, x, y, empleado) -> None:
     lienzo.drawString(x + 4 * mm, y + 9 * mm, "Código")
     lienzo.setFillColor(TINTA)
     lienzo.setFont("Courier-Bold", 13)
-    lienzo.drawString(x + 4 * mm, y + 4 * mm, f"{codigo[:3]} {codigo[3:]}" if len(codigo) == 6 else codigo)
+    lienzo.drawString(x + 4 * mm, y + 4 * mm, _codigo_legible(codigo))
     lienzo.restoreState()
+
+
+def _codigo_legible(codigo: str) -> str:
+    return f"{codigo[:3]} {codigo[3:]}" if len(codigo) == 6 else codigo
+
+
+# Carnet para el celular: una hoja vertical, mas o menos con la forma de la
+# pantalla, para que el visor de PDF del celular la muestre entera y grande.
+CELULAR_ANCHO = 70 * mm
+CELULAR_ALTO = 124 * mm
+CELULAR_MARGEN = 6 * mm
+CELULAR_FRANJA = 17 * mm
+CELULAR_QR = 54 * mm
+CELULAR_BASE_QR = 26 * mm  # el QR va de aca hasta CELULAR_BASE_QR + CELULAR_QR
+
+
+def generar_carnet_celular_pdf(empleado) -> bytes:
+    """El carnet de un empleado para mostrar en el celular (EP-14 D16)."""
+    buffer = BytesIO()
+    lienzo = canvas.Canvas(buffer, pagesize=(CELULAR_ANCHO, CELULAR_ALTO))
+    lienzo.setTitle(f"Carnet de asistencia - {empleado.nombre}")
+    lienzo.setAuthor("Gerayse")
+    ancho_util = CELULAR_ANCHO - 2 * CELULAR_MARGEN
+
+    # Franja de arriba, como en el carnet impreso.
+    lienzo.setFillColor(TINTA)
+    lienzo.rect(0, CELULAR_ALTO - CELULAR_FRANJA, CELULAR_ANCHO, CELULAR_FRANJA, stroke=0, fill=1)
+    lienzo.setFillColor(VERDE)
+    lienzo.rect(0, CELULAR_ALTO - CELULAR_FRANJA - 1 * mm, CELULAR_ANCHO, 1 * mm, stroke=0, fill=1)
+    lienzo.setFillColor(colors.white)
+    lienzo.setFont("Helvetica-Bold", 9)
+    lienzo.drawString(CELULAR_MARGEN, CELULAR_ALTO - 7 * mm, "CARNET DE ASISTENCIA")
+    tamano, renglones = ajustar_texto(empleado.empresa.nombre, "Helvetica", (8, 7, 6), ancho_util, 1)
+    lienzo.setFont("Helvetica", tamano)
+    lienzo.drawString(CELULAR_MARGEN, CELULAR_ALTO - 12 * mm, renglones[0] if renglones else "")
+
+    # Nombre y local, siempre adentro de su zona.
+    cursor = CELULAR_ALTO - CELULAR_FRANJA - 9 * mm
+    lienzo.setFillColor(TINTA)
+    tamano, renglones = ajustar_texto(empleado.nombre, "Helvetica-Bold", (17, 15, 13, 11), ancho_util, 2)
+    lienzo.setFont("Helvetica-Bold", tamano)
+    for renglon in renglones:
+        lienzo.drawString(CELULAR_MARGEN, cursor, renglon)
+        cursor -= tamano * 1.15
+    if empleado.sucursal.empresa_id == empleado.empresa_id:
+        lienzo.setFillColor(GRIS)
+        tamano, renglones = ajustar_texto(empleado.sucursal.nombre, "Helvetica", (10, 9, 8), ancho_util, 1)
+        lienzo.setFont("Helvetica", tamano)
+        lienzo.drawString(CELULAR_MARGEN, cursor - 1 * mm, renglones[0] if renglones else "")
+
+    # QR grande y centrado, con el codigo abajo.
+    qr = QrCodeWidget(contenido_qr(empleado), barLevel="M")
+    x0, y0, x1, y1 = qr.getBounds()
+    dibujo = Drawing(CELULAR_QR, CELULAR_QR, transform=[CELULAR_QR / (x1 - x0), 0, 0, CELULAR_QR / (y1 - y0), 0, 0])
+    dibujo.add(qr)
+    renderPDF.draw(dibujo, lienzo, (CELULAR_ANCHO - CELULAR_QR) / 2, CELULAR_BASE_QR)
+    lienzo.setFillColor(GRIS)
+    lienzo.setFont("Helvetica", 8)
+    lienzo.drawCentredString(CELULAR_ANCHO / 2, 20 * mm, "Código")
+    lienzo.setFillColor(TINTA)
+    # Helvetica y no Courier: los visores del celular cambian Courier por otra letra.
+    lienzo.setFont("Helvetica-Bold", 24)
+    lienzo.drawCentredString(CELULAR_ANCHO / 2, 12 * mm, _codigo_legible(contenido_qr(empleado)))
+    lienzo.setFillColor(GRIS)
+    lienzo.setFont("Helvetica", 7)
+    lienzo.drawCentredString(CELULAR_ANCHO / 2, 5 * mm, "Mostralo en la caja al llegar y al irte.")
+    lienzo.showPage()
+    lienzo.save()
+    return buffer.getvalue()

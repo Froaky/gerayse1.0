@@ -143,12 +143,20 @@
       </div>
       <p class="leyenda">Así es un carnet. Datos inventados.</p>
       <div class="nota"><span class="nota__titulo">Tip</span><p>El código de 6 números sirve para cuando la cámara no lee el QR: el cajero lo tipea y listo. El carnet <b>no lleva el DNI</b> ni ningún dato personal adentro del QR.</p></div>
+      <h3>El carnet en el celular</h3>
+      <p>Si preferís no imprimir, o mientras llega el impreso, cada empleado puede tener su carnet en el celular y mostrarlo en la caja.</p>
+      <ol class="pasos">
+        <li><div><b>Asistencia → Empleados</b>Buscá a la persona en el padrón.</div></li>
+        <li><div><b>Tocá <span class="boton boton--borde">Carnet celular</span></b>Se abre un PDF con la forma de la pantalla del celular: su nombre, su local, el QR grande y los 6 números.</div></li>
+        <li><div><b>Mandáselo por WhatsApp</b>Descargá el PDF y mandáselo. Le conviene guardarlo o sacarle una captura para tenerlo a mano.</div></li>
+      </ol>
+      <div class="nota"><span class="nota__titulo">Tip</span><p>Con <span class="boton boton--borde">Carnet</span> también bajás el carnet impreso de una sola persona. <b>Imprimir carnets</b> es para bajarlos todos juntos.</p></div>
       <h3>Carnet perdido o roto</h3>
       <ol class="pasos">
         <li><div><b>Empleados → Anular carnet</b>Escribí el motivo (por ejemplo, «lo perdió»).</div></li>
-        <li><div><b>Tocá <span class="boton boton--borde">Carnet</span></b>Se imprime el nuevo, con otro código.</div></li>
+        <li><div><b>Tocá <span class="boton boton--borde">Carnet</span> o <span class="boton boton--borde">Carnet celular</span></b>Sale el nuevo, con otro código.</div></li>
       </ol>
-      <div class="nota nota--aviso"><span class="nota__titulo">Ojo</span><p>El carnet viejo <b>deja de servir</b> en el momento. Si alguien lo escanea, la pantalla avisa «Ese carnet está anulado». Un código anulado nunca se le asigna a otra persona.</p></div>
+      <div class="nota nota--aviso"><span class="nota__titulo">Ojo</span><p>El carnet viejo <b>deja de servir</b> en el momento, el impreso y el del celular. Si alguien lo escanea, la pantalla avisa «Ese carnet está anulado»: mandale el nuevo. Un código anulado nunca se le asigna a otra persona.</p></div>
     </section>
 
     <section id="fichar">
@@ -266,7 +274,7 @@
       <ul class="checklist">
         <li>Sistemas te dio el permiso «Administrar asistencia» (y «Fichar asistencia» si vas a fichar).</li>
         <li>Cargaste el personal desde el Excel y no quedaron filas rechazadas.</li>
-        <li>Imprimiste, recortaste y repartiste los carnets.</li>
+        <li>Imprimiste, recortaste y repartiste los carnets (o se los mandaste al celular).</li>
         <li>Sistemas configuró a cada cajero con «Fichar asistencia» y su local.</li>
         <li>Le avisaste a sistemas quiénes cubren más de un local, para que se los habilite.</li>
         <li>Probaste fichar con un carnet en cada local (celular, tablet o lector).</li>
@@ -281,6 +289,7 @@
       <details class="faq"><summary>¿Se puede cambiar la hora de una marca?</summary><div><p>No se edita. Se anula la equivocada y se agrega la correcta con motivo. Queda como «Corregida», con tu usuario.</p></div></details>
       <details class="faq"><summary>¿Y si un empleado trabaja en dos locales?</summary><div><p>Tiene un solo carnet y puede fichar en cualquier local. Cada marca guarda dónde fichó, y en Por local aparece en ese local.</p></div></details>
       <details class="faq"><summary>¿El QR tiene datos personales?</summary><div><p>No. Solo el código de 6 números del carnet. Ni el nombre ni el DNI.</p></div></details>
+      <details class="faq"><summary>¿Puedo bajar los carnets de a uno?</summary><div><p>Sí. En Empleados, cada persona tiene <b>Carnet</b> (para imprimir) y <b>Carnet celular</b> (para mandar por WhatsApp). <b>Imprimir carnets</b> los baja todos juntos.</p></div></details>
       <details class="faq"><summary>¿Y si se corta internet en el local?</summary><div><p>Ese escaneo no se registra y la pantalla lo avisa en rojo. Cuando vuelve, se escanea de nuevo. Si se perdió, la agregás vos con el motivo «no había internet».</p></div></details>
       <details class="faq"><summary>¿Alguien que sale después de medianoche cuenta en qué día?</summary><div><p>En el día de la entrada. Por ejemplo, entra el lunes a las 22:00 y sale el martes a las 02:00: son 4 horas del lunes.</p></div></details>
       <details class="faq"><summary>¿Los dados de baja aparecen en el Excel?</summary><div><p>Sí, en los meses en que tuvieron marcas. Así no se pierde lo que trabajaron.</p></div></details>
@@ -309,7 +318,7 @@
             <tr><td class="k">El cajero ve «Tu usuario no tiene un local asignado»</td><td>Le falta su local.</td><td>Lo resuelve <b>sistemas</b>: que se lo pida a ellos.</td></tr>
             <tr><td class="k">El cajero no ve Asistencia en el menú</td><td>Le falta el permiso «Fichar asistencia».</td><td>Lo da <b>sistemas</b>: que se lo pida a ellos.</td></tr>
             <tr><td class="k">La cámara no abre o dice que no dio permiso</td><td>El navegador del celular no tiene permiso para la cámara.</td><td>En los permisos del sitio, habilitá la cámara y volvé a tocar <b>Usar la cámara</b>. Mientras tanto se pueden tipear los 6 números.</td></tr>
-            <tr><td class="k">Sale «Ese carnet está anulado»</td><td>Ese empleado tiene un carnet nuevo.</td><td>Si no lo tiene, imprimíselo desde Empleados → <b>Carnet</b>.</td></tr>
+            <tr><td class="k">Sale «Ese carnet está anulado»</td><td>Ese empleado tiene un carnet nuevo.</td><td>Si no lo tiene, imprimíselo desde Empleados → <b>Carnet</b> o mandáselo con <b>Carnet celular</b>.</td></tr>
             <tr><td class="k">Sale «Está dado de baja»</td><td>La persona está dada de baja en el padrón.</td><td>Si volvió a trabajar, reactivala en Empleados.</td></tr>
             <tr><td class="k">«Ya hay un empleado activo con ese nombre»</td><td>Ya está cargado, o es otra persona que se llama igual.</td><td>Si es otra persona, cargales el DNI a las dos.</td></tr>
             <tr><td class="k">En Por local aparece «Sin salida»</td><td>Alguien entró y no fichó la salida.</td><td>Preguntá en el local a qué hora se fue y agregá la salida en Marcas, con el motivo.</td></tr>
@@ -326,7 +335,7 @@
           <h4>Vos (administración)</h4>
           <ul>
             <li>Cargar el personal y dar de baja a quien se va.</li>
-            <li>Imprimir y reponer los carnets.</li>
+            <li>Imprimir y reponer los carnets, o mandarlos al celular.</li>
             <li>Avisarle a sistemas cuando entra un cajero nuevo o alguien cubre otro local.</li>
             <li>Mirar Por local y corregir olvidos.</li>
             <li>Bajar el Excel a fin de mes.</li>

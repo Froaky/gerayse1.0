@@ -162,6 +162,9 @@ Last updated: 2026-10-21
   - 26/10 (en staging, no en main): pantalla "Por local" (D15), cajero fijo en su local salvo
     "Otros locales donde ficha asistencia" en su ficha (D14, migracion users/0021). En main desde
     el 26/10 12:30 (285d438).
+  - 26/10 boton "Carnet celular" en el padron (EP-14 D16): PDF vertical de un empleado para
+    mandarlo por WhatsApp y mostrarlo en la pantalla. Los carnets se bajan de a uno con "Carnet"
+    (impreso) o "Carnet celular"; "Imprimir carnets" baja todos juntos.
   - **Manuales (26/10, corregido a pedido de Mateo):** van con el formato del "Manual para la
     administracion" de julio (traspaso, `anexos/documentos-de-la-cuenta-claude/`): pagina HTML con
     encabezado, indice, secciones numeradas, pasos, notas Tip/Ojo, antes/ahora, checklist,

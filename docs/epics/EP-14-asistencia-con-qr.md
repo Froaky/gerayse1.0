@@ -120,6 +120,13 @@ construir un servicio, hosting ni base aparte.
   lleva), quien salio y sus horas, corregidas, sin salida y quienes del local no ficharon. Misma
   regla de tramos que el Excel. Manuales con el formato del de julio (de vos):
   `docs/manual-asistencia-administracion.html` y `docs/manual-asistencia-cajeros.html`.
+- D16 (2026-10-26, pedido de Mateo) "Carnet celular" en el padron
+  (`/asistencia/empleados/<id>/carnet/celular/`, `generar_carnet_celular_pdf`): el carnet de un
+  empleado en una hoja vertical de 70 x 124 mm, con forma de pantalla, para mandarlo por WhatsApp y
+  mostrarlo en el celular. Mismo codigo vigente que el impreso, QR de 54 mm y los 6 numeros en
+  Helvetica (los visores del celular cambian Courier por otra letra). Al anular el carnet, el del
+  celular tambien deja de servir: hay que mandar el nuevo. Tests en
+  `asistencia/tests_carnet_celular.py`.
 
 ## Reglas de negocio
 

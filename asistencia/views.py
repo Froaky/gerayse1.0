@@ -14,7 +14,7 @@ from django.utils.text import slugify
 from django.views.decorators.http import require_http_methods
 
 from .alcance import empresas_en_alcance, sucursales_en_alcance
-from .carnets import generar_carnets_pdf
+from .carnets import generar_carnet_celular_pdf, generar_carnets_pdf
 from .excel import CONTENT_TYPE_XLSX, generar_excel, jornadas_del_mes, ventana_del_mes
 from .fichaje import Fichaje, Resultado, fichar
 from .forms import (
@@ -337,6 +337,19 @@ def carnet_empleado(request, empleado_id: int):
         messages.error(request, f"{empleado.nombre} está dado de baja: no se imprime su carnet.")
         return redirect("asistencia:empleado_list")
     return _respuesta_pdf(generar_carnets_pdf([empleado]), f"carnet-{slugify(empleado.nombre) or empleado.pk}.pdf")
+
+
+@login_required
+def carnet_celular(request, empleado_id: int):
+    """El carnet de un empleado para mandar por WhatsApp y mostrar en el celular."""
+    ensure_administrar(request.user)
+    empleado = _empleado_en_alcance_or_404(request, empleado_id)
+    if not empleado.activo:
+        messages.error(request, f"{empleado.nombre} está dado de baja: no se genera su carnet.")
+        return redirect("asistencia:empleado_list")
+    return _respuesta_pdf(
+        generar_carnet_celular_pdf(empleado), f"carnet-celular-{slugify(empleado.nombre) or empleado.pk}.pdf"
+    )
 
 
 @login_required
