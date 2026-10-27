@@ -174,7 +174,8 @@ Last updated: 2026-10-21
     faltan para 85 y la empresa de Rodrigo Correa.
   - 27/10 carnets celular de varios juntos (EP-14 D17, pedido de Mateo): casillas en el padron +
     "Marcar todos" y "Bajar carnets celular", que baja un ZIP con un PDF por persona
-    (`carnet-celular-<nombre>.pdf`) para adjuntar en WhatsApp. En staging; a main con OK de Mateo.
+    (`carnet-celular-<nombre>.pdf`) para adjuntar en WhatsApp. En main desde el 27/10 11:55
+    (39965a3, OK de Mateo; deploy de production y demo OK, CI OK).
     Manual de administracion actualizado (seccion "A varios juntos", artefacto v7 y Escritorio).
   - **Manuales (26/10, corregido a pedido de Mateo):** van con el formato del "Manual para la
     administracion" de julio (traspaso, `anexos/documentos-de-la-cuenta-claude/`): pagina HTML con
