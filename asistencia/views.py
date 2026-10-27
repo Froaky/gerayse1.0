@@ -14,7 +14,12 @@ from django.utils.text import slugify
 from django.views.decorators.http import require_http_methods
 
 from .alcance import empresas_en_alcance, sucursales_en_alcance
-from .carnets import generar_carnet_celular_pdf, generar_carnets_pdf
+from .carnets import (
+    generar_carnet_celular_pdf,
+    generar_carnets_pdf,
+    generar_zip_carnets_celular,
+    nombre_carnet_celular,
+)
 from .excel import CONTENT_TYPE_XLSX, generar_excel, jornadas_del_mes, ventana_del_mes
 from .fichaje import Fichaje, Resultado, fichar
 from .forms import (
@@ -126,6 +131,8 @@ def empleado_list(request):
             "title": "Empleados",
             "filtro": filtro,
             "empleados": empleados,
+            # Evalua el queryset una vez: la plantilla recorre el mismo cache.
+            "hay_activos": any(empleado.activo for empleado in empleados),
             "activos_count": base.filter(activo=True).count(),
             "baja_count": base.filter(activo=False).count(),
         },
@@ -347,9 +354,23 @@ def carnet_celular(request, empleado_id: int):
     if not empleado.activo:
         messages.error(request, f"{empleado.nombre} está dado de baja: no se genera su carnet.")
         return redirect("asistencia:empleado_list")
-    return _respuesta_pdf(
-        generar_carnet_celular_pdf(empleado), f"carnet-celular-{slugify(empleado.nombre) or empleado.pk}.pdf"
-    )
+    return _respuesta_pdf(generar_carnet_celular_pdf(empleado), nombre_carnet_celular(empleado))
+
+
+@login_required
+@require_http_methods(["POST"])
+def carnets_celular(request):
+    """Los carnets del celular de los marcados en el padron: un PDF por persona, en un ZIP."""
+    ensure_administrar(request.user)
+    ids = [valor for valor in request.POST.getlist("empleado") if valor.isdigit()]
+    # Solo activos y de las empresas del usuario: un id ajeno o de baja no suma.
+    empleados = list(_empleados_en_alcance(request).filter(activo=True, pk__in=ids).order_by("nombre", "pk"))
+    if not empleados:
+        messages.error(request, "Marcá al menos un empleado activo para bajar sus carnets.")
+        return redirect("asistencia:empleado_list")
+    response = HttpResponse(generar_zip_carnets_celular(empleados), content_type="application/zip")
+    response["Content-Disposition"] = 'attachment; filename="carnets-celular.zip"'
+    return response
 
 
 @login_required

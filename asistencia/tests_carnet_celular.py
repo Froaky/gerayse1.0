@@ -6,9 +6,16 @@ Riesgos que cubre:
 - que se pueda bajar el carnet de un empleado de otra empresa o dado de baja;
 - que un nombre larguisimo se salga de su zona y pise el QR;
 - que quien solo ficha pueda bajar carnets.
+
+D17, varios juntos en un ZIP:
+- que un archivo no lleve el carnet de la persona de su nombre;
+- que dos personas con el mismo nombre se pisen dentro del ZIP;
+- que un id de otra empresa o de un dado de baja se cuele en el ZIP.
 """
 
 import re
+import zipfile
+from io import BytesIO
 from unittest import mock
 
 from django.urls import reverse
@@ -94,3 +101,84 @@ class CarnetCelularTests(PadronTestCase):
         self.assertEqual(
             self.client.get(reverse("asistencia:carnet_celular", args=[self.empleado.pk])).status_code, 403
         )
+
+
+class CarnetsCelularZipTests(PadronTestCase):
+    def setUp(self):
+        super().setUp()
+        self.maria = self._empleado(nombre="María Belén López", dni="")
+        self.juan = self._empleado(nombre="Juan Perez", dni="30123456")
+        self.ana = self._empleado(nombre="Ana Gómez", dni="30999888", sucursal=self.vivre)
+
+    def _bajar(self, *empleados):
+        return self.client.post(reverse("asistencia:carnets_celular"), {"empleado": [e.pk for e in empleados]})
+
+    def _pdfs(self, response):
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/zip")
+        self.assertIn('attachment; filename="carnets-celular.zip"', response["Content-Disposition"])
+        with zipfile.ZipFile(BytesIO(response.content)) as archivo:
+            return {nombre: archivo.read(nombre) for nombre in archivo.namelist()}
+
+    def _codigo_en(self, pdf, empleado):
+        codigo = empleado.codigo_carnet
+        self.assertIn(f"({codigo[:3]} {codigo[3:]})", _textos_del_pdf(pdf))
+
+    def test_un_pdf_por_marcado_con_su_nombre_y_su_carnet(self):
+        self._login(self.admin, [self.armadi, self.mapogo])
+        pdfs = self._pdfs(self._bajar(self.maria, self.ana))
+        self.assertEqual(sorted(pdfs), ["carnet-celular-ana-gomez.pdf", "carnet-celular-maria-belen-lopez.pdf"])
+        self._codigo_en(pdfs["carnet-celular-maria-belen-lopez.pdf"], self.maria)
+        self._codigo_en(pdfs["carnet-celular-ana-gomez.pdf"], self.ana)
+        self.assertEqual(len(re.findall(r"/Type /Page\b", pdfs["carnet-celular-ana-gomez.pdf"].decode("latin-1"))), 1)
+
+    def test_los_que_se_llaman_igual_no_se_pisan(self):
+        de_terminal = self._empleado(nombre="Juan Perez", dni="30123457", sucursal=self.terminal)
+        otro_del_centro = self._empleado(nombre="Juan Perez", dni="30123458")
+        tercero_del_centro = self._empleado(nombre="Juan Perez", dni="30123459")
+        self._login(self.admin, [self.armadi])
+        pdfs = self._pdfs(self._bajar(self.juan, de_terminal, otro_del_centro, tercero_del_centro))
+        self.assertEqual(
+            sorted(pdfs),
+            [
+                "carnet-celular-juan-perez-cent-02-2.pdf",
+                "carnet-celular-juan-perez-cent-02.pdf",
+                "carnet-celular-juan-perez-term-01.pdf",
+                "carnet-celular-juan-perez.pdf",
+            ],
+        )
+        # El orden es por nombre y despues por alta: el primero cargado se queda sin sufijo.
+        self._codigo_en(pdfs["carnet-celular-juan-perez.pdf"], self.juan)
+        self._codigo_en(pdfs["carnet-celular-juan-perez-term-01.pdf"], de_terminal)
+        self._codigo_en(pdfs["carnet-celular-juan-perez-cent-02.pdf"], otro_del_centro)
+        self._codigo_en(pdfs["carnet-celular-juan-perez-cent-02-2.pdf"], tercero_del_centro)
+
+    def test_no_se_cuelan_los_de_otra_empresa_ni_los_de_baja(self):
+        dar_de_baja_empleado(actor=self.admin, empleado=self.juan)
+        self._login(self.admin, [self.armadi])
+        pdfs = self._pdfs(self._bajar(self.maria, self.juan, self.ana))
+        self.assertEqual(list(pdfs), ["carnet-celular-maria-belen-lopez.pdf"])
+
+    def test_sin_ninguno_valido_vuelve_al_padron_con_aviso(self):
+        self._login(self.admin, [self.armadi])
+        response = self._bajar(self.ana)
+        self.assertRedirects(response, reverse("asistencia:empleado_list"))
+        response = self.client.post(reverse("asistencia:carnets_celular"), {"empleado": ["abc", ""]}, follow=True)
+        self.assertContains(response, "Marcá al menos un empleado activo")
+
+    def test_solo_por_post_y_quien_solo_ficha_no_lo_baja(self):
+        self._login(self.admin, [self.armadi])
+        self.assertEqual(self.client.get(reverse("asistencia:carnets_celular")).status_code, 405)
+        self._login(self.cajero, [self.armadi])
+        self.assertEqual(self._bajar(self.maria).status_code, 403)
+
+    def test_el_padron_trae_casillas_solo_para_los_activos(self):
+        dar_de_baja_empleado(actor=self.admin, empleado=self.juan)
+        self._login(self.admin, [self.armadi])
+        response = self.client.get(reverse("asistencia:empleado_list"), {"estado": "todos"})
+        self.assertContains(response, f'action="{reverse("asistencia:carnets_celular")}"')
+        self.assertContains(response, f'name="empleado" value="{self.maria.pk}" form="carnets-celular"')
+        self.assertNotContains(response, f'name="empleado" value="{self.juan.pk}"')
+        # Solo los de baja: no hay nada para marcar.
+        response = self.client.get(reverse("asistencia:empleado_list"), {"estado": "baja"})
+        self.assertNotContains(response, 'id="carnets-celular"')

@@ -7,11 +7,14 @@ va escrito grande: si la camara no lee, el cajero lo tipea. Nunca el DNI.
 
 Tambien la version para el celular (EP-14 D16): el carnet de un empleado en una
 hoja vertical con el QR grande, para mandarlo por WhatsApp y mostrarlo en la
-pantalla del celular. Mismo codigo y mismos colores que el impreso.
+pantalla del celular. Mismo codigo y mismos colores que el impreso. Y varios
+juntos (EP-14 D17): un ZIP con un PDF por persona, cada uno con su nombre.
 """
 
+import zipfile
 from io import BytesIO
 
+from django.utils.text import slugify
 from reportlab.graphics import renderPDF
 from reportlab.graphics.barcode.qr import QrCodeWidget
 from reportlab.graphics.shapes import Drawing
@@ -236,4 +239,31 @@ def generar_carnet_celular_pdf(empleado) -> bytes:
     lienzo.drawCentredString(CELULAR_ANCHO / 2, 5 * mm, "Mostralo en la caja al llegar y al irte.")
     lienzo.showPage()
     lienzo.save()
+    return buffer.getvalue()
+
+
+def nombre_carnet_celular(empleado) -> str:
+    return f"carnet-celular-{slugify(empleado.nombre) or empleado.pk}.pdf"
+
+
+def generar_zip_carnets_celular(empleados) -> bytes:
+    """Un PDF de carnet celular por empleado, en un ZIP (EP-14 D17).
+
+    Cada archivo lleva el nombre de la persona, para adjuntarlo en WhatsApp sin
+    renombrar. Si dos se llaman igual, el segundo suma el codigo de su local, y
+    si tambien coincide, un numero: ningun archivo pisa a otro.
+    """
+    buffer = BytesIO()
+    usados = set()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archivo:
+        for empleado in empleados:
+            nombre = nombre_carnet_celular(empleado)
+            if nombre in usados:
+                nombre = f"{nombre[:-4]}-{slugify(empleado.sucursal.codigo)}.pdf"
+            base, numero = nombre[:-4], 2
+            while nombre in usados:
+                nombre = f"{base}-{numero}.pdf"
+                numero += 1
+            usados.add(nombre)
+            archivo.writestr(nombre, generar_carnet_celular_pdf(empleado))
     return buffer.getvalue()

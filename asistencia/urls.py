@@ -18,6 +18,7 @@ urlpatterns = [
     path("empleados/<int:empleado_id>/carnet/celular/", views.carnet_celular, name="carnet_celular"),
     path("empleados/<int:empleado_id>/carnet/anular/", views.carnet_anular, name="carnet_anular"),
     path("carnets/", views.carnets, name="carnets"),
+    path("carnets/celular/", views.carnets_celular, name="carnets_celular"),
     path("por-local/", views.por_local, name="por_local"),
     path("excel/", views.excel, name="excel"),
     path("marcas/", views.marca_list, name="marca_list"),

@@ -127,6 +127,14 @@ construir un servicio, hosting ni base aparte.
   Helvetica (los visores del celular cambian Courier por otra letra). Al anular el carnet, el del
   celular tambien deja de servir: hay que mandar el nuevo. Tests en
   `asistencia/tests_carnet_celular.py`.
+- D17 (2026-10-27, pedido de Mateo) carnets celular de varios juntos: en el padron cada activo
+  tiene una casilla, mas "Marcar todos" (marca los que muestra el filtro). "Bajar carnets celular"
+  manda un POST a `/asistencia/carnets/celular/` y baja `carnets-celular.zip` con un PDF por
+  persona, `carnet-celular-<nombre>.pdf`, listo para adjuntar en WhatsApp
+  (`generar_zip_carnets_celular`). Si dos se llaman igual, el segundo suma el codigo de su local
+  y, si tambien coincide, un numero: ningun archivo pisa a otro. Solo entran activos de las
+  empresas del usuario; un id ajeno o de baja se ignora. POST y no GET para no chocar con el largo
+  maximo de la URL con muchos marcados. Tests en `asistencia/tests_carnet_celular.py`.
 
 ## Reglas de negocio
 

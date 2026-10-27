@@ -172,6 +172,10 @@ Last updated: 2026-10-21
     staging: los carnets de staging no sirven. El manual de administracion dice ahora que la
     primera carga la hizo sistemas y que Tais agrega a los nuevos. Siguen pendientes los 10 que
     faltan para 85 y la empresa de Rodrigo Correa.
+  - 27/10 carnets celular de varios juntos (EP-14 D17, pedido de Mateo): casillas en el padron +
+    "Marcar todos" y "Bajar carnets celular", que baja un ZIP con un PDF por persona
+    (`carnet-celular-<nombre>.pdf`) para adjuntar en WhatsApp. En staging; a main con OK de Mateo.
+    Manual de administracion actualizado (seccion "A varios juntos", artefacto v7 y Escritorio).
   - **Manuales (26/10, corregido a pedido de Mateo):** van con el formato del "Manual para la
     administracion" de julio (traspaso, `anexos/documentos-de-la-cuenta-claude/`): pagina HTML con
     encabezado, indice, secciones numeradas, pasos, notas Tip/Ojo, antes/ahora, checklist,

@@ -48,12 +48,26 @@
       <h2>Padrón</h2>
       <span class="badge-muted">{{ empleados|length }} empleado{{ empleados|length|pluralize }}</span>
     </div>
+    {% if hay_activos %}
+      {# Las casillas de cada fila se suman a este form con form="carnets-celular": las filas ya tienen sus propios forms. #}
+      <form method="post" action="{% url 'asistencia:carnets_celular' %}" id="carnets-celular" class="carnets-marcados mt-16">
+        {% csrf_token %}
+        <label class="marcar"><input type="checkbox" data-marcar-todos> Marcar todos</label>
+        <span class="muted" data-cuantos>Marcá a quiénes les querés mandar el carnet.</span>
+        <button class="button" type="submit">Bajar carnets celular</button>
+      </form>
+      <small class="muted">Se baja un ZIP con un PDF por persona, con su nombre, listo para mandar por WhatsApp.</small>
+    {% endif %}
     <div class="list mt-16">
       {% for empleado in empleados %}
         <article class="list-item" id="empleado-{{ empleado.pk|unlocalize }}">
           <div class="row">
             <div>
-              <strong>{{ empleado.nombre }}</strong>
+              {% if empleado.activo %}
+                <label class="marcar"><input type="checkbox" name="empleado" value="{{ empleado.pk|unlocalize }}" form="carnets-celular" data-marcar> <strong>{{ empleado.nombre }}</strong></label>
+              {% else %}
+                <strong>{{ empleado.nombre }}</strong>
+              {% endif %}
               <div class="muted mt-8">DNI {{ empleado.dni|default:"sin cargar" }} · {{ empleado.empresa.nombre }} · {% if empleado.sucursal.empresa_id == empleado.empresa_id %}{{ empleado.sucursal.nombre }}{% else %}local de otra empresa: corregilo{% endif %}</div>
               {% if not empleado.activo and empleado.dado_de_baja_en %}
                 <div class="muted mt-8">De baja desde el {{ empleado.dado_de_baja_en|date:"d/m/Y" }}{% if empleado.dado_de_baja_por %} por {{ empleado.dado_de_baja_por.get_username }}{% endif %}.</div>
@@ -90,4 +104,35 @@
       {% endfor %}
     </div>
   </section>
+  <style>
+    .carnets-marcados { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel-soft); }
+    .carnets-marcados .button { margin-left: auto; }
+    .marcar { display: inline-flex; align-items: center; gap: 10px; color: var(--text); cursor: pointer; }
+    .marcar input { width: 18px; height: 18px; margin: 0; flex-shrink: 0; accent-color: var(--accent); cursor: pointer; }
+  </style>
+  <script>
+    (() => {
+      const form = document.getElementById("carnets-celular");
+      if (!form) return;
+      const todos = form.querySelector("[data-marcar-todos]");
+      const cuantos = form.querySelector("[data-cuantos]");
+      const boton = form.querySelector("button[type=submit]");
+      const casillas = [...document.querySelectorAll("[data-marcar]")];
+      const actualizar = () => {
+        const marcados = casillas.filter((casilla) => casilla.checked).length;
+        boton.disabled = marcados === 0;
+        boton.textContent = marcados === 1 ? "Bajar 1 carnet celular" : marcados ? `Bajar ${marcados} carnets celular` : "Bajar carnets celular";
+        cuantos.textContent = marcados ? `${marcados} de ${casillas.length} marcado${marcados === 1 ? "" : "s"}.` : "Marcá a quiénes les querés mandar el carnet.";
+        todos.checked = marcados === casillas.length;
+        todos.indeterminate = marcados > 0 && marcados < casillas.length;
+      };
+      todos.addEventListener("change", () => {
+        casillas.forEach((casilla) => { casilla.checked = todos.checked; });
+        actualizar();
+      });
+      casillas.forEach((casilla) => casilla.addEventListener("change", actualizar));
+      window.addEventListener("pageshow", actualizar);
+      actualizar();
+    })();
+  </script>
 {% endblock %}
