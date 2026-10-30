@@ -6,10 +6,12 @@ Para correrlos: DATABASE_URL=postgres://... python manage.py test asistencia.tes
 Riesgos que cubre:
 - un doble click en "Guardar la semana" o en "Copiar la semana anterior" sobre
   casillas nuevas termina en 500 (los dos INSERT chocan en el unico por dia);
-- el historial queda duplicado o un horario se pierde.
+- el historial queda duplicado o un horario se pierde;
+- reactivar a alguien (que borra los horarios de su baja) mientras el encargado
+  guarda la grilla de su local se traba ("deadlock detected").
 """
 
-from datetime import timedelta
+from datetime import time, timedelta
 from threading import Barrier, Thread
 from unittest import skipUnless
 
@@ -22,8 +24,8 @@ from cashops.models import Empresa, Sucursal
 from users.models import PermissionModule, Role, User, UserPermission
 
 from .horarios import lunes_de
-from .models import Horario, HorarioCambio
-from .services import crear_empleado
+from .models import Empleado, Horario, HorarioCambio
+from .services import crear_empleado, dar_de_baja_empleado, reactivar_empleado
 
 
 @skipUnless(connection.vendor == "postgresql", "Solo PostgreSQL atiende pedidos en paralelo de verdad.")
@@ -82,6 +84,54 @@ class DobleEnvioEnPostgresTests(TransactionTestCase):
         for hilo in hilos:
             hilo.join()
         return estados
+
+    def _a_la_vez(self, *tareas):
+        """Corre las tareas en hilos que arrancan juntos. Devuelve lo que devolvio
+        cada una, o la excepcion que tiro."""
+        barrera = Barrier(len(tareas))
+        resultados = [None] * len(tareas)
+
+        def correr(indice, tarea):
+            close_old_connections()
+            try:
+                barrera.wait(timeout=10)
+                resultados[indice] = tarea()
+            except Exception as error:  # el test compara el resultado
+                resultados[indice] = error
+            finally:
+                connection.close()
+
+        hilos = [Thread(target=correr, args=(indice, tarea)) for indice, tarea in enumerate(tareas)]
+        for hilo in hilos:
+            hilo.start()
+        for hilo in hilos:
+            hilo.join()
+        return resultados
+
+    def test_reactivar_mientras_se_guarda_la_grilla_no_se_traba(self):
+        juan, ana = self.empleados
+        hoy = timezone.localdate()
+        encargado = self._cliente(self.encargado)
+        for vuelta in range(4):
+            lunes = self.proxima + timedelta(days=7 * vuelta)
+            # Juan se fue hace 5 dias y tenia horarios cargados para los dias de la baja.
+            for dias in (1, 2, 3):
+                Horario.objects.create(empleado=juan, fecha=hoy - timedelta(days=dias), entrada_1=time(8))
+            dar_de_baja_empleado(actor=self.admin, empleado=juan)
+            Empleado.objects.filter(pk=juan.pk).update(dado_de_baja_en=timezone.now() - timedelta(days=5))
+            datos = {"local": self.centro.pk, "semana": lunes.isoformat(), f"o-{ana.pk}": "|".join([""] * 7)}
+            for n in range(7):
+                datos[f"c-{ana.pk}-{lunes + timedelta(days=n):%Y%m%d}"] = "8"
+            resultados = self._a_la_vez(
+                lambda: encargado.post(self.url, datos).status_code,
+                lambda: reactivar_empleado(actor=self.admin, empleado=Empleado.objects.get(pk=juan.pk)).activo,
+            )
+            with self.subTest(vuelta=vuelta):
+                self.assertEqual(resultados, [302, True])
+                self.assertFalse(Horario.objects.filter(empleado=juan, fecha__lt=hoy).exists())
+                self.assertEqual(
+                    Horario.objects.filter(empleado=ana, fecha__gte=lunes, fecha__lt=lunes + timedelta(days=7)).count(), 7
+                )
 
     def test_doble_guardar_no_da_error_ni_duplica(self):
         for vuelta in range(6):

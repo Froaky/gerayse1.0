@@ -94,16 +94,21 @@ def reactivar_empleado(*, actor, empleado: Empleado) -> Empleado:
         )
     # EP-14 D18: los horarios de los dias que estuvo de baja (cargados antes de
     # irse) no le hacen faltas al volver: se borran, y el historial los guarda.
-    # Los de hoy en adelante quedan, por si la baja fue un error.
+    # De hoy quedan el franco y los turnos que todavia no empezaron; de mañana en
+    # adelante, todo, por si la baja fue un error.
     if empleado.dado_de_baja_en:
         dia_de_baja = timezone.localdate(empleado.dado_de_baja_en)
+        ahora = timezone.localtime()
         for horario in Horario.objects.filter(
-            empleado=empleado, fecha__gt=dia_de_baja, fecha__lt=timezone.localdate()
+            empleado=empleado, fecha__gt=dia_de_baja, fecha__lte=ahora.date()
         ).order_by("fecha"):
-            HorarioCambio.objects.create(
-                empleado=empleado, fecha=horario.fecha, antes=Celda.de_horario(horario).texto, despues="", cambiado_por=actor
-            )
-            horario.delete()
+            antes = Celda.de_horario(horario)
+            despues = Celda()
+            if horario.fecha == ahora.date():
+                despues = Celda(franco=antes.franco, entradas=tuple(e for e in antes.entradas if e > ahora.time()))
+                if despues == antes:
+                    continue
+            _aplicar_celda(actor, empleado, horario.fecha, horario, antes, despues)
     empleado.activo = True
     empleado.dado_de_baja_en = None
     empleado.dado_de_baja_por = None

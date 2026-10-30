@@ -709,7 +709,7 @@ def horarios(request):
         return redirect(_url_horarios(local, lunes))
 
     if request.method == "POST":
-        celdas, originales, vieja = {}, {}, False
+        celdas, originales, vieja, cerrada = {}, {}, False, False
         for empleado in empleados:
             fila = request.POST.get(f"o-{empleado.pk}")
             partes = fila.split("|") if fila is not None else []
@@ -722,6 +722,11 @@ def horarios(request):
                     vieja = True
                     continue
                 vistos[nombre] = partes[indice]
+                if not dia_editable(dia, administra=administra, hoy=hoy):
+                    # Se cerro con la pantalla abierta (es de ayer): no se guarda, y si la
+                    # cambio se avisa en la casilla, aunque lo escrito no se entienda.
+                    cerrada = cerrada or not _misma_celda(valores[nombre], partes[indice])
+                    continue
                 try:
                     nueva = leer_celda(valores[nombre])
                 except CeldaInvalida as error:
@@ -743,9 +748,12 @@ def horarios(request):
                 "Esta pantalla había quedado vieja: la abrimos de nuevo con lo guardado. No se guardó nada; volvé a escribir lo que cambiaste.",
             )
             return redirect(_url_horarios(local, lunes))
+        if cerrada:
+            avisos.append("Hoy y los días anteriores solo los cambia administración. No se guardó nada de la semana.")
+            status = 403
         if errores:
             avisos.append("Hay casillas que no se entienden: están marcadas en rojo. No se guardó nada de la semana.")
-        else:
+        if not cerrada and not errores:
             try:
                 cambios = guardar_semana(
                     actor=request.user, sucursal=local, lunes=lunes, celdas=celdas, originales=originales
@@ -777,7 +785,7 @@ def horarios(request):
         (h.empleado_id, h.fecha): h
         for h in Horario.objects.filter(empleado__in=empleados, fecha__in=dias).select_related("cargado_por")
     }
-    filas = []
+    filas, sin_guardar = [], False
     for empleado in empleados:
         celdas_fila = []
         for dia in dias:
@@ -787,14 +795,17 @@ def horarios(request):
             bloqueada = not dia_editable(dia, administra=administra, hoy=hoy)
             valor, original = valores.get(nombre, actual), vistos.get(nombre, actual)
             if bloqueada:
-                # Un dia que se cerro mientras cargaba: se muestra lo guardado y, si habia
-                # escrito otra cosa, se dice que no se guardo.
-                if nombre in valores and not _misma_celda(valor, actual) and nombre not in errores:
+                # Un dia que se cerro mientras cargaba: se muestra lo guardado y, si la
+                # habia cambiado (contra lo que vio, no contra lo de ahora: quizas la
+                # cambio administracion), se dice que no se guardo.
+                if nombre in valores and not _misma_celda(valor, original):
                     errores[nombre] = "Este día ya cerró: no se guardó lo que escribiste. Si hace falta, pedíselo a administración."
                 valor = original = actual
             elif nombre in valores and nombre not in errores and _misma_celda(valor, original):
                 # No la toco: se muestra lo que hay ahora (quizas lo cambio otro).
                 valor = original = actual
+            # Lo que la pantalla muestra distinto de lo guardado: avisa antes de salir.
+            sin_guardar = sin_guardar or (not bloqueada and not _misma_celda(valor, actual))
             celdas_fila.append(
                 {
                     "nombre": nombre,
@@ -833,7 +844,7 @@ def horarios(request):
             "filas": filas,
             "avisos": avisos,
             "errores": [(fila["empleado"], celda) for fila in filas for celda in fila["celdas"] if celda["error"]],
-            "sin_guardar": status != 200,
+            "sin_guardar": sin_guardar,
             "administra": administra,
             "hay_cerradas": any(c["bloqueado"] for c in cabecera),
         },

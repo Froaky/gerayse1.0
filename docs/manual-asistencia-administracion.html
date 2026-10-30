@@ -270,10 +270,11 @@
         <table>
           <thead><tr><th>En el Excel</th><th>Qué es</th></tr></thead>
           <tbody>
-            <tr><td class="k">Llegada tarde</td><td>Fichó la entrada después de la hora cargada (a minuto). Cada entrada del horario toma la primera que fichó desde 2 horas antes de esa hora hasta 8 horas después (o hasta la mitad del camino con su otro turno): con turno cortado, quien viene solo a la tarde se compara con la tarde. Cada entrada tarde es una llegada tarde.</td></tr>
+            <tr><td class="k">Llegada tarde</td><td>Fichó la entrada después de la hora cargada (a minuto). Cada entrada del horario toma la primera que fichó desde 2 horas antes de esa hora hasta 8 horas después, sin pasar de las 5 de la mañana del día siguiente ni de la mitad del camino con su otro turno. Así, con turno cortado, quien viene solo a la tarde se compara con la tarde, y quien faltó a la noche y entra temprano al otro día tiene una falta, no una llegada tarde. Cada entrada tarde es una llegada tarde.</td></tr>
             <tr><td class="k">Pasa la tolerancia</td><td>La suma de los minutos tarde del mes es mayor que la tolerancia de su empresa.</td></tr>
-            <tr><td class="k">Falta</td><td>Tenía horario ese día (no franco) y no fichó nada. Se cuenta hasta ayer: hoy todavía puede llegar.</td></tr>
-            <tr><td class="k">No fichó el 2.º turno</td><td>Vino, pero a uno de sus turnos no. Se marca en la hoja; no es falta. Si fichó lejos de todos sus horarios, dice «Fichó fuera de su horario». En un turno que empieza pasada la medianoche, la entrada puede quedar en la fila del día anterior: la hoja lo dice.</td></tr>
+            <tr><td class="k">Falta</td><td>Tenía horario ese día (no franco) y no vino: no fichó nada para ese día (la entrada que es del turno de otro día no cuenta). Se cuenta hasta ayer: hoy todavía puede llegar.</td></tr>
+            <tr><td class="k">No fichó el 2.º turno</td><td>Vino, pero a uno de sus turnos no, y a esa hora no estaba trabajando. Se marca en la hoja; no es falta. Si fichó lejos de todos sus horarios, dice «Fichó fuera de su horario». Quien llegó más de 2 horas antes y se quedó no se marca.</td></tr>
+            <tr><td class="k">Fichó la entrada el día anterior</td><td>En un turno pegado a la medianoche (por ejemplo, el de las 0:30), la entrada queda en la fila del día en que fichó. La hoja lo dice en las dos filas: «Fichó la entrada el día anterior» en la del turno, y «La entrada de las 23:55 es del turno del día siguiente» en la que la muestra.</td></tr>
             <tr><td class="k">Horas extra</td><td>Lo que el día pasa de la jornada de su empresa.</td></tr>
             <tr><td class="k">Sin horario</td><td>El encargado no cargó ese día. No cuenta como falta ni como tardanza, pero se cuenta para que veas qué local no cargó.</td></tr>
           </tbody>
@@ -303,7 +304,7 @@
         </table>
       </div>
       <p class="leyenda">Una hoja del Excel. Datos inventados.</p>
-      <div class="nota nota--gris"><span class="nota__titulo">Recordá</span><p>Al final de cada hoja está el <b>total del mes</b> (horas, horas extra y minutos tarde). Las marcas anuladas no aparecen. Los dados de baja salen solo si trabajaron o faltaron ese mes. Si corregís una marca, volvé a bajar el Excel.</p></div>
+      <div class="nota nota--gris"><span class="nota__titulo">Recordá</span><p>Al final de cada hoja está el <b>total del mes</b> (horas, horas extra y minutos tarde). Las marcas anuladas no aparecen. Los dados de baja salen solo si trabajaron o faltaron ese mes. Si corregís una marca, volvé a bajar el Excel. Si lo bajás de madrugada, el turno de noche de ayer puede salir «Falta» o «Sin salida» hasta que termina: bajalo de nuevo más tarde.</p></div>
     </section>
 
     <section id="cajero">
@@ -356,7 +357,7 @@
       <details class="faq"><summary>¿Qué pasa si un encargado no carga la semana?</summary><div><p>Esos días salen como «Sin horario»: no cuentan como falta ni como llegada tarde. En el Resumen ves cuántos días sin horario tiene cada uno, así sabés qué local no cargó. Los podés cargar vos.</p></div></details>
       <details class="faq"><summary>¿Puedo cambiar la jornada o la tolerancia?</summary><div><p>Sí, en <b>Asistencia → Reglas</b>, por empresa, cuando quieras. El próximo Excel ya sale con lo nuevo.</p></div></details>
       <details class="faq"><summary>¿Un franco trabajado cuenta como tarde?</summary><div><p>No. En la hoja sale «Franco» y las horas que trabajó se suman igual.</p></div></details>
-      <details class="faq"><summary>¿Los dados de baja aparecen en el Excel?</summary><div><p>Sí, en los meses en que ficharon o tenían horario y faltaron antes de irse. Si reactivás a alguien, los horarios de los días que estuvo de baja se borran (queda registrado), así no le salen faltas; los de hoy en adelante quedan.</p></div></details>
+      <details class="faq"><summary>¿Los dados de baja aparecen en el Excel?</summary><div><p>Sí, en los meses en que ficharon o tenían horario y faltaron antes de irse. Si reactivás a alguien, los horarios de los días que estuvo de baja se borran (queda registrado), y también los turnos de hoy que ya empezaron, así no le salen faltas; lo que viene queda.</p></div></details>
     </section>
 
     <section id="ejemplo">

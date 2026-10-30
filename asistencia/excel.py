@@ -100,6 +100,10 @@ def _local(empleado) -> str:
     return empleado.sucursal.nombre if empleado.sucursal.empresa_id == empleado.empresa_id else "local de otra empresa"
 
 
+def _de_que_dia(otro, fecha) -> str:
+    return "anterior" if otro < fecha else "siguiente"
+
+
 def observacion_del_dia(dia: DiaResumen) -> str:
     """La observacion de las marcas (`observacion`) mas lo que sale del horario:
     falta, franco, sin horario o un turno sin fichar (US-14.14)."""
@@ -115,11 +119,15 @@ def observacion_del_dia(dia: DiaResumen) -> str:
         notas.append("Fichó fuera de su horario")
     elif faltantes:
         notas.append(f"No fichó el {faltantes[0]}.º turno")
-    if not dia.tramos:
-        # Turno pegado a la medianoche: la entrada quedo en la fila del dia de al lado.
-        for turno in dia.turnos:
-            if turno.real is not None and turno.real.date() != dia.fecha:
-                notas.append("Fichó la entrada el día " + ("anterior" if turno.real.date() < dia.fecha else "siguiente"))
+    # Un turno pegado a la medianoche: su entrada queda en la fila del dia de al
+    # lado. Se dice en las dos filas: la del turno y la que muestra la entrada.
+    for turno in dia.turnos:
+        if turno.real is not None and turno.real.date() != dia.fecha:
+            nota = f"Fichó la entrada el día {_de_que_dia(turno.real.date(), dia.fecha)}"
+            if nota not in notas:
+                notas.append(nota)
+    for entrada, otro in sorted(dia.ajenas.items()):
+        notas.append(f"La entrada de las {entrada:%H:%M} es del turno del día {_de_que_dia(otro, dia.fecha)}")
     de_las_marcas = observacion(dia.tramos).split(", ") if dia.tramos else ([] if notas else ["Sin marcas"])
     if not dia.pasado:
         # Hoy todavia puede estar trabajando: no es una salida que falta.

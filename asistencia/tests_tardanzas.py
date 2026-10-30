@@ -11,6 +11,7 @@ Riesgos que cubre:
 
 from datetime import date, datetime, time, timedelta
 from io import BytesIO
+from unittest import mock
 
 from django.urls import reverse
 from django.utils import timezone
@@ -51,6 +52,10 @@ class TardanzasYFaltasTestCase(ExcelTestCase):
 
     def _dia(self, resumen, dia):
         return next(d for d in resumen.dias if d.fecha == date(2026, 11, dia))
+
+    def _reloj(self, dia, hora, minuto=0):
+        """Fija la hora de ahora en noviembre de 2026."""
+        return mock.patch("django.utils.timezone.now", return_value=_momento(dia, hora, minuto))
 
 
 class LlegadasTardeTests(TardanzasYFaltasTestCase):
@@ -176,6 +181,76 @@ class LlegadasTardeTests(TardanzasYFaltasTestCase):
         self.assertEqual((dia_2.falta, dia_2.tarde), (True, timedelta()))
         self.assertEqual(self._dia(resumen, 3).tarde, timedelta())
 
+    def test_la_franja_de_un_turno_de_noche_no_pasa_de_las_5(self):
+        # Tercera revision: con 8 h, el turno de las 22 tomaba la entrada de las 5:30 del otro dia.
+        self._horario(2, time(22))
+        self._horario(3, franco=True)
+        self._marca(_momento(3, 5, 30), Marca.Tipo.ENTRADA)
+        self._marca(_momento(3, 13, 30), Marca.Tipo.SALIDA)
+        # 22 del 5 y 14 del 6: trabajo el 6 de 5:30 a 13:30. El 5 es falta; el 6 no.
+        self._horario(5, time(22))
+        self._horario(6, time(14))
+        self._marca(_momento(6, 5, 30), Marca.Tipo.ENTRADA)
+        self._marca(_momento(6, 13, 30), Marca.Tipo.SALIDA)
+        resumen = self._resumen()
+        self.assertEqual([self._dia(resumen, d).falta for d in (2, 5, 6)], [True, True, False])
+        self.assertEqual((resumen.faltas, resumen.minutos_tarde), (2, 0))
+        self.assertEqual(observacion_del_dia(self._dia(resumen, 6)), "Fichó fuera de su horario")
+        # Hasta las 5 sigue siendo una llegada tarde: a las 0:30 son 150 minutos.
+        self._horario(8, time(22))
+        self._marca(_momento(9, 0, 30), Marca.Tipo.ENTRADA)
+        self.assertEqual(self._dia(self._resumen(), 8).tarde, timedelta(minutes=150))
+
+    def test_un_mes_cerrado_no_cambia_al_cargar_el_dia_1_del_siguiente(self):
+        self._horario(30, time(22))
+        self._marca(timezone.make_aware(datetime(2026, 12, 1, 5, 30)), Marca.Tipo.ENTRADA)
+        antes = self._dia(self._resumen(hoy=date(2026, 12, 5)), 30)
+        Horario.objects.create(empleado=self.empleado, fecha=date(2026, 12, 1), entrada_1=time(6))
+        despues = self._dia(self._resumen(hoy=date(2026, 12, 5)), 30)
+        for dia in (antes, despues):
+            self.assertEqual((dia.falta, dia.tarde, observacion_del_dia(dia)), (True, timedelta(), "Falta"))
+
+    def test_un_franco_trabajado_a_la_noche_no_tapa_la_falta_del_otro_dia(self):
+        self._horario(2, franco=True)
+        self._horario(3, time(7))
+        self._marca(_momento(2, 19, 30), Marca.Tipo.ENTRADA)
+        self._marca(_momento(2, 23, 30), Marca.Tipo.SALIDA)
+        resumen = self._resumen()
+        self.assertTrue(self._dia(resumen, 3).falta)
+        self.assertEqual(resumen.faltas, 1)
+        self.assertEqual(observacion_del_dia(self._dia(resumen, 2)), "Franco")
+
+    def test_la_noche_del_ultimo_dia_del_mes_anterior_no_tapa_la_falta_del_1(self):
+        # Por la vista, que trae las marcas de alrededor del mes.
+        self._horario(1, time(7))
+        self._marca(timezone.make_aware(datetime(2026, 10, 31, 19, 30)), Marca.Tipo.ENTRADA)
+        self._marca(timezone.make_aware(datetime(2026, 10, 31, 23, 30)), Marca.Tipo.SALIDA)
+        self._login(self.admin, [self.armadi])
+        with self._reloj(10, 12):
+            response = self.client.get(reverse("asistencia:excel"), {"descargar": "1", "mes": "2026-11"})
+        libro = load_workbook(BytesIO(response.content))
+        self.assertEqual(libro["Juan Perez"]["J6"].value, "Falta")
+        fila = next(r for r in libro["Resumen"].iter_rows(min_row=6, values_only=True) if r[0] == "Juan Perez")
+        self.assertEqual(fila[9], 1)
+
+    def test_llegar_mas_de_dos_horas_antes_no_es_tarde_ni_se_senala(self):
+        # 9 y 17, vuelve 14:30 y se queda hasta las 21. Horario 10, entra 7:45.
+        self._horario(2, time(9), time(17))
+        self._turno(2, 9, 13)
+        self._marca(_momento(2, 14, 30), Marca.Tipo.ENTRADA)
+        self._marca(_momento(2, 21), Marca.Tipo.SALIDA)
+        self._horario(3, time(10))
+        self._marca(_momento(3, 7, 45), Marca.Tipo.ENTRADA)
+        self._marca(_momento(3, 16), Marca.Tipo.SALIDA)
+        # 9 y 17, pero se fue a las 16 sin quedarse al 2.º turno: ese si se senala.
+        self._horario(4, time(9), time(17))
+        self._turno(4, 9, 13)
+        self._marca(_momento(4, 14, 30), Marca.Tipo.ENTRADA)
+        self._marca(_momento(4, 16), Marca.Tipo.SALIDA)
+        resumen = self._resumen()
+        self.assertEqual([observacion_del_dia(self._dia(resumen, d)) for d in (2, 3, 4)], ["", "", "No fichó el 2.º turno"])
+        self.assertEqual((resumen.minutos_tarde, resumen.faltas), (0, 0))
+
     def test_panaderia_de_madrugada_no_toma_la_vuelta_de_la_tarde_anterior(self):
         for dia in (2, 3):
             self._horario(dia, time(4))
@@ -224,6 +299,57 @@ class LlegadasTardeTests(TardanzasYFaltasTestCase):
         resumen = self._resumen()
         self.assertEqual(resumen.minutos_tarde, 31)
         self.assertTrue(resumen.pasa_la_tolerancia)
+
+
+class EntradasDeOtroDiaTests(TardanzasYFaltasTestCase):
+    """Una entrada que le toca al turno de otro dia queda en la fila del dia en que
+    se ficho: la hoja lo dice en las dos filas (tercera revision de D18)."""
+
+    def test_turnos_de_madrugada_seguidos_lo_dicen_en_las_dos_filas(self):
+        for dia in (3, 4, 5):
+            self._horario(dia, time(0, 30))
+        for dia in (2, 3, 4):
+            self._marca(_momento(dia, 23, 55), Marca.Tipo.ENTRADA)
+            self._marca(_momento(dia + 1, 8), Marca.Tipo.SALIDA)
+        resumen = self._resumen()
+        siguiente = "La entrada de las 23:55 es del turno del día siguiente"
+        self.assertEqual(
+            [observacion_del_dia(self._dia(resumen, d)) for d in (2, 3, 4, 5)],
+            [
+                f"Sin horario, {siguiente}",
+                f"Fichó la entrada el día anterior, {siguiente}",
+                f"Fichó la entrada el día anterior, {siguiente}",
+                "Fichó la entrada el día anterior",
+            ],
+        )
+        self.assertEqual((resumen.faltas, resumen.minutos_tarde), (0, 0))
+
+    def test_una_falta_que_muestra_la_entrada_del_turno_del_dia_anterior_lo_dice(self):
+        # 22 del 6 y del 7: el 6 llego a las 0:30 del 7 (150 minutos tarde) y el 7 no vino.
+        self._horario(6, time(22))
+        self._horario(7, time(22))
+        self._marca(_momento(7, 0, 30), Marca.Tipo.ENTRADA)
+        self._marca(_momento(7, 6), Marca.Tipo.SALIDA)
+        resumen = self._resumen()
+        self.assertEqual(observacion_del_dia(self._dia(resumen, 6)), "Fichó la entrada el día siguiente")
+        self.assertEqual(
+            observacion_del_dia(self._dia(resumen, 7)), "Falta, La entrada de las 00:30 es del turno del día anterior"
+        )
+        self.assertEqual((resumen.faltas, resumen.minutos_tarde), (1, 150))
+
+    def test_una_salida_suelta_con_la_entrada_de_otro_dia_no_dice_fuera_de_horario(self):
+        # El 9: la entrada de las 8 se anulo y quedo la salida; a las 23:30 entro al turno de las 0 del 10.
+        self._horario(9, time(8))
+        self._horario(10, time(0))
+        self._marca(_momento(9, 8), Marca.Tipo.ENTRADA, anulada=True)
+        self._marca(_momento(9, 16), Marca.Tipo.SALIDA)
+        self._marca(_momento(9, 23, 30), Marca.Tipo.ENTRADA)
+        self._marca(_momento(10, 7), Marca.Tipo.SALIDA)
+        dia = self._dia(self._resumen(hoy=date(2026, 11, 12)), 9)
+        self.assertEqual((dia.turnos_sin_fichar, dia.falta), ([], False))
+        self.assertEqual(
+            observacion_del_dia(dia), "La entrada de las 23:30 es del turno del día siguiente, Salida sin entrada"
+        )
 
 
 class FaltasYSinHorarioTests(TardanzasYFaltasTestCase):
@@ -293,23 +419,54 @@ class FaltasYSinHorarioTests(TardanzasYFaltasTestCase):
 
 class BajasYReactivacionesTests(TardanzasYFaltasTestCase):
     def test_la_baja_no_borra_horarios_y_al_volver_se_limpian_los_dias_de_baja(self):
-        hoy = timezone.localdate()
-        fechas = [hoy + timedelta(days=dias) for dias in (-8, -3, 0, 2)]
+        fechas = [date(2026, 11, dia) for dia in (2, 7, 10, 12)]
         for fecha in fechas:
             Horario.objects.create(empleado=self.empleado, fecha=fecha, entrada_1=time(8))
-        dar_de_baja_empleado(actor=self.admin, empleado=self.empleado)
+        with self._reloj(5, 12):
+            dar_de_baja_empleado(actor=self.admin, empleado=self.empleado)
         # La baja no toca la grilla: una baja por error se deshace sin perder nada cargado.
         self.assertEqual(sorted(Horario.objects.values_list("fecha", flat=True)), fechas)
         self.assertFalse(HorarioCambio.objects.exists())
-        # Estuvo de baja desde hace 5 dias: al volver, el horario de hace 3 dias no le hace una falta.
-        Empleado.objects.filter(pk=self.empleado.pk).update(dado_de_baja_en=timezone.now() - timedelta(days=5))
-        self.empleado.refresh_from_db()
-        reactivar_empleado(actor=self.admin, empleado=self.empleado)
+        # Vuelve el 10 a las 7: el horario del 7 (estaba de baja) no le hace una falta; el de hoy a las 8 queda.
+        with self._reloj(10, 7):
+            reactivar_empleado(actor=self.admin, empleado=self.empleado)
         self.assertEqual(sorted(Horario.objects.values_list("fecha", flat=True)), [fechas[0], fechas[2], fechas[3]])
         self.assertEqual(
             list(HorarioCambio.objects.values_list("fecha", "antes", "despues", "cambiado_por")),
             [(fechas[1], "8:00", "", self.admin.pk)],
         )
+
+    def test_al_volver_a_media_manana_no_cuentan_los_turnos_de_hoy_que_ya_empezaron(self):
+        # Se fueron el 2 y vuelven el 5 a las 12: Juan tenia 8 y 17, Ana 8 y Beto franco.
+        ana = self._empleado(nombre="Ana Gomez", dni="30999888")
+        beto = self._empleado(nombre="Beto Franco", dni="31000111")
+        self._alta(ana, date(2026, 10, 1))
+        self._horario(5, time(8), time(17))
+        self._horario(5, time(8), empleado=ana)
+        self._horario(5, franco=True, empleado=beto)
+        for empleado in (self.empleado, ana, beto):
+            with self._reloj(2, 9, 30):
+                dar_de_baja_empleado(actor=self.admin, empleado=empleado)
+            with self._reloj(5, 12):
+                reactivar_empleado(actor=self.admin, empleado=empleado)
+        self.assertEqual(Horario.objects.get(empleado=self.empleado).entradas, (time(17),))
+        self.assertFalse(Horario.objects.filter(empleado=ana).exists())
+        self.assertTrue(Horario.objects.get(empleado=beto).franco)
+        self.assertEqual(
+            sorted(HorarioCambio.objects.values_list("empleado__nombre", "antes", "despues")),
+            [("Ana Gomez", "8:00", ""), ("Juan Perez", "8:00 y 17:00", "17:00")],
+        )
+        # El 5 no es falta para Ana: a las 8 no trabajaba aca.
+        self.assertFalse(self._dia(self._resumen(hoy=date(2026, 11, 6), empleado=ana), 5).falta)
+
+    def test_una_baja_y_vuelta_el_mismo_dia_no_toca_el_horario_de_hoy(self):
+        self._horario(5, time(8))
+        with self._reloj(5, 9, 30):
+            dar_de_baja_empleado(actor=self.admin, empleado=self.empleado)
+        with self._reloj(5, 9, 35):
+            reactivar_empleado(actor=self.admin, empleado=self.empleado)
+        self.assertEqual(Horario.objects.get(empleado=self.empleado).entradas, (time(8),))
+        self.assertFalse(HorarioCambio.objects.exists())
 
     def test_una_baja_y_vuelta_inmediata_no_pierde_la_grilla(self):
         hoy = timezone.localdate()

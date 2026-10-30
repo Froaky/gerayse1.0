@@ -10,25 +10,30 @@ Aca vive la cuenta; el Excel solo la muestra. Reglas:
 - marcas corregidas: las cargadas a mano por administracion;
 - llegada tarde: cada entrada del horario (`Horario`, una o dos con turno
   cortado) toma la primera entrada fichada dentro de su franja, que va desde 2
-  horas antes de la hora hasta 8 horas despues, y corta a mitad de camino con
-  la entrada esperada vecina (la del otro turno, o la del dia de al lado). Llega
-  tarde si fichó despues de la hora (a minuto). Asi quien viene solo al 2.º
-  turno se compara con el 2.º, un turno de las 0:30 toma al que llego a las
-  23:55 del dia anterior, y una entrada de la noche anterior o de la mañana
-  siguiente no tapa ni la tardanza ni la falta de otro turno. Cada entrada tarde
-  es una llegada tarde; se suman los minutos del mes y se marca si pasan la
-  tolerancia de la empresa;
+  horas antes de la hora hasta 8 horas despues (sin pasar de las 5 de la mañana
+  del dia siguiente), y corta a mitad de camino con la entrada esperada vecina
+  (la del otro turno, o la del dia de al lado). Llega tarde si fichó despues de
+  la hora (a minuto). Asi quien viene solo al 2.º turno se compara con el 2.º,
+  un turno de las 0:30 toma al que llego a las 23:55 del dia anterior, y una
+  entrada de la noche anterior o de la mañana siguiente no tapa ni la tardanza
+  ni la falta de otro turno. Cada entrada tarde es una llegada tarde; se suman
+  los minutos del mes y se marca si pasan la tolerancia de la empresa;
 - turno sin fichar: un dia que ya paso en que fichó una entrada propia, pero
-  ninguna cayo en la franja de un turno; se senala, no es falta;
+  a ese turno no le toco ninguna y a esa hora no estaba trabajando (quien llego
+  mas de 2 horas antes no se senala); se senala, no es falta;
 - falta: dia con horario (no franco) en que no fichó nada propio (una entrada
   que le toco a un turno de otro dia no cuenta) y ningun turno tuvo entrada.
   Solo hasta ayer: hoy todavia puede llegar;
 - dia sin horario: no cuenta como falta ni tardanza. Se cuentan los de hasta
   ayer, desde el alta del empleado y hasta su baja, para ver que local no cargo.
+
+Limite conocido: "ayer" se corta a medianoche. Un Excel bajado de madrugada
+puede mostrar el turno de noche de ayer como falta o sin salida aunque todavia
+este dentro de su franja; bajado mas tarde, se corrige solo.
 """
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
 from django.utils import timezone
 
@@ -39,6 +44,23 @@ from .models import Horario, Marca, ReglasAsistencia
 # contar para ese turno) y hasta cuanto despues sigue siendo una llegada tarde.
 ANTES_DE_HORA = timedelta(hours=2)
 DESPUES_DE_HORA = timedelta(hours=8)
+# Un turno de la noche no toma entradas de la mañana siguiente: su franja no pasa
+# de esta hora del dia siguiente. Quien falto a la noche y entra temprano al otro
+# dia tiene una falta, no una llegada tarde de siete horas.
+FIN_DE_LA_NOCHE = time(5)
+
+
+def _minuto(marca) -> datetime:
+    return a_minuto(timezone.localtime(marca.momento))
+
+
+def _cubre(tramo: Tramo, momento: datetime) -> bool:
+    """Si a esa hora estaba trabajando: un tramo cerrado que la contiene."""
+    return (
+        tramo.entrada is not None
+        and tramo.salida is not None
+        and _minuto(tramo.entrada) <= momento < _minuto(tramo.salida)
+    )
 
 
 @dataclass
@@ -67,8 +89,21 @@ class DiaResumen:
     pasado: bool = False
     # Ademas el empleado estaba dado de alta: cuenta para faltas y dias sin horario.
     cuenta: bool = False
-    # Fichó algo propio ese dia: una marca que no es la entrada de un turno de otro dia.
-    fichajes_propios: bool = False
+    # Entradas de esta fila que le tocaron al turno de otro dia: {entrada (a minuto): dia de ese turno}.
+    ajenas: dict = field(default_factory=dict)
+
+    def _ajena(self, tramo: Tramo) -> bool:
+        return tramo.entrada is not None and _minuto(tramo.entrada) in self.ajenas
+
+    @property
+    def entrada_propia(self) -> bool:
+        """Fichó una entrada que no es la del turno de otro dia."""
+        return any(t.entrada is not None and not self._ajena(t) for t in self.tramos)
+
+    @property
+    def fichajes_propios(self) -> bool:
+        """Una entrada propia, o una salida suelta (su entrada se anulo)."""
+        return self.entrada_propia or any(t.entrada is None for t in self.tramos)
 
     @property
     def trabajado(self) -> bool:
@@ -115,10 +150,15 @@ class DiaResumen:
     def turnos_sin_fichar(self) -> list[int]:
         """Numeros (1 o 2) de los turnos sin entrada, en un dia que ya paso y en
         el que fichó alguna entrada propia: si no vino, es falta; si solo hay una
-        salida suelta, eso ya se senala como "Salida sin entrada"."""
-        if not self.pasado or not self.fichajes_propios or not self.trabajado:
+        salida suelta o la entrada de otro dia, eso ya se senala aparte. Un turno
+        a cuya hora estaba trabajando (llego mas de 2 horas antes) no cuenta."""
+        if not self.pasado or not self.entrada_propia:
             return []
-        return [numero for numero, turno in enumerate(self.turnos, start=1) if turno.real is None]
+        return [
+            numero
+            for numero, turno in enumerate(self.turnos, start=1)
+            if turno.real is None and not any(_cubre(tramo, turno.esperada) for tramo in self.tramos)
+        ]
 
 
 @dataclass
@@ -183,12 +223,14 @@ def _turnos_del_horario(horarios: dict) -> list[tuple[datetime, date]]:
 def asignar_turnos(horarios: dict, entradas: list[datetime]) -> dict[date, list[Turno]]:
     """A cada entrada del horario le toca la primera entrada fichada (ya a minuto
     y en orden) de su franja: de `ANTES_DE_HORA` antes a `DESPUES_DE_HORA`
-    despues, cortando a mitad de camino con la entrada esperada vecina. Las
-    franjas no se pisan, asi que una entrada fichada le toca a un solo turno."""
+    despues (sin pasar de `FIN_DE_LA_NOCHE` del dia siguiente), cortando a mitad
+    de camino con la entrada esperada vecina. Las franjas no se pisan, asi que
+    una entrada fichada le toca a un solo turno."""
     esperadas = _turnos_del_horario(horarios)
     turnos = {}
     for indice, (esperada, fecha) in enumerate(esperadas):
-        desde, hasta = esperada - ANTES_DE_HORA, esperada + DESPUES_DE_HORA
+        fin_de_la_noche = timezone.make_aware(datetime.combine(fecha + timedelta(days=1), FIN_DE_LA_NOCHE))
+        desde, hasta = esperada - ANTES_DE_HORA, min(esperada + DESPUES_DE_HORA, fin_de_la_noche)
         if indice > 0:
             anterior = esperadas[indice - 1][0]
             desde = max(desde, anterior + (esperada - anterior) / 2)
@@ -200,14 +242,17 @@ def asignar_turnos(horarios: dict, entradas: list[datetime]) -> dict[date, list[
     return turnos
 
 
-def _fichajes_propios(fecha: date, tramos: list[Tramo], turnos: dict) -> bool:
-    """Una salida suelta cuenta; una entrada no cuenta si es la que le toco a un
-    turno de otro dia (por ejemplo, la de las 23:55 para el turno de las 0:30)."""
-    de_otro_dia = {t.real for otro, lista in turnos.items() if otro != fecha for t in lista if t.real is not None}
-    return any(
-        tramo.entrada is None or a_minuto(timezone.localtime(tramo.entrada.momento)) not in de_otro_dia
-        for tramo in tramos
-    )
+def _ajenas(fecha: date, tramos: list[Tramo], dia_del_turno: dict) -> dict:
+    """Las entradas de la fila que le tocaron al turno de otro dia (por ejemplo,
+    la de las 23:55 para el turno de las 0:30), con el dia de ese turno."""
+    ajenas = {}
+    for tramo in tramos:
+        if tramo.entrada is not None:
+            minuto = _minuto(tramo.entrada)
+            otro = dia_del_turno.get(minuto)
+            if otro is not None and otro != fecha:
+                ajenas[minuto] = otro
+    return ajenas
 
 
 def _dias_que_cuentan(empleado, hoy: date) -> tuple[date, date]:
@@ -220,7 +265,7 @@ def _dias_que_cuentan(empleado, hoy: date) -> tuple[date, date]:
 
 
 def calcular_dia(fecha: date, tramos: list[Tramo], reglas: ReglasAsistencia, horario=None, turnos=None, *,
-                 pasado=False, cuenta=False, fichajes_propios=None) -> DiaResumen:
+                 pasado=False, cuenta=False, ajenas=None) -> DiaResumen:
     horas = horas_del_dia(tramos)
     return DiaResumen(
         fecha=fecha,
@@ -231,7 +276,7 @@ def calcular_dia(fecha: date, tramos: list[Tramo], reglas: ReglasAsistencia, hor
         turnos=turnos or [],
         pasado=pasado,
         cuenta=cuenta,
-        fichajes_propios=bool(tramos) if fichajes_propios is None else fichajes_propios,
+        ajenas=ajenas or {},
     )
 
 
@@ -245,6 +290,7 @@ def calcular_mes(empleado, marcas, anio: int, mes: int, reglas: ReglasAsistencia
         a_minuto(timezone.localtime(m.momento)) for m in marcas if not m.anulada and m.tipo == Marca.Tipo.ENTRADA
     )
     turnos = asignar_turnos(horarios, entradas)
+    dia_del_turno = {t.real: fecha for fecha, lista in turnos.items() for t in lista if t.real is not None}
     dias = [
         calcular_dia(
             fecha,
@@ -254,7 +300,7 @@ def calcular_mes(empleado, marcas, anio: int, mes: int, reglas: ReglasAsistencia
             turnos.get(fecha),
             pasado=fecha < hoy,
             cuenta=desde <= fecha <= hasta,
-            fichajes_propios=_fichajes_propios(fecha, tramos, turnos),
+            ajenas=_ajenas(fecha, tramos, dia_del_turno),
         )
         for fecha, tramos in jornadas_del_mes(marcas, anio, mes).items()
     ]

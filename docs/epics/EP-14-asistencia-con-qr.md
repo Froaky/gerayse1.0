@@ -157,15 +157,21 @@ construir un servicio, hosting ni base aparte.
   Reglas de calculo (dominio en `asistencia/resumen.py`, el Excel solo lo muestra):
   - horas extra del dia = horas del dia - jornada de su empresa, si da positivo;
   - llegada tarde: cada entrada del horario toma la primera entrada fichada de su franja, que va
-    de 2 h antes de la hora a 8 h despues y corta a mitad de camino con la entrada esperada vecina
-    (la del otro turno o la del dia de al lado); llega tarde si fichó despues (a minuto). Asi quien
-    viene solo al 2.º turno se compara con el 2.º, un turno de las 0:30 toma al que llego 23:55 del
-    dia anterior, y una entrada de la noche anterior o de la mañana siguiente no tapa ni la
-    tardanza ni la falta de otro turno. Cada entrada tarde es una llegada tarde; se suman los
-    minutos del mes y se marca si pasan la tolerancia de su empresa. Las 2 h y las 8 h son
-    constantes del calculo (`ANTES_DE_HORA`, `DESPUES_DE_HORA` en `asistencia/resumen.py`);
-  - turno sin fichar: un dia pasado en que vino pero un turno quedo sin entrada en su ventana; se
-    senala ("No fichó el 2.º turno", o "Fichó fuera de su horario" si ninguno), no es falta;
+    de 2 h antes de la hora a 8 h despues, sin pasar de las 5 de la mañana del dia siguiente, y
+    corta a mitad de camino con la entrada esperada vecina (la del otro turno o la del dia de al
+    lado); llega tarde si fichó despues (a minuto). Asi quien viene solo al 2.º turno se compara
+    con el 2.º, un turno de las 0:30 toma al que llego 23:55 del dia anterior, y una entrada de la
+    noche anterior o de la mañana siguiente no tapa ni la tardanza ni la falta de otro turno. Cada
+    entrada tarde es una llegada tarde; se suman los minutos del mes y se marca si pasan la
+    tolerancia de su empresa. Las 2 h, las 8 h y las 5 de la mañana son constantes del calculo
+    (`ANTES_DE_HORA`, `DESPUES_DE_HORA`, `FIN_DE_LA_NOCHE` en `asistencia/resumen.py`);
+  - turno sin fichar: un dia pasado en que fichó una entrada propia pero un turno quedo sin entrada
+    en su franja y a esa hora no estaba trabajando; se senala ("No fichó el 2.º turno", o "Fichó
+    fuera de su horario" si ninguno), no es falta. Quien llego mas de 2 h antes y se quedo no se
+    senala;
+  - entrada de otro dia: la de un turno pegado a la medianoche queda en la fila del dia en que se
+    ficho; la hoja lo dice en las dos filas ("Fichó la entrada el día anterior" y "La entrada de
+    las 23:55 es del turno del día siguiente");
   - falta = dia con horario (no franco) sin ninguna marca propia (la entrada que le toco a un turno
     de otro dia no cuenta) ni entrada en sus franjas, hasta ayer;
   - dia sin horario = no cuenta como falta ni tardanza; el resumen dice cuantos hay, desde el alta
@@ -199,6 +205,29 @@ construir un servicio, hosting ni base aparte.
   campo de originales por fila (antes uno por casilla: con 72 empleados se pasaba el limite de
   1000 campos de Django), la baja ya no borra la grilla, reactivar toma el candado de la grilla
   antes que la fila del empleado, y el mensaje de la coma propone lo que se escribio.
+  Tercera revision del 30/10 (verificador, revisor nuevo, pruebas al azar y esceptico): 11 de los
+  15 puntos cerrados y 7 hallazgos nuevos confirmados (todos de severidad baja), arreglados:
+  - un turno de noche salteado ya no toma la entrada de la mañana siguiente (la franja no pasa de
+    las 5): faltar a las 22 y entrar 5:30 al otro dia es falta, no 450 minutos tarde, y un mes
+    cerrado no cambia al cargar el dia 1 del siguiente;
+  - "8,15hs", "y 8,15" o "8,15 17" (coma pegada con algo al lado) se marcan en rojo como "8,15"; el
+    aviso propone solo lo que se puede escribir (13:30 si es "13,30"; nada si es "8,5");
+  - la entrada que le toca al turno de otro dia se explica en la fila que la muestra, asi una fila
+    con "Falta" y una entrada a la vista dice de que turno es; una salida suelta con la entrada de
+    otro dia ya no dice "Fichó fuera de su horario";
+  - quien llego mas de 2 h antes a un turno y se quedo ya no sale "No fichó el 2.º turno";
+  - grilla: una casilla de un dia que cerro, sin tocar, ya no sale en rojo porque administracion la
+    cambio; lo escrito en una casilla que cerro, aunque no se entienda, sale como dia cerrado; el
+    aviso de salir sin guardar solo aparece si la pantalla muestra algo distinto de lo guardado;
+  - al reactivar tambien se sacan los turnos de hoy que ya empezaron (si volvio a las 12, el turno
+    de las 8 no es falta; con turno cortado queda el de la tarde);
+  - test en Postgres de reactivar mientras se guarda la grilla (no se traba).
+  Limites que quedan, anotados: un Excel bajado de madrugada puede mostrar el turno de noche de
+  ayer como falta o sin salida hasta que termina su franja (se corta a medianoche); despues de
+  reactivar, los dias de baja cuentan como "sin horario"; el 400 de Django por mas de 1000 campos
+  llega con 125 empleados activos en un mismo local (hoy el mas grande tiene muchos menos); "8 y
+  15" es turno cortado (8 y 15), por diseño; dias trabajados cuenta el dia en que se ficho la
+  entrada, aunque sea la del turno del dia siguiente.
 
 ## Reglas de negocio
 

@@ -46,6 +46,10 @@ class LeerCeldaTests(PadronTestCase):
             "8:00 y 17:00": Celda(entradas=(time(8), time(17))),
             "8/17:30": Celda(entradas=(time(8), time(17, 30))),
             "8, 17": Celda(entradas=(time(8), time(17))),
+            # Con minutos antes de la coma no hay duda: son dos entradas.
+            "8:00,17:00": Celda(entradas=(time(8), time(17))),
+            "8.30,17": Celda(entradas=(time(8, 30), time(17))),
+            "8h30,17": Celda(entradas=(time(8, 30), time(17))),
         }
         for texto, esperado in casos.items():
             with self.subTest(texto=texto):
@@ -53,24 +57,32 @@ class LeerCeldaTests(PadronTestCase):
 
     def test_lo_que_no_entiende_lo_dice(self):
         # Una casilla con solo separadores no es "vacia": si no, borraria el horario sin aviso.
-        # "8,15" puede ser 8:15 o dos entradas: se pide que lo aclare.
+        # "8,15" puede ser 8:15 o dos entradas: se pide que lo aclare, tambien con algo pegado.
         for texto in ("8-16", "8 a 16", "25", "8:61", "8:5", "abc", "17 8", "8 8", "8 12 17", "８", "F 8",
-                      ",", "/", "y", ", /", "8,15", "8,30", "13,15", "8,5"):
+                      ",", "/", "y", ", /", "8,15", "8,30", "13,15", "8,5",
+                      "8,15hs", "8,15h", "08,15hs", "8,15 hs", "y 8,15", "8,15/", "8,15 17", "8,9hs", "8,15:00"):
             with self.subTest(texto=texto):
                 with self.assertRaises(CeldaInvalida):
                     leer_celda(texto)
 
-    def test_la_coma_propone_lo_que_escribio(self):
+    def test_la_coma_propone_solo_lo_que_se_puede_escribir(self):
         for texto, mensaje in (
-            ("8,15", "escribí 8:15 si es una hora, o 8 15 si tiene turno cortado"),
-            ("13,30", "escribí 13:30 si es una hora, o 13 30 si tiene turno cortado"),
-            ("8,5", "escribí 8:05 si es una hora, o 8 5 si tiene turno cortado"),
+            ("8,15", "«8,15»: escribí 8:15 si es una hora, o 8 15 si tiene turno cortado."),
+            ("8,15hs", "«8,15»: escribí 8:15 si es una hora, o 8 15 si tiene turno cortado."),
+            ("8,15 hs", "«8,15»: escribí 8:15 si es una hora, o 8 15 si tiene turno cortado."),
+            # 30 no es una hora: no hay turno cortado que proponer.
+            ("13,30", "«13,30»: escribí 13:30 si es una hora."),
+            ("8,00", "«8,00»: escribí 8:00 si es una hora."),
+            # Ni 8:05 ni "8 5": no se sabe que quiso decir.
+            ("8,5", "«8,5»: con coma no se entiende."),
+            ("8,60", "«8,60»: con coma no se entiende."),
         ):
             with self.subTest(texto=texto):
                 with self.assertRaisesMessage(CeldaInvalida, mensaje):
                     leer_celda(texto)
-        # Con minutos o con espacio no hay duda: son dos entradas.
-        self.assertEqual(leer_celda("8:00,17:00"), Celda(entradas=(time(8), time(17))))
+        # Lo que propone se lee.
+        self.assertEqual(leer_celda("8 15"), Celda(entradas=(time(8), time(15))))
+        self.assertEqual(leer_celda("13:30"), Celda(entradas=(time(13, 30),)))
 
     def test_el_texto_de_la_celda_se_vuelve_a_leer_igual(self):
         for celda in (Celda(), Celda(franco=True), Celda(entradas=(time(8, 5),)), Celda(entradas=(time(8), time(17)))):
@@ -275,6 +287,29 @@ class GrillaDelEncargadoTests(GrillaTestCase):
         # La casilla cerrada muestra lo guardado, no lo escrito.
         self.assertNotContains(response, 'value="10"', status_code=403)
         self.assertEqual(self._horario(self.juan, self.hoy).entradas, (time(9),))
+
+    def test_una_casilla_cerrada_que_no_toco_no_sale_en_rojo(self):
+        # Abrio la semana ayer: hoy decia 8:00 para Juan y estaba vacio para Ana. En el medio
+        # administracion paso a Juan a las 9:00; el encargado no toco a Juan y en Ana escribio "abc".
+        lunes = lunes_de(self.hoy)
+        guardar_semana(actor=self.admin, sucursal=self.centro, lunes=lunes, celdas={(self.juan.pk, self.hoy): Celda(entradas=(time(9),))})
+        self._login(self.encargado, [self.armadi])
+        response = self._post(
+            lunes,
+            {(self.juan, self.hoy): "8:00", (self.ana, self.hoy): "abc"},
+            originales={(self.juan, self.hoy): "8:00", (self.ana, self.hoy): ""},
+        )
+        self.assertEqual(response.status_code, 403)
+        # Solo la de Ana, y como dia cerrado (no se puede corregir), no como algo que no se entiende.
+        self.assertEqual([celda["nombre"] for _, celda in response.context["errores"]], [self._celda(self.ana, self.hoy)])
+        self.assertContains(response, "Este día ya cerró: no se guardó lo que escribiste", status_code=403)
+        self.assertNotContains(response, "No entiendo", status_code=403)
+        self.assertNotContains(response, "no se entienden", status_code=403)
+        # Las dos muestran lo guardado: no queda nada sin guardar en la pantalla.
+        self.assertContains(response, f'name="{self._celda(self.juan, self.hoy)}" value="9:00"', status_code=403)
+        self.assertContains(response, "let cambiada = false;", status_code=403)
+        self.assertEqual(self._horario(self.juan, self.hoy).entradas, (time(9),))
+        self.assertIsNone(self._horario(self.ana, self.hoy))
 
     def test_despues_de_un_choque_lo_que_no_toco_muestra_lo_de_ahora(self):
         lunes = self.proxima

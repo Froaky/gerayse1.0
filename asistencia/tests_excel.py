@@ -165,6 +165,14 @@ class PantallaDelExcelTests(ExcelTestCase):
         self._login(self.admin, [self.armadi])
         self.assertEqual(self._hojas(self._descargar()), ["Beto Baja", "Juan Perez"])
 
+    def test_la_pantalla_dice_quienes_entran(self):
+        # Desde D18 tambien entran los de baja con faltas: la pantalla no puede decir "solo con marcas".
+        self._login(self.admin, [self.armadi])
+        self.assertContains(
+            self.client.get(reverse("asistencia:excel")),
+            "los dados de baja que tengan marcas o faltas ese mes. La primera hoja es el Resumen.",
+        )
+
     def test_un_solo_empleado(self):
         self._empleado(nombre="Otro", dni="34000111")
         self._login(self.admin, [self.armadi])
