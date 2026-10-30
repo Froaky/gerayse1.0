@@ -177,6 +177,25 @@ Last updated: 2026-10-21
     (`carnet-celular-<nombre>.pdf`) para adjuntar en WhatsApp. En main desde el 27/10 11:55
     (39965a3, OK de Mateo; deploy de production y demo OK, CI OK).
     Manual de administracion actualizado (seccion "A varios juntos", artefacto v7 y Escritorio).
+  - **30/10 horarios, resumen, tardanzas y faltas (EP-14 D18, US-14.10 a US-14.15)**, pedido de
+    Tais via Mateo. En staging; a main con OK de Mateo.
+    - Asistencia -> Reglas: jornada diaria (8:30) y tolerancia de llegadas tarde del mes (30 min)
+      por empresa, editables. Nada de eso queda fijo en el codigo.
+    - Asistencia -> Horarios: grilla semanal por local. Cada casilla: "8", "8:30", "8 17" (turno
+      cortado), "F" o vacio. El encargado carga hasta el dia anterior; hoy y lo pasado, solo
+      administracion. Historial de cambios (`HorarioCambio`).
+    - Permiso nuevo "Cargar horarios de asistencia" (users/0022). Los grupos ya existen: Usuarios ->
+      Roles. Al pasar a produccion hay que crear el rol "Encargado de local" (fichar + cargar
+      horarios) y asignarlo a cada encargado con su sucursal base: eso lo hace sistemas.
+    - Excel: primera hoja "Resumen" (por local, con filtro) y, por dia, Horario, Horas extra,
+      Tarde (min) y Falta/Franco/Sin horario. La cuenta esta en `asistencia/resumen.py`; los tramos
+      se movieron sin cambios a `asistencia/jornadas.py`.
+    - Feriados: no (decision de Mateo, los calcula el cliente). El manual dice poner F.
+    - Reglas, horarios e historial entran al respaldo diario.
+    - Manuales: el de administracion (artefacto v8) y uno nuevo para encargados
+      (claude.ai/artifact/7NJBHqPXz9rCB3fVzAJtr5, `docs/manual-asistencia-encargados.html`).
+      HTML y PDF de los dos en el Escritorio.
+    - Pendiente de Tais: quien es el encargado de cada local y si ya tiene usuario.
   - **Manuales (26/10, corregido a pedido de Mateo):** van con el formato del "Manual para la
     administracion" de julio (traspaso, `anexos/documentos-de-la-cuenta-claude/`): pagina HTML con
     encabezado, indice, secciones numeradas, pasos, notas Tip/Ojo, antes/ahora, checklist,

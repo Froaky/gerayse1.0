@@ -379,7 +379,7 @@ Criterios:
 
 ### Ampliacion del 30/10: horarios y resumen del mes (D18)
 
-### [ ] US-14.10 Reglas de asistencia por empresa
+### [x] US-14.10 Reglas de asistencia por empresa
 
 Como administracion
 Quiero editar la jornada diaria y la tolerancia de llegadas tarde del mes de cada empresa
@@ -393,8 +393,11 @@ Criterios:
 - valores fuera de rango (jornada de 0 o de mas de 24 h, tolerancia negativa) se rechazan
 - una empresa fuera del alcance no se ve ni se puede guardar por URL
 - estimado: 2 h
+- hecha 2026-10-30: `ReglasAsistencia` (OneToOne a la empresa, migracion
+  `asistencia/0009`), `/asistencia/reglas/`, servicio `guardar_reglas`. Tests en
+  `asistencia/tests_reglas.py`
 
-### [ ] US-14.11 Hoja Resumen y horas extra en el Excel
+### [x] US-14.11 Hoja Resumen y horas extra en el Excel
 
 Como administracion y encargados
 Queremos una primera hoja con una fila por empleado y los totales del mes
@@ -408,8 +411,11 @@ Criterios:
 - horas extra con la jornada de la empresa del empleado (US-14.10)
 - tests: dia justo en la jornada (0 extra), un minuto de mas, turno cortado, sin salida (no suma)
 - estimado: 3 h
+- hecha 2026-10-30: la cuenta en `asistencia/resumen.py`; el armado de tramos se movio sin
+  cambios a `asistencia/jornadas.py` (`excel.py` lo reexporta). Resumen con enlace a la hoja de
+  cada uno y filtro. Tests en `asistencia/tests_resumen.py`
 
-### [ ] US-14.12 Permiso "Cargar horarios de asistencia"
+### [x] US-14.12 Permiso "Cargar horarios de asistencia"
 
 Como administracion
 Quiero darle a los encargados el permiso de cargar horarios, por rol o por usuario
@@ -422,8 +428,10 @@ Criterios:
 - sus locales son la sucursal base y los otros locales donde ficha; sin ninguno no ve nada
 - quien administra asistencia tambien carga horarios, de todos los locales de su alcance
 - estimado: 1,5 h
+- hecha 2026-10-30: `PermissionModule.ASISTENCIA_HORARIOS` (migracion `users/0022`),
+  `can_cargar_horarios` y `alcance.locales_de_horarios`. Tests en `asistencia/tests_horarios.py`
 
-### [ ] US-14.13 Grilla semanal de horarios por local
+### [x] US-14.13 Grilla semanal de horarios por local
 
 Como encargado de local
 Quiero cargar la semana de mi local en una grilla: cada empleado, de lunes a domingo, su hora de
@@ -442,8 +450,12 @@ Criterios:
 - tests: formatos, segunda entrada antes de la primera, dia bloqueado, local ajeno, empleado de
   otro local, copiar sin pisar, historial
 - estimado: 8 h
+- hecha 2026-10-30: `Horario` y `HorarioCambio` (migracion `asistencia/0010`), lectura de
+  casillas en `asistencia/horarios.py`, servicios `guardar_semana` y `copiar_semana_anterior`,
+  `/asistencia/horarios/`. Reglas, horarios e historial entran al respaldo. Tests en
+  `asistencia/tests_horarios.py`
 
-### [ ] US-14.14 Llegadas tarde y faltas en el Excel
+### [x] US-14.14 Llegadas tarde y faltas en el Excel
 
 Como administracion y encargados
 Queremos ver en el Excel quien llego tarde, cuantos minutos en el mes, si paso la tolerancia y
@@ -458,13 +470,17 @@ Criterios:
 - tests: a horario, un minuto tarde, turno cortado tarde en el segundo, falta, franco trabajado,
   dia de hoy sin marca (no es falta), dias antes del alta, tolerancia justa y pasada
 - estimado: 4 h
+- hecha 2026-10-30: `asistencia/resumen.py` + columnas Horario y Tarde (min) en cada hoja.
+  Tests en `asistencia/tests_tardanzas.py`
 
-### [ ] US-14.15 Manuales: encargados y administracion
+### [x] US-14.15 Manuales: encargados y administracion
 
 Criterios:
 - manual nuevo para encargados (cargar la semana) con el formato de los otros
 - el de administracion suma reglas, permiso de encargado (rol) y la hoja Resumen
 - estimado: 2,5 h
+- hecha 2026-10-30: `docs/manual-asistencia-encargados.html` (nuevo) y el de administracion
+  con reglas, horarios, el rol "Encargado de local" y la hoja Resumen
 
 Total de la ampliacion: 21 h.
 

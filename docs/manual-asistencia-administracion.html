@@ -19,11 +19,11 @@
     <div class="marca-linea"><span class="marca marca--m">G</span><b>Gerayse</b><span>Administración, tesorería y control de gestión</span></div>
     <p class="eyebrow">Manual de uso · Asistencia · Administración</p>
     <h1>Asistencia del personal</h1>
-    <p class="bajada">Carnets con QR, fichaje con el celular o con lector, cómo va cada local durante el día, correcciones y el Excel de fin de mes: qué cambió y cómo lo manejás.</p>
+    <p class="bajada">Carnets con QR, fichaje con el celular o con lector, cómo va cada local durante el día, horarios, llegadas tarde y faltas, correcciones y el Excel de fin de mes: qué cambió y cómo lo manejás.</p>
     <div class="pastillas">
       <span class="pastilla pastilla--viva">Sistema activo</span>
       <span class="pastilla">Para: administración</span>
-      <span class="pastilla">Actualizado: 26 de octubre de 2026</span>
+      <span class="pastilla">Actualizado: 30 de octubre de 2026</span>
     </div>
   </div>
 </header>
@@ -41,6 +41,7 @@
           <li><a href="#fichar">Cómo se ficha</a></li>
           <li><a href="#por-local">Cómo va cada local</a></li>
           <li><a href="#correcciones">Corregir marcas</a></li>
+          <li><a href="#horarios">Horarios, tardanzas y faltas</a></li>
           <li><a href="#excel">El Excel del mes</a></li>
           <li><a href="#cajero">El cajero: qué ve</a></li>
           <li><a href="#no-cambia">Lo que no cambia</a></li>
@@ -57,7 +58,7 @@
 
   <main>
     <div class="resumen">
-      <strong>En una línea:</strong> cada empleado tiene un carnet con QR. Al llegar y al irse, el cajero del local lo escanea con el celular o con un lector, y la hora la pone el sistema. Vos ves en el momento quién está trabajando en cada local, corregís lo que haga falta y a fin de mes bajás el Excel con los días y las horas de cada uno. Nada se pasa a mano.
+      <strong>En una línea:</strong> cada empleado tiene un carnet con QR. Al llegar y al irse, el cajero del local lo escanea con el celular o con un lector, y la hora la pone el sistema. Vos ves en el momento quién está trabajando en cada local, corregís lo que haga falta y a fin de mes bajás el Excel con los días y las horas de cada uno. Los encargados cargan los horarios de la semana y el Excel marca solo las llegadas tarde, las faltas y las horas extra. Nada se pasa a mano.
     </div>
 
     <section id="que-cambia">
@@ -87,7 +88,7 @@
 
     <section id="permisos">
       <h2><span class="n">2</span>Permisos y locales</h2>
-      <p>La asistencia tiene dos permisos, y cada cajero tiene su local. Todo eso <b>lo configura sistemas</b>: vos no tocás usuarios. Acá va cómo funciona, para que sepas qué pedir.</p>
+      <p>La asistencia tiene tres permisos, y cada cajero y cada encargado tienen su local. Todo eso <b>lo configura sistemas</b>: vos no tocás usuarios. Acá va cómo funciona, para que sepas qué pedir.</p>
 
       <h3>Permiso «Administrar asistencia»</h3>
       <p>Es el tuyo. Te deja ver cómo va cada local, manejar el padrón de empleados, imprimir los carnets, corregir marcas y bajar el Excel del mes. Con este permiso te aparece <b>Asistencia</b> en el menú, con todas las pantallas de administración.</p>
@@ -100,6 +101,10 @@
         <li><div><b>Su local</b>Es el que queda anotado en cada marca que escanee. Sin local, la pantalla le avisa: «Tu usuario no tiene un local asignado: pedile a sistemas que te lo cargue».</div></li>
       </ol>
       <div class="nota nota--gris"><span class="nota__titulo">Recordá</span><p>Si un cajero no puede fichar o no ve Asistencia, que se lo pida a <b>sistemas</b>, no a vos. La pantalla ya se lo dice así.</p></div>
+
+      <h3>Permiso «Cargar horarios de asistencia»</h3>
+      <p>Es el de los <b>encargados de local</b>: les deja abrir la pantalla <b>Horarios</b> y cargar la semana de su local. No ven el padrón, ni las marcas, ni el Excel. Su local es el mismo que usan para fichar.</p>
+      <div class="nota"><span class="nota__titulo">Por grupo, no de a uno</span><p>Sistemas arma el rol <b>«Encargado de local»</b> con «Fichar asistencia» y «Cargar horarios de asistencia». A cada encargado se le pone ese rol y su local, y listo. Si a alguien le hace falta algo distinto, se le puede personalizar.</p></div>
 
       <h3>Un cajero que ficha en más de un local</h3>
       <p>Normalmente cada cajero ficha <b>solo en su local</b>: no puede elegir otro, así ninguna marca queda anotada en un local equivocado. Si una persona cubre más de uno (por ejemplo, la panadería que está dentro de otro local), pedile a sistemas que le habilite esos locales. Desde ahí, al fichar le aparece arriba una lista para elegir dónde está, solo entre los suyos.</p>
@@ -239,29 +244,68 @@
       <div class="nota nota--aviso"><span class="nota__titulo">Ojo</span><p>No se pueden cargar marcas a futuro ni repetir una que ya está.</p></div>
     </section>
 
-    <section id="excel">
-      <h2><span class="n">8</span>El Excel del mes</h2>
+    <section id="horarios">
+      <h2><span class="n">8</span>Horarios, tardanzas y faltas</h2>
+      <p>Para saber quién llegó tarde y quién faltó, el sistema necesita saber <b>a qué hora entra cada uno</b>. Como los horarios cambian cada semana, los carga el <b>encargado de cada local</b> en una grilla. Las reglas para contar las horas extra y la tolerancia las ponés vos.</p>
+
+      <h3>Las reglas: jornada y tolerancia</h3>
       <ol class="pasos">
-        <li><div><b>Asistencia → Excel del mes</b>Elegí el mes. Si querés, una empresa o un solo empleado.</div></li>
-        <li><div><b>Tocá <span class="boton">Descargar Excel</span></b>Hay una hoja por empleado con todos los días del mes.</div></li>
+        <li><div><b>Asistencia → Reglas</b>Cada empresa tiene las suyas.</div></li>
+        <li><div><b>Jornada diaria</b>Lo que un día pase de esto son horas extra. Arranca en <b>8:30</b>.</div></li>
+        <li><div><b>Tolerancia de llegadas tarde del mes</b>Cuántos minutos tarde, sumados en todo el mes, se aceptan. Arranca en <b>30</b>. Tocá <span class="boton">Guardar</span>.</div></li>
       </ol>
+      <div class="nota nota--gris"><span class="nota__titulo">Recordá</span><p>Si cambiás una regla, el próximo Excel que bajes sale con lo nuevo, también el de meses anteriores. Queda anotado quién la cambió y cuándo.</p></div>
+
+      <h3>La semana de cada local</h3>
+      <p>En <b>Asistencia → Horarios</b> hay una grilla por local y por semana: una fila por persona y una columna por día. En cada casilla va la hora de entrada (<kbd>8</kbd> o <kbd>8:30</kbd>), dos si tiene turno cortado (<kbd>8 17</kbd>), <kbd>F</kbd> si tiene franco, o nada. Con <span class="boton boton--borde">Copiar la semana anterior</span> se llenan las casillas vacías.</p>
+      <ul>
+        <li>El encargado carga y cambia <b>hasta el día anterior</b>. Hoy y los días que pasaron solo los cambiás <b>vos</b>.</li>
+        <li>Vos ves y cargás todos los locales. Cada cambio queda registrado: quién, cuándo y qué había antes.</li>
+        <li>Los encargados tienen su propio manual: <b>Asistencia: manual para encargados</b>.</li>
+      </ul>
+
+      <h3>Cómo se cuenta</h3>
       <div class="tabla-scroll">
         <table>
-          <thead><tr><th>Día</th><th>Entrada 1</th><th>Salida 1</th><th>Entrada 2</th><th>Salida 2</th><th>Horas del día</th><th>Observación</th></tr></thead>
+          <thead><tr><th>En el Excel</th><th>Qué es</th></tr></thead>
           <tbody>
-            <tr><td class="k">lun 02/11</td><td class="cifra">08:00</td><td class="cifra">12:00</td><td class="cifra">16:00</td><td class="cifra">20:00</td><td class="cifra">8:00</td><td></td></tr>
-            <tr><td class="k">mar 03/11</td><td class="cifra">06:00</td><td class="cifra">14:00</td><td></td><td></td><td class="cifra">8:00</td><td>Corregida</td></tr>
-            <tr><td class="k">mié 04/11</td><td class="cifra">08:05</td><td></td><td></td><td></td><td class="cifra">0:00</td><td>Sin salida</td></tr>
-            <tr><td class="k">jue 05/11</td><td></td><td></td><td></td><td></td><td></td><td>Sin marcas</td></tr>
+            <tr><td class="k">Llegada tarde</td><td>Fichó la entrada después de la hora cargada (a minuto). Con turno cortado, cada entrada se compara con la suya.</td></tr>
+            <tr><td class="k">Pasa la tolerancia</td><td>La suma de los minutos tarde del mes es mayor que la tolerancia de su empresa.</td></tr>
+            <tr><td class="k">Falta</td><td>Tenía horario ese día (no franco) y no fichó nada. Se cuenta hasta ayer: hoy todavía puede llegar.</td></tr>
+            <tr><td class="k">Horas extra</td><td>Lo que el día pasa de la jornada de su empresa.</td></tr>
+            <tr><td class="k">Sin horario</td><td>El encargado no cargó ese día. No cuenta como falta ni como tardanza, pero se cuenta para que veas qué local no cargó.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="nota nota--aviso"><span class="nota__titulo">Ojo con los feriados</span><p>El sistema no los marca: los seguís calculando vos. Para que un feriado no salga como falta, el encargado pone <kbd>F</kbd> a quien no trabaja.</p></div>
+    </section>
+
+    <section id="excel">
+      <h2><span class="n">9</span>El Excel del mes</h2>
+      <ol class="pasos">
+        <li><div><b>Asistencia → Excel del mes</b>Elegí el mes. Si querés, una empresa o un solo empleado.</div></li>
+        <li><div><b>Tocá <span class="boton">Descargar Excel</span></b>La primera hoja es el <b>Resumen</b>; después hay una hoja por empleado con todos los días del mes.</div></li>
+      </ol>
+      <h3>La hoja Resumen</h3>
+      <p>Una fila por persona, ordenada por local, con los totales del mes: días trabajados, horas, horas extra, llegadas tarde, minutos tarde, si pasa la tolerancia, faltas, días sin horario, días sin salida y marcas corregidas. Con las flechas del encabezado filtrás por local, y si hacés clic en un nombre vas a su hoja.</p>
+      <h3>La hoja de cada empleado</h3>
+      <div class="tabla-scroll">
+        <table>
+          <thead><tr><th>Día</th><th>Horario</th><th>Entrada 1</th><th>Salida 1</th><th>Entrada 2</th><th>Salida 2</th><th>Horas del día</th><th>Horas extra</th><th>Tarde (min)</th><th>Observación</th></tr></thead>
+          <tbody>
+            <tr><td class="k">lun 02/11</td><td>8:00 y 16:00</td><td class="cifra">08:00</td><td class="cifra">12:00</td><td class="cifra">16:10</td><td class="cifra">20:30</td><td class="cifra">8:20</td><td></td><td class="cifra">10</td><td></td></tr>
+            <tr><td class="k">mar 03/11</td><td>6:00</td><td class="cifra">06:00</td><td class="cifra">16:00</td><td></td><td></td><td class="cifra">10:00</td><td class="cifra">1:30</td><td></td><td>Corregida</td></tr>
+            <tr><td class="k">mié 04/11</td><td>8:00</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td>Falta</td></tr>
+            <tr><td class="k">jue 05/11</td><td>Franco</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td>Franco</td></tr>
           </tbody>
         </table>
       </div>
       <p class="leyenda">Una hoja del Excel. Datos inventados.</p>
-      <div class="nota nota--gris"><span class="nota__titulo">Recordá</span><p>Al final de cada hoja está el <b>total del mes</b>. Las marcas anuladas no aparecen. Los dados de baja salen solo si trabajaron ese mes. Si corregís una marca, volvé a bajar el Excel.</p></div>
+      <div class="nota nota--gris"><span class="nota__titulo">Recordá</span><p>Al final de cada hoja está el <b>total del mes</b> (horas, horas extra y minutos tarde). Las marcas anuladas no aparecen. Los dados de baja salen solo si trabajaron ese mes. Si corregís una marca, volvé a bajar el Excel.</p></div>
     </section>
 
     <section id="cajero">
-      <h2><span class="n">9</span>El cajero: qué puede y qué ve</h2>
+      <h2><span class="n">10</span>El cajero: qué puede y qué ve</h2>
       <ul>
         <li>Ve solo la pantalla <b>Fichar</b>, con <b>su local fijo</b> (o los suyos, si le habilitaron otros).</li>
         <li>Escanea los carnets y ve el resultado de cada uno.</li>
@@ -273,7 +317,7 @@
     </section>
 
     <section id="no-cambia">
-      <h2><span class="n">10</span>Lo que no cambia</h2>
+      <h2><span class="n">11</span>Lo que no cambia</h2>
       <ul>
         <li>Las cajas, las validaciones de efectivo y la tesorería siguen igual: la asistencia no toca la plata.</li>
         <li>Cada cajero entra con su usuario de siempre.</li>
@@ -282,12 +326,15 @@
     </section>
 
     <section id="checklist">
-      <h2><span class="n">11</span>Para arrancar</h2>
+      <h2><span class="n">12</span>Para arrancar</h2>
       <ul class="checklist">
         <li>Sistemas te dio el permiso «Administrar asistencia» (y «Fichar asistencia» si vas a fichar).</li>
         <li>Revisaste en Empleados que esté todo el personal (lo cargó sistemas) y agregaste a los que falten.</li>
         <li>Imprimiste, recortaste y repartiste los carnets (o se los mandaste al celular).</li>
         <li>Sistemas configuró a cada cajero con «Fichar asistencia» y su local.</li>
+        <li>Sistemas configuró a cada encargado con el rol «Encargado de local» y su local, y le pasaste su manual.</li>
+        <li>Revisaste en <b>Reglas</b> la jornada (8:30) y la tolerancia del mes (30 minutos) de cada empresa.</li>
+        <li>Cada encargado cargó la primera semana en <b>Horarios</b>.</li>
         <li>Le avisaste a sistemas quiénes cubren más de un local, para que se los habilite.</li>
         <li>Probaste fichar con un carnet en cada local (celular, tablet o lector).</li>
         <li>El primer día miraste <b>Por local</b> para ver que todos estén fichando.</li>
@@ -296,7 +343,7 @@
     </section>
 
     <section id="faq">
-      <h2><span class="n">12</span>Preguntas frecuentes</h2>
+      <h2><span class="n">13</span>Preguntas frecuentes</h2>
       <details class="faq"><summary>¿Qué pasa si escanean dos veces seguidas el mismo carnet?</summary><div><p>Nada: dentro de los 2 minutos no se anota otra marca. La pantalla muestra en amarillo «Ya registrada».</p></div></details>
       <details class="faq"><summary>¿Se puede cambiar la hora de una marca?</summary><div><p>No se edita. Se anula la equivocada y se agrega la correcta con motivo. Queda como «Corregida», con tu usuario.</p></div></details>
       <details class="faq"><summary>¿Y si un empleado trabaja en dos locales?</summary><div><p>Tiene un solo carnet y puede fichar en cualquier local. Cada marca guarda dónde fichó, y en Por local aparece en ese local.</p></div></details>
@@ -304,11 +351,14 @@
       <details class="faq"><summary>¿Puedo bajar los carnets de a uno?</summary><div><p>Sí. En Empleados, cada persona tiene <b>Carnet</b> (para imprimir) y <b>Carnet celular</b> (para mandar por WhatsApp). <b>Imprimir carnets</b> los baja todos juntos. Y para mandar el del celular a varios, marcalos en Empleados y tocá <b>Bajar carnets celular</b>: te baja uno por persona, con su nombre.</p></div></details>
       <details class="faq"><summary>¿Y si se corta internet en el local?</summary><div><p>Ese escaneo no se registra y la pantalla lo avisa en rojo. Cuando vuelve, se escanea de nuevo. Si se perdió, la agregás vos con el motivo «no había internet».</p></div></details>
       <details class="faq"><summary>¿Alguien que sale después de medianoche cuenta en qué día?</summary><div><p>En el día de la entrada. Por ejemplo, entra el lunes a las 22:00 y sale el martes a las 02:00: son 4 horas del lunes.</p></div></details>
+      <details class="faq"><summary>¿Qué pasa si un encargado no carga la semana?</summary><div><p>Esos días salen como «Sin horario»: no cuentan como falta ni como llegada tarde. En el Resumen ves cuántos días sin horario tiene cada uno, así sabés qué local no cargó. Los podés cargar vos.</p></div></details>
+      <details class="faq"><summary>¿Puedo cambiar la jornada o la tolerancia?</summary><div><p>Sí, en <b>Asistencia → Reglas</b>, por empresa, cuando quieras. El próximo Excel ya sale con lo nuevo.</p></div></details>
+      <details class="faq"><summary>¿Un franco trabajado cuenta como tarde?</summary><div><p>No. En la hoja sale «Franco» y las horas que trabajó se suman igual.</p></div></details>
       <details class="faq"><summary>¿Los dados de baja aparecen en el Excel?</summary><div><p>Sí, en los meses en que tuvieron marcas. Así no se pierde lo que trabajaron.</p></div></details>
     </section>
 
     <section id="ejemplo">
-      <h2><span class="n">13</span>Un día de operación</h2>
+      <h2><span class="n">14</span>Un día de operación</h2>
       <p class="chico">Un ejemplo, con nombres inventados.</p>
       <div class="dia">
         <div><time>07:55</time><div><p>Juan, cajero del Local Centro, abre <b>Fichar</b> en el celular del local y toca <span class="boton">Usar la cámara</span>.</p></div></div>
@@ -322,7 +372,7 @@
     </section>
 
     <section id="problemas">
-      <h2><span class="n">14</span>Si algo falla</h2>
+      <h2><span class="n">15</span>Si algo falla</h2>
       <div class="tabla-scroll">
         <table>
           <thead><tr><th>Qué pasa</th><th>Por qué</th><th>Qué hacer</th></tr></thead>
@@ -334,6 +384,8 @@
             <tr><td class="k">Sale «Está dado de baja»</td><td>La persona está dada de baja en el padrón.</td><td>Si volvió a trabajar, reactivala en Empleados.</td></tr>
             <tr><td class="k">«Ya hay un empleado activo con ese nombre»</td><td>Ya está cargado, o es otra persona que se llama igual.</td><td>Si es otra persona, cargales el DNI a las dos.</td></tr>
             <tr><td class="k">En Por local aparece «Sin salida»</td><td>Alguien entró y no fichó la salida.</td><td>Preguntá en el local a qué hora se fue y agregá la salida en Marcas, con el motivo.</td></tr>
+            <tr><td class="k">En el Excel salen muchos «Sin horario»</td><td>El encargado no cargó esa semana.</td><td>Pedile que la cargue, o cargala vos en Horarios. El Excel se recalcula cuando lo volvés a bajar.</td></tr>
+            <tr><td class="k">El encargado no puede cambiar un día</td><td>Es hoy o un día que ya pasó.</td><td>Lo cambiás vos en Horarios, con su local y su semana.</td></tr>
             <tr><td class="k">El QR no se lee</td><td>Poca luz, o el carnet está gastado.</td><td>Que se tipeen los 6 números. Si pasa seguido con un carnet, reimprimilo.</td></tr>
           </tbody>
         </table>
@@ -341,7 +393,7 @@
     </section>
 
     <section id="responsabilidades">
-      <h2><span class="n">15</span>Quién hace qué</h2>
+      <h2><span class="n">16</span>Quién hace qué</h2>
       <div class="dos">
         <div class="tarjeta">
           <h4>Vos (administración)</h4>
@@ -350,12 +402,14 @@
             <li>Imprimir y reponer los carnets, o mandarlos al celular.</li>
             <li>Avisarle a sistemas cuando entra un cajero nuevo o alguien cubre otro local.</li>
             <li>Mirar Por local y corregir olvidos.</li>
+            <li>Poner las reglas (jornada y tolerancia) y corregir horarios de días pasados.</li>
             <li>Bajar el Excel a fin de mes.</li>
           </ul>
         </div>
         <div class="tarjeta">
-          <h4>Cajeros y empleados</h4>
+          <h4>Encargados, cajeros y empleados</h4>
           <ul>
+            <li>Encargado: cargar la semana de su local antes de que empiece.</li>
             <li>Cajero: abrir Fichar al empezar y escanear a cada uno al llegar y al irse.</li>
             <li>Cajero: avisarte cualquier olvido o error.</li>
             <li>Empleado: cuidar su carnet y avisar si lo pierde.</li>
@@ -365,7 +419,7 @@
     </section>
 
     <section id="contacto">
-      <h2><span class="n">16</span>Si necesitás ayuda</h2>
+      <h2><span class="n">17</span>Si necesitás ayuda</h2>
       <ul>
         <li>Ante la duda, probá con un carnet de prueba antes de hacerlo con todos.</li>
         <li>Si ves un error, anotá qué hiciste, en qué local y a qué hora.</li>
@@ -377,7 +431,7 @@
 </div>
 
 <footer class="manual-pie">
-  <div class="pie"><span>Gerayse · Asistencia: manual para la administración</span><span>Actualizado el 26 de octubre de 2026</span></div>
+  <div class="pie"><span>Gerayse · Asistencia: manual para la administración</span><span>Actualizado el 30 de octubre de 2026</span></div>
 </footer>
 
 <button class="arriba" id="arriba" type="button" aria-label="Volver arriba">↑ Arriba</button>

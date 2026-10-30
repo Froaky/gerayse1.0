@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Asistencia: manual para encargados</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&family=Spline+Sans+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="marca/gerayse-documento.css">
+<style>
+  @page { @bottom-left { content: "Gerayse · Asistencia: manual para encargados"; } }
+</style>
+</head>
+<body class="manual">
+
+<header class="masthead">
+  <div class="masthead__in">
+    <div class="marca-linea"><span class="marca marca--m">G</span><b>Gerayse</b><span>Administración, tesorería y control de gestión</span></div>
+    <p class="eyebrow">Manual de uso · Asistencia · Encargados de local</p>
+    <h1>Cargar los horarios de la semana</h1>
+    <p class="bajada">Cómo cargar a qué hora entra cada uno de tu local, o si tiene franco, para que el Excel del mes marque solo las llegadas tarde y las faltas.</p>
+    <div class="pastillas">
+      <span class="pastilla pastilla--viva">Sistema activo</span>
+      <span class="pastilla">Para: encargados de cada local</span>
+      <span class="pastilla">Actualizado: 30 de octubre de 2026</span>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="lateral">
+    <details class="indice" open>
+      <summary>Contenido</summary>
+      <nav aria-label="Contenido del manual">
+        <ol>
+          <li><a href="#que-cambia">Qué cambia</a></li>
+          <li><a href="#antes">Antes de empezar</a></li>
+          <li><a href="#cargar">Cargar la semana</a></li>
+          <li><a href="#escribir">Qué escribir en cada casilla</a></li>
+          <li><a href="#copiar">Copiar la semana anterior</a></li>
+          <li><a href="#hasta-cuando">Hasta cuándo podés cambiar</a></li>
+          <li><a href="#para-que">Para qué sirve</a></li>
+          <li><a href="#faq">Preguntas frecuentes</a></li>
+          <li><a href="#problemas">Si algo falla</a></li>
+        </ol>
+      </nav>
+    </details>
+  </aside>
+
+  <main>
+    <div class="resumen">
+      <strong>En una línea:</strong> antes de que empiece cada semana, cargás en <b>Asistencia → Horarios</b> a qué hora entra cada uno de tu local, o si tiene franco. Con eso el sistema sabe solo quién llegó tarde y quién faltó.
+    </div>
+
+    <section id="que-cambia">
+      <h2><span class="n">1</span>Qué cambia</h2>
+      <div class="dos">
+        <div class="tarjeta tarjeta--antes">
+          <h4>Antes</h4>
+          <ul>
+            <li>Los horarios estaban en un papel o en el grupo del local.</li>
+            <li>Para saber quién llegó tarde había que comparar a mano.</li>
+          </ul>
+        </div>
+        <div class="tarjeta tarjeta--ahora">
+          <h4>Ahora</h4>
+          <ul>
+            <li>Cargás la semana en una <b>grilla</b>: una fila por persona, una columna por día.</li>
+            <li>El sistema compara la hora en que fichó cada uno con la que cargaste.</li>
+            <li>Administración ve en el Excel las llegadas tarde y las faltas, sin pasar nada a mano.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="antes">
+      <h2><span class="n">2</span>Antes de empezar</h2>
+      <ul class="checklist">
+        <li>Entrás a Gerayse con <b>tu usuario de siempre</b>.</li>
+        <li>En el menú ves <b>Asistencia</b> y, adentro, <b>Horarios</b>. Si no está, pedile a <b>sistemas</b> el permiso «Cargar horarios de asistencia».</li>
+        <li>Tu usuario tiene <b>tu local</b>. Si cubrís más de uno, sistemas te los habilita y los elegís arriba de la grilla.</li>
+      </ul>
+    </section>
+
+    <section id="cargar">
+      <h2><span class="n">3</span>Cargar la semana</h2>
+      <ol class="pasos">
+        <li><div><b>Abrí Asistencia → Horarios</b>Arriba elegís el local (si tenés más de uno) y la semana con <span class="boton boton--borde">Semana siguiente →</span>.</div></li>
+        <li><div><b>Completá cada casilla</b>Una fila por cada persona de tu local, de lunes a domingo. Escribí la hora de entrada o <b>F</b> si tiene franco. Te movés con la tecla Tab.</div></li>
+        <li><div><b>Tocá <span class="boton">Guardar la semana</span></b>Arriba sale «Semana guardada» con cuántas casillas cambiaron.</div></li>
+      </ol>
+      <div class="tabla-scroll">
+        <table>
+          <thead><tr><th>Empleado</th><th>lun 2/11</th><th>mar 3/11</th><th>mié 4/11</th><th>jue 5/11</th><th>vie 6/11</th><th>sáb 7/11</th><th>dom 8/11</th></tr></thead>
+          <tbody>
+            <tr><td class="k">María López</td><td>8:00</td><td>8:00</td><td>8:00</td><td>Franco</td><td>8:00</td><td>8:00</td><td>Franco</td></tr>
+            <tr><td class="k">Pedro Díaz</td><td>14:00</td><td>Franco</td><td>14:00</td><td>14:00</td><td>14:00</td><td>14:00</td><td>Franco</td></tr>
+            <tr><td class="k">Ana Ruiz</td><td>8:00 y 17:00</td><td>8:00 y 17:00</td><td>Franco</td><td>8:00 y 17:00</td><td>8:00 y 17:00</td><td>9:00</td><td>Franco</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="leyenda">Así queda una semana cargada. Datos inventados.</p>
+      <div class="nota"><span class="nota__titulo">Tip</span><p>Cargala unos días antes, por ejemplo el jueves o el viernes para la semana que viene. Así, si alguien pregunta su horario, ya está.</p></div>
+    </section>
+
+    <section id="escribir">
+      <h2><span class="n">4</span>Qué escribir en cada casilla</h2>
+      <div class="tabla-scroll">
+        <table>
+          <thead><tr><th>Escribís</th><th>Queda</th><th>Cuándo</th></tr></thead>
+          <tbody>
+            <tr><td class="k"><kbd>8</kbd></td><td>8:00</td><td>Entra a las 8 en punto.</td></tr>
+            <tr><td class="k"><kbd>8:30</kbd></td><td>8:30</td><td>Entra a las 8 y media.</td></tr>
+            <tr><td class="k"><kbd>8 17</kbd></td><td>8:00 y 17:00</td><td>Turno cortado: entra a las 8 y vuelve a entrar a las 17.</td></tr>
+            <tr><td class="k"><kbd>F</kbd></td><td>Franco</td><td>Ese día no trabaja.</td></tr>
+            <tr><td class="k">(vacío)</td><td>Sin horario</td><td>No sabés todavía. Ese día no cuenta como falta ni como llegada tarde.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="nota nota--aviso"><span class="nota__titulo">Ojo</span><p>Va <b>solo la hora de entrada</b>, no la de salida. Si escribís «8-16», la casilla se pone en rojo y te pide que lo corrijas: no se guarda nada de la semana hasta que esté bien, así no queda nada a medias.</p></div>
+    </section>
+
+    <section id="copiar">
+      <h2><span class="n">5</span>Copiar la semana anterior</h2>
+      <p>Si la semana se parece a la anterior, no la cargues de cero.</p>
+      <ol class="pasos">
+        <li><div><b>Abrí la semana nueva</b>Con <span class="boton boton--borde">Semana siguiente →</span>.</div></li>
+        <li><div><b>Tocá <span class="boton boton--borde">Copiar la semana anterior</span></b>Se llenan las casillas vacías con lo de la semana pasada, día por día.</div></li>
+        <li><div><b>Cambiá lo que sea distinto</b>Y tocá <span class="boton">Guardar la semana</span>.</div></li>
+      </ol>
+      <div class="nota nota--gris"><span class="nota__titulo">Recordá</span><p>Copiar <b>nunca pisa</b> lo que ya cargaste: solo llena las casillas vacías.</p></div>
+    </section>
+
+    <section id="hasta-cuando">
+      <h2><span class="n">6</span>Hasta cuándo podés cambiar</h2>
+      <p>Podés cargar y cambiar los horarios <b>hasta el día anterior</b>. El día de hoy y los que ya pasaron aparecen en gris: ya cuentan para las llegadas tarde y las faltas, así que solo los cambia <b>administración</b>.</p>
+      <div class="nota"><span class="nota__titulo">Si hubo un cambio de último momento</span><p>Por ejemplo, alguien cambió de turno hoy. Avisale a administración la hora real: ellos corrigen el día.</p></div>
+      <div class="nota nota--gris"><span class="nota__titulo">Recordá</span><p>Cada cambio queda registrado: quién lo hizo, cuándo, y qué había antes. Si apoyás el mouse sobre una casilla, ves quién la cargó.</p></div>
+    </section>
+
+    <section id="para-que">
+      <h2><span class="n">7</span>Para qué sirve</h2>
+      <ul>
+        <li><b>Llegada tarde:</b> si alguien ficha después de la hora que cargaste. Se suman los minutos del mes; administración define cuántos se aceptan.</li>
+        <li><b>Falta:</b> si tenía horario ese día y no fichó nada.</li>
+        <li><b>Franco:</b> no cuenta como falta, aunque no fiche.</li>
+        <li><b>Sin horario:</b> no cuenta ni como falta ni como tardanza, pero administración ve cuántos días quedaron sin cargar en cada local.</li>
+      </ul>
+      <div class="nota nota--ok"><span class="nota__titulo">En criollo</span><p>Si cargás bien la semana, nadie tiene que revisar papeles a fin de mes.</p></div>
+    </section>
+
+    <section id="faq">
+      <h2><span class="n">8</span>Preguntas frecuentes</h2>
+      <details class="faq"><summary>¿Tengo que cargar la hora de salida?</summary><div><p>No. Solo la entrada. Las horas trabajadas salen de lo que se fichó.</p></div></details>
+      <details class="faq"><summary>¿Qué pongo si alguien entra dos veces en el día?</summary><div><p>Las dos entradas separadas por un espacio, por ejemplo <kbd>8 17</kbd>. Se compara cada entrada con la suya.</p></div></details>
+      <details class="faq"><summary>¿Y si alguien de otro local viene a cubrir al mío?</summary><div><p>En tu grilla aparecen solo los de tu local. El horario de esa persona lo carga su encargado o administración: fiche donde fiche, se compara con su horario.</p></div></details>
+      <details class="faq"><summary>¿Veo los horarios de otros locales?</summary><div><p>No, solo los de tu local (o los tuyos, si cubrís más de uno).</p></div></details>
+      <details class="faq"><summary>¿Y los feriados?</summary><div><p>El sistema no los marca. Si un feriado alguien no trabaja, poné <b>F</b>.</p></div></details>
+      <details class="faq"><summary>¿Veo quién llegó tarde?</summary><div><p>No: eso lo ve administración en el Excel del mes. Vos cargás los horarios.</p></div></details>
+    </section>
+
+    <section id="problemas">
+      <h2><span class="n">9</span>Si algo falla</h2>
+      <div class="tabla-scroll">
+        <table>
+          <thead><tr><th>Qué pasa</th><th>Qué hacer</th></tr></thead>
+          <tbody>
+            <tr><td class="k">No aparece Asistencia o Horarios en el menú</td><td>Te falta el permiso «Cargar horarios de asistencia». Pedíselo a <b>sistemas</b>.</td></tr>
+            <tr><td class="k">Dice «Tu usuario no tiene ningún local para cargar horarios»</td><td>Pedile a <b>sistemas</b> que te asigne tu local.</td></tr>
+            <tr><td class="k">Falta alguien en la grilla</td><td>No está cargado en el padrón o figura en otro local. Avisale a administración.</td></tr>
+            <tr><td class="k">Una casilla está en gris</td><td>Es hoy o un día que ya pasó. Si hay que cambiarlo, avisale a administración.</td></tr>
+            <tr><td class="k">Una casilla se puso en rojo</td><td>No se entendió lo que escribiste. Mirá el mensaje de arriba, corregila y volvé a guardar.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="nota nota--ok"><span class="nota__titulo">Tranquila</span><p>Si te equivocaste en un día que todavía no pasó, lo cambiás y listo. Si ya pasó, lo corrige administración. Nada se pierde.</p></div>
+    </section>
+  </main>
+</div>
+
+<footer class="manual-pie">
+  <div class="pie"><span>Gerayse · Asistencia: manual para encargados</span><span>Actualizado el 30 de octubre de 2026</span></div>
+</footer>
+
+<button class="arriba" id="arriba" type="button" aria-label="Volver arriba">↑ Arriba</button>
+
+<script>
+  (function () {
+    var enlaces = Array.prototype.slice.call(document.querySelectorAll('.indice a[href^="#"]'));
+    var porId = {};
+    enlaces.forEach(function (a) { porId[a.getAttribute('href').slice(1)] = a; });
+    if ('IntersectionObserver' in window && enlaces.length) {
+      var obs = new IntersectionObserver(function (entradas) {
+        entradas.forEach(function (e) {
+          if (!e.isIntersecting) return;
+          enlaces.forEach(function (a) { a.classList.remove('activo'); });
+          var a = porId[e.target.id];
+          if (a) a.classList.add('activo');
+        });
+      }, { rootMargin: '-20% 0px -70% 0px' });
+      document.querySelectorAll('main section[id]').forEach(function (s) { obs.observe(s); });
+    }
+    // En el celular, el índice se cierra al elegir una sección.
+    enlaces.forEach(function (a) {
+      a.addEventListener('click', function () {
+        if (window.matchMedia('(max-width: 900px)').matches) {
+          var d = document.querySelector('.indice');
+          if (d) d.open = false;
+        }
+      });
+    });
+    var arriba = document.getElementById('arriba');
+    if (arriba) {
+      window.addEventListener('scroll', function () {
+        arriba.classList.toggle('ver', window.scrollY > 500);
+      }, { passive: true });
+      arriba.addEventListener('click', function () { window.scrollTo({ top: 0, behavior: 'smooth' }); });
+    }
+    // Al imprimir, las preguntas salen abiertas.
+    var abiertas = [];
+    window.addEventListener('beforeprint', function () {
+      abiertas = Array.prototype.filter.call(document.querySelectorAll('details.faq'), function (d) { return !d.open; });
+      abiertas.forEach(function (d) { d.open = true; });
+    });
+    window.addEventListener('afterprint', function () {
+      abiertas.forEach(function (d) { d.open = false; });
+      abiertas = [];
+    });
+  })();
+</script>
+
+</body>
+</html>
