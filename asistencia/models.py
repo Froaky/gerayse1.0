@@ -287,3 +287,86 @@ class ReglasAsistencia(models.Model):
 
     def __str__(self) -> str:
         return f"Reglas de asistencia de {self.empresa}"
+
+
+class Horario(models.Model):
+    """A que hora entra un empleado un dia, o si tiene franco (EP-14 D18). Lo
+    carga el encargado en la grilla semanal. Sin fila, ese dia no tiene horario:
+    no cuenta como falta ni como llegada tarde. Hasta dos entradas (turno cortado);
+    la salida no se carga."""
+
+    empleado = models.ForeignKey(Empleado, on_delete=models.PROTECT, related_name="horarios")
+    fecha = models.DateField()
+    franco = models.BooleanField(default=False)
+    entrada_1 = models.TimeField(null=True, blank=True)
+    entrada_2 = models.TimeField(null=True, blank=True)
+    cargado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="horarios_asistencia_cargados",
+    )
+    cargado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["fecha", "empleado__nombre"]
+        constraints = [
+            models.UniqueConstraint(fields=["empleado", "fecha"], name="asistencia_un_horario_por_dia"),
+            # Franco sin horas, o al menos la primera entrada; la segunda, despues de la primera.
+            models.CheckConstraint(
+                condition=(Q(franco=True, entrada_1__isnull=True, entrada_2__isnull=True) | Q(franco=False, entrada_1__isnull=False)),
+                name="asistencia_horario_franco_o_entrada",
+            ),
+            models.CheckConstraint(
+                condition=Q(entrada_2__isnull=True) | Q(entrada_2__gt=models.F("entrada_1")),
+                name="asistencia_horario_segunda_despues",
+            ),
+        ]
+
+    @property
+    def entradas(self) -> tuple:
+        return tuple(e for e in (self.entrada_1, self.entrada_2) if e is not None)
+
+    @property
+    def texto(self) -> str:
+        if self.franco:
+            return "Franco"
+        return " y ".join(f"{e.hour}:{e.minute:02d}" for e in self.entradas)
+
+    def clean(self) -> None:
+        if self.franco and self.entradas:
+            raise ValidationError("Un franco no lleva hora de entrada.")
+        if not self.franco and self.entrada_1 is None:
+            raise ValidationError("Falta la hora de entrada.")
+        if self.entrada_2 is not None and self.entrada_1 is not None and self.entrada_2 <= self.entrada_1:
+            raise ValidationError("La segunda entrada tiene que ser después de la primera.")
+
+    def __str__(self) -> str:
+        return f"Horario de {self.empleado.nombre} el {self.fecha:%d/%m/%Y}: {self.texto}"
+
+
+class HorarioCambio(models.Model):
+    """Historial de la grilla de horarios: cada alta, cambio o borrado, con
+    quien y cuando. Nunca se borra. `antes` y `despues` van como texto ("" es
+    sin horario)."""
+
+    empleado = models.ForeignKey(Empleado, on_delete=models.PROTECT, related_name="cambios_de_horario")
+    fecha = models.DateField()
+    antes = models.CharField(max_length=40, blank=True)
+    despues = models.CharField(max_length=40, blank=True)
+    cambiado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="cambios_de_horario_asistencia",
+    )
+    cambiado_en = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-cambiado_en", "-pk"]
+        indexes = [models.Index(fields=["empleado", "fecha"])]
+
+    def __str__(self) -> str:
+        return f"{self.empleado.nombre} {self.fecha:%d/%m}: '{self.antes}' -> '{self.despues}'"

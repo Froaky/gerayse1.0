@@ -1,0 +1,86 @@
+"""Grilla semanal de horarios (EP-14 D18, US-14.13).
+
+Cada casilla de la grilla es un texto corto que escribe el encargado:
+- vacio: sin horario ese dia (no cuenta como falta ni tardanza);
+- "F" o "franco": franco;
+- una hora de entrada: "8", "8:30", "08.30", "8hs";
+- dos horas, con turno cortado: "8 17", "8:00 y 17:00", "8/17".
+La salida no se carga. Un guion ("8-16") se rechaza: parece entrada y salida,
+y adivinar seria peor que pedir que lo corrijan.
+"""
+
+import re
+from dataclasses import dataclass
+from datetime import date, time, timedelta
+
+DIAS = ("lun", "mar", "mié", "jue", "vie", "sáb", "dom")
+_SEPARADORES = re.compile(r"\s*(?:\s|,|/|\by\b)\s*")
+_HORA = re.compile(r"([0-9]{1,2})(?:[:.h]([0-9]{2}))?(?:hs?)?")
+
+
+class CeldaInvalida(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class Celda:
+    franco: bool = False
+    entradas: tuple = ()
+
+    @property
+    def vacia(self) -> bool:
+        return not self.franco and not self.entradas
+
+    @property
+    def texto(self) -> str:
+        """Como se muestra en la grilla y se guarda en el historial."""
+        if self.franco:
+            return "Franco"
+        return " y ".join(f"{e.hour}:{e.minute:02d}" for e in self.entradas)
+
+    @classmethod
+    def de_horario(cls, horario) -> "Celda":
+        if horario is None:
+            return cls()
+        return cls(franco=horario.franco, entradas=horario.entradas)
+
+
+def _hora(texto: str) -> time:
+    partes = _HORA.fullmatch(texto)
+    if not partes:
+        raise CeldaInvalida(f"No entiendo «{texto}». Escribí la hora de entrada, por ejemplo 8 o 8:30.")
+    horas, minutos = int(partes[1]), int(partes[2] or 0)
+    if horas > 23 or minutos > 59:
+        raise CeldaInvalida(f"«{texto}» no es una hora válida.")
+    return time(horas, minutos)
+
+
+def leer_celda(texto: str) -> Celda:
+    texto = " ".join((texto or "").lower().split())
+    if not texto:
+        return Celda()
+    if texto in ("f", "franco"):
+        return Celda(franco=True)
+    if "-" in texto:
+        raise CeldaInvalida("Poné solo la hora de entrada (8), o dos si tiene turno cortado (8 17): la salida no va.")
+    partes = [p for p in _SEPARADORES.split(texto) if p]
+    if len(partes) > 2:
+        raise CeldaInvalida("Como mucho dos entradas por día (turno cortado).")
+    entradas = tuple(_hora(p) for p in partes)
+    if len(entradas) == 2 and entradas[1] <= entradas[0]:
+        raise CeldaInvalida("La segunda entrada tiene que ser después de la primera.")
+    return Celda(entradas=entradas)
+
+
+def lunes_de(dia: date) -> date:
+    return dia - timedelta(days=dia.weekday())
+
+
+def dias_de_la_semana(lunes: date) -> list[date]:
+    return [lunes + timedelta(days=n) for n in range(7)]
+
+
+def dia_editable(dia: date, *, administra: bool, hoy: date) -> bool:
+    """El encargado carga y cambia hasta el dia anterior: hoy y lo pasado ya
+    cuentan para tardanzas y faltas. Quien administra puede corregir cualquier dia."""
+    return administra or dia > hoy

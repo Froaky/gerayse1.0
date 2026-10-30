@@ -39,6 +39,9 @@ class PermissionModule(models.TextChoices):
     # la hora a otro no son la misma responsabilidad.
     ASISTENCIA_FICHAR = "asistencia_fichar", "Fichar asistencia"
     ASISTENCIA_ADMIN = "asistencia_admin", "Administrar asistencia"
+    # EP-14 D18: el encargado de local carga la grilla semanal de horarios de
+    # sus locales. Va aparte de administrar: no ve padron, marcas ni Excel.
+    ASISTENCIA_HORARIOS = "asistencia_horarios", "Cargar horarios de asistencia"
 
 
 class Role(models.Model):
@@ -261,9 +264,16 @@ class User(AbstractUser):
     def can_administrar_asistencia(self) -> bool:
         return self.has_module_permission(PermissionModule.ASISTENCIA_ADMIN, "write")
 
+    def can_cargar_horarios_asistencia(self) -> bool:
+        return self.has_module_permission(PermissionModule.ASISTENCIA_HORARIOS, "write")
+
     def can_access_asistencia(self) -> bool:
-        """Ver Asistencia en el menu: alcanza con cualquiera de los dos."""
-        return self.can_fichar_asistencia() or self.can_administrar_asistencia()
+        """Ver Asistencia en el menu: alcanza con cualquiera de los tres."""
+        return (
+            self.can_fichar_asistencia()
+            or self.can_administrar_asistencia()
+            or self.can_cargar_horarios_asistencia()
+        )
 
     def __str__(self) -> str:
         if self.get_full_name():

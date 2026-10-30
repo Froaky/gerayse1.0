@@ -16,6 +16,16 @@
     </section>
   {% endif %}
 
+  {% if puede_cargar_horarios %}
+    <section class="card mt-16" id="asistencia-horarios">
+      <div class="row">
+        <h2>Horarios</h2>
+        <a class="button" href="{% url 'asistencia:horarios' %}">Horarios</a>
+      </div>
+      <p class="muted mt-8">Cargar la semana de cada local: a qué hora entra cada uno o si tiene franco.</p>
+    </section>
+  {% endif %}
+
   {% if puede_administrar %}
     <section class="card mt-16" id="asistencia-administrar">
       <div class="row">

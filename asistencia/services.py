@@ -11,8 +11,9 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.utils import timezone
 
-from .models import CarnetAnulado, Empleado, Marca, ReglasAsistencia, nuevo_codigo_carnet
-from .permissions import ensure_administrar
+from .horarios import Celda, dia_editable, dias_de_la_semana
+from .models import CarnetAnulado, Empleado, Horario, HorarioCambio, Marca, ReglasAsistencia, nuevo_codigo_carnet
+from .permissions import can_administrar, ensure_administrar, ensure_cargar_horarios
 
 
 def _require_actor(actor) -> None:
@@ -204,3 +205,91 @@ def guardar_reglas(*, actor, empresa, jornada_minutos: int, tolerancia_mensual_m
     reglas.full_clean()
     reglas.save()
     return reglas
+
+
+def empleados_de_la_grilla(sucursal):
+    """Las filas de la grilla de horarios de un local: sus empleados activos."""
+    return Empleado.objects.filter(activo=True, sucursal=sucursal, empresa_id=sucursal.empresa_id).order_by("nombre", "pk")
+
+
+def _ensure_local_de_horarios(actor, sucursal) -> bool:
+    """Revalida en el servicio lo que la vista ya filtro (EP-14 D18): quien
+    administra carga en los locales de sus empresas; el encargado, solo en su
+    sucursal base y los otros locales donde ficha. Devuelve si administra."""
+    ensure_cargar_horarios(actor)
+    if not sucursal.activa or not actor.empresas_permitidas.filter(pk=sucursal.empresa_id).exists():
+        raise PermissionDenied("No podés cargar horarios de ese local.")
+    administra = can_administrar(actor)
+    if not administra and not actor.locales_de_fichaje().filter(pk=sucursal.pk).exists():
+        raise PermissionDenied("No podés cargar horarios de ese local.")
+    return administra
+
+
+def _aplicar_celda(actor, empleado, fecha, horario, celda: Celda) -> bool:
+    antes = Celda.de_horario(horario)
+    if antes == celda:
+        return False
+    if celda.vacia:
+        # El horario se borra, pero el historial guarda lo que habia.
+        horario.delete()
+    else:
+        horario = horario or Horario(empleado=empleado, fecha=fecha)
+        horario.franco = celda.franco
+        horario.entrada_1, horario.entrada_2 = (*celda.entradas, None, None)[:2]
+        horario.cargado_por = actor
+        horario.full_clean()
+        horario.save()
+    HorarioCambio.objects.create(empleado=empleado, fecha=fecha, antes=antes.texto, despues=celda.texto, cambiado_por=actor)
+    return True
+
+
+@transaction.atomic
+def guardar_semana(*, actor, sucursal, lunes, celdas: dict, hoy=None) -> int:
+    """Guarda las casillas de la grilla de un local (US-14.13).
+
+    `celdas`: {(empleado_id, fecha): Celda}. Solo se tocan las que vienen; una
+    vacia borra el horario. Una casilla de un empleado que no es de la grilla,
+    de otra semana o de un dia cerrado para el usuario frena todo: no se guarda
+    nada. Devuelve cuantas cambiaron (cada una queda en el historial).
+    """
+    _require_actor(actor)
+    administra = _ensure_local_de_horarios(actor, sucursal)
+    hoy = hoy or timezone.localdate()
+    dias = set(dias_de_la_semana(lunes))
+    empleados = {e.pk: e for e in empleados_de_la_grilla(sucursal)}
+    for empleado_id, fecha in celdas:
+        if empleado_id not in empleados or fecha not in dias:
+            raise ValidationError("La grilla cambió mientras la cargabas: volvé a abrirla.")
+        if not dia_editable(fecha, administra=administra, hoy=hoy):
+            raise PermissionDenied("Hoy y los días anteriores solo los cambia administración.")
+    existentes = {
+        (h.empleado_id, h.fecha): h
+        for h in Horario.objects.select_for_update().filter(empleado_id__in=list(empleados), fecha__in=dias)
+    }
+    return sum(
+        _aplicar_celda(actor, empleados[empleado_id], fecha, existentes.get((empleado_id, fecha)), celda)
+        for (empleado_id, fecha), celda in celdas.items()
+    )
+
+
+@transaction.atomic
+def copiar_semana_anterior(*, actor, sucursal, lunes, hoy=None) -> int:
+    """Llena con la semana anterior solo las casillas vacias que el usuario
+    puede tocar: nunca pisa lo ya cargado."""
+    _require_actor(actor)
+    administra = _ensure_local_de_horarios(actor, sucursal)
+    hoy = hoy or timezone.localdate()
+    empleados = list(empleados_de_la_grilla(sucursal))
+    dias = [d for d in dias_de_la_semana(lunes) if dia_editable(d, administra=administra, hoy=hoy)]
+    ocupados = set(
+        Horario.objects.select_for_update()
+        .filter(empleado__in=empleados, fecha__in=dias)
+        .values_list("empleado_id", "fecha")
+    )
+    anteriores = Horario.objects.filter(empleado__in=empleados, fecha__in=[d - timedelta(days=7) for d in dias])
+    celdas = {
+        (h.empleado_id, h.fecha + timedelta(days=7)): Celda.de_horario(h)
+        for h in anteriores
+        if (h.empleado_id, h.fecha + timedelta(days=7)) not in ocupados
+    }
+    return guardar_semana(actor=actor, sucursal=sucursal, lunes=lunes, celdas=celdas, hoy=hoy)

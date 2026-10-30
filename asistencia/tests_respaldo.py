@@ -79,7 +79,10 @@ class RespaldoYRestauracionTests(RespaldoTestCase):
 
         resultado = restaurar_respaldo(contenido)
 
-        self.assertEqual(resultado.cantidades, {"Empleado": 2, "CarnetAnulado": 1, "Marca": 2})
+        self.assertEqual(
+            resultado.cantidades,
+            {"Empleado": 2, "CarnetAnulado": 1, "Marca": 2, "ReglasAsistencia": 0, "Horario": 0, "HorarioCambio": 0},
+        )
         self.assertEqual(resultado.usuarios_vaciados, 0)
         self.assertEqual(list(Empleado.objects.order_by("pk").values()), antes["empleados"])
         self.assertEqual(list(CarnetAnulado.objects.order_by("pk").values()), antes["carnets"])

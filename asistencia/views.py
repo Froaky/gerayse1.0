@@ -1,5 +1,5 @@
 import secrets
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -13,7 +13,7 @@ from django.utils import timezone
 from django.utils.text import slugify
 from django.views.decorators.http import require_http_methods
 
-from .alcance import empresas_en_alcance, sucursales_en_alcance
+from .alcance import empresas_en_alcance, locales_de_horarios, sucursales_en_alcance
 from .carnets import (
     generar_carnet_celular_pdf,
     generar_carnets_pdf,
@@ -22,6 +22,7 @@ from .carnets import (
 )
 from .excel import CONTENT_TYPE_XLSX, generar_excel, jornadas_del_mes, ventana_del_mes
 from .fichaje import Fichaje, Resultado, fichar
+from .horarios import DIAS, Celda, CeldaInvalida, dia_editable, dias_de_la_semana, leer_celda, lunes_de
 from .forms import (
     AnularCarnetForm,
     AnularMarcaForm,
@@ -36,17 +37,28 @@ from .forms import (
     ReglasForm,
 )
 from .importacion import Estado, FilaListado, ListadoIlegible, leer_listado, procesar_listado
-from .models import CarnetAnulado, Empleado, Marca, ReglasAsistencia
-from .permissions import can_administrar, can_fichar, ensure_acceder, ensure_administrar, ensure_fichar
+from .models import CarnetAnulado, Empleado, Horario, Marca, ReglasAsistencia
+from .permissions import (
+    can_administrar,
+    can_cargar_horarios,
+    can_fichar,
+    ensure_acceder,
+    ensure_administrar,
+    ensure_cargar_horarios,
+    ensure_fichar,
+)
 from .por_local import asistencia_del_dia
 from .services import (
     actualizar_empleado,
     agregar_marca,
     anular_carnet,
     anular_marca,
+    copiar_semana_anterior,
     crear_empleado,
     dar_de_baja_empleado,
+    empleados_de_la_grilla,
     guardar_reglas,
+    guardar_semana,
     reactivar_empleado,
 )
 
@@ -63,6 +75,7 @@ def inicio(request):
             "title": "Asistencia",
             "puede_fichar": can_fichar(request.user),
             "puede_administrar": can_administrar(request.user),
+            "puede_cargar_horarios": can_cargar_horarios(request.user),
         },
     )
 
@@ -601,6 +614,130 @@ def reglas(request):
         status = 400
     filas = [(empresa, actuales[empresa.pk], formularios[empresa.pk]) for empresa in empresas]
     return render(request, "asistencia/reglas.html", {"title": "Reglas", "filas": filas}, status=status)
+
+
+
+def _semana_pedida(texto) -> date:
+    try:
+        dia = date.fromisoformat(texto or "")
+    except ValueError:
+        dia = timezone.localdate()
+    return lunes_de(dia)
+
+
+def _nombre_celda(empleado, dia) -> str:
+    return f"c-{empleado.pk}-{dia:%Y%m%d}"
+
+
+def _url_horarios(local, lunes) -> str:
+    return f"{reverse('asistencia:horarios')}?local={local.pk}&semana={lunes.isoformat()}"
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def horarios(request):
+    """Grilla semanal de horarios de un local (US-14.13). La carga el encargado
+    (hasta el dia anterior) o quien administra."""
+    ensure_cargar_horarios(request.user)
+    locales = list(locales_de_horarios(request))
+    if not locales:
+        return render(request, "asistencia/horarios.html", {"title": "Horarios", "locales": []})
+    fuente = request.POST if request.method == "POST" else request.GET
+    pedido = fuente.get("local", "")
+    if pedido:
+        # Un local que no es suyo (o un id tocado a mano) no existe para este usuario.
+        local = next((o for o in locales if pedido.isascii() and pedido.isdigit() and o.pk == int(pedido)), None)
+        if local is None:
+            raise Http404
+    else:
+        local = locales[0]
+    lunes = _semana_pedida(fuente.get("semana"))
+    dias = dias_de_la_semana(lunes)
+    administra = can_administrar(request.user)
+    hoy = timezone.localdate()
+    empleados = list(empleados_de_la_grilla(local))
+    valores, errores = {}, {}
+    status = 200
+
+    if request.method == "POST" and request.POST.get("accion") == "copiar":
+        copiadas = copiar_semana_anterior(actor=request.user, sucursal=local, lunes=lunes)
+        if copiadas:
+            messages.success(request, f"Se copiaron {copiadas} casilla{'s' if copiadas != 1 else ''} de la semana anterior.")
+        else:
+            messages.info(request, "No había nada para copiar: la semana anterior está vacía o estas casillas ya estaban cargadas.")
+        return redirect(_url_horarios(local, lunes))
+
+    if request.method == "POST":
+        celdas = {}
+        for empleado in empleados:
+            for dia in dias:
+                nombre = _nombre_celda(empleado, dia)
+                if nombre not in request.POST:
+                    continue  # casilla cerrada (no se envia) o grilla vieja: no se toca
+                valores[nombre] = request.POST[nombre]
+                try:
+                    celdas[(empleado.pk, dia)] = leer_celda(request.POST[nombre])
+                except CeldaInvalida as error:
+                    errores[nombre] = str(error)
+        if not errores:
+            try:
+                cambios = guardar_semana(actor=request.user, sucursal=local, lunes=lunes, celdas=celdas)
+            except ValidationError as error:
+                messages.error(request, _mensaje_de_error(error))
+            else:
+                if cambios:
+                    messages.success(request, f"Semana guardada: {cambios} cambio{'s' if cambios != 1 else ''}.")
+                else:
+                    messages.info(request, "No había cambios para guardar.")
+                return redirect(_url_horarios(local, lunes))
+        else:
+            messages.error(request, "Hay casillas que no se entienden: están marcadas en rojo. No se guardó nada.")
+        status = 400
+
+    existentes = {
+        (h.empleado_id, h.fecha): h
+        for h in Horario.objects.filter(empleado__in=empleados, fecha__in=dias).select_related("cargado_por")
+    }
+    filas = []
+    for empleado in empleados:
+        celdas = []
+        for dia in dias:
+            nombre = _nombre_celda(empleado, dia)
+            horario = existentes.get((empleado.pk, dia))
+            celdas.append(
+                {
+                    "nombre": nombre,
+                    "dia": dia,
+                    "valor": valores.get(nombre, Celda.de_horario(horario).texto),
+                    "bloqueada": not dia_editable(dia, administra=administra, hoy=hoy),
+                    "error": errores.get(nombre, ""),
+                    "cargado": horario,
+                }
+            )
+        filas.append({"empleado": empleado, "celdas": celdas})
+    cabecera = [
+        {"dia": dia, "nombre": DIAS[dia.weekday()], "bloqueado": not dia_editable(dia, administra=administra, hoy=hoy), "hoy": dia == hoy}
+        for dia in dias
+    ]
+    return render(
+        request,
+        "asistencia/horarios.html",
+        {
+            "title": "Horarios",
+            "locales": locales,
+            "local": local,
+            "lunes": lunes,
+            "domingo": dias[-1],
+            "anterior": lunes - timedelta(days=7),
+            "siguiente": lunes + timedelta(days=7),
+            "cabecera": cabecera,
+            "filas": filas,
+            "errores": [(fila["empleado"], celda) for fila in filas for celda in fila["celdas"] if celda["error"]],
+            "administra": administra,
+            "hay_cerradas": any(c["bloqueado"] for c in cabecera),
+        },
+        status=status,
+    )
 
 
 MAXIMO_MARCAS_LISTADO = 500

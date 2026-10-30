@@ -9,6 +9,8 @@ app y ademas no revalida contra los permisos.
 
 from cashops.models import Empresa, Sucursal
 
+from .permissions import can_administrar, can_cargar_horarios
+
 
 def empresas_en_alcance(request):
     user = request.user
@@ -23,3 +25,19 @@ def empresas_en_alcance(request):
 
 def sucursales_en_alcance(request):
     return Sucursal.objects.filter(activa=True, empresa__in=empresas_en_alcance(request)).order_by("nombre")
+
+
+def locales_de_horarios(request):
+    """Locales cuya grilla de horarios puede cargar el usuario (EP-14 D18).
+
+    Quien administra: todos los de su alcance. El encargado (permiso de cargar
+    horarios): su sucursal base y los otros locales donde ficha, y de esos solo
+    los que esten en su alcance de empresas. Sin permiso, ninguno.
+    """
+    user = request.user
+    alcance = sucursales_en_alcance(request)
+    if can_administrar(user):
+        return alcance
+    if can_cargar_horarios(user):
+        return alcance.filter(pk__in=user.locales_de_fichaje().values("pk"))
+    return Sucursal.objects.none()

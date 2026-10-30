@@ -72,6 +72,10 @@ PERMISSION_MODULE_META = {
         "label": "Administrar asistencia",
         "scope": "Empleados, carnets con QR, corrección de marcas con motivo y Excel del mes. Va aparte de fichar: cambiar la hora de una marca no es lo mismo que escanear un carnet.",
     },
+    PermissionModule.ASISTENCIA_HORARIOS: {
+        "label": "Cargar horarios de asistencia",
+        "scope": "Cargar la semana de horarios de los empleados de sus locales (sucursal base y otros locales donde ficha), hasta el día anterior. Es lo del encargado de local: no ve padrón, marcas ni Excel.",
+    },
 }
 
 

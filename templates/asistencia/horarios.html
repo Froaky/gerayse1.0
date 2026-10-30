@@ -1,0 +1,133 @@
+{% extends "cashops/layout.html" %}
+{% load l10n %}
+{% block title %}Horarios | Gerayse{% endblock %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Horarios</h1>
+        <p class="muted">La semana de cada local: a qué hora entra cada uno o si tiene franco. Con esto el Excel del mes marca las llegadas tarde y las faltas.</p>
+      </div>
+      <div class="list-actions">
+        <a class="button-secondary" href="{% url 'asistencia:inicio' %}">Asistencia</a>
+      </div>
+    </div>
+    {% if locales %}
+      <form method="get" action="{% url 'asistencia:horarios' %}" class="horarios-filtro mt-16">
+        <div class="field">
+          <label for="horarios-local">Local</label>
+          <select id="horarios-local" name="local" class="input select" onchange="this.form.submit()">
+            {% for opcion in locales %}
+              <option value="{{ opcion.pk|unlocalize }}"{% if opcion.pk == local.pk %} selected{% endif %}>{{ opcion.nombre }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <input type="hidden" name="semana" value="{{ lunes|date:'Y-m-d' }}">
+        <noscript><button class="button-secondary" type="submit">Ver</button></noscript>
+      </form>
+      <div class="horarios-semana mt-16">
+        <a class="button-secondary" href="{% url 'asistencia:horarios' %}?local={{ local.pk|unlocalize }}&semana={{ anterior|date:'Y-m-d' }}" data-sale>← Semana anterior</a>
+        <strong>Semana del {{ lunes|date:"j/n" }} al {{ domingo|date:"j/n" }}</strong>
+        <a class="button-secondary" href="{% url 'asistencia:horarios' %}?local={{ local.pk|unlocalize }}&semana={{ siguiente|date:'Y-m-d' }}" data-sale>Semana siguiente →</a>
+      </div>
+    {% endif %}
+  </section>
+
+  {% if not locales %}
+    <section class="card mt-16">
+      <p class="muted">Tu usuario no tiene ningún local para cargar horarios. Pedile a administración que te asigne tu local.</p>
+    </section>
+  {% else %}
+    <section class="card mt-16">
+      <p class="muted">Escribí la hora de entrada (<b>8</b> o <b>8:30</b>), dos si tiene turno cortado (<b>8 17</b>), o <b>F</b> si tiene franco. Vacío es sin horario: ese día no cuenta como falta ni como llegada tarde.{% if hay_cerradas and not administra %} Los días en gris ya no se pueden cambiar; si hace falta, pedíselo a administración.{% endif %}</p>
+      {% if errores %}
+        <ul class="errors mt-8">
+          {% for empleado, celda in errores %}
+            <li>{{ empleado.nombre }}, {{ celda.dia|date:"D j/n" }}: {{ celda.error }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      {% if filas %}
+        <form method="post" action="{% url 'asistencia:horarios' %}" class="mt-16" id="grilla-horarios">
+          {% csrf_token %}
+          <input type="hidden" name="local" value="{{ local.pk|unlocalize }}">
+          <input type="hidden" name="semana" value="{{ lunes|date:'Y-m-d' }}">
+          <div class="grilla-horarios">
+            <table>
+              <thead>
+                <tr>
+                  <th class="grilla-nombre" scope="col">Empleado</th>
+                  {% for columna in cabecera %}
+                    <th scope="col" class="{% if columna.bloqueado %}cerrado{% endif %}{% if columna.hoy %} hoy{% endif %}">{{ columna.nombre }}<br><small>{{ columna.dia|date:"j/n" }}</small></th>
+                  {% endfor %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for fila in filas %}
+                  <tr>
+                    <th class="grilla-nombre" scope="row">{{ fila.empleado.nombre }}</th>
+                    {% for celda in fila.celdas %}
+                      <td>
+                        <input type="text" name="{{ celda.nombre }}" value="{{ celda.valor }}" maxlength="20" autocomplete="off" spellcheck="false"
+                               class="celda{% if celda.error %} celda--error{% endif %}"
+                               aria-label="{{ fila.empleado.nombre }}, {{ celda.dia|date:'l j/n' }}"
+                               {% if celda.error %}title="{{ celda.error }}"{% elif celda.cargado %}title="Cargó {{ celda.cargado.cargado_por.get_username|default:'un usuario que ya no está' }} el {{ celda.cargado.cargado_en|date:'d/m H:i' }}"{% endif %}
+                               {% if celda.bloqueada %}disabled{% endif %}>
+                      </td>
+                    {% endfor %}
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <div class="list-actions mt-16">
+            <button class="button" type="submit">Guardar la semana</button>
+          </div>
+        </form>
+        <form method="post" action="{% url 'asistencia:horarios' %}" class="horarios-copiar mt-16">
+          {% csrf_token %}
+          <input type="hidden" name="local" value="{{ local.pk|unlocalize }}">
+          <input type="hidden" name="semana" value="{{ lunes|date:'Y-m-d' }}">
+          <input type="hidden" name="accion" value="copiar">
+          <button class="button-secondary" type="submit">Copiar la semana anterior</button>
+          <small class="muted">Llena solo las casillas vacías{% if not administra %} de los días que todavía podés cambiar{% endif %}. Lo ya cargado no se toca.</small>
+        </form>
+      {% else %}
+        <p class="muted mt-8">Este local no tiene empleados activos.</p>
+      {% endif %}
+    </section>
+  {% endif %}
+
+  <style>
+    .horarios-filtro { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+    .horarios-filtro .field { flex: 1 1 220px; max-width: 360px; }
+    .horarios-semana { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; }
+    .horarios-copiar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+    .grilla-horarios { overflow-x: auto; border: 1px solid var(--line); border-radius: 4px; }
+    .grilla-horarios table { border-collapse: collapse; width: 100%; min-width: 760px; }
+    .grilla-horarios th, .grilla-horarios td { border-bottom: 1px solid var(--line); padding: 6px; text-align: center; }
+    .grilla-horarios thead th { background: var(--panel-soft); font-weight: 600; }
+    .grilla-horarios thead th small { font-weight: 400; color: var(--muted); }
+    .grilla-horarios th.hoy { color: var(--accent); }
+    .grilla-horarios th.cerrado { opacity: 0.7; }
+    .grilla-horarios .grilla-nombre { position: sticky; left: 0; z-index: 1; min-width: 150px; text-align: left; background: var(--panel); }
+    .grilla-horarios thead .grilla-nombre { z-index: 2; background: var(--panel-soft); }
+    .celda { width: 100%; min-width: 84px; padding: 7px 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--field-bg, transparent); color: var(--text); font: inherit; text-align: center; }
+    .celda:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--ring, transparent); }
+    .celda:disabled { opacity: 0.55; cursor: not-allowed; background: transparent; }
+    .celda--error { border-color: #e05555; box-shadow: 0 0 0 2px rgba(224, 85, 85, 0.25); }
+  </style>
+  <script>
+    (() => {
+      // Avisa antes de irse con casillas cambiadas sin guardar (cambiar de semana o de local).
+      const grilla = document.getElementById("grilla-horarios");
+      if (!grilla) return;
+      let cambiada = false;
+      grilla.addEventListener("input", () => { cambiada = true; });
+      grilla.addEventListener("submit", () => { cambiada = false; });
+      window.addEventListener("beforeunload", (evento) => {
+        if (cambiada) { evento.preventDefault(); evento.returnValue = ""; }
+      });
+    })();
+  </script>
+{% endblock %}

@@ -33,13 +33,15 @@ from django.db import IntegrityError, connection, transaction
 from django.utils import timezone
 from django.utils.text import slugify
 
-from .models import CarnetAnulado, Empleado, Marca
+from .models import CarnetAnulado, Empleado, Horario, HorarioCambio, Marca, ReglasAsistencia
 
 RETENCION = 30
 PREFIJO = "asistencia-"
 EXTENSION = ".json.gz"
-# Orden de carga: las marcas y los carnets anulados apuntan al empleado.
-MODELOS = (Empleado, CarnetAnulado, Marca)
+# Orden de carga: marcas, carnets anulados y horarios apuntan al empleado.
+# Reglas y horarios entraron con EP-14 D18; un respaldo anterior no los trae y
+# restaura igual (quedan vacios).
+MODELOS = (Empleado, CarnetAnulado, Marca, ReglasAsistencia, Horario, HorarioCambio)
 TANDA = 2000
 
 
@@ -111,7 +113,8 @@ def hay_datos() -> bool:
 
 def _referencias_externas(objeto):
     for campo in type(objeto)._meta.concrete_fields:
-        if campo.many_to_one and campo.related_model not in MODELOS:
+        # one_to_one: las reglas apuntan a su empresa con un OneToOne.
+        if (campo.many_to_one or campo.one_to_one) and campo.related_model not in MODELOS:
             yield campo, getattr(objeto, campo.attname)
 
 
