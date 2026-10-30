@@ -7,6 +7,8 @@ del resumen no dependa del armado del Excel. Reglas (epica EP-14):
 - una entrada se cierra con la siguiente salida si pasaron menos de 16 horas
   (la misma regla del fichaje), asi una salida despues de medianoche cuenta en
   el dia de la entrada;
+- en el mismo instante va primero la salida: una salida y una entrada cargadas
+  a mano a la misma hora parten un tramo en dos;
 - las horas del dia suman solo los tramos con entrada y salida; un tramo sin
   salida (o una salida sin entrada) no suma y queda senalado.
 """
@@ -52,10 +54,17 @@ def ventana_del_mes(anio: int, mes: int) -> tuple[datetime, datetime]:
     return inicio - ENTRADA_ABIERTA_MAXIMA, siguiente + ENTRADA_ABIERTA_MAXIMA
 
 
+def orden_de_marca(marca) -> tuple:
+    """Por momento y, en el mismo instante, la salida antes que la entrada: asi
+    una salida y una entrada cargadas a mano a la misma hora parten un tramo en
+    dos, sin importar en que orden se cargaron."""
+    return (marca.momento, marca.tipo == Marca.Tipo.ENTRADA, marca.pk)
+
+
 def armar_tramos(marcas) -> list[Tramo]:
-    """`marcas` vigentes (no anuladas) de un empleado, en orden de momento."""
+    """`marcas` vigentes (no anuladas) de un empleado; se ordenan aca."""
     tramos, abierta = [], None
-    for marca in marcas:
+    for marca in sorted(marcas, key=orden_de_marca):
         if marca.tipo == Marca.Tipo.ENTRADA:
             if abierta is not None:
                 tramos.append(Tramo(abierta, None))
@@ -75,8 +84,7 @@ def armar_tramos(marcas) -> list[Tramo]:
 
 def jornadas_del_mes(marcas, anio: int, mes: int) -> dict[date, list[Tramo]]:
     dias = {date(anio, mes, d): [] for d in range(1, calendar.monthrange(anio, mes)[1] + 1)}
-    vigentes = sorted((m for m in marcas if not m.anulada), key=lambda m: (m.momento, m.pk))
-    for tramo in armar_tramos(vigentes):
+    for tramo in armar_tramos([m for m in marcas if not m.anulada]):
         if tramo.dia in dias:
             dias[tramo.dia].append(tramo)
     return dias

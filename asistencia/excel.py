@@ -119,11 +119,13 @@ def observacion_del_dia(dia: DiaResumen) -> str:
         notas.append("Fichó fuera de su horario")
     elif faltantes:
         notas.append(f"No fichó el {faltantes[0]}.º turno")
-    # Un turno pegado a la medianoche: su entrada queda en la fila del dia de al
-    # lado. Se dice en las dos filas: la del turno y la que muestra la entrada.
+    # Un turno pegado a la medianoche (o al que llego antes, el dia anterior): su
+    # entrada queda en la fila del dia de al lado. Se dice en las dos filas: la
+    # del turno y la que muestra la entrada.
     for turno in dia.turnos:
-        if turno.real is not None and turno.real.date() != dia.fecha:
-            nota = f"Fichó la entrada el día {_de_que_dia(turno.real.date(), dia.fecha)}"
+        entrada = turno.real or turno.cubierto
+        if entrada is not None and entrada.date() != dia.fecha:
+            nota = f"Fichó la entrada el día {_de_que_dia(entrada.date(), dia.fecha)}"
             if nota not in notas:
                 notas.append(nota)
     for entrada, otro in sorted(dia.ajenas.items()):

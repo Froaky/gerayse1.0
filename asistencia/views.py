@@ -710,6 +710,13 @@ def horarios(request):
 
     if request.method == "POST":
         celdas, originales, vieja, cerrada = {}, {}, False, False
+        # Lo guardado hoy en los dias cerrados (para quien administra no hay): si lo
+        # escrito ya es eso, no hay nada que frenar.
+        dias_cerrados = [dia for dia in dias if not dia_editable(dia, administra=administra, hoy=hoy)]
+        guardados = {
+            (h.empleado_id, h.fecha): Celda.de_horario(h).texto
+            for h in Horario.objects.filter(empleado__in=empleados, fecha__in=dias_cerrados)
+        } if dias_cerrados else {}
         for empleado in empleados:
             fila = request.POST.get(f"o-{empleado.pk}")
             partes = fila.split("|") if fila is not None else []
@@ -722,10 +729,14 @@ def horarios(request):
                     vieja = True
                     continue
                 vistos[nombre] = partes[indice]
-                if not dia_editable(dia, administra=administra, hoy=hoy):
+                if dia in dias_cerrados:
                     # Se cerro con la pantalla abierta (es de ayer): no se guarda, y si la
                     # cambio se avisa en la casilla, aunque lo escrito no se entienda.
-                    cerrada = cerrada or not _misma_celda(valores[nombre], partes[indice])
+                    escrito = valores[nombre]
+                    cerrada = cerrada or not (
+                        _misma_celda(escrito, partes[indice])
+                        or _misma_celda(escrito, guardados.get((empleado.pk, dia), ""))
+                    )
                     continue
                 try:
                     nueva = leer_celda(valores[nombre])
@@ -797,8 +808,8 @@ def horarios(request):
             if bloqueada:
                 # Un dia que se cerro mientras cargaba: se muestra lo guardado y, si la
                 # habia cambiado (contra lo que vio, no contra lo de ahora: quizas la
-                # cambio administracion), se dice que no se guardo.
-                if nombre in valores and not _misma_celda(valor, original):
+                # cambio administracion) y no es lo que ya hay, se dice que no se guardo.
+                if nombre in valores and not _misma_celda(valor, original) and not _misma_celda(valor, actual):
                     errores[nombre] = "Este día ya cerró: no se guardó lo que escribiste. Si hace falta, pedíselo a administración."
                 valor = original = actual
             elif nombre in valores and nombre not in errores and _misma_celda(valor, original):

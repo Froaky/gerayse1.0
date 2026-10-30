@@ -105,7 +105,10 @@ def fichar(*, actor, codigo: str, sucursal=None) -> Fichaje:
 
     ahora = timezone.now()
     # Una marca anulada no cuenta para nada: ni para alternar ni como doble escaneo.
-    ultima = empleado.marcas.filter(anulada=False).order_by("-momento", "-pk").first()
+    # En el mismo instante la ultima es la entrada, como en los tramos
+    # (jornadas.orden_de_marca): una salida y una entrada cargadas a mano a la
+    # misma hora dejan abierta la entrada.
+    ultima = empleado.marcas.filter(anulada=False).order_by("-momento", "tipo", "-pk").first()
     if ultima is not None and ahora - ultima.momento < DOBLE_ESCANEO:
         segundos = max(int((ahora - ultima.momento).total_seconds()), 0)
         return Fichaje(

@@ -5,7 +5,7 @@ el permiso, el alcance por empresa y las invariantes se validan aca.
 """
 
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, connection, transaction
@@ -92,20 +92,28 @@ def reactivar_empleado(*, actor, empleado: Empleado) -> Empleado:
         raise ValidationError(
             {"nombre": "Ya hay un empleado activo con ese nombre en esta empresa. Si es otra persona, cargale el DNI."}
         )
-    # EP-14 D18: los horarios de los dias que estuvo de baja (cargados antes de
-    # irse) no le hacen faltas al volver: se borran, y el historial los guarda.
-    # De hoy quedan el franco y los turnos que todavia no empezaron; de mañana en
-    # adelante, todo, por si la baja fue un error.
+    # EP-14 D18: los turnos que empezaban mientras estuvo de baja (cargados antes
+    # de irse) no le hacen faltas al volver: se sacan, y el historial los guarda.
+    # Los dias del medio se vacian; el dia de la baja y hoy conservan el franco y
+    # los turnos de antes de la baja o que todavia no empezaron, por si la baja
+    # fue un error. De mañana en adelante queda todo.
     if empleado.dado_de_baja_en:
-        dia_de_baja = timezone.localdate(empleado.dado_de_baja_en)
+        baja = timezone.localtime(empleado.dado_de_baja_en)
         ahora = timezone.localtime()
         for horario in Horario.objects.filter(
-            empleado=empleado, fecha__gt=dia_de_baja, fecha__lte=ahora.date()
+            empleado=empleado, fecha__gte=baja.date(), fecha__lte=ahora.date()
         ).order_by("fecha"):
             antes = Celda.de_horario(horario)
             despues = Celda()
-            if horario.fecha == ahora.date():
-                despues = Celda(franco=antes.franco, entradas=tuple(e for e in antes.entradas if e > ahora.time()))
+            if horario.fecha in (baja.date(), ahora.date()):
+                despues = Celda(
+                    franco=antes.franco,
+                    entradas=tuple(
+                        e
+                        for e in antes.entradas
+                        if not baja < timezone.make_aware(datetime.combine(horario.fecha, e)) <= ahora
+                    ),
+                )
                 if despues == antes:
                     continue
             _aplicar_celda(actor, empleado, horario.fecha, horario, antes, despues)

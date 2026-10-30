@@ -208,11 +208,18 @@ Last updated: 2026-10-21
       ahi); la baja no toca la grilla y reactivar limpia los dias de baja; los originales de la
       grilla van en un campo por fila.
     - Tercera revision: 7 hallazgos nuevos de severidad baja, arreglados. La franja de un turno de
-      noche no pasa de las 5 de la mañana (`FIN_DE_LA_NOCHE`): faltar a las 22 y entrar 5:30 al
-      otro dia es falta. "8,15hs" se rechaza como "8,15". La hoja explica en las dos filas la
+      noche no pasa de las 5 de la mañana del dia siguiente al de su horario (`FIN_DE_LA_NOCHE`):
+      faltar a las 22 y entrar 5:30 al otro dia es falta. "8,15hs" se rechaza como "8,15". La hoja explica en las dos filas la
       entrada que es del turno de otro dia. Quien llego mas de 2 h antes y se quedo no se senala.
       Al reactivar se sacan tambien los turnos de hoy que ya empezaron. Limites anotados en la
       epica (Excel bajado de madrugada, dias de baja como "sin horario").
+    - Cuarta revision: sin regresiones en los numeros (8580 escenarios al azar); 9 hallazgos,
+      arreglados. El dia de la baja cuentan solo los turnos de antes de la baja, y reactivar saca
+      los que empezaban estando de baja (tambien con baja y vuelta el mismo dia). "Llego antes y
+      se quedo" vale aunque el tramo venga del dia anterior, pero no si empezo con la entrada de
+      otro turno (doble turno de corrido = mismas marcas que una salida olvidada: se senala y se
+      arregla partiendo el tramo en Marcas). Salida y entrada a mano en el mismo instante: primero
+      la salida, en tramos y fichaje. Grilla: escribir en un dia cerrado lo que ya esta no frena.
   - **Manuales (26/10, corregido a pedido de Mateo):** van con el formato del "Manual para la
     administracion" de julio (traspaso, `anexos/documentos-de-la-cuenta-claude/`): pagina HTML con
     encabezado, indice, secciones numeradas, pasos, notas Tip/Ojo, antes/ahora, checklist,

@@ -11,7 +11,8 @@ Riesgos que cubre:
 - que los horarios y las reglas no entren al respaldo.
 """
 
-from datetime import date, time, timedelta
+from datetime import date, datetime, time, timedelta
+from unittest import mock
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, transaction
@@ -310,6 +311,23 @@ class GrillaDelEncargadoTests(GrillaTestCase):
         self.assertContains(response, "let cambiada = false;", status_code=403)
         self.assertEqual(self._horario(self.juan, self.hoy).entradas, (time(9),))
         self.assertIsNone(self._horario(self.ana, self.hoy))
+
+    def test_una_casilla_cerrada_con_lo_que_ya_cargo_administracion_no_frena_la_semana(self):
+        # Miercoles 4/11 a las 10. La pantalla es de ayer: el miercoles de Juan decia 8:00 y administracion
+        # ya lo paso a 9:00. El encargado escribio 9 ahi (lo mismo que ya esta) y 8 el jueves de Ana.
+        miercoles = date(2026, 11, 4)
+        lunes, jueves = lunes_de(miercoles), miercoles + timedelta(days=1)
+        with mock.patch("django.utils.timezone.now", return_value=timezone.make_aware(datetime(2026, 11, 4, 10))):
+            guardar_semana(actor=self.admin, sucursal=self.centro, lunes=lunes, celdas={(self.juan.pk, miercoles): Celda(entradas=(time(9),))})
+            self._login(self.encargado, [self.armadi])
+            response = self._post(lunes, {(self.juan, miercoles): "9", (self.ana, jueves): "8"}, originales={(self.juan, miercoles): "8:00"})
+            self.assertEqual(response.status_code, 302)
+            self.assertEqual(self._horario(self.ana, jueves).entradas, (time(8),))
+            # Con otra hora si frena: ese dia ya cerro.
+            response = self._post(lunes, {(self.juan, miercoles): "10", (self.ana, jueves): "9"}, originales={(self.juan, miercoles): "8:00"})
+            self.assertEqual(response.status_code, 403)
+        self.assertEqual(self._horario(self.ana, jueves).entradas, (time(8),))
+        self.assertEqual(self._horario(self.juan, miercoles).entradas, (time(9),))
 
     def test_despues_de_un_choque_lo_que_no_toco_muestra_lo_de_ahora(self):
         lunes = self.proxima

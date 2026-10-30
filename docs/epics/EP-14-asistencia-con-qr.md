@@ -165,15 +165,23 @@ construir un servicio, hosting ni base aparte.
     entrada tarde es una llegada tarde; se suman los minutos del mes y se marca si pasan la
     tolerancia de su empresa. Las 2 h, las 8 h y las 5 de la mañana son constantes del calculo
     (`ANTES_DE_HORA`, `DESPUES_DE_HORA`, `FIN_DE_LA_NOCHE` en `asistencia/resumen.py`);
+  - llego antes y se quedo: un turno sin entrada en su franja, a cuya hora estaba trabajando en un
+    tramo cerrado que no empezo con la entrada de otro turno (llego mas de 2 h antes, aunque sea el
+    dia anterior): no es tarde, ni falta, ni se senala. Un tramo que empezo con la entrada de otro
+    turno (doble turno de corrido) no cuenta: tiene las mismas marcas que una salida olvidada, asi
+    que se senala para que se revise; si fue un doble turno, se parte el tramo en Marcas con una
+    salida y una entrada a la hora del segundo turno (en el mismo instante va primero la salida,
+    sin importar el orden de carga);
   - turno sin fichar: un dia pasado en que fichó una entrada propia pero un turno quedo sin entrada
-    en su franja y a esa hora no estaba trabajando; se senala ("No fichó el 2.º turno", o "Fichó
-    fuera de su horario" si ninguno), no es falta. Quien llego mas de 2 h antes y se quedo no se
-    senala;
-  - entrada de otro dia: la de un turno pegado a la medianoche queda en la fila del dia en que se
-    ficho; la hoja lo dice en las dos filas ("Fichó la entrada el día anterior" y "La entrada de
-    las 23:55 es del turno del día siguiente");
+    en su franja ni llego antes y se quedo; se senala ("No fichó el 2.º turno", o "Fichó fuera de
+    su horario" si ninguno), no es falta;
+  - entrada de otro dia: la de un turno pegado a la medianoche (o la del tramo en que estaba
+    trabajando, si llego el dia anterior) queda en la fila del dia en que se ficho; la hoja lo dice
+    en las dos filas ("Fichó la entrada el día anterior" y "La entrada de las 23:55 es del turno
+    del día siguiente");
   - falta = dia con horario (no franco) sin ninguna marca propia (la entrada que le toco a un turno
-    de otro dia no cuenta) ni entrada en sus franjas, hasta ayer;
+    de otro dia no cuenta), sin entrada en sus franjas y sin estar trabajando a la hora de ningun
+    turno, hasta ayer. El dia de la baja cuentan solo los turnos que empezaron antes de la baja;
   - dia sin horario = no cuenta como falta ni tardanza; el resumen dice cuantos hay, desde el alta
     y hasta ayer o la baja, asi se ve que local no cargo;
   - dias sin salida: solo los que ya pasaron (hoy puede seguir trabajando);
@@ -208,8 +216,9 @@ construir un servicio, hosting ni base aparte.
   Tercera revision del 30/10 (verificador, revisor nuevo, pruebas al azar y esceptico): 11 de los
   15 puntos cerrados y 7 hallazgos nuevos confirmados (todos de severidad baja), arreglados:
   - un turno de noche salteado ya no toma la entrada de la mañana siguiente (la franja no pasa de
-    las 5): faltar a las 22 y entrar 5:30 al otro dia es falta, no 450 minutos tarde, y un mes
-    cerrado no cambia al cargar el dia 1 del siguiente;
+    las 5 del dia siguiente al de su horario): faltar a las 22 y entrar 5:30 al otro dia es falta,
+    no 450 minutos tarde, y esa entrada ya no cambia el mes cerrado al cargar el dia 1 del
+    siguiente;
   - "8,15hs", "y 8,15" o "8,15 17" (coma pegada con algo al lado) se marcan en rojo como "8,15"; el
     aviso propone solo lo que se puede escribir (13:30 si es "13,30"; nada si es "8,5");
   - la entrada que le toca al turno de otro dia se explica en la fila que la muestra, asi una fila
@@ -222,12 +231,29 @@ construir un servicio, hosting ni base aparte.
   - al reactivar tambien se sacan los turnos de hoy que ya empezaron (si volvio a las 12, el turno
     de las 8 no es falta; con turno cortado queda el de la tarde);
   - test en Postgres de reactivar mientras se guarda la grilla (no se traba).
+  Cuarta revision del 30/10 (verificador, revisor nuevo, pruebas al azar con 8580 escenarios y un
+  esceptico por hallazgo): los 11 puntos cerrados, sin regresiones en los numeros; 9 hallazgos
+  confirmados (de severidad media o baja), arreglados:
+  - el dia de la baja cuentan solo los turnos que empezaron antes de la baja (baja a las 10 y turno
+    a las 14 ya no es falta, ni hace salir en el Excel a un dado de baja sin marcas); al reactivar
+    se sacan, con historial, los turnos que empezaban mientras estuvo de baja: los del dia de la
+    baja posteriores a la baja, los de los dias del medio y los de hoy ya empezados, tambien si la
+    baja y la vuelta son el mismo dia;
+  - "llego antes y se quedo" vale tambien con un tramo que empezo el dia anterior (turno de las
+    0:30 y entrada a las 22:00), y deja de valer con un tramo que empezo con la entrada de otro
+    turno (es lo mismo que una salida olvidada: se senala);
+  - una salida y una entrada a mano en el mismo instante parten el tramo sin importar el orden de
+    carga (en los tramos y en el fichaje);
+  - grilla: escribir en un dia que cerro lo mismo que ya cargo administracion no frena la semana.
   Limites que quedan, anotados: un Excel bajado de madrugada puede mostrar el turno de noche de
-  ayer como falta o sin salida hasta que termina su franja (se corta a medianoche); despues de
-  reactivar, los dias de baja cuentan como "sin horario"; el 400 de Django por mas de 1000 campos
-  llega con 125 empleados activos en un mismo local (hoy el mas grande tiene muchos menos); "8 y
-  15" es turno cortado (8 y 15), por diseño; dias trabajados cuenta el dia en que se ficho la
-  entrada, aunque sea la del turno del dia siguiente.
+  ayer como falta o sin salida hasta que termina su franja (se corta a medianoche); el ultimo dia
+  del mes depende del horario del dia 1 del siguiente (si se carga o se corrige despues, hay que
+  volver a bajar el Excel); un doble turno de corrido se senala hasta que se parte el tramo;
+  despues de reactivar, los dias de baja cuentan como "sin horario"; el 400 de Django por mas de
+  1000 campos llega con 125 empleados activos en un mismo local (hoy el mas grande tiene muchos
+  menos); "8 y 15" es turno cortado (8 y 15), por diseño; un turno cargado pasada la medianoche
+  (0:30) es de ese dia y tiene sus 8 h; dias trabajados cuenta el dia en que se ficho la entrada,
+  aunque sea la del turno del dia siguiente.
 
 ## Reglas de negocio
 

@@ -57,6 +57,16 @@ class ReglasDeFichajeTests(FichajeTestCase):
         salida = self._fichar(_momento(6, 2))
         self.assertEqual(salida.marca.tipo, Marca.Tipo.SALIDA)
 
+    def test_una_salida_y_una_entrada_a_mano_a_la_misma_hora_dejan_abierta_la_entrada(self):
+        # Administracion partio un tramo a las 6 cargando primero la entrada: el proximo escaneo la cierra.
+        self._fichar(_momento(2, 22))
+        for tipo in (Marca.Tipo.ENTRADA, Marca.Tipo.SALIDA):
+            Marca.objects.create(
+                empleado=self.empleado, tipo=tipo, momento=_momento(3, 6), sucursal=self.terminal,
+                origen=Marca.Origen.MANUAL, registrada_por=self.admin, motivo="Doble turno",
+            )
+        self.assertEqual(self._fichar(_momento(3, 13, 30)).marca.tipo, Marca.Tipo.SALIDA)
+
     def test_una_entrada_abierta_de_mas_de_16_horas_no_se_cierra_con_el_proximo_escaneo(self):
         self._fichar(_momento(2, 8))
         siguiente = self._fichar(_momento(3, 8))
