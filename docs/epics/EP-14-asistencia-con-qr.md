@@ -156,15 +156,18 @@ construir un servicio, hosting ni base aparte.
   - el horario es del empleado, no del local: si cubre en otro local, la marca se compara igual.
   Reglas de calculo (dominio en `asistencia/resumen.py`, el Excel solo lo muestra):
   - horas extra del dia = horas del dia - jornada de su empresa, si da positivo;
-  - llegada tarde: cada entrada del horario toma la primera entrada fichada de su ventana, que va
-    de la mitad del camino con la entrada esperada anterior a la mitad del camino con la siguiente
-    (aunque esten en otro dia), como mucho 12 h para cada lado; llega tarde si fichó despues (a
-    minuto). Asi quien viene solo al 2.º turno se compara con el 2.º, y un turno de las 0:30 toma
-    al que llego 23:55 del dia anterior. Cada entrada tarde es una llegada tarde; se suman los
-    minutos del mes y se marca si pasan la tolerancia de su empresa;
+  - llegada tarde: cada entrada del horario toma la primera entrada fichada de su franja, que va
+    de 2 h antes de la hora a 8 h despues y corta a mitad de camino con la entrada esperada vecina
+    (la del otro turno o la del dia de al lado); llega tarde si fichó despues (a minuto). Asi quien
+    viene solo al 2.º turno se compara con el 2.º, un turno de las 0:30 toma al que llego 23:55 del
+    dia anterior, y una entrada de la noche anterior o de la mañana siguiente no tapa ni la
+    tardanza ni la falta de otro turno. Cada entrada tarde es una llegada tarde; se suman los
+    minutos del mes y se marca si pasan la tolerancia de su empresa. Las 2 h y las 8 h son
+    constantes del calculo (`ANTES_DE_HORA`, `DESPUES_DE_HORA` en `asistencia/resumen.py`);
   - turno sin fichar: un dia pasado en que vino pero un turno quedo sin entrada en su ventana; se
     senala ("No fichó el 2.º turno", o "Fichó fuera de su horario" si ninguno), no es falta;
-  - falta = dia con horario (no franco) sin ninguna marca ni entrada en sus ventanas, hasta ayer;
+  - falta = dia con horario (no franco) sin ninguna marca propia (la entrada que le toco a un turno
+    de otro dia no cuenta) ni entrada en sus franjas, hasta ayer;
   - dia sin horario = no cuenta como falta ni tardanza; el resumen dice cuantos hay, desde el alta
     y hasta ayer o la baja, asi se ve que local no cargo;
   - dias sin salida: solo los que ya pasaron (hoy puede seguir trabajando);
@@ -182,10 +185,20 @@ construir un servicio, hosting ni base aparte.
     `asistencia/tests_horarios_postgres.py` (en SQLite se saltean);
   - "8,15" y una casilla con solo separadores se marcan en rojo; una semana o un id absurdos en la
     URL vuelven a la semana actual o dan 404, no 500;
-  - la baja borra los horarios de despues de la baja (quedan en el historial), asi una
-    reactivacion no trae faltas viejas. Limite conocido: despues de reactivar, los dias que estuvo
-    de baja cuentan como "sin horario" (no como faltas);
+  - la baja no toca la grilla (el calculo ya corta en el dia de la baja, y una baja por error se
+    deshace sin perder nada); al reactivar se borran, con historial, los horarios de los dias que
+    estuvo de baja, asi no le salen faltas; los de hoy en adelante quedan. Limite conocido: despues
+    de reactivar, los dias que estuvo de baja cuentan como "sin horario" (no como faltas);
   - el Excel incluye al dado de baja que no fichó nada pero falto antes de irse.
+  Segunda revision del 30/10 (4 verificadores + 2 revisores nuevos + 1 esceptico): 20 de los 22
+  hallazgos cerrados y 10 regresiones del primer arreglo confirmadas, todas arregladas: franjas de
+  12 h que tapaban tardanzas y faltas (ahora 2 h antes y 8 h despues), entrada de otro dia que
+  tapaba una falta, "Sin salida" de hoy ("En curso"), salida suelta como "fuera de horario", la
+  pantalla vieja se reabre con lo guardado (no se redibuja lo recibido), un dia que cerro frena
+  antes que el choque y muestra lo guardado, lo no tocado se refresca despues de un choque, un
+  campo de originales por fila (antes uno por casilla: con 72 empleados se pasaba el limite de
+  1000 campos de Django), la baja ya no borra la grilla, reactivar toma el candado de la grilla
+  antes que la fila del empleado, y el mensaje de la coma propone lo que se escribio.
 
 ## Reglas de negocio
 

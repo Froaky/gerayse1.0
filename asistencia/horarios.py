@@ -64,9 +64,13 @@ def leer_celda(texto: str) -> Celda:
         return Celda(franco=True)
     if "-" in texto:
         raise CeldaInvalida("Poné solo la hora de entrada (8), o dos si tiene turno cortado (8 17): la salida no va.")
-    if re.search(r"[0-9],[0-9]", texto):
+    coma = re.fullmatch(r"([0-9]{1,2}),([0-9]{1,2})", texto)
+    if coma:
         # "8,15": ¿8:15 o dos entradas? Adivinar sale caro en el Excel.
-        raise CeldaInvalida(f"«{texto}»: escribí 8:15 si es una hora, o 8 15 si tiene turno cortado.")
+        hora, otro = coma[1], coma[2]
+        raise CeldaInvalida(
+            f"«{texto}»: escribí {int(hora)}:{int(otro):02d} si es una hora, o {int(hora)} {int(otro)} si tiene turno cortado."
+        )
     partes = [p for p in _SEPARADORES.split(texto) if p]
     if not partes:
         # Solo separadores (",", "/", "y"): no es una casilla vacia, que borraria el horario.

@@ -202,6 +202,11 @@ Last updated: 2026-10-21
       cambiado y avisa si otro cambio la misma casilla (antes una pantalla vieja pisaba en
       silencio); candado de Postgres por local para el doble envio. Probado en Postgres 16 local
       (`asistencia/tests_horarios_postgres.py`, se saltea en SQLite/CI).
+    - Segunda revision (verificar los arreglos): 20 de 22 cerrados y 10 regresiones del primer
+      arreglo, todas arregladas. La franja de cada turno quedo en 2 h antes y 8 h despues
+      (`ANTES_DE_HORA`/`DESPUES_DE_HORA` en resumen.py: si Mateo quiere otros numeros, se cambian
+      ahi); la baja no toca la grilla y reactivar limpia los dias de baja; los originales de la
+      grilla van en un campo por fila.
   - **Manuales (26/10, corregido a pedido de Mateo):** van con el formato del "Manual para la
     administracion" de julio (traspaso, `anexos/documentos-de-la-cuenta-claude/`): pagina HTML con
     encabezado, indice, secciones numeradas, pasos, notas Tip/Ojo, antes/ahora, checklist,

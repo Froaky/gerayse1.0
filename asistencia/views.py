@@ -645,6 +645,15 @@ def _id_pedido(valor: str) -> int | None:
     return None
 
 
+def _misma_celda(texto_a: str, texto_b: str) -> bool:
+    """Si dos textos de casilla dicen lo mismo ("8" y "8:00"); si alguno no se
+    entiende, se comparan tal cual."""
+    try:
+        return leer_celda(texto_a) == leer_celda(texto_b)
+    except CeldaInvalida:
+        return texto_a.strip() == texto_b.strip()
+
+
 def _nombre_celda(empleado_id, dia) -> str:
     return f"c-{empleado_id}-{dia:%Y%m%d}"
 
@@ -659,9 +668,11 @@ def horarios(request):
     """Grilla semanal de horarios de un local (US-14.13). La carga el encargado
     (hasta el dia anterior) o quien administra.
 
-    Cada casilla abierta viaja con el valor que tenia al abrir la pantalla
-    ("o-<casilla>"). Solo se guardan las que el usuario cambio, y si otra
-    persona cambio una de esas en el medio, no se pisa: se avisa en la casilla.
+    Cada fila viaja con lo que mostraban sus casillas al abrir la pantalla
+    ("o-<empleado>", los 7 dias separados por "|": un solo campo por fila, asi
+    un local grande no pasa el limite de campos de Django). Solo se guardan las
+    casillas que el usuario cambio, y si otra persona cambio una de esas en el
+    medio, no se pisa: se avisa en la casilla.
     """
     ensure_cargar_horarios(request.user)
     locales = list(locales_de_horarios(request))
@@ -700,33 +711,40 @@ def horarios(request):
     if request.method == "POST":
         celdas, originales, vieja = {}, {}, False
         for empleado in empleados:
-            for dia in dias:
+            fila = request.POST.get(f"o-{empleado.pk}")
+            partes = fila.split("|") if fila is not None else []
+            for indice, dia in enumerate(dias):
                 nombre = _nombre_celda(empleado.pk, dia)
                 if nombre not in request.POST:
                     continue  # casilla cerrada (no se envia): no se toca
                 valores[nombre] = request.POST[nombre]
-                visto = request.POST.get(f"o-{nombre}")
-                if visto is None:
+                if len(partes) != len(dias):
                     vieja = True
                     continue
-                vistos[nombre] = visto
+                vistos[nombre] = partes[indice]
                 try:
                     nueva = leer_celda(valores[nombre])
                 except CeldaInvalida as error:
                     errores[nombre] = str(error)
                     continue
                 try:
-                    original = leer_celda(visto)
+                    original = leer_celda(partes[indice])
                 except CeldaInvalida:
                     vieja = True
                     continue
                 if nueva != original:
                     celdas[(empleado.pk, dia)] = nueva
                     originales[(empleado.pk, dia)] = original
+        if vieja:
+            # Sin lo que mostraba la pantalla no se puede saber que cambio el usuario:
+            # se vuelve a abrir con lo guardado, sin dibujar lo recibido (que pisaria al reenviarse).
+            messages.error(
+                request,
+                "Esta pantalla había quedado vieja: la abrimos de nuevo con lo guardado. No se guardó nada; volvé a escribir lo que cambiaste.",
+            )
+            return redirect(_url_horarios(local, lunes))
         if errores:
             avisos.append("Hay casillas que no se entienden: están marcadas en rojo. No se guardó nada de la semana.")
-        elif vieja:
-            avisos.append("Esta pantalla quedó vieja: volvé a abrir la semana para cargarla. No se guardó nada.")
         else:
             try:
                 cambios = guardar_semana(
@@ -766,19 +784,36 @@ def horarios(request):
             nombre = _nombre_celda(empleado.pk, dia)
             horario = existentes.get((empleado.pk, dia))
             actual = Celda.de_horario(horario).texto
+            bloqueada = not dia_editable(dia, administra=administra, hoy=hoy)
+            valor, original = valores.get(nombre, actual), vistos.get(nombre, actual)
+            if bloqueada:
+                # Un dia que se cerro mientras cargaba: se muestra lo guardado y, si habia
+                # escrito otra cosa, se dice que no se guardo.
+                if nombre in valores and not _misma_celda(valor, actual) and nombre not in errores:
+                    errores[nombre] = "Este día ya cerró: no se guardó lo que escribiste. Si hace falta, pedíselo a administración."
+                valor = original = actual
+            elif nombre in valores and nombre not in errores and _misma_celda(valor, original):
+                # No la toco: se muestra lo que hay ahora (quizas lo cambio otro).
+                valor = original = actual
             celdas_fila.append(
                 {
                     "nombre": nombre,
                     "dia": dia,
-                    "valor": valores.get(nombre, actual),
-                    # Lo que el usuario vio al abrir: con un error se conserva el de su pantalla.
-                    "original": vistos.get(nombre, actual),
-                    "bloqueada": not dia_editable(dia, administra=administra, hoy=hoy),
+                    "valor": valor,
+                    "original": original,
+                    "bloqueada": bloqueada,
                     "error": errores.get(nombre, ""),
                     "cargado": horario,
                 }
             )
-        filas.append({"empleado": empleado, "celdas": celdas_fila})
+        filas.append(
+            {
+                "empleado": empleado,
+                "celdas": celdas_fila,
+                # Lo que mostraba cada casilla al abrir (o lo que hay ahora, despues de un choque).
+                "originales": "|".join(celda["original"] for celda in celdas_fila),
+            }
+        )
     cabecera = [
         {"dia": dia, "nombre": DIAS[dia.weekday()], "bloqueado": not dia_editable(dia, administra=administra, hoy=hoy), "hoy": dia == hoy}
         for dia in dias

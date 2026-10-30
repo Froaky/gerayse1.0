@@ -115,11 +115,16 @@ def observacion_del_dia(dia: DiaResumen) -> str:
         notas.append("Fichó fuera de su horario")
     elif faltantes:
         notas.append(f"No fichó el {faltantes[0]}.º turno")
-    de_las_marcas = observacion(dia.tramos)
-    # "Sin marcas" sobra si ya se dijo falta, franco o sin horario.
-    if de_las_marcas and not (de_las_marcas == "Sin marcas" and notas):
-        notas.append(de_las_marcas)
-    return ", ".join(notas)
+    if not dia.tramos:
+        # Turno pegado a la medianoche: la entrada quedo en la fila del dia de al lado.
+        for turno in dia.turnos:
+            if turno.real is not None and turno.real.date() != dia.fecha:
+                notas.append("Fichó la entrada el día " + ("anterior" if turno.real.date() < dia.fecha else "siguiente"))
+    de_las_marcas = observacion(dia.tramos).split(", ") if dia.tramos else ([] if notas else ["Sin marcas"])
+    if not dia.pasado:
+        # Hoy todavia puede estar trabajando: no es una salida que falta.
+        de_las_marcas = ["En curso" if nota == "Sin salida" else nota for nota in de_las_marcas]
+    return ", ".join(notas + [nota for nota in de_las_marcas if nota])
 
 
 def _minutos(duracion) -> int | None:

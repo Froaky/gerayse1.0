@@ -60,9 +60,8 @@ class DobleEnvioEnPostgresTests(TransactionTestCase):
         datos = {"local": self.centro.pk, "semana": lunes.isoformat()}
         for empleado in self.empleados:
             for n in range(7):
-                nombre = f"c-{empleado.pk}-{lunes + timedelta(days=n):%Y%m%d}"
-                datos[nombre] = texto
-                datos[f"o-{nombre}"] = ""
+                datos[f"c-{empleado.pk}-{lunes + timedelta(days=n):%Y%m%d}"] = texto
+            datos[f"o-{empleado.pk}"] = "|".join([""] * 7)
         return datos
 
     def _en_paralelo(self, envios):

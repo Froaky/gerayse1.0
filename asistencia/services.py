@@ -70,15 +70,6 @@ def dar_de_baja_empleado(*, actor, empleado: Empleado) -> Empleado:
     # Sin full_clean a proposito: la baja no cambia datos del empleado, y no
     # puede quedar trabada porque a su local le cambiaron la empresa despues.
     empleado.save(update_fields=["activo", "dado_de_baja_en", "dado_de_baja_por", "actualizado_en"])
-    # EP-14 D18: sus horarios de despues de la baja ya no van. Si despues lo
-    # reactivan, no salen faltas de un horario cargado antes de irse. El
-    # historial guarda lo que habia.
-    dia_de_baja = timezone.localdate(empleado.dado_de_baja_en)
-    for horario in Horario.objects.filter(empleado=empleado, fecha__gt=dia_de_baja).order_by("fecha"):
-        HorarioCambio.objects.create(
-            empleado=empleado, fecha=horario.fecha, antes=Celda.de_horario(horario).texto, despues="", cambiado_por=actor
-        )
-        horario.delete()
     return empleado
 
 
@@ -87,6 +78,9 @@ def reactivar_empleado(*, actor, empleado: Empleado) -> Empleado:
     _require_actor(actor)
     ensure_administrar(actor)
     _ensure_empresa_permitida(actor, empleado.empresa)
+    # Primero el candado de la grilla de su local y despues la fila del
+    # empleado: el mismo orden que la grilla, asi no se traban entre si.
+    _bloquear_grilla(empleado.sucursal)
     empleado = Empleado.objects.select_for_update(of=("self",)).get(pk=empleado.pk)
     if empleado.activo:
         raise ValidationError("El empleado ya está activo.")
@@ -98,6 +92,18 @@ def reactivar_empleado(*, actor, empleado: Empleado) -> Empleado:
         raise ValidationError(
             {"nombre": "Ya hay un empleado activo con ese nombre en esta empresa. Si es otra persona, cargale el DNI."}
         )
+    # EP-14 D18: los horarios de los dias que estuvo de baja (cargados antes de
+    # irse) no le hacen faltas al volver: se borran, y el historial los guarda.
+    # Los de hoy en adelante quedan, por si la baja fue un error.
+    if empleado.dado_de_baja_en:
+        dia_de_baja = timezone.localdate(empleado.dado_de_baja_en)
+        for horario in Horario.objects.filter(
+            empleado=empleado, fecha__gt=dia_de_baja, fecha__lt=timezone.localdate()
+        ).order_by("fecha"):
+            HorarioCambio.objects.create(
+                empleado=empleado, fecha=horario.fecha, antes=Celda.de_horario(horario).texto, despues="", cambiado_por=actor
+            )
+            horario.delete()
     empleado.activo = True
     empleado.dado_de_baja_en = None
     empleado.dado_de_baja_por = None
@@ -316,11 +322,12 @@ def guardar_semana(*, actor, sucursal, lunes, celdas: dict, originales=None, hoy
         if actual == celda:
             # Ya esta como lo quiere: un doble envio, o el otro cargo lo mismo.
             continue
+        # Un dia cerrado frena antes que un choque: volver a guardar no lo arreglaria.
+        if not dia_editable(clave[1], administra=administra, hoy=hoy):
+            raise PermissionDenied("Hoy y los días anteriores solo los cambia administración.")
         if clave in originales and originales[clave] != actual:
             conflictos[clave] = actual
             continue
-        if not dia_editable(clave[1], administra=administra, hoy=hoy):
-            raise PermissionDenied("Hoy y los días anteriores solo los cambia administración.")
         cambios.append((clave, actual, celda))
     if conflictos:
         raise GrillaDesactualizada(conflictos)

@@ -68,7 +68,7 @@
               <tbody>
                 {% for fila in filas %}
                   <tr>
-                    <th class="grilla-nombre" scope="row">{{ fila.empleado.nombre }}</th>
+                    <th class="grilla-nombre" scope="row">{{ fila.empleado.nombre }}<input type="hidden" name="o-{{ fila.empleado.pk|unlocalize }}" value="{{ fila.originales }}"></th>
                     {% for celda in fila.celdas %}
                       <td>
                         <input type="text" name="{{ celda.nombre }}" value="{{ celda.valor }}" maxlength="20" autocomplete="off" spellcheck="false"
@@ -76,7 +76,6 @@
                                aria-label="{{ fila.empleado.nombre }}, {{ celda.dia|date:'l j/n' }}"
                                {% if celda.error %}title="{{ celda.error }}"{% elif celda.cargado %}title="Cargó {{ celda.cargado.cargado_por.get_username|default:'un usuario que ya no está' }} el {{ celda.cargado.cargado_en|date:'d/m H:i' }}"{% endif %}
                                {% if celda.bloqueada %}disabled{% endif %}>
-                        {% if not celda.bloqueada %}<input type="hidden" name="o-{{ celda.nombre }}" value="{{ celda.original }}">{% endif %}
                       </td>
                     {% endfor %}
                   </tr>
