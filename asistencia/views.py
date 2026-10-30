@@ -38,6 +38,7 @@ from .forms import (
 )
 from .importacion import Estado, FilaListado, ListadoIlegible, leer_listado, procesar_listado
 from .models import CarnetAnulado, Empleado, Horario, Marca, ReglasAsistencia
+from .resumen import calcular_meses
 from .permissions import (
     can_administrar,
     can_cargar_horarios,
@@ -58,6 +59,7 @@ from .services import (
     dar_de_baja_empleado,
     empleados_de_la_grilla,
     guardar_reglas,
+    GrillaDesactualizada,
     guardar_semana,
     reactivar_empleado,
 )
@@ -543,9 +545,13 @@ def excel(request):
     if form.cleaned_data.get("empleado"):
         seleccion = seleccion.filter(pk=form.cleaned_data["empleado"].pk)
     else:
-        # Todo activo, y los dados de baja solo si tienen marcas ese mes.
+        # Todo activo, y los dados de baja solo si tienen marcas ese mes o un
+        # horario de trabajo (pueden haber faltado antes de irse, EP-14 D18).
         con_marcas = Marca.objects.filter(anulada=False, momento__gte=inicio_mes, momento__lt=fin_mes)
-        seleccion = seleccion.filter(Q(activo=True) | Q(pk__in=con_marcas.values("empleado_id")))
+        con_horario = Horario.objects.filter(franco=False, fecha__gte=inicio_mes.date(), fecha__lt=fin_mes.date())
+        seleccion = seleccion.filter(
+            Q(activo=True) | Q(pk__in=con_marcas.values("empleado_id")) | Q(pk__in=con_horario.values("empleado_id"))
+        )
     seleccion = seleccion.prefetch_related(
         Prefetch(
             "marcas",
@@ -556,10 +562,12 @@ def excel(request):
     lista = list(seleccion)
     if not form.cleaned_data.get("empleado"):
         # Un dado de baja cuya unica marca es la salida del dia 1 que cierra el mes
-        # anterior no tiene nada en este mes: no lleva hoja.
-        lista = [
-            e for e in lista if e.activo or any(jornadas_del_mes(e.marcas_mes, anio, mes).values())
-        ]
+        # anterior no tiene nada en este mes: no lleva hoja. Si no fichó nada pero
+        # tenia horario antes de la baja, lleva hoja por sus faltas.
+        trabajaron = {e.pk for e in lista if any(jornadas_del_mes(e.marcas_mes, anio, mes).values())}
+        sin_marcas = [e for e in lista if not e.activo and e.pk not in trabajaron]
+        faltaron = {r.empleado.pk for r in calcular_meses([(e, e.marcas_mes) for e in sin_marcas], anio, mes) if r.faltas}
+        lista = [e for e in lista if e.activo or e.pk in trabajaron or e.pk in faltaron]
     if not lista:
         messages.error(request, "No hay empleados para ese mes con ese filtro.")
         return redirect("asistencia:excel")
@@ -591,13 +599,13 @@ def reglas(request):
     formularios = {pk: _form_reglas(regla) for pk, regla in actuales.items()}
     status = 200
     if request.method == "POST":
-        valor = request.POST.get("empresa", "")
+        empresa_id = _id_pedido(request.POST.get("empresa", ""))
         # Una empresa fuera del alcance (o un id tocado a mano) no existe para este usuario.
-        if not valor.isascii() or not valor.isdigit() or int(valor) not in actuales:
+        if empresa_id not in actuales:
             raise Http404
-        form = _form_reglas(actuales[int(valor)], request.POST)
+        form = _form_reglas(actuales[empresa_id], request.POST)
         if form.is_valid():
-            empresa = next(e for e in empresas if e.pk == int(valor))
+            empresa = next(e for e in empresas if e.pk == empresa_id)
             try:
                 guardar_reglas(
                     actor=request.user,
@@ -610,7 +618,7 @@ def reglas(request):
             else:
                 messages.success(request, f"Reglas de {empresa.nombre} guardadas.")
                 return redirect("asistencia:reglas")
-        formularios[int(valor)] = form
+        formularios[empresa_id] = form
         status = 400
     filas = [(empresa, actuales[empresa.pk], formularios[empresa.pk]) for empresa in empresas]
     return render(request, "asistencia/reglas.html", {"title": "Reglas", "filas": filas}, status=status)
@@ -618,15 +626,27 @@ def reglas(request):
 
 
 def _semana_pedida(texto) -> date:
+    """El lunes de la semana pedida. Una fecha que no se entiende o fuera de
+    rango (un 0001-01-01 tocado a mano) vuelve a la semana de hoy."""
     try:
         dia = date.fromisoformat(texto or "")
     except ValueError:
+        dia = None
+    if dia is None or not date(2020, 1, 1) <= dia <= date(2099, 12, 31):
         dia = timezone.localdate()
     return lunes_de(dia)
 
 
-def _nombre_celda(empleado, dia) -> str:
-    return f"c-{empleado.pk}-{dia:%Y%m%d}"
+def _id_pedido(valor: str) -> int | None:
+    """Un id que llega en la URL o en el form: digitos ASCII y un largo
+    razonable (int() de miles de digitos da error)."""
+    if valor and len(valor) <= 18 and valor.isascii() and valor.isdigit():
+        return int(valor)
+    return None
+
+
+def _nombre_celda(empleado_id, dia) -> str:
+    return f"c-{empleado_id}-{dia:%Y%m%d}"
 
 
 def _url_horarios(local, lunes) -> str:
@@ -637,7 +657,12 @@ def _url_horarios(local, lunes) -> str:
 @require_http_methods(["GET", "POST"])
 def horarios(request):
     """Grilla semanal de horarios de un local (US-14.13). La carga el encargado
-    (hasta el dia anterior) o quien administra."""
+    (hasta el dia anterior) o quien administra.
+
+    Cada casilla abierta viaja con el valor que tenia al abrir la pantalla
+    ("o-<casilla>"). Solo se guardan las que el usuario cambio, y si otra
+    persona cambio una de esas en el medio, no se pisa: se avisa en la casilla.
+    """
     ensure_cargar_horarios(request.user)
     locales = list(locales_de_horarios(request))
     if not locales:
@@ -646,7 +671,8 @@ def horarios(request):
     pedido = fuente.get("local", "")
     if pedido:
         # Un local que no es suyo (o un id tocado a mano) no existe para este usuario.
-        local = next((o for o in locales if pedido.isascii() and pedido.isdigit() and o.pk == int(pedido)), None)
+        local_id = _id_pedido(pedido)
+        local = next((opcion for opcion in locales if opcion.pk == local_id), None)
         if local is None:
             raise Http404
     else:
@@ -656,43 +682,78 @@ def horarios(request):
     administra = can_administrar(request.user)
     hoy = timezone.localdate()
     empleados = list(empleados_de_la_grilla(local))
-    valores, errores = {}, {}
+    valores, vistos, errores, avisos = {}, {}, {}, []
     status = 200
 
     if request.method == "POST" and request.POST.get("accion") == "copiar":
-        copiadas = copiar_semana_anterior(actor=request.user, sucursal=local, lunes=lunes)
-        if copiadas:
-            messages.success(request, f"Se copiaron {copiadas} casilla{'s' if copiadas != 1 else ''} de la semana anterior.")
+        try:
+            copiadas = copiar_semana_anterior(actor=request.user, sucursal=local, lunes=lunes)
+        except ValidationError:
+            messages.error(request, "Otra persona cargó esta semana mientras copiabas. Revisala y volvé a copiar si hace falta.")
         else:
-            messages.info(request, "No había nada para copiar: la semana anterior está vacía o estas casillas ya estaban cargadas.")
+            if copiadas:
+                messages.success(request, f"Se copiaron {copiadas} casilla{'s' if copiadas != 1 else ''} de la semana anterior.")
+            else:
+                messages.info(request, "No había nada para copiar: la semana anterior está vacía o estas casillas ya estaban cargadas.")
         return redirect(_url_horarios(local, lunes))
 
     if request.method == "POST":
-        celdas = {}
+        celdas, originales, vieja = {}, {}, False
         for empleado in empleados:
             for dia in dias:
-                nombre = _nombre_celda(empleado, dia)
+                nombre = _nombre_celda(empleado.pk, dia)
                 if nombre not in request.POST:
-                    continue  # casilla cerrada (no se envia) o grilla vieja: no se toca
+                    continue  # casilla cerrada (no se envia): no se toca
                 valores[nombre] = request.POST[nombre]
+                visto = request.POST.get(f"o-{nombre}")
+                if visto is None:
+                    vieja = True
+                    continue
+                vistos[nombre] = visto
                 try:
-                    celdas[(empleado.pk, dia)] = leer_celda(request.POST[nombre])
+                    nueva = leer_celda(valores[nombre])
                 except CeldaInvalida as error:
                     errores[nombre] = str(error)
-        if not errores:
+                    continue
+                try:
+                    original = leer_celda(visto)
+                except CeldaInvalida:
+                    vieja = True
+                    continue
+                if nueva != original:
+                    celdas[(empleado.pk, dia)] = nueva
+                    originales[(empleado.pk, dia)] = original
+        if errores:
+            avisos.append("Hay casillas que no se entienden: están marcadas en rojo. No se guardó nada de la semana.")
+        elif vieja:
+            avisos.append("Esta pantalla quedó vieja: volvé a abrir la semana para cargarla. No se guardó nada.")
+        else:
             try:
-                cambios = guardar_semana(actor=request.user, sucursal=local, lunes=lunes, celdas=celdas)
+                cambios = guardar_semana(
+                    actor=request.user, sucursal=local, lunes=lunes, celdas=celdas, originales=originales
+                )
+            except GrillaDesactualizada as error:
+                for (empleado_id, dia), actual in error.conflictos.items():
+                    nombre = _nombre_celda(empleado_id, dia)
+                    errores[nombre] = (
+                        f"Otra persona la cambió mientras la cargabas: ahora dice «{actual.texto or 'vacía'}». "
+                        "Si querés dejar lo tuyo, volvé a guardar."
+                    )
+                    # El proximo guardado ya sabe lo que hay ahora: pisa a sabiendas.
+                    vistos[nombre] = actual.texto
+                avisos.append("Otra persona cambió esta semana mientras la cargabas. No se guardó nada: revisá las casillas en rojo.")
+            except PermissionDenied as error:
+                avisos.append(str(error))
+                status = 403
             except ValidationError as error:
-                messages.error(request, _mensaje_de_error(error))
+                avisos.append(_mensaje_de_error(error))
             else:
                 if cambios:
                     messages.success(request, f"Semana guardada: {cambios} cambio{'s' if cambios != 1 else ''}.")
                 else:
                     messages.info(request, "No había cambios para guardar.")
                 return redirect(_url_horarios(local, lunes))
-        else:
-            messages.error(request, "Hay casillas que no se entienden: están marcadas en rojo. No se guardó nada.")
-        status = 400
+        status = status if status != 200 else 400
 
     existentes = {
         (h.empleado_id, h.fecha): h
@@ -700,21 +761,24 @@ def horarios(request):
     }
     filas = []
     for empleado in empleados:
-        celdas = []
+        celdas_fila = []
         for dia in dias:
-            nombre = _nombre_celda(empleado, dia)
+            nombre = _nombre_celda(empleado.pk, dia)
             horario = existentes.get((empleado.pk, dia))
-            celdas.append(
+            actual = Celda.de_horario(horario).texto
+            celdas_fila.append(
                 {
                     "nombre": nombre,
                     "dia": dia,
-                    "valor": valores.get(nombre, Celda.de_horario(horario).texto),
+                    "valor": valores.get(nombre, actual),
+                    # Lo que el usuario vio al abrir: con un error se conserva el de su pantalla.
+                    "original": vistos.get(nombre, actual),
                     "bloqueada": not dia_editable(dia, administra=administra, hoy=hoy),
                     "error": errores.get(nombre, ""),
                     "cargado": horario,
                 }
             )
-        filas.append({"empleado": empleado, "celdas": celdas})
+        filas.append({"empleado": empleado, "celdas": celdas_fila})
     cabecera = [
         {"dia": dia, "nombre": DIAS[dia.weekday()], "bloqueado": not dia_editable(dia, administra=administra, hoy=hoy), "hoy": dia == hoy}
         for dia in dias
@@ -732,13 +796,14 @@ def horarios(request):
             "siguiente": lunes + timedelta(days=7),
             "cabecera": cabecera,
             "filas": filas,
+            "avisos": avisos,
             "errores": [(fila["empleado"], celda) for fila in filas for celda in fila["celdas"] if celda["error"]],
+            "sin_guardar": status != 200,
             "administra": administra,
             "hay_cerradas": any(c["bloqueado"] for c in cabecera),
         },
         status=status,
     )
-
 
 MAXIMO_MARCAS_LISTADO = 500
 

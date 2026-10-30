@@ -8,7 +8,7 @@ Riesgos que cubre:
 - que un empleado llamado "Resumen" pise la hoja del resumen o el enlace lleve a otra hoja.
 """
 
-from datetime import timedelta
+from datetime import date, timedelta
 from io import BytesIO
 
 from openpyxl import load_workbook
@@ -23,12 +23,14 @@ from .tests_fichaje import _momento
 # Hoja de empleado: Dia, Horario y dos pares de entrada y salida.
 COLUMNA_HORAS, COLUMNA_EXTRA, COLUMNA_TARDE, COLUMNA_OBSERVACION = 7, 8, 9, 10
 FILA_DIA_1 = 6
+# Con el mes ya cerrado: "sin salida" no cuenta el dia de hoy, que sigue en curso.
+FIN_DE_MES = date(2026, 12, 1)
 
 
 class HorasExtraTests(ExcelTestCase):
     def _resumen(self, empleado=None):
         empleado = empleado or self.empleado
-        return calcular_meses([(empleado, list(empleado.marcas.all()))], 2026, 11)[0]
+        return calcular_meses([(empleado, list(empleado.marcas.all()))], 2026, 11, hoy=FIN_DE_MES)[0]
 
     def _dia(self, resumen, dia):
         return next(d for d in resumen.dias if d.fecha == _momento(dia, 0).date())
@@ -81,7 +83,7 @@ class HorasExtraTests(ExcelTestCase):
 
 class HojaResumenTests(ExcelTestCase):
     def _libro(self, empleados):
-        contenido = generar_excel([(e, list(e.marcas.all())) for e in empleados], 2026, 11)
+        contenido = generar_excel([(e, list(e.marcas.all())) for e in empleados], 2026, 11, hoy=FIN_DE_MES)
         return load_workbook(BytesIO(contenido))
 
     def test_la_hoja_del_empleado_trae_horas_extra_por_dia_y_total(self):

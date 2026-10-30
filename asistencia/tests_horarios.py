@@ -52,7 +52,10 @@ class LeerCeldaTests(PadronTestCase):
                 self.assertEqual(leer_celda(texto), esperado)
 
     def test_lo_que_no_entiende_lo_dice(self):
-        for texto in ("8-16", "8 a 16", "25", "8:61", "8:5", "abc", "17 8", "8 8", "8 12 17", "８", "F 8"):
+        # Una casilla con solo separadores no es "vacia": si no, borraria el horario sin aviso.
+        # "8,15" puede ser 8:15 o dos entradas: se pide que lo aclare.
+        for texto in ("8-16", "8 a 16", "25", "8:61", "8:5", "abc", "17 8", "8 8", "8 12 17", "８", "F 8",
+                      ",", "/", "y", ", /", "8,15", "8,30", "13,15"):
             with self.subTest(texto=texto):
                 with self.assertRaises(CeldaInvalida):
                     leer_celda(texto)
@@ -82,9 +85,18 @@ class GrillaTestCase(PadronTestCase):
     def _celda(self, empleado, dia):
         return f"c-{empleado.pk}-{dia:%Y%m%d}"
 
-    def _post(self, lunes, celdas, local=None, **extra):
+    def _post(self, lunes, celdas, local=None, originales=None, **extra):
+        """Como la pantalla: cada casilla viaja con lo que mostraba al abrirse
+        ("o-<casilla>"). Sin `originales`, es una pantalla recien abierta."""
+        originales = originales or {}
         datos = {"local": (local or self.centro).pk, "semana": lunes.isoformat(), **extra}
-        datos.update({self._celda(e, d): texto for (e, d), texto in celdas.items()})
+        for (empleado, dia), texto in celdas.items():
+            nombre = self._celda(empleado, dia)
+            datos[nombre] = texto
+            if (empleado, dia) in originales:
+                datos[f"o-{nombre}"] = originales[(empleado, dia)]
+            else:
+                datos[f"o-{nombre}"] = Celda.de_horario(self._horario(empleado, dia)).texto
         return self.client.post(reverse("asistencia:horarios"), datos)
 
     def _get(self, lunes, local=None):
@@ -160,6 +172,81 @@ class GrillaDelEncargadoTests(GrillaTestCase):
         self.assertFalse(Horario.objects.exists())
         with self.assertRaises(PermissionDenied):
             guardar_semana(actor=self.encargado, sucursal=self.centro, lunes=self.pasada, celdas={(self.juan.pk, self.pasada): Celda(franco=True)})
+
+    def test_una_pantalla_vieja_no_pisa_lo_que_otro_guardo(self):
+        lunes = self.proxima
+        miercoles = lunes + timedelta(days=2)
+        # El encargado abrio la semana vacia; mientras tanto administracion le pone franco a Juan el miercoles.
+        guardar_semana(actor=self.admin, sucursal=self.centro, lunes=lunes, celdas={(self.juan.pk, miercoles): Celda(franco=True)})
+        self._login(self.encargado, [self.armadi])
+        # Su pantalla manda todas las casillas como las vio (vacias) y solo cambio el lunes de Ana.
+        response = self._post(
+            lunes,
+            {(self.juan, miercoles): "", (self.ana, lunes): "9"},
+            originales={(self.juan, miercoles): "", (self.ana, lunes): ""},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(self._horario(self.juan, miercoles).franco)
+        self.assertEqual(self._horario(self.ana, lunes).entradas, (time(9),))
+        self.assertFalse(HorarioCambio.objects.filter(empleado=self.juan, cambiado_por=self.encargado).exists())
+
+    def test_si_otro_cambio_la_misma_casilla_avisa_y_no_pisa(self):
+        lunes = self.proxima
+        guardar_semana(actor=self.admin, sucursal=self.centro, lunes=lunes, celdas={(self.juan.pk, lunes): Celda(entradas=(time(8),))})
+        self._login(self.encargado, [self.armadi])
+        response = self._post(lunes, {(self.juan, lunes): "10"}, originales={(self.juan, lunes): ""})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self._horario(self.juan, lunes).entradas, (time(8),))
+        self.assertContains(response, "ahora dice «8:00»", status_code=400)
+        self.assertContains(response, 'value="10"', status_code=400)
+        # La pantalla ya trae lo que hay ahora: volver a guardar deja lo suyo, a sabiendas.
+        self.assertContains(response, f'name="o-{self._celda(self.juan, lunes)}" value="8:00"', status_code=400)
+        self.assertContains(response, "let cambiada = true;", status_code=400)
+        response = self._post(lunes, {(self.juan, lunes): "10"}, originales={(self.juan, lunes): "8:00"})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self._horario(self.juan, lunes).entradas, (time(10),))
+
+    def test_una_grilla_abierta_ayer_guarda_aunque_hoy_haya_quedado_cerrado(self):
+        # La casilla de hoy estaba abierta cuando se dibujo la pagina y viaja sin cambios.
+        manana = self.hoy + timedelta(days=1)
+        celdas = {(self.juan, self.hoy): "", (self.ana, manana): "8"}
+        self._login(self.encargado, [self.armadi])
+        response = self._post(lunes_de(manana), celdas) if lunes_de(manana) == lunes_de(self.hoy) else None
+        if response is None:
+            # Hoy es domingo: la de manana es de otra semana. Se prueba con la de hoy sola.
+            response = self._post(lunes_de(self.hoy), {(self.juan, self.hoy): ""})
+            self.assertEqual(response.status_code, 302)
+            return
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self._horario(self.ana, manana).entradas, (time(8),))
+
+    def test_cambiar_un_dia_cerrado_muestra_la_grilla_con_el_aviso(self):
+        self._login(self.encargado, [self.armadi])
+        response = self._post(lunes_de(self.hoy), {(self.juan, self.hoy): "8"})
+        self.assertEqual(response.status_code, 403)
+        self.assertContains(response, "Hoy y los días anteriores solo los cambia administración.", status_code=403)
+        self.assertContains(response, 'id="grilla-horarios"', status_code=403)
+        self.assertFalse(Horario.objects.exists())
+
+    def test_una_pantalla_sin_los_valores_originales_no_guarda(self):
+        self._login(self.encargado, [self.armadi])
+        datos = {"local": self.centro.pk, "semana": self.proxima.isoformat(), self._celda(self.juan, self.proxima): "8"}
+        response = self.client.post(reverse("asistencia:horarios"), datos)
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, "Esta pantalla quedó vieja", status_code=400)
+        self.assertFalse(Horario.objects.exists())
+
+    def test_una_semana_o_un_id_tocados_a_mano_no_dan_error(self):
+        self._login(self.encargado, [self.armadi])
+        for semana in ("0001-01-01", "9999-12-31", "2026-02-30", "abc"):
+            with self.subTest(semana=semana):
+                response = self.client.get(reverse("asistencia:horarios"), {"semana": semana})
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.context["lunes"], lunes_de(self.hoy))
+        self.assertEqual(self.client.get(reverse("asistencia:horarios"), {"local": "9" * 5000}).status_code, 404)
+        self._login(self.admin, [self.armadi])
+        self.assertEqual(self.client.post(reverse("asistencia:reglas"), {"empresa": "9" * 5000}).status_code, 404)
+        self.assertEqual(self.client.post(reverse("asistencia:horarios"), {"semana": "0001-01-01", "accion": "copiar"}).status_code, 302)
 
     def test_las_casillas_cerradas_salen_deshabilitadas(self):
         self._login(self.encargado, [self.armadi])

@@ -4,9 +4,10 @@ Cada casilla de la grilla es un texto corto que escribe el encargado:
 - vacio: sin horario ese dia (no cuenta como falta ni tardanza);
 - "F" o "franco": franco;
 - una hora de entrada: "8", "8:30", "08.30", "8hs";
-- dos horas, con turno cortado: "8 17", "8:00 y 17:00", "8/17".
-La salida no se carga. Un guion ("8-16") se rechaza: parece entrada y salida,
-y adivinar seria peor que pedir que lo corrijan.
+- dos horas, con turno cortado: "8 17", "8:00 y 17:00", "8/17", "8, 17".
+La salida no se carga. Lo que se puede leer de dos maneras se rechaza, porque
+adivinar seria peor que pedir que lo corrijan: un guion ("8-16" parece entrada
+y salida), una coma pegada ("8,15": ¿8:15 o dos entradas?) o solo separadores.
 """
 
 import re
@@ -63,7 +64,13 @@ def leer_celda(texto: str) -> Celda:
         return Celda(franco=True)
     if "-" in texto:
         raise CeldaInvalida("Poné solo la hora de entrada (8), o dos si tiene turno cortado (8 17): la salida no va.")
+    if re.search(r"[0-9],[0-9]", texto):
+        # "8,15": ¿8:15 o dos entradas? Adivinar sale caro en el Excel.
+        raise CeldaInvalida(f"«{texto}»: escribí 8:15 si es una hora, o 8 15 si tiene turno cortado.")
     partes = [p for p in _SEPARADORES.split(texto) if p]
+    if not partes:
+        # Solo separadores (",", "/", "y"): no es una casilla vacia, que borraria el horario.
+        raise CeldaInvalida(f"No entiendo «{texto}». Escribí la hora de entrada (8 o 8:30), F si tiene franco, o dejala vacía.")
     if len(partes) > 2:
         raise CeldaInvalida("Como mucho dos entradas por día (turno cortado).")
     entradas = tuple(_hora(p) for p in partes)

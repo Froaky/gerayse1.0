@@ -8,7 +8,7 @@ import re
 from datetime import timedelta
 
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import transaction
+from django.db import IntegrityError, connection, transaction
 from django.utils import timezone
 
 from .horarios import Celda, dia_editable, dias_de_la_semana
@@ -70,6 +70,15 @@ def dar_de_baja_empleado(*, actor, empleado: Empleado) -> Empleado:
     # Sin full_clean a proposito: la baja no cambia datos del empleado, y no
     # puede quedar trabada porque a su local le cambiaron la empresa despues.
     empleado.save(update_fields=["activo", "dado_de_baja_en", "dado_de_baja_por", "actualizado_en"])
+    # EP-14 D18: sus horarios de despues de la baja ya no van. Si despues lo
+    # reactivan, no salen faltas de un horario cargado antes de irse. El
+    # historial guarda lo que habia.
+    dia_de_baja = timezone.localdate(empleado.dado_de_baja_en)
+    for horario in Horario.objects.filter(empleado=empleado, fecha__gt=dia_de_baja).order_by("fecha"):
+        HorarioCambio.objects.create(
+            empleado=empleado, fecha=horario.fecha, antes=Celda.de_horario(horario).texto, despues="", cambiado_por=actor
+        )
+        horario.delete()
     return empleado
 
 
@@ -196,8 +205,11 @@ def guardar_reglas(*, actor, empresa, jornada_minutos: int, tolerancia_mensual_m
     _require_actor(actor)
     ensure_administrar(actor)
     _ensure_empresa_permitida(actor, empresa)
-    reglas = ReglasAsistencia.objects.select_for_update().filter(empresa=empresa).first()
-    reglas = reglas or ReglasAsistencia(empresa=empresa)
+    # get_or_create y despues el bloqueo: dos guardados juntos de una empresa sin
+    # reglas no chocan en el OneToOne (get_or_create reintenta el get). Si algo
+    # no valida, la transaccion se deshace entera, fila nueva incluida.
+    reglas, _ = ReglasAsistencia.objects.get_or_create(empresa=empresa)
+    reglas = ReglasAsistencia.objects.select_for_update(of=("self",)).get(pk=reglas.pk)
     reglas.jornada_minutos = jornada_minutos
     reglas.tolerancia_mensual_minutos = tolerancia_mensual_minutos
     reglas.actualizado_por = actor
@@ -225,10 +237,30 @@ def _ensure_local_de_horarios(actor, sucursal) -> bool:
     return administra
 
 
-def _aplicar_celda(actor, empleado, fecha, horario, celda: Celda) -> bool:
-    antes = Celda.de_horario(horario)
-    if antes == celda:
-        return False
+# Llave del candado de Postgres que pone en fila a quienes guardan la grilla de
+# un mismo local (EP-14 D18). Es un numero fijo que no usa ninguna otra parte.
+CANDADO_GRILLA = 1418
+
+
+class GrillaDesactualizada(ValidationError):
+    """Otra persona cambio casillas de la grilla despues de que el usuario la
+    abrio. `conflictos`: {(empleado_id, fecha): Celda que hay ahora}."""
+
+    def __init__(self, conflictos: dict):
+        self.conflictos = conflictos
+        super().__init__("Otra persona cambió esta semana mientras la cargabas.")
+
+
+def _bloquear_grilla(sucursal) -> None:
+    """Un guardado por local a la vez. En Postgres, con un candado de la
+    transaccion que no traba ninguna tabla (ni cajas ni fichajes); SQLite ya
+    escribe de a uno."""
+    if connection.vendor == "postgresql":
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [CANDADO_GRILLA, sucursal.pk])
+
+
+def _aplicar_celda(actor, empleado, fecha, horario, antes: Celda, celda: Celda) -> None:
     if celda.vacia:
         # El horario se borra, pero el historial guarda lo que habia.
         horario.delete()
@@ -238,38 +270,63 @@ def _aplicar_celda(actor, empleado, fecha, horario, celda: Celda) -> bool:
         horario.entrada_1, horario.entrada_2 = (*celda.entradas, None, None)[:2]
         horario.cargado_por = actor
         horario.full_clean()
-        horario.save()
+        try:
+            with transaction.atomic():
+                horario.save()
+        except IntegrityError as error:
+            # Red por si dos guardados se cruzan igual (en Postgres lo evita el candado).
+            raise ValidationError("Otra persona guardó esta semana al mismo tiempo: volvé a abrirla.") from error
     HorarioCambio.objects.create(empleado=empleado, fecha=fecha, antes=antes.texto, despues=celda.texto, cambiado_por=actor)
-    return True
 
 
 @transaction.atomic
-def guardar_semana(*, actor, sucursal, lunes, celdas: dict, hoy=None) -> int:
+def guardar_semana(*, actor, sucursal, lunes, celdas: dict, originales=None, hoy=None) -> int:
     """Guarda las casillas de la grilla de un local (US-14.13).
 
-    `celdas`: {(empleado_id, fecha): Celda}. Solo se tocan las que vienen; una
-    vacia borra el horario. Una casilla de un empleado que no es de la grilla,
-    de otra semana o de un dia cerrado para el usuario frena todo: no se guarda
-    nada. Devuelve cuantas cambiaron (cada una queda en el historial).
+    `celdas`: {(empleado_id, fecha): Celda nueva}; una vacia borra el horario.
+    `originales`: {(empleado_id, fecha): Celda que el usuario vio al abrir la
+    grilla}. Si ya no es la que hay en la base, otra persona la cambio en el
+    medio: no se pisa nada y no se guarda nada (GrillaDesactualizada). Una
+    casilla igual a la de la base no se toca, aunque sea de un dia cerrado.
+    Cambiar un dia cerrado para el usuario, un empleado que no es de la grilla
+    o un dia de otra semana frenan todo. Devuelve cuantas cambiaron (cada una
+    queda en el historial).
     """
     _require_actor(actor)
     administra = _ensure_local_de_horarios(actor, sucursal)
+    _bloquear_grilla(sucursal)
     hoy = hoy or timezone.localdate()
+    originales = originales or {}
     dias = set(dias_de_la_semana(lunes))
     empleados = {e.pk: e for e in empleados_de_la_grilla(sucursal)}
     for empleado_id, fecha in celdas:
         if empleado_id not in empleados or fecha not in dias:
             raise ValidationError("La grilla cambió mientras la cargabas: volvé a abrirla.")
-        if not dia_editable(fecha, administra=administra, hoy=hoy):
-            raise PermissionDenied("Hoy y los días anteriores solo los cambia administración.")
+    # order_by(): sin el orden por nombre no hay JOIN con Empleado, y of=("self",)
+    # bloquea solo los horarios, no las filas de empleado que usa el fichaje.
     existentes = {
         (h.empleado_id, h.fecha): h
-        for h in Horario.objects.select_for_update().filter(empleado_id__in=list(empleados), fecha__in=dias)
+        for h in Horario.objects.select_for_update(of=("self",))
+        .filter(empleado_id__in=list(empleados), fecha__in=dias)
+        .order_by()
     }
-    return sum(
-        _aplicar_celda(actor, empleados[empleado_id], fecha, existentes.get((empleado_id, fecha)), celda)
-        for (empleado_id, fecha), celda in celdas.items()
-    )
+    conflictos, cambios = {}, []
+    for clave, celda in celdas.items():
+        actual = Celda.de_horario(existentes.get(clave))
+        if actual == celda:
+            # Ya esta como lo quiere: un doble envio, o el otro cargo lo mismo.
+            continue
+        if clave in originales and originales[clave] != actual:
+            conflictos[clave] = actual
+            continue
+        if not dia_editable(clave[1], administra=administra, hoy=hoy):
+            raise PermissionDenied("Hoy y los días anteriores solo los cambia administración.")
+        cambios.append((clave, actual, celda))
+    if conflictos:
+        raise GrillaDesactualizada(conflictos)
+    for (empleado_id, fecha), actual, celda in cambios:
+        _aplicar_celda(actor, empleados[empleado_id], fecha, existentes.get((empleado_id, fecha)), actual, celda)
+    return len(cambios)
 
 
 @transaction.atomic
@@ -278,18 +335,19 @@ def copiar_semana_anterior(*, actor, sucursal, lunes, hoy=None) -> int:
     puede tocar: nunca pisa lo ya cargado."""
     _require_actor(actor)
     administra = _ensure_local_de_horarios(actor, sucursal)
+    _bloquear_grilla(sucursal)
     hoy = hoy or timezone.localdate()
     empleados = list(empleados_de_la_grilla(sucursal))
     dias = [d for d in dias_de_la_semana(lunes) if dia_editable(d, administra=administra, hoy=hoy)]
     ocupados = set(
-        Horario.objects.select_for_update()
-        .filter(empleado__in=empleados, fecha__in=dias)
-        .values_list("empleado_id", "fecha")
+        Horario.objects.filter(empleado__in=empleados, fecha__in=dias).order_by().values_list("empleado_id", "fecha")
     )
-    anteriores = Horario.objects.filter(empleado__in=empleados, fecha__in=[d - timedelta(days=7) for d in dias])
+    anteriores = Horario.objects.filter(empleado__in=empleados, fecha__in=[d - timedelta(days=7) for d in dias]).order_by()
     celdas = {
         (h.empleado_id, h.fecha + timedelta(days=7)): Celda.de_horario(h)
         for h in anteriores
         if (h.empleado_id, h.fecha + timedelta(days=7)) not in ocupados
     }
-    return guardar_semana(actor=actor, sucursal=sucursal, lunes=lunes, celdas=celdas, hoy=hoy)
+    # Se copian solo sobre casillas vacias: si en el medio alguien cargo una, no se pisa.
+    originales = {clave: Celda() for clave in celdas}
+    return guardar_semana(actor=actor, sucursal=sucursal, lunes=lunes, celdas=celdas, originales=originales, hoy=hoy)

@@ -156,13 +156,36 @@ construir un servicio, hosting ni base aparte.
   - el horario es del empleado, no del local: si cubre en otro local, la marca se compara igual.
   Reglas de calculo (dominio en `asistencia/resumen.py`, el Excel solo lo muestra):
   - horas extra del dia = horas del dia - jornada de su empresa, si da positivo;
-  - llegada tarde = la entrada N del dia despues de la entrada N del horario (a minuto); se suman
-    los minutos del mes y se marca si pasan la tolerancia de su empresa;
-  - falta = dia con horario (no franco) sin ninguna marca, hasta ayer;
+  - llegada tarde: cada entrada del horario toma la primera entrada fichada de su ventana, que va
+    de la mitad del camino con la entrada esperada anterior a la mitad del camino con la siguiente
+    (aunque esten en otro dia), como mucho 12 h para cada lado; llega tarde si fichó despues (a
+    minuto). Asi quien viene solo al 2.º turno se compara con el 2.º, y un turno de las 0:30 toma
+    al que llego 23:55 del dia anterior. Cada entrada tarde es una llegada tarde; se suman los
+    minutos del mes y se marca si pasan la tolerancia de su empresa;
+  - turno sin fichar: un dia pasado en que vino pero un turno quedo sin entrada en su ventana; se
+    senala ("No fichó el 2.º turno", o "Fichó fuera de su horario" si ninguno), no es falta;
+  - falta = dia con horario (no franco) sin ninguna marca ni entrada en sus ventanas, hasta ayer;
   - dia sin horario = no cuenta como falta ni tardanza; el resumen dice cuantos hay, desde el alta
     y hasta ayer o la baja, asi se ve que local no cargo;
+  - dias sin salida: solo los que ya pasaron (hoy puede seguir trabajando);
   - si cambian una regla, el Excel de un mes anterior se recalcula con el valor nuevo (no se
     guarda desde cuando rige; se agrega si hace falta).
+  Revision del 30/10 (4 revisores + 4 verificadores, 22 hallazgos confirmados, todos arreglados):
+  - la grilla manda cada casilla con lo que mostraba al abrirse ("o-<casilla>"); solo se guardan
+    las cambiadas, y si otra persona cambio esa misma casilla en el medio no se pisa: se avisa en
+    la casilla y no se guarda nada (`GrillaDesactualizada`). Una casilla de un dia que se cerro a
+    medianoche, sin cambios, ya no frena el guardado; cambiar un dia cerrado muestra la grilla con
+    el aviso (403);
+  - un guardado por local a la vez: candado de transaccion de Postgres (`pg_advisory_xact_lock`),
+    que no traba cajas ni fichajes; los horarios se bloquean con `of=("self",)`, sin tocar las filas
+    de empleado. Doble envio: el segundo ve que ya esta y no hace nada. Tests en Postgres real en
+    `asistencia/tests_horarios_postgres.py` (en SQLite se saltean);
+  - "8,15" y una casilla con solo separadores se marcan en rojo; una semana o un id absurdos en la
+    URL vuelven a la semana actual o dan 404, no 500;
+  - la baja borra los horarios de despues de la baja (quedan en el historial), asi una
+    reactivacion no trae faltas viejas. Limite conocido: despues de reactivar, los dias que estuvo
+    de baja cuentan como "sin horario" (no como faltas);
+  - el Excel incluye al dado de baja que no fichó nada pero falto antes de irse.
 
 ## Reglas de negocio
 

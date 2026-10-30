@@ -110,8 +110,11 @@ def observacion_del_dia(dia: DiaResumen) -> str:
         notas.append("Franco")
     elif dia.sin_horario:
         notas.append("Sin horario")
-    if dia.turno_sin_fichar:
-        notas.append("No fichó el 2.º turno")
+    faltantes = dia.turnos_sin_fichar
+    if faltantes and len(faltantes) == len(dia.turnos):
+        notas.append("Fichó fuera de su horario")
+    elif faltantes:
+        notas.append(f"No fichó el {faltantes[0]}.º turno")
     de_las_marcas = observacion(dia.tramos)
     # "Sin marcas" sobra si ya se dijo falta, franco o sin horario.
     if de_las_marcas and not (de_las_marcas == "Sin marcas" and notas):

@@ -196,6 +196,12 @@ Last updated: 2026-10-21
       (claude.ai/artifact/7NJBHqPXz9rCB3fVzAJtr5, `docs/manual-asistencia-encargados.html`).
       HTML y PDF de los dos en el Escritorio.
     - Pendiente de Tais: quien es el encargado de cada local y si ya tiene usuario.
+    - Revision independiente del 30/10 (4 miradas + verificadores; 22 hallazgos confirmados,
+      todos arreglados, detalle en la epica D18). Lo principal: la tardanza va por ventanas de
+      turno (antes, quien venia solo a la tarde daba 545 min tarde); la grilla guarda solo lo
+      cambiado y avisa si otro cambio la misma casilla (antes una pantalla vieja pisaba en
+      silencio); candado de Postgres por local para el doble envio. Probado en Postgres 16 local
+      (`asistencia/tests_horarios_postgres.py`, se saltea en SQLite/CI).
   - **Manuales (26/10, corregido a pedido de Mateo):** van con el formato del "Manual para la
     administracion" de julio (traspaso, `anexos/documentos-de-la-cuenta-claude/`): pagina HTML con
     encabezado, indice, secciones numeradas, pasos, notas Tip/Ojo, antes/ahora, checklist,

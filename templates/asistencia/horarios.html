@@ -40,8 +40,11 @@
   {% else %}
     <section class="card mt-16">
       <p class="muted">Escribí la hora de entrada (<b>8</b> o <b>8:30</b>), dos si tiene turno cortado (<b>8 17</b>), o <b>F</b> si tiene franco. Vacío es sin horario: ese día no cuenta como falta ni como llegada tarde.{% if hay_cerradas and not administra %} Los días en gris ya no se pueden cambiar; si hace falta, pedíselo a administración.{% endif %}</p>
-      {% if errores %}
-        <ul class="errors mt-8">
+      {% if avisos or errores %}
+        <ul class="errors mt-8" id="avisos-grilla">
+          {% for aviso in avisos %}
+            <li><b>{{ aviso }}</b></li>
+          {% endfor %}
           {% for empleado, celda in errores %}
             <li>{{ empleado.nombre }}, {{ celda.dia|date:"D j/n" }}: {{ celda.error }}</li>
           {% endfor %}
@@ -73,6 +76,7 @@
                                aria-label="{{ fila.empleado.nombre }}, {{ celda.dia|date:'l j/n' }}"
                                {% if celda.error %}title="{{ celda.error }}"{% elif celda.cargado %}title="Cargó {{ celda.cargado.cargado_por.get_username|default:'un usuario que ya no está' }} el {{ celda.cargado.cargado_en|date:'d/m H:i' }}"{% endif %}
                                {% if celda.bloqueada %}disabled{% endif %}>
+                        {% if not celda.bloqueada %}<input type="hidden" name="o-{{ celda.nombre }}" value="{{ celda.original }}">{% endif %}
                       </td>
                     {% endfor %}
                   </tr>
@@ -90,7 +94,8 @@
           <input type="hidden" name="semana" value="{{ lunes|date:'Y-m-d' }}">
           <input type="hidden" name="accion" value="copiar">
           <button class="button-secondary" type="submit">Copiar la semana anterior</button>
-          <small class="muted">Llena solo las casillas vacías{% if not administra %} de los días que todavía podés cambiar{% endif %}. Lo ya cargado no se toca.</small>
+          <small class="muted">Llena solo las casillas vacías{% if not administra %} de los días que todavía podés cambiar{% endif %}. Lo ya guardado no se toca. Si escribiste algo, guardalo antes de copiar.</small>
+          <p class="error" data-aviso-copiar hidden>Primero tocá «Guardar la semana»: copiar no lleva lo que escribiste y no está guardado.</p>
         </form>
       {% else %}
         <p class="muted mt-8">Este local no tiene empleados activos.</p>
@@ -126,12 +131,22 @@
       // Avisa antes de irse con casillas cambiadas sin guardar (cambiar de semana o de local).
       const grilla = document.getElementById("grilla-horarios");
       if (!grilla) return;
-      let cambiada = false;
+      // Si la pagina volvio con un error, lo que se ve todavia no esta guardado.
+      let cambiada = {{ sin_guardar|yesno:"true,false" }};
       grilla.addEventListener("input", () => { cambiada = true; });
       grilla.addEventListener("submit", () => { cambiada = false; });
       window.addEventListener("beforeunload", (evento) => {
         if (cambiada) { evento.preventDefault(); evento.returnValue = ""; }
       });
+      // Copiar es otro formulario: no lleva lo escrito. Mejor que guarde primero.
+      const copiar = document.querySelector(".horarios-copiar");
+      if (copiar) {
+        copiar.addEventListener("submit", (evento) => {
+          if (!cambiada) return;
+          evento.preventDefault();
+          copiar.querySelector("[data-aviso-copiar]").hidden = false;
+        });
+      }
     })();
   </script>
 {% endblock %}
