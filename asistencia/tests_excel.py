@@ -93,9 +93,10 @@ class ReglasDelExcelTests(ExcelTestCase):
         self._turno(2, 8, 16)
         self._turno(3, 8, 12)
         hoja = load_workbook(BytesIO(generar_excel([(self.empleado, self.empleado.marcas.all())], 2026, 11)))["Juan Perez"]
-        columna_horas = 2 + 2 * 2
+        # Dia, Horario (US-14.14) y dos pares de entrada y salida.
+        columna_horas = 3 + 2 * 2
         self.assertEqual(hoja.cell(row=5, column=columna_horas).value, "Horas del día")
-        self.assertEqual(hoja.cell(row=FILA_DIA_1 + 1, column=2).value.strftime("%H:%M"), "08:00")
+        self.assertEqual(hoja.cell(row=FILA_DIA_1 + 1, column=3).value.strftime("%H:%M"), "08:00")
         self.assertEqual(hoja.cell(row=FILA_DIA_1 + 1, column=columna_horas).value, timedelta(hours=8))
         self.assertEqual(hoja.cell(row=FILA_DIA_1 + 30, column=1).value, "Total del mes")
         self.assertEqual(hoja.cell(row=FILA_DIA_1 + 30, column=columna_horas).value, timedelta(hours=12))

@@ -20,8 +20,8 @@ from .services import guardar_reglas
 from .tests_excel import ExcelTestCase
 from .tests_fichaje import _momento
 
-# Hoja de empleado con dos pares de entrada y salida.
-COLUMNA_HORAS, COLUMNA_EXTRA, COLUMNA_OBSERVACION = 6, 7, 8
+# Hoja de empleado: Dia, Horario y dos pares de entrada y salida.
+COLUMNA_HORAS, COLUMNA_EXTRA, COLUMNA_TARDE, COLUMNA_OBSERVACION = 7, 8, 9, 10
 FILA_DIA_1 = 6
 
 
@@ -92,7 +92,7 @@ class HojaResumenTests(ExcelTestCase):
         self.assertEqual(hoja.cell(row=FILA_DIA_1 + 1, column=COLUMNA_EXTRA).value, timedelta(hours=1, minutes=30))
         self.assertIsNone(hoja.cell(row=FILA_DIA_1, column=COLUMNA_EXTRA).value)
         self.assertEqual(hoja.cell(row=FILA_DIA_1 + 30, column=COLUMNA_EXTRA).value, timedelta(hours=1, minutes=30))
-        self.assertEqual(hoja["A4"].value, "Horas extra: lo que pasa de 8:30 por día.")
+        self.assertTrue(hoja["A4"].value.startswith("Horas extra: lo que pasa de 8:30 por día."))
 
     def test_el_resumen_va_primero_por_local_y_nombre_y_coincide_con_las_hojas(self):
         de_vivre = self._empleado(nombre="Zoe Vivre", dni="31000111", sucursal=self.vivre)
@@ -106,18 +106,23 @@ class HojaResumenTests(ExcelTestCase):
         self.assertEqual(libro.sheetnames[0], "Resumen")
         resumen = libro["Resumen"]
         self.assertEqual(resumen["A1"].value, "Resumen de asistencia de noviembre de 2026")
-        encabezados = [resumen.cell(row=5, column=c).value for c in range(1, 9)]
+        encabezados = [resumen.cell(row=5, column=c).value for c in range(1, 14)]
         self.assertEqual(
             encabezados,
-            ["Empleado", "Empresa", "Local", "Días trabajados", "Horas del mes", "Horas extra", "Días sin salida", "Marcas corregidas"],
+            [
+                "Empleado", "Empresa", "Local", "Días trabajados", "Horas del mes", "Horas extra",
+                "Llegadas tarde", "Minutos tarde", "Pasa la tolerancia", "Faltas", "Días sin horario",
+                "Días sin salida", "Marcas corregidas",
+            ],
         )
-        filas = [[resumen.cell(row=f, column=c).value for c in range(1, 9)] for f in range(6, 10)]
+        filas = [[resumen.cell(row=f, column=c).value for c in range(1, 14)] for f in range(6, 10)]
         # Centro, Terminal, Vivré; dentro del local, por nombre.
         self.assertEqual([f[0] for f in filas], ["Ana Centro", "Juan Perez", "Beto Terminal", "Zoe Vivre"])
         juan = filas[1]
         self.assertEqual(juan[1:4], ["ARMADI", "Centro", 3])
-        self.assertEqual(juan[4:8], [timedelta(hours=14), timedelta(hours=1, minutes=30), 1, 0])
-        self.assertEqual(resumen.auto_filter.ref, "A5:H9")
+        self.assertEqual(juan[4:6], [timedelta(hours=14), timedelta(hours=1, minutes=30)])
+        self.assertEqual(juan[11:13], [1, 0])
+        self.assertEqual(resumen.auto_filter.ref, "A5:M9")
         # El total de horas del Resumen es el mismo que el de la hoja de la persona.
         self.assertEqual(libro["Juan Perez"].cell(row=FILA_DIA_1 + 30, column=COLUMNA_HORAS).value, juan[4])
 
@@ -141,4 +146,4 @@ class HojaResumenTests(ExcelTestCase):
             libro["Resumen"]["A2"].value,
             "Horas extra: lo que pasa de la jornada diaria de cada empresa (ARMADI 8:30, MAPOGO 9:00).",
         )
-        self.assertEqual(libro["Zoe Vivre"]["A4"].value, "Horas extra: lo que pasa de 9:00 por día.")
+        self.assertTrue(libro["Zoe Vivre"]["A4"].value.startswith("Horas extra: lo que pasa de 9:00 por día."))
