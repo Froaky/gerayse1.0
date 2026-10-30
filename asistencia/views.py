@@ -34,7 +34,6 @@ from .forms import (
     MarcaManualForm,
     PorLocalForm,
     ReglasForm,
-    texto_de_minutos,
 )
 from .importacion import Estado, FilaListado, ListadoIlegible, leer_listado, procesar_listado
 from .models import CarnetAnulado, Empleado, Marca, ReglasAsistencia
@@ -565,7 +564,7 @@ def _form_reglas(reglas: ReglasAsistencia, datos=None) -> ReglasForm:
     return ReglasForm(
         datos,
         prefix=f"empresa-{reglas.empresa_id}",
-        initial={"jornada": texto_de_minutos(reglas.jornada_minutos), "tolerancia": reglas.tolerancia_mensual_minutos},
+        initial={"jornada": reglas.jornada_texto, "tolerancia": reglas.tolerancia_mensual_minutos},
     )
 
 

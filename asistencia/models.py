@@ -269,6 +269,11 @@ class ReglasAsistencia(models.Model):
         return timedelta(minutes=self.jornada_minutos)
 
     @property
+    def jornada_texto(self) -> str:
+        """Como en un reloj: 510 minutos son "8:30"."""
+        return f"{self.jornada_minutos // 60}:{self.jornada_minutos % 60:02d}"
+
+    @property
     def tolerancia(self) -> timedelta:
         return timedelta(minutes=self.tolerancia_mensual_minutos)
 

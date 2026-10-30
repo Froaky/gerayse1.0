@@ -187,10 +187,6 @@ class ImportarEmpleadosForm(forms.Form):
         return archivo
 
 
-def texto_de_minutos(minutos: int) -> str:
-    return f"{minutos // 60}:{minutos % 60:02d}"
-
-
 class ReglasForm(forms.Form):
     """Reglas de una empresa (US-14.10). La jornada se escribe como en un reloj
     ("8:30"), no en minutos; el modelo la guarda en minutos."""

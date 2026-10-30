@@ -126,9 +126,13 @@ class ReglasDelExcelTests(ExcelTestCase):
     def test_un_nombre_con_igual_no_se_vuelve_formula(self):
         self.empleado.nombre = "=HYPERLINK(\"http://x\")"
         contenido = generar_excel([(self.empleado, [])], 2026, 11)
-        hoja = load_workbook(BytesIO(contenido)).worksheets[0]
+        libro = load_workbook(BytesIO(contenido))
+        hoja = libro.worksheets[1]
         self.assertEqual(hoja["A1"].data_type, "s")
         self.assertEqual(hoja["A1"].value, self.empleado.nombre)
+        # En el Resumen tambien queda como texto.
+        self.assertEqual(libro["Resumen"]["A6"].data_type, "s")
+        self.assertEqual(libro["Resumen"]["A6"].value, self.empleado.nombre)
 
 
 class PantallaDelExcelTests(ExcelTestCase):
@@ -136,7 +140,10 @@ class PantallaDelExcelTests(ExcelTestCase):
         return self.client.get(reverse("asistencia:excel"), {"descargar": "1", "mes": "2026-11", **params})
 
     def _hojas(self, response):
-        return load_workbook(BytesIO(response.content)).sheetnames
+        # La primera es siempre el Resumen (US-14.11); despues, una por empleado.
+        hojas = load_workbook(BytesIO(response.content)).sheetnames
+        self.assertEqual(hojas[0], "Resumen")
+        return hojas[1:]
 
     def test_una_hoja_por_empleado_del_alcance(self):
         self._turno(2, 8, 16)
