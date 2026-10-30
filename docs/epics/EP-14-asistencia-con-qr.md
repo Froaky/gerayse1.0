@@ -175,10 +175,12 @@ construir un servicio, hosting ni base aparte.
   - turno sin fichar: un dia pasado en que fichó una entrada propia pero un turno quedo sin entrada
     en su franja ni llego antes y se quedo; se senala ("No fichó el 2.º turno", o "Fichó fuera de
     su horario" si ninguno), no es falta;
-  - entrada de otro dia: la de un turno pegado a la medianoche (o la del tramo en que estaba
-    trabajando, si llego el dia anterior) queda en la fila del dia en que se ficho; la hoja lo dice
-    en las dos filas ("Fichó la entrada el día anterior" y "La entrada de las 23:55 es del turno
-    del día siguiente");
+  - entrada de otro dia: las entradas de un turno son la que tomo y las vueltas de un corte dentro
+    de su franja. La de un turno pegado a la medianoche, la vuelta de un corte despues de
+    medianoche en un turno de noche, o la del tramo en que estaba trabajando si llego el dia
+    anterior, quedan en la fila del dia en que se ficharon; la hoja lo dice en las dos filas
+    ("Fichó la entrada el día anterior" y "La entrada de las 23:55 es del turno del día
+    siguiente");
   - falta = dia con horario (no franco) sin ninguna marca propia (la entrada que le toco a un turno
     de otro dia no cuenta), sin entrada en sus franjas y sin estar trabajando a la hora de ningun
     turno, hasta ayer. El dia de la baja cuentan solo los turnos que empezaron antes de la baja;
@@ -240,8 +242,10 @@ construir un servicio, hosting ni base aparte.
     baja posteriores a la baja, los de los dias del medio y los de hoy ya empezados, tambien si la
     baja y la vuelta son el mismo dia;
   - "llego antes y se quedo" vale tambien con un tramo que empezo el dia anterior (turno de las
-    0:30 y entrada a las 22:00), y deja de valer con un tramo que empezo con la entrada de otro
+    0:30 y entrada a las 22:00), y deja de valer con un tramo que empezo con una entrada de otro
     turno (es lo mismo que una salida olvidada: se senala);
+  - la vuelta de un corte despues de medianoche en un turno de noche (de 2 a 2:30 en el de las
+    22) es de ese turno: ya no tapa la falta de la noche siguiente;
   - una salida y una entrada a mano en el mismo instante parten el tramo sin importar el orden de
     carga (en los tramos y en el fichaje);
   - grilla: escribir en un dia que cerro lo mismo que ya cargo administracion no frena la semana.

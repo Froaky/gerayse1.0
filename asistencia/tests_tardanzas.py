@@ -377,6 +377,19 @@ class EntradasDeOtroDiaTests(TardanzasYFaltasTestCase):
         )
         self.assertEqual((resumen.faltas, resumen.minutos_tarde), (1, 150))
 
+    def test_la_vuelta_de_un_corte_en_un_turno_de_noche_no_tapa_la_falta_del_otro_dia(self):
+        # 22 del 2 y del 3. La noche del 2 corta de 2 a 2:30 (la vuelta queda en la fila del 3); la del 3 no viene.
+        for dia in (2, 3):
+            self._horario(dia, time(22))
+        for dia, hora, minuto, tipo in ((2, 21, 55, Marca.Tipo.ENTRADA), (3, 2, 0, Marca.Tipo.SALIDA),
+                                        (3, 2, 30, Marca.Tipo.ENTRADA), (3, 6, 0, Marca.Tipo.SALIDA)):
+            self._marca(_momento(dia, hora, minuto), tipo)
+        resumen = self._resumen()
+        self.assertEqual(resumen.faltas, 1)
+        self.assertEqual(
+            observacion_del_dia(self._dia(resumen, 3)), "Falta, La entrada de las 02:30 es del turno del día anterior"
+        )
+
     def test_una_salida_suelta_con_la_entrada_de_otro_dia_no_dice_fuera_de_horario(self):
         # El 9: la entrada de las 8 se anulo y quedo la salida; a las 23:30 entro al turno de las 0 del 10.
         self._horario(9, time(8))

@@ -18,18 +18,21 @@ Aca vive la cuenta; el Excel solo la muestra. Reglas:
   entrada de la noche anterior o de la mañana siguiente no tapa ni la tardanza
   ni la falta de otro turno. Cada entrada tarde es una llegada tarde; se suman
   los minutos del mes y se marca si pasan la tolerancia de la empresa;
+- entradas de un turno: la que tomo y las vueltas de un corte dentro de su
+  franja (en un turno de las 22 que corto de 2 a 2:30, la de las 2:30 es de ese
+  turno aunque quede en la fila del dia siguiente);
 - llego antes y se quedo: un turno sin entrada en su franja, a cuya hora estaba
-  trabajando en un tramo cerrado que no empezo con la entrada de otro turno
+  trabajando en un tramo cerrado que no empezo con una entrada de otro turno
   (llego mas de 2 horas antes, aunque sea el dia anterior). No es tarde, ni se
-  senala, ni es falta. Un tramo que empezo con la entrada de otro turno (doble
+  senala, ni es falta. Un tramo que empezo con una entrada de otro turno (doble
   turno de corrido) no cuenta: sus marcas son las mismas que las de una salida
   olvidada, asi que se senala para que se revise;
 - turno sin fichar: un dia que ya paso en que fichó una entrada propia, pero a
   ese turno no le toco ninguna ni llego antes y se quedo; se senala, no es falta;
 - falta: dia con horario (no franco) en que no fichó nada propio (una entrada
-  que le toco a un turno de otro dia no cuenta) y ningun turno tuvo entrada ni
-  lo encontro trabajando. Solo hasta ayer: hoy todavia puede llegar. El dia de
-  la baja cuentan solo los turnos que empezaron antes de la baja;
+  de un turno de otro dia no cuenta) y ningun turno tuvo entrada ni lo encontro
+  trabajando. Solo hasta ayer: hoy todavia puede llegar. El dia de la baja
+  cuentan solo los turnos que empezaron antes de la baja;
 - dia sin horario: no cuenta como falta ni tardanza. Se cuentan los de hasta
   ayer, desde el alta del empleado y hasta su baja, para ver que local no cargo.
 
@@ -84,6 +87,9 @@ class Turno:
 
     esperada: datetime
     real: datetime | None = None
+    # Fin de su franja: una entrada entre `real` y `hasta` es la vuelta de un
+    # corte dentro de este turno.
+    hasta: datetime | None = None
     # Sin entrada en su franja pero llego antes y se quedo: la entrada (a minuto)
     # del tramo en que estaba trabajando a esa hora.
     cubierto: datetime | None = None
@@ -107,7 +113,8 @@ class DiaResumen:
     pasado: bool = False
     # Ademas el empleado estaba dado de alta: cuenta para faltas y dias sin horario.
     cuenta: bool = False
-    # Entradas de esta fila que le tocaron al turno de otro dia: {entrada (a minuto): dia de ese turno}.
+    # Entradas de esta fila que son de un turno de otro dia (la que tomo, una vuelta
+    # de un corte o la del tramo en que estaba trabajando): {entrada (a minuto): dia de ese turno}.
     ajenas: dict = field(default_factory=dict)
 
     def _ajena(self, tramo: Tramo) -> bool:
@@ -258,7 +265,7 @@ def asignar_turnos(horarios: dict, entradas: list[datetime]) -> dict[date, list[
             siguiente = esperadas[indice + 1][0]
             hasta = min(hasta, esperada + (siguiente - esperada) / 2)
         real = next((entrada for entrada in entradas if desde <= entrada < hasta), None)
-        turnos.setdefault(fecha, []).append(Turno(esperada=esperada, real=real))
+        turnos.setdefault(fecha, []).append(Turno(esperada=esperada, real=real, hasta=hasta))
     return turnos
 
 
@@ -273,14 +280,27 @@ def _antes_de_la_baja(empleado, turnos: dict) -> None:
         turnos[baja.date()] = [t for t in turnos[baja.date()] if t.esperada < baja or t.real is not None]
 
 
-def _cubrir(turnos: dict, tramos: list[Tramo]) -> None:
+def _entradas_de_turnos(turnos: dict, entradas: list[datetime]) -> dict:
+    """{entrada: dia de su turno}: la que tomo cada turno y las vueltas de un
+    corte dentro de su franja (la de las 2:30 en un turno de las 22 que corto de
+    2 a 2:30 es de ese turno, aunque quede en la fila del dia siguiente)."""
+    suyas = {}
+    for fecha in sorted(turnos):
+        for turno in turnos[fecha]:
+            if turno.real is not None:
+                for entrada in entradas:
+                    if turno.real <= entrada < turno.hasta:
+                        suyas.setdefault(entrada, fecha)
+    return suyas
+
+
+def _cubrir(turnos: dict, tramos: list[Tramo], de_turnos) -> None:
     """A cada turno sin entrada en su franja le busca un tramo cerrado abierto a
-    su hora que no haya empezado con la entrada de otro turno: llego antes y se
-    quedo (puede venir del dia anterior). Un tramo que empezo con la entrada de
-    otro turno no cubre: un doble turno de corrido tiene las mismas marcas que
-    una salida olvidada, y eso se senala."""
-    reales = {t.real for lista in turnos.values() for t in lista if t.real is not None}
-    libres = [t for t in tramos if t.entrada is not None and t.salida is not None and _minuto(t.entrada) not in reales]
+    su hora que no haya empezado con una entrada de otro turno (`de_turnos`):
+    llego antes y se quedo (puede venir del dia anterior). Un tramo que empezo
+    con la entrada de otro turno no cubre: un doble turno de corrido tiene las
+    mismas marcas que una salida olvidada, y eso se senala."""
+    libres = [t for t in tramos if t.entrada is not None and t.salida is not None and _minuto(t.entrada) not in de_turnos]
     for lista in turnos.values():
         for turno in lista:
             if turno.real is None:
@@ -288,8 +308,8 @@ def _cubrir(turnos: dict, tramos: list[Tramo]) -> None:
 
 
 def _ajenas(fecha: date, tramos: list[Tramo], dia_del_turno: dict) -> dict:
-    """Las entradas de la fila que le tocaron al turno de otro dia (por ejemplo,
-    la de las 23:55 para el turno de las 0:30), con el dia de ese turno."""
+    """Las entradas de la fila que son de un turno de otro dia (por ejemplo, la
+    de las 23:55 para el turno de las 0:30), con el dia de ese turno."""
     ajenas = {}
     for tramo in tramos:
         if tramo.entrada is not None:
@@ -336,18 +356,18 @@ def calcular_mes(empleado, marcas, anio: int, mes: int, reglas: ReglasAsistencia
     entradas = sorted(_minuto(m) for m in vigentes if m.tipo == Marca.Tipo.ENTRADA)
     turnos = asignar_turnos(horarios, entradas)
     _antes_de_la_baja(empleado, turnos)
+    # Las entradas de cada turno (la que tomo y las vueltas de un corte) y la del
+    # tramo en que estaba trabajando si llego antes: si quedaron en la fila de
+    # otro dia, en esa fila son "ajenas". Si una cubre dos turnos, queda con el
+    # primero.
+    dia_del_turno = _entradas_de_turnos(turnos, entradas)
     # Con todas las marcas, no solo las del mes: un tramo del ultimo dia del mes
     # anterior puede cubrir un turno del dia 1.
-    _cubrir(turnos, armar_tramos(vigentes))
-    # La entrada que tomo cada turno, o la del tramo en que estaba trabajando: si
-    # quedo en la fila de otro dia, en esa fila es "ajena". Si una cubre dos
-    # turnos, queda con el primero.
-    dia_del_turno = {}
+    _cubrir(turnos, armar_tramos(vigentes), dia_del_turno)
     for fecha in sorted(turnos):
         for turno in turnos[fecha]:
-            for entrada in (turno.real, turno.cubierto):
-                if entrada is not None:
-                    dia_del_turno.setdefault(entrada, fecha)
+            if turno.cubierto is not None:
+                dia_del_turno.setdefault(turno.cubierto, fecha)
     dias = [
         calcular_dia(
             fecha,

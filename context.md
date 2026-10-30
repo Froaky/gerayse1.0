@@ -218,8 +218,10 @@ Last updated: 2026-10-21
       los que empezaban estando de baja (tambien con baja y vuelta el mismo dia). "Llego antes y
       se quedo" vale aunque el tramo venga del dia anterior, pero no si empezo con la entrada de
       otro turno (doble turno de corrido = mismas marcas que una salida olvidada: se senala y se
-      arregla partiendo el tramo en Marcas). Salida y entrada a mano en el mismo instante: primero
-      la salida, en tramos y fichaje. Grilla: escribir en un dia cerrado lo que ya esta no frena.
+      arregla partiendo el tramo en Marcas). La vuelta de un corte despues de medianoche es del
+      turno de noche (ya no tapa la falta de la noche siguiente). Salida y entrada a mano en el
+      mismo instante: primero la salida, en tramos y fichaje. Grilla: escribir en un dia cerrado
+      lo que ya esta no frena.
   - **Manuales (26/10, corregido a pedido de Mateo):** van con el formato del "Manual para la
     administracion" de julio (traspaso, `anexos/documentos-de-la-cuenta-claude/`): pagina HTML con
     encabezado, indice, secciones numeradas, pasos, notas Tip/Ojo, antes/ahora, checklist,
