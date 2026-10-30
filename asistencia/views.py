@@ -6,7 +6,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError
 from django.db.models import Prefetch, Q
-from django.http import HttpResponse, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -33,9 +33,11 @@ from .forms import (
     MarcaFiltroForm,
     MarcaManualForm,
     PorLocalForm,
+    ReglasForm,
+    texto_de_minutos,
 )
 from .importacion import Estado, FilaListado, ListadoIlegible, leer_listado, procesar_listado
-from .models import CarnetAnulado, Empleado, Marca
+from .models import CarnetAnulado, Empleado, Marca, ReglasAsistencia
 from .permissions import can_administrar, can_fichar, ensure_acceder, ensure_administrar, ensure_fichar
 from .por_local import asistencia_del_dia
 from .services import (
@@ -45,6 +47,7 @@ from .services import (
     anular_marca,
     crear_empleado,
     dar_de_baja_empleado,
+    guardar_reglas,
     reactivar_empleado,
 )
 
@@ -555,6 +558,50 @@ def excel(request):
     response = HttpResponse(contenido, content_type=CONTENT_TYPE_XLSX)
     response["Content-Disposition"] = f'attachment; filename="{nombre}.xlsx"'
     return response
+
+
+
+def _form_reglas(reglas: ReglasAsistencia, datos=None) -> ReglasForm:
+    return ReglasForm(
+        datos,
+        prefix=f"empresa-{reglas.empresa_id}",
+        initial={"jornada": texto_de_minutos(reglas.jornada_minutos), "tolerancia": reglas.tolerancia_mensual_minutos},
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def reglas(request):
+    """Jornada diaria y tolerancia del mes de cada empresa del alcance (US-14.10)."""
+    ensure_administrar(request.user)
+    empresas = list(empresas_en_alcance(request))
+    actuales = ReglasAsistencia.de_empresas(empresas)
+    formularios = {pk: _form_reglas(regla) for pk, regla in actuales.items()}
+    status = 200
+    if request.method == "POST":
+        valor = request.POST.get("empresa", "")
+        # Una empresa fuera del alcance (o un id tocado a mano) no existe para este usuario.
+        if not valor.isascii() or not valor.isdigit() or int(valor) not in actuales:
+            raise Http404
+        form = _form_reglas(actuales[int(valor)], request.POST)
+        if form.is_valid():
+            empresa = next(e for e in empresas if e.pk == int(valor))
+            try:
+                guardar_reglas(
+                    actor=request.user,
+                    empresa=empresa,
+                    jornada_minutos=form.cleaned_data["jornada"],
+                    tolerancia_mensual_minutos=form.cleaned_data["tolerancia"],
+                )
+            except ValidationError as error:
+                form.add_error(None, _mensaje_de_error(error))
+            else:
+                messages.success(request, f"Reglas de {empresa.nombre} guardadas.")
+                return redirect("asistencia:reglas")
+        formularios[int(valor)] = form
+        status = 400
+    filas = [(empresa, actuales[empresa.pk], formularios[empresa.pk]) for empresa in empresas]
+    return render(request, "asistencia/reglas.html", {"title": "Reglas", "filas": filas}, status=status)
 
 
 MAXIMO_MARCAS_LISTADO = 500

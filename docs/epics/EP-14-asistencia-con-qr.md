@@ -62,9 +62,11 @@ construir un servicio, hosting ni base aparte.
 
 ## No incluye todavia
 
-- horarios por empleado, grilla semanal, tardanza, tolerancia u horas extra
-- avisos en pantalla, faltas, justificaciones o presentismo
-- resumenes o reportes por local dentro del sistema
+- ~~horarios por empleado, grilla semanal, tardanza, tolerancia u horas extra~~ y ~~faltas~~:
+  entran con la ampliacion del 30/10 (US-14.10 a US-14.15, D18)
+- feriados: el cliente los calcula a mano (decision de Mateo del 30/10)
+- avisos en pantalla, justificaciones o presentismo
+- resumenes o reportes por local dentro del sistema (fuera de la hoja Resumen del Excel)
 - calculo de sueldos o montos
 - servicio, hosting o base de datos aparte de Gerayse
 - fichaje del empleado desde su propio celular, biometria o fotos
@@ -135,6 +137,32 @@ construir un servicio, hosting ni base aparte.
   y, si tambien coincide, un numero: ningun archivo pisa a otro. Solo entran activos de las
   empresas del usuario; un id ajeno o de baja se ignora. POST y no GET para no chocar con el largo
   maximo de la URL con muchos marcados. Tests en `asistencia/tests_carnet_celular.py`.
+- D18 (2026-10-30, pedido de Tais via Mateo) horarios, resumen, tardanzas, faltas y horas extra.
+  Respuestas de Tais: los horarios cambian cada semana; las horas extra son lo que pasa de 8:30
+  por dia; la tolerancia es la suma de las llegadas tarde del mes, que no pase de 30 minutos;
+  puede haber gente que entre dos veces el mismo dia. Decisiones de Mateo:
+  - nada hardcodeado: jornada diaria y tolerancia del mes son reglas por empresa que edita
+    quien administra (arrancan en 8:30 y 30 min); las formulas quedan en codigo, con tests;
+  - feriados no: los calcula el cliente a mano;
+  - los horarios los carga el encargado de cada local en una grilla semanal: por empleado y dia,
+    la hora de entrada (hasta dos, turno cortado) o "Franco"; solo entrada, sin salida;
+  - permiso nuevo "Cargar horarios de asistencia", asignable por rol o por usuario. Los grupos
+    ya existen: son los roles de Usuarios -> Roles (permisos default del rol + personalizado por
+    usuario); se arma el rol "Encargado de local" con fichar + cargar horarios;
+  - el encargado ve solo a los empleados de sus locales (sucursal base + "otros locales donde
+    ficha asistencia"); quien administra ve todos los de su alcance;
+  - el encargado carga y cambia hasta el dia anterior; el dia mismo y los pasados solo quien
+    administra. Todo cambio queda registrado (quien, cuando, antes y despues);
+  - el horario es del empleado, no del local: si cubre en otro local, la marca se compara igual.
+  Reglas de calculo (dominio en `asistencia/resumen.py`, el Excel solo lo muestra):
+  - horas extra del dia = horas del dia - jornada de su empresa, si da positivo;
+  - llegada tarde = la entrada N del dia despues de la entrada N del horario (a minuto); se suman
+    los minutos del mes y se marca si pasan la tolerancia de su empresa;
+  - falta = dia con horario (no franco) sin ninguna marca, hasta ayer;
+  - dia sin horario = no cuenta como falta ni tardanza; el resumen dice cuantos hay, desde el alta
+    y hasta ayer o la baja, asi se ve que local no cargo;
+  - si cambian una regla, el Excel de un mes anterior se recalcula con el valor nuevo (no se
+    guarda desde cuando rige; se agrega si hace falta).
 
 ## Reglas de negocio
 
@@ -348,6 +376,97 @@ Criterios:
 - avance 2026-10-26: manuales de administracion y de cajeros con el formato del manual de julio
   (`docs/manual-asistencia-administracion.html`, `docs/manual-asistencia-cajeros.html`). Falta el
   arranque (carga real, permisos de cajeros, carnets impresos)
+
+### Ampliacion del 30/10: horarios y resumen del mes (D18)
+
+### [ ] US-14.10 Reglas de asistencia por empresa
+
+Como administracion
+Quiero editar la jornada diaria y la tolerancia de llegadas tarde del mes de cada empresa
+Para que las horas extra y las tardanzas se calculen con nuestras reglas, y cambiarlas sin pedirle
+a sistemas
+
+Criterios:
+- pantalla Asistencia -> Reglas, solo para quien administra, con las empresas de su alcance
+- jornada diaria en horas y minutos ("8:30") y tolerancia del mes en minutos ("30")
+- sin reglas guardadas valen 8:30 y 30 min; guardar registra quien y cuando
+- valores fuera de rango (jornada de 0 o de mas de 24 h, tolerancia negativa) se rechazan
+- una empresa fuera del alcance no se ve ni se puede guardar por URL
+- estimado: 2 h
+
+### [ ] US-14.11 Hoja Resumen y horas extra en el Excel
+
+Como administracion y encargados
+Queremos una primera hoja con una fila por empleado y los totales del mes
+Para no tener que abrir la hoja de cada uno
+
+Criterios:
+- la hoja "Resumen" va primera, ordenada por local y nombre, con filtro
+- columnas: empleado, empresa, local, dias trabajados, horas del mes, horas extra, dias sin
+  salida y marcas corregidas (US-14.14 suma tardanzas, faltas y dias sin horario)
+- cada hoja de empleado suma la columna "Horas extra" por dia y su total
+- horas extra con la jornada de la empresa del empleado (US-14.10)
+- tests: dia justo en la jornada (0 extra), un minuto de mas, turno cortado, sin salida (no suma)
+- estimado: 3 h
+
+### [ ] US-14.12 Permiso "Cargar horarios de asistencia"
+
+Como administracion
+Quiero darle a los encargados el permiso de cargar horarios, por rol o por usuario
+Para que cada encargado cargue los de su local sin ver nada mas
+
+Criterios:
+- la matriz de permisos suma "Cargar horarios de asistencia"; roles y usuarios existentes no lo
+  reciben (salvo los administradores del sistema)
+- con ese permiso se ve Asistencia en el menu y, en su inicio, solo Horarios (y Fichar si lo tiene)
+- sus locales son la sucursal base y los otros locales donde ficha; sin ninguno no ve nada
+- quien administra asistencia tambien carga horarios, de todos los locales de su alcance
+- estimado: 1,5 h
+
+### [ ] US-14.13 Grilla semanal de horarios por local
+
+Como encargado de local
+Quiero cargar la semana de mi local en una grilla: cada empleado, de lunes a domingo, su hora de
+entrada o franco
+Para que el sistema sepa a que hora entra cada uno aunque cambie todas las semanas
+
+Criterios:
+- se elige local (de los suyos) y semana; filas: empleados activos de ese local; columnas: dias
+- cada casilla acepta una entrada ("8", "8:30"), dos ("8 17" o "8:00 17:00", turno cortado),
+  "F" o "franco", o vacio (sin horario); lo que no se entiende se marca en la casilla y no se guarda
+  nada de la semana hasta corregirlo
+- "Copiar la semana anterior" llena solo las casillas vacias que el usuario puede tocar
+- el encargado no puede cambiar hoy ni dias pasados (ni por URL); quien administra si
+- todo cambio guarda quien, cuando, antes y despues
+- los horarios entran al respaldo diario
+- tests: formatos, segunda entrada antes de la primera, dia bloqueado, local ajeno, empleado de
+  otro local, copiar sin pisar, historial
+- estimado: 8 h
+
+### [ ] US-14.14 Llegadas tarde y faltas en el Excel
+
+Como administracion y encargados
+Queremos ver en el Excel quien llego tarde, cuantos minutos en el mes, si paso la tolerancia y
+quien falto
+Para controlar la asistencia sin leer dia por dia
+
+Criterios:
+- cada hoja de empleado suma "Horario" y "Tarde (min)" por dia; la observacion dice "Falta",
+  "Franco" o "Sin horario"
+- el Resumen suma llegadas tarde, minutos tarde, "Pasa la tolerancia", faltas y dias sin horario
+- reglas de D18 (entrada N contra entrada N, falta solo hasta ayer, sin horario no suma)
+- tests: a horario, un minuto tarde, turno cortado tarde en el segundo, falta, franco trabajado,
+  dia de hoy sin marca (no es falta), dias antes del alta, tolerancia justa y pasada
+- estimado: 4 h
+
+### [ ] US-14.15 Manuales: encargados y administracion
+
+Criterios:
+- manual nuevo para encargados (cargar la semana) con el formato de los otros
+- el de administracion suma reglas, permiso de encargado (rol) y la hoja Resumen
+- estimado: 2,5 h
+
+Total de la ampliacion: 21 h.
 
 ## Dependencias
 

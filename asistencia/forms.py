@@ -185,3 +185,38 @@ class ImportarEmpleadosForm(forms.Form):
         if archivo.size > TAMANO_MAXIMO_LISTADO:
             raise forms.ValidationError("El archivo es muy grande: el máximo es 2 MB.")
         return archivo
+
+
+def texto_de_minutos(minutos: int) -> str:
+    return f"{minutos // 60}:{minutos % 60:02d}"
+
+
+class ReglasForm(forms.Form):
+    """Reglas de una empresa (US-14.10). La jornada se escribe como en un reloj
+    ("8:30"), no en minutos; el modelo la guarda en minutos."""
+
+    jornada = forms.CharField(
+        label="Jornada diaria",
+        max_length=5,
+        help_text="Horas y minutos, por ejemplo 8:30. Lo que un día pase de esto son horas extra.",
+    )
+    tolerancia = forms.IntegerField(
+        label="Tolerancia de llegadas tarde del mes (minutos)",
+        min_value=0,
+        max_value=24 * 60,
+        help_text="Cuántos minutos tarde, sumados en todo el mes, se aceptan antes de marcarlo.",
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        _estilar(self)
+
+    def clean_jornada(self):
+        texto = (self.cleaned_data.get("jornada") or "").strip()
+        partes = re.fullmatch(r"([0-9]{1,2})(?:[:.]([0-5][0-9]))?", texto)
+        if not partes:
+            raise forms.ValidationError("Escribila como horas y minutos, por ejemplo 8:30.")
+        minutos = int(partes[1]) * 60 + int(partes[2] or 0)
+        if not 0 < minutos <= 24 * 60:
+            raise forms.ValidationError("La jornada tiene que ser de más de 0 y hasta 24 horas.")
+        return minutos

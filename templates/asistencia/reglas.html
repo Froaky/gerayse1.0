@@ -1,0 +1,55 @@
+{% extends "cashops/layout.html" %}
+{% load l10n %}
+{% block title %}Reglas | Gerayse{% endblock %}
+{% block content %}
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Reglas de asistencia</h1>
+        <p class="muted">Con estas reglas el Excel del mes calcula las horas extra y las llegadas tarde. Cada empresa tiene las suyas y las podés cambiar cuando quieras: el próximo Excel que bajes ya sale con lo nuevo.</p>
+      </div>
+      <div class="list-actions">
+        <a class="button-secondary" href="{% url 'asistencia:inicio' %}">Asistencia</a>
+      </div>
+    </div>
+  </section>
+
+  {% for empresa, actual, form in filas %}
+    <section class="card mt-16" id="reglas-{{ empresa.pk|unlocalize }}">
+      <h2>{{ empresa.nombre }}</h2>
+      {% if form.non_field_errors %}
+        <ul class="errors mt-8">
+          {% for error in form.non_field_errors %}<li>{{ error }}</li>{% endfor %}
+        </ul>
+      {% endif %}
+      <form method="post" action="{% url 'asistencia:reglas' %}" class="stack mt-16">
+        {% csrf_token %}
+        <input type="hidden" name="empresa" value="{{ empresa.pk|unlocalize }}">
+        <div class="summary-grid grid-2">
+          {% for field in form.visible_fields %}
+            <div class="field">
+              <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+              {{ field }}
+              {% if field.help_text %}<small class="muted">{{ field.help_text }}</small>{% endif %}
+              {% for error in field.errors %}<div class="error">{{ error }}</div>{% endfor %}
+            </div>
+          {% endfor %}
+        </div>
+        <div class="list-actions">
+          <button class="button" type="submit">Guardar</button>
+        </div>
+        <small class="muted">
+          {% if actual.pk %}
+            Último cambio: {{ actual.actualizado_por.get_username|default:"un usuario que ya no está" }}, el {{ actual.actualizado_en|date:"d/m/Y H:i" }}.
+          {% else %}
+            Todavía nadie las cambió: valen las iniciales.
+          {% endif %}
+        </small>
+      </form>
+    </section>
+  {% empty %}
+    <section class="card mt-16">
+      <p class="muted">No tenés empresas seleccionadas. Elegí al menos una arriba, en el selector de empresas.</p>
+    </section>
+  {% endfor %}
+{% endblock %}

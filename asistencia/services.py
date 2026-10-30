@@ -11,7 +11,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.utils import timezone
 
-from .models import CarnetAnulado, Empleado, Marca, nuevo_codigo_carnet
+from .models import CarnetAnulado, Empleado, Marca, ReglasAsistencia, nuevo_codigo_carnet
 from .permissions import ensure_administrar
 
 
@@ -187,3 +187,20 @@ def anular_marca(*, actor, marca: Marca, motivo: str) -> Marca:
     marca.motivo_anulacion = motivo
     marca.save(update_fields=["anulada", "anulada_en", "anulada_por", "motivo_anulacion"])
     return marca
+
+
+@transaction.atomic
+def guardar_reglas(*, actor, empresa, jornada_minutos: int, tolerancia_mensual_minutos: int) -> ReglasAsistencia:
+    """Reglas de calculo de una empresa (EP-14 D18 / US-14.10)."""
+    _require_actor(actor)
+    ensure_administrar(actor)
+    _ensure_empresa_permitida(actor, empresa)
+    reglas = ReglasAsistencia.objects.select_for_update().filter(empresa=empresa).first()
+    reglas = reglas or ReglasAsistencia(empresa=empresa)
+    reglas.jornada_minutos = jornada_minutos
+    reglas.tolerancia_mensual_minutos = tolerancia_mensual_minutos
+    reglas.actualizado_por = actor
+    reglas.actualizado_en = timezone.now()
+    reglas.full_clean()
+    reglas.save()
+    return reglas

@@ -1,9 +1,11 @@
 import re
 import secrets
 import unicodedata
+from datetime import timedelta
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
@@ -221,3 +223,62 @@ class Marca(models.Model):
 
     def __str__(self) -> str:
         return f"{self.get_tipo_display()} de {self.empleado.nombre} ({self.momento:%d/%m/%Y %H:%M})"
+
+
+# EP-14 D18: reglas de calculo de cada empresa. Arrancan con lo que dijo el
+# cliente el 30/10/2026 y las edita quien administra desde Asistencia -> Reglas:
+# los numeros no quedan fijos en el codigo, solo la forma de calcular.
+JORNADA_INICIAL_MINUTOS = 8 * 60 + 30
+TOLERANCIA_INICIAL_MINUTOS = 30
+
+
+class ReglasAsistencia(models.Model):
+    """Jornada diaria (lo que pasa de esto en un dia son horas extra) y
+    tolerancia de llegadas tarde del mes (suma de minutos) de una empresa."""
+
+    empresa = models.OneToOneField(
+        "cashops.Empresa",
+        on_delete=models.PROTECT,
+        related_name="reglas_asistencia",
+    )
+    jornada_minutos = models.PositiveSmallIntegerField(
+        "Jornada diaria (minutos)",
+        default=JORNADA_INICIAL_MINUTOS,
+        validators=[MinValueValidator(1), MaxValueValidator(24 * 60)],
+    )
+    tolerancia_mensual_minutos = models.PositiveSmallIntegerField(
+        "Tolerancia de llegadas tarde del mes (minutos)",
+        default=TOLERANCIA_INICIAL_MINUTOS,
+        validators=[MaxValueValidator(24 * 60)],
+    )
+    actualizado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reglas_asistencia_actualizadas",
+    )
+    actualizado_en = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "reglas de asistencia"
+        verbose_name_plural = "reglas de asistencia"
+
+    @property
+    def jornada(self) -> timedelta:
+        return timedelta(minutes=self.jornada_minutos)
+
+    @property
+    def tolerancia(self) -> timedelta:
+        return timedelta(minutes=self.tolerancia_mensual_minutos)
+
+    @classmethod
+    def de_empresas(cls, empresas) -> dict[int, "ReglasAsistencia"]:
+        """Las reglas de cada empresa, sin escribir nada: la que nunca se guardo
+        usa los valores iniciales."""
+        empresas = list(empresas)
+        guardadas = {r.empresa_id: r for r in cls.objects.filter(empresa__in=[e.pk for e in empresas])}
+        return {empresa.pk: guardadas.get(empresa.pk) or cls(empresa=empresa) for empresa in empresas}
+
+    def __str__(self) -> str:
+        return f"Reglas de asistencia de {self.empresa}"
