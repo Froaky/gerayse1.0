@@ -112,10 +112,14 @@
     .grilla-horarios th.cerrado { opacity: 0.7; }
     .grilla-horarios .grilla-nombre { position: sticky; left: 0; z-index: 1; min-width: 150px; text-align: left; background: var(--panel); }
     .grilla-horarios thead .grilla-nombre { z-index: 2; background: var(--panel-soft); }
-    .celda { width: 100%; min-width: 84px; padding: 7px 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--field-bg, transparent); color: var(--text); font: inherit; text-align: center; }
+    .celda { width: 100%; min-width: 112px; padding: 7px 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--field-bg, transparent); color: var(--text); font: inherit; text-align: center; }
     .celda:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--ring, transparent); }
     .celda:disabled { opacity: 0.55; cursor: not-allowed; background: transparent; }
     .celda--error { border-color: #e05555; box-shadow: 0 0 0 2px rgba(224, 85, 85, 0.25); }
+    @media (max-width: 640px) {
+      /* En el celular la grilla se desliza de costado; el nombre ocupa menos para ver mas dias. */
+      .grilla-horarios .grilla-nombre { min-width: 0; width: 112px; max-width: 112px; font-size: 0.92rem; line-height: 1.25; }
+    }
   </style>
   <script>
     (() => {
