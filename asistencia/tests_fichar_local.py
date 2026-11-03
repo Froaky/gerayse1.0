@@ -27,7 +27,7 @@ class ElegirLocalAlFicharTests(FichajeTestCase):
         return self.client.post(reverse("asistencia:fichar"), {"elegir_local": "1", "local": local})
 
     def _fichar_por_pantalla(self, **extra):
-        return self.client.post(reverse("asistencia:fichar"), {"codigo": self.empleado.codigo_carnet}, **extra)
+        return self.client.post(reverse("asistencia:fichar"), {"codigo": self.empleado.codigo_carnet}, follow="HTTP_ACCEPT" not in extra, **extra)
 
     def test_un_admin_sin_sucursal_base_ve_el_selector_y_no_el_formulario(self):
         self._login(self.admin, [self.armadi])
