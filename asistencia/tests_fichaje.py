@@ -133,11 +133,26 @@ class ReglasDeFichajeTests(FichajeTestCase):
 class PantallaDeFichajeTests(FichajeTestCase):
     def test_el_cajero_registra_y_ve_el_resultado(self):
         self._login(self.cajero)
-        response = self.client.post(reverse("asistencia:fichar"), {"codigo": self.empleado.codigo_carnet})
+        response = self.client.post(reverse("asistencia:fichar"), {"codigo": self.empleado.codigo_carnet}, follow=True)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'data-resultado="registrada"')
         self.assertContains(response, "Juan Perez")
         self.assertContains(response, "Entrada")
+        self.assertEqual(Marca.objects.count(), 1)
+
+    def test_recargar_la_pantalla_despues_de_fichar_no_vuelve_a_registrar(self):
+        # 03/11: la pantalla quedo con el resultado del codigo de una empleada y a la mañana
+        # alguien la recargo: el navegador reenvio su codigo y le registro una entrada.
+        self._login(self.cajero)
+        response = self.client.post(reverse("asistencia:fichar"), {"codigo": self.empleado.codigo_carnet})
+        self.assertRedirects(response, reverse("asistencia:fichar"), fetch_redirect_response=False)
+        # El resultado se ve una vez, en la pantalla a la que redirige.
+        pantalla = self.client.get(reverse("asistencia:fichar"))
+        self.assertContains(pantalla, 'data-resultado="registrada"')
+        self.assertContains(pantalla, "Juan Perez")
+        # Recargar es un GET: no registra nada ni vuelve a mostrar el resultado.
+        recargada = self.client.get(reverse("asistencia:fichar"))
+        self.assertNotContains(recargada, "data-resultado=")
         self.assertEqual(Marca.objects.count(), 1)
 
     def test_la_camara_recibe_json(self):
@@ -166,7 +181,7 @@ class PantallaDeFichajeTests(FichajeTestCase):
 
     def test_un_rechazo_se_muestra_sin_marca(self):
         self._login(self.cajero)
-        response = self.client.post(reverse("asistencia:fichar"), {"codigo": "cualquier cosa"})
+        response = self.client.post(reverse("asistencia:fichar"), {"codigo": "cualquier cosa"}, follow=True)
         self.assertContains(response, 'data-resultado="desconocido"')
         self.assertFalse(Marca.objects.exists())
 

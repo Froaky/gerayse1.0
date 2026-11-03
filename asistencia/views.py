@@ -429,6 +429,21 @@ def carnet_anular(request, empleado_id: int):
 
 
 SESION_LOCAL_FICHAJE = "asistencia_local_fichaje"
+# El resultado del ultimo codigo tipeado, para mostrarlo una sola vez despues del redirect.
+SESION_ULTIMO_FICHAJE = "asistencia_ultimo_fichaje"
+
+
+def _resultado_de_fichaje(fichaje) -> dict:
+    """Lo que muestra la pantalla de fichar (y devuelve la camara), en datos
+    simples para poder guardarlo en la sesion."""
+    return {
+        "resultado": fichaje.resultado,
+        "registrada": fichaje.registrada,
+        "mensaje": fichaje.mensaje,
+        "nombre": fichaje.empleado.nombre if fichaje.empleado else "",
+        "tipo": fichaje.marca.get_tipo_display() if fichaje.marca else "",
+        "hora": timezone.localtime(fichaje.marca.momento).strftime("%H:%M") if fichaje.marca else "",
+    }
 
 
 def _local_de_fichaje(request):
@@ -471,21 +486,21 @@ def fichar_view(request):
     if request.method == "POST" and locales is not None and local is None:
         # Quien administra y todavia no eligio local: no se cae a una sucursal
         # base que puede estar fuera del alcance.
-        fichaje = Fichaje(Resultado.SIN_LOCAL, "Elegí el local donde estás fichando.")
+        fichaje = _resultado_de_fichaje(Fichaje(Resultado.SIN_LOCAL, "Elegí el local donde estás fichando."))
     elif request.method == "POST":
-        fichaje = fichar(actor=request.user, codigo=request.POST.get("codigo", ""), sucursal=local)
+        fichaje = _resultado_de_fichaje(
+            fichar(actor=request.user, codigo=request.POST.get("codigo", ""), sucursal=local)
+        )
         if request.headers.get("Accept", "").startswith("application/json"):
             # Para la lectura con la camara: la pantalla no se recarga.
-            return JsonResponse(
-                {
-                    "resultado": fichaje.resultado,
-                    "registrada": fichaje.registrada,
-                    "mensaje": fichaje.mensaje,
-                    "nombre": fichaje.empleado.nombre if fichaje.empleado else "",
-                    "tipo": fichaje.marca.get_tipo_display() if fichaje.marca else "",
-                    "hora": timezone.localtime(fichaje.marca.momento).strftime("%H:%M") if fichaje.marca else "",
-                }
-            )
+            return JsonResponse(fichaje)
+        # Con el codigo tipeado se vuelve a abrir la pantalla con un GET: si despues
+        # la recargan (F5, o el navegador la reabre a la mañana siguiente), no se
+        # vuelve a mandar el ultimo codigo, que le registraba una marca a esa persona.
+        request.session[SESION_ULTIMO_FICHAJE] = fichaje
+        return redirect("asistencia:fichar")
+    else:
+        fichaje = request.session.pop(SESION_ULTIMO_FICHAJE, None)
     return render(
         request,
         "asistencia/fichar.html",

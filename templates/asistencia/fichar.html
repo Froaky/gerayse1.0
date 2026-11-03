@@ -64,11 +64,11 @@
   {% if fichaje %}
     <section class="card mt-16" id="resultado-fichaje" data-resultado="{{ fichaje.resultado }}"
       style="border-left: 6px solid {% if fichaje.registrada %}#1f6b45{% elif fichaje.resultado == 'repetida' %}#8a5f12{% else %}#a83232{% endif %};">
-      {% if fichaje.empleado %}
-        <h2 style="font-size: 1.8rem; margin: 0;">{{ fichaje.empleado.nombre }}</h2>
+      {% if fichaje.nombre %}
+        <h2 style="font-size: 1.8rem; margin: 0;">{{ fichaje.nombre }}</h2>
       {% endif %}
       {% if fichaje.registrada %}
-        <p style="font-size: 2.4rem; font-weight: 700; margin: 8px 0 0;">{{ fichaje.marca.get_tipo_display }} · {{ fichaje.marca.momento|time:"H:i" }}</p>
+        <p style="font-size: 2.4rem; font-weight: 700; margin: 8px 0 0;">{{ fichaje.tipo }} · {{ fichaje.hora }}</p>
       {% endif %}
       <p class="{% if fichaje.registrada %}muted{% else %}error{% endif %} mt-8" style="font-size: 1.1rem;">{{ fichaje.mensaje }}</p>
     </section>

@@ -21,17 +21,17 @@ class LectorUSBTests(FichajeTestCase):
         for sufijo in ("\r", "\n", "\r\n", "\t"):
             with self.subTest(sufijo=repr(sufijo)):
                 Marca.objects.all().delete()
-                response = self.client.post(reverse("asistencia:fichar"), {"codigo": self.empleado.codigo_carnet + sufijo})
+                response = self.client.post(reverse("asistencia:fichar"), {"codigo": self.empleado.codigo_carnet + sufijo}, follow=True)
                 self.assertContains(response, 'data-resultado="registrada"')
 
     def test_con_bloq_mayus_el_lector_escribe_en_minusculas_y_registra(self):
         self._login(self.cajero)
-        response = self.client.post(reverse("asistencia:fichar"), {"codigo": self.empleado.codigo_carnet.lower()})
+        response = self.client.post(reverse("asistencia:fichar"), {"codigo": self.empleado.codigo_carnet.lower()}, follow=True)
         self.assertContains(response, 'data-resultado="registrada"')
 
     def test_despues_de_cada_lectura_el_campo_queda_vacio_y_con_el_foco(self):
         self._login(self.cajero)
-        response = self.client.post(reverse("asistencia:fichar"), {"codigo": self.empleado.codigo_carnet})
+        response = self.client.post(reverse("asistencia:fichar"), {"codigo": self.empleado.codigo_carnet}, follow=True)
         campo = re.search(r'<input id="id_codigo"[^>]*>', response.content.decode())
         self.assertIsNotNone(campo)
         self.assertIn("autofocus", campo.group(0))
