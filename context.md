@@ -4,6 +4,30 @@ Last updated: 2026-10-21
 
 ## Current Session
 
+### Pedidos de Tais del 04/11: validaciones y PDF economico (2026-11-04)
+
+- Rama `fix/pedidos-tais-2026-11-04` desde `main`. Dos slices, un commit cada uno.
+- Validaciones: la cola ordena primero las pendientes y despues las rechazadas, cada grupo por
+  fecha (`box_validation_queue`, `Case/When` sobre `validacion_estado`). Las 11 rechazadas de
+  Vivre de junio/julio quedaban arriba y Tais tenia que bajar para validar las del dia. Solo
+  orden, sin datos.
+- PDF "Situacion economica": a pedido de Tais ("que en reportes solamente salga ventas,
+  egresos, resultado"; "en el gerayse que siga apareciendo asi porque me sirve") el PDF muestra
+  solo Ventas, Egresos y Resultado (margen como aclaracion), y la tabla pasa a "Egresos por
+  rubro" con una sola cifra y el %. Sin caja/tesoreria/deuda separados, sin objetivos ni
+  desvio, sin la palabra "deuda" (las facturas sin rubro se avisan como "facturas"). Nota:
+  Egresos = caja + tesoreria + facturas del periodo, pagadas o no; lo que falta pagar va en el
+  Desglose de deudas. La pantalla del dashboard NO cambia.
+- `build_economic_period_snapshot` suma la clave `expense_total` (caja + tesoreria + facturas
+  del periodo) y `economic_result = sales_total - expense_total`: mismo valor que antes, pero el
+  reporte lee la clave y no calcula plata.
+- Contexto de datos (lectura de produccion del 04/11, solo lectura; cifras fuera del repo):
+  siguen abiertas cientos de facturas del 24/09 al 26/10 que Tais dice pagadas; todas las de
+  octubre las cargan las cajeras desde la caja y el pago se carga despues en tesoreria. La
+  regularizacion NO se hizo: el comando paga en EFECTIVO desde la boveda (la de Vivre ya
+  coincide con el conteo de Tais) y el reemplazo automatico de REGULARIZACION por el pago real
+  (D3) sigue cancelado. Falta decidir el metodo con Mateo y Tais.
+
 ### Celular usable, S1 layout comun (2026-10-23)
 
 - Pedido de Mateo (captura de la ficha de usuario en staging): Gerayse se usa incomodo en el
