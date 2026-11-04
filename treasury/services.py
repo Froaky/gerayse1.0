@@ -3190,7 +3190,10 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
     items = _collapse_economic_items_by_group(rubro_items, sales_total=sales_total)
     items.sort(key=lambda item: (-item["total_expense"], item["rubro_nombre"].lower()))
 
-    economic_result = sales_total - cash_expense_total - treasury_expense_total - debt_period_total
+    # Egresos del periodo: lo que la lectura economica resta de las ventas. Las
+    # facturas cuentan por su importe, pagadas o no.
+    expense_total = cash_expense_total + treasury_expense_total + debt_period_total
+    economic_result = sales_total - expense_total
     margin_pct = (
         ((economic_result * Decimal("100.00")) / sales_total).quantize(Decimal("0.01"))
         if sales_total > 0
@@ -3221,6 +3224,7 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
         "treasury_expense_total": treasury_expense_total,
         "debt_period_total": debt_period_total,
         "debt_pending_total": debt_pending_total,
+        "expense_total": expense_total,
         "economic_result": economic_result,
         "margin_pct": margin_pct,
         "items": items,

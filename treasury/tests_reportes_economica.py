@@ -51,34 +51,23 @@ from users.models import Role
 
 User = get_user_model()
 
-# Rotulo del KPI -> clave del snapshot.
-KPIS_BASE = [
+# Rotulo del KPI -> clave del snapshot. Desde el 04/11/2026 el PDF muestra solo
+# estas tres (pedido de Tais); el detalle sigue en la pantalla.
+KPIS = [
     ("Ventas", "sales_total"),
-    ("Gasto de caja", "cash_expense_total"),
-    ("Gasto de tesorería", "treasury_expense_total"),
-    ("Deuda del período", "debt_period_total"),
-    ("Resultado económico", "economic_result"),
+    ("Egresos", "expense_total"),
+    ("Resultado", "economic_result"),
 ]
-KPIS_OBJETIVO = [
-    ("Objetivo", "objective_total"),
-    ("Real comparado", "objective_scope_real_total"),
-    ("Desvío vs objetivo", "deviation_total"),
-]
-NOTA_PORCENTAJE = "El % de cada rubro es sobre el total de ventas del período."
-NOTA_OBJETIVOS_GENERAL = (
-    "En el reporte general solo se comparan objetivos globales. "
-    "Los objetivos propios de cada sucursal se aplican en el reporte de esa sucursal."
+NOTA_EGRESOS = (
+    "Egresos = gastos de caja + gastos de tesorería + facturas de proveedores del período, "
+    "pagadas o no. Lo que falta pagar está en el reporte Desglose de deudas."
 )
+NOTA_PORCENTAJE = "El % de cada rubro es sobre el total de ventas del período."
 NOTA_SOLO_VENTAS = (
-    "No se listan los rubros que en el período solo tuvieron ventas, sin gasto ni objetivo; "
+    "No se listan los rubros que en el período solo tuvieron ventas, sin egresos; "
     "esas ventas sí cuentan en el total de ventas."
 )
-
-
-def _con_gasto_u_objetivo(item):
-    return bool(
-        item["cash_expense_total"] or item["treasury_expense_total"] or item["debt_total"] or item["has_objective"]
-    )
+TABLA = "Egresos por rubro"
 
 
 class SituacionEconomicaFixtureMixin:
@@ -283,29 +272,28 @@ class SituacionEconomicaFixtureMixin:
 
 class SituacionEconomicaKpiTests(SituacionEconomicaFixtureMixin, TestCase):
     def _assert_kpis_del_snapshot(self, doc, snapshot):
-        for label, clave in KPIS_BASE:
+        self.assertEqual([kpi.label for kpi in doc.kpis], [label for label, _ in KPIS])
+        for label, clave in KPIS:
             self.assertEqual(doc.kpi(label).value, snapshot[clave], label)
-        self.assertEqual(doc.kpi("Margen").value, Pct(snapshot["margin_pct"]))
+        # Egresos es exactamente lo que el resultado le resta a las ventas.
         self.assertEqual(
-            doc.kpi("Deuda del período").hint,
-            "De eso falta pagar " + format_value(snapshot["debt_pending_total"]),
+            snapshot["expense_total"],
+            snapshot["cash_expense_total"] + snapshot["treasury_expense_total"] + snapshot["debt_period_total"],
         )
+        self.assertEqual(snapshot["economic_result"], snapshot["sales_total"] - snapshot["expense_total"])
+        margen = "Margen " + format_value(Pct(snapshot["margin_pct"])) if snapshot["sales_total"] > 0 else ""
+        self.assertEqual(doc.kpi("Resultado").hint, margen)
 
-    def test_kpis_del_general_son_las_claves_del_snapshot(self):
+    def test_kpis_del_general_son_ventas_egresos_y_resultado(self):
         doc, snapshot = self._leer()
 
         self._assert_kpis_del_snapshot(doc, snapshot)
-        self.assertEqual(
-            [kpi.label for kpi in doc.kpis],
-            ["Ventas", "Gasto de caja", "Gasto de tesorería", "Deuda del período", "Resultado económico", "Margen"],
-        )
         # El escenario suma las dos sucursales: si no, el test no prueba nada.
         self.assertEqual(doc.kpi("Ventas").value, Decimal("1800.00"))
-        self.assertEqual(doc.kpi("Gasto de caja").value, Decimal("190.00"))
-        self.assertEqual(doc.kpi("Gasto de tesorería").value, Decimal("120.00"))
-        self.assertEqual(doc.kpi("Deuda del período").value, Decimal("200.00"))
-        self.assertEqual(doc.kpi("Deuda del período").hint, "De eso falta pagar $ 150,00")
-        self.assertEqual(doc.kpi("Resultado económico").value, Decimal("1290.00"))
+        # Caja 190 + tesoreria 120 + factura de 200 (de la que se pagaron 50).
+        self.assertEqual(doc.kpi("Egresos").value, Decimal("510.00"))
+        self.assertEqual(doc.kpi("Resultado").value, Decimal("1290.00"))
+        self.assertEqual(doc.kpi("Resultado").hint, "Margen 71,67 %")
 
     def test_kpis_de_una_sucursal_son_las_claves_de_su_snapshot(self):
         general, _ = self._leer()
@@ -313,14 +301,13 @@ class SituacionEconomicaKpiTests(SituacionEconomicaFixtureMixin, TestCase):
 
         self._assert_kpis_del_snapshot(doc, snapshot)
         self.assertEqual(doc.kpi("Ventas").value, Decimal("1500.00"))
-        self.assertEqual(doc.kpi("Gasto de caja").value, Decimal("150.00"))
-        self.assertNotEqual(doc.kpi("Ventas").value, general.kpi("Ventas").value)
-        self.assertNotEqual(doc.kpi("Resultado económico").value, general.kpi("Resultado económico").value)
+        self.assertEqual(doc.kpi("Egresos").value, Decimal("470.00"))
+        self.assertNotEqual(doc.kpi("Resultado").value, general.kpi("Resultado").value)
 
         norte, snapshot_norte = self._leer(self.norte)
         self._assert_kpis_del_snapshot(norte, snapshot_norte)
         self.assertEqual(norte.kpi("Ventas").value, Decimal("300.00"))
-        self.assertEqual(norte.kpi("Deuda del período").value, Decimal("0.00"))
+        self.assertEqual(norte.kpi("Egresos").value, Decimal("40.00"))
 
     def test_encabezado_sale_del_alcance(self):
         doc, _ = self._leer(self.centro)
@@ -333,42 +320,21 @@ class SituacionEconomicaKpiTests(SituacionEconomicaFixtureMixin, TestCase):
         self.assertEqual(doc.periodo_label, "Período: 01/09/2026 al 30/09/2026")
         self.assertEqual(doc.emitido_label, "13/10/2026 11:40")
 
-    def test_sin_objetivo_no_aparecen_los_kpis_de_objetivo(self):
-        doc, snapshot = self._leer()
-
-        self.assertEqual(snapshot["objective_items_count"], 0)
-        for label, _ in KPIS_OBJETIVO:
-            with self.assertRaises(KeyError):
-                doc.kpi(label)
-
-    def test_con_objetivo_aparecen_los_kpis_de_objetivo(self):
+    def test_no_muestra_deuda_ni_objetivos(self):
+        # Pedido de Tais: en el PDF solo ventas, egresos y resultado. Con un
+        # objetivo cargado y una factura con saldo, igual no aparecen.
         self._objetivo_almacen()
-
-        for sucursal in (None, self.centro):
-            doc, snapshot = self._leer(sucursal)
-            self.assertEqual(snapshot["objective_items_count"], 1)
-            self._assert_kpis_del_snapshot(doc, snapshot)
-            for label, clave in KPIS_OBJETIVO:
-                self.assertEqual(doc.kpi(label).value, snapshot[clave], label)
-            self.assertEqual(doc.kpi("Objetivo").hint, "1 rubro con objetivo")
-            self.assertEqual([kpi.label for kpi in doc.kpis][6:], [label for label, _ in KPIS_OBJETIVO])
-
-        # General: 10 % de las ventas de Almacen de las dos sucursales (1300).
-        general, _ = self._leer()
-        self.assertEqual(general.kpi("Objetivo").value, Decimal("130.00"))
-        self.assertEqual(general.kpi("Real comparado").value, Decimal("80.00"))
-        self.assertEqual(general.kpi("Desvío vs objetivo").value, Decimal("-50.00"))
-
-    def test_con_varios_objetivos_el_hint_va_en_plural(self):
-        self._objetivo_almacen()
-        self._objetivo(self.personal)
 
         doc, snapshot = self._leer()
 
-        self.assertEqual(snapshot["objective_items_count"], 2)
-        self.assertEqual(doc.kpi("Objetivo").hint, "2 rubros con objetivo")
-        for label, clave in KPIS_OBJETIVO:
-            self.assertEqual(doc.kpi(label).value, snapshot[clave], label)
+        self.assertEqual(snapshot["objective_items_count"], 1)
+        self.assertGreater(snapshot["debt_pending_total"], Decimal("0.00"))
+        self.assertEqual([kpi.label for kpi in doc.kpis], ["Ventas", "Egresos", "Resultado"])
+        textos = [kpi.label + " " + kpi.hint for kpi in doc.kpis] + doc.notes + doc.table(TABLA).columns
+        for texto in textos:
+            self.assertNotIn("deuda", texto.lower().replace("desglose de deudas", ""), texto)
+            self.assertNotIn("objetivo", texto.lower(), texto)
+            self.assertNotIn("desvío", texto.lower(), texto)
 
     def test_sin_ventas_el_margen_y_los_porcentajes_no_aplican(self):
         sur = Sucursal.objects.create(
@@ -378,60 +344,42 @@ class SituacionEconomicaKpiTests(SituacionEconomicaFixtureMixin, TestCase):
 
         doc, snapshot = self._leer(sur)
 
-        # El snapshot devuelve 0,00 % sin ventas; el reporte muestra que no aplica.
+        # El snapshot devuelve 0,00 % sin ventas; el reporte no muestra margen.
         self.assertEqual(snapshot["sales_total"], Decimal("0.00"))
-        self.assertEqual(snapshot["margin_pct"], Decimal("0.00"))
-        self.assertEqual(doc.kpi("Margen").value, Pct(None))
-        for label, clave in KPIS_BASE:
-            self.assertEqual(doc.kpi(label).value, snapshot[clave], label)
-        self.assertEqual(doc.kpi("Resultado económico").value, Decimal("-40.00"))
-        self.assertEqual(
-            doc.table("Gasto por rubro").rows,
-            [
-                [
-                    "Limpieza",
-                    Decimal("40.00"),
-                    Decimal("0.00"),
-                    Decimal("0.00"),
-                    Decimal("40.00"),
-                    Pct(None),
-                    "Sin objetivo",
-                ]
-            ],
-        )
+        self._assert_kpis_del_snapshot(doc, snapshot)
+        self.assertEqual(doc.kpi("Resultado").value, Decimal("-40.00"))
+        self.assertEqual(doc.kpi("Resultado").hint, "")
+        self.assertEqual(doc.table(TABLA).rows, [["Limpieza", Decimal("40.00"), Pct(None)]])
 
 
 class SituacionEconomicaTablaTests(SituacionEconomicaFixtureMixin, TestCase):
     def _fila(self, doc, nombre):
-        return next(row for row in doc.table("Gasto por rubro").rows if row[0] == nombre)
+        return next(row for row in doc.table(TABLA).rows if row[0] == nombre)
 
     def test_filas_siguen_los_items_del_snapshot(self):
         for sucursal in (None, self.centro, self.norte):
             doc, snapshot = self._leer(sucursal)
-            tabla = doc.table("Gasto por rubro")
-            items = [item for item in snapshot["items"] if _con_gasto_u_objetivo(item)]
-            self.assertEqual(tabla.columns, ["Rubro", "Caja", "Tesorería", "Deuda", "Total", "% s/ventas", "Desvío"])
-            self.assertEqual(tabla.numeric_cols, frozenset({1, 2, 3, 4, 5, 6}))
+            tabla = doc.table(TABLA)
+            items = [item for item in snapshot["items"] if item["total_expense"]]
+            self.assertEqual(tabla.columns, ["Rubro", "Egresos", "% s/ventas"])
+            self.assertEqual(tabla.numeric_cols, frozenset({1, 2}))
             self.assertEqual(len(tabla.rows), len(items))
             for row, item in zip(tabla.rows, items):
                 self.assertTrue(row[0].startswith(item["rubro_nombre"]))
-                self.assertEqual(row[1], item["cash_expense_total"])
-                self.assertEqual(row[2], item["treasury_expense_total"])
-                self.assertEqual(row[3], item["debt_total"])
-                self.assertEqual(row[4], item["total_expense"])
-                self.assertEqual(row[5], Pct(item["expense_ratio_over_sales"]))
+                self.assertEqual(row[1], item["total_expense"])
+                self.assertEqual(row[2], Pct(item["expense_ratio_over_sales"]))
 
-        # En el general todos los items tienen gasto: no se omite ninguno.
+        # En el general todos los items tienen egresos: no se omite ninguno.
         general, snapshot = self._leer()
-        self.assertEqual(len(general.table("Gasto por rubro").rows), len(snapshot["items"]))
+        self.assertEqual(len(general.table(TABLA).rows), len(snapshot["items"]))
         self.assertEqual(
-            [row[0] for row in general.table("Gasto por rubro").rows],
+            [row[0] for row in general.table(TABLA).rows],
             ["Servicios", "Personal", "MATERIA PRIMA · 2 rubros", "Limpieza"],
         )
-        self.assertEqual(
-            self._fila(general, "Personal")[1:5],
-            [Decimal("50.00"), Decimal("120.00"), Decimal("0.00"), Decimal("170.00")],
-        )
+        # Personal: caja 50 + tesoreria 120 en una sola cifra.
+        self.assertEqual(self._fila(general, "Personal")[1], Decimal("170.00"))
+        # Servicios: la factura cuenta entera aunque tenga saldo.
+        self.assertEqual(self._fila(general, "Servicios")[1], Decimal("200.00"))
 
     def test_fila_de_grupo_muestra_la_cantidad_de_rubros(self):
         doc, snapshot = self._leer()
@@ -439,39 +387,8 @@ class SituacionEconomicaTablaTests(SituacionEconomicaFixtureMixin, TestCase):
         grupo = next(item for item in snapshot["items"] if item.get("grupo"))
         fila = self._fila(doc, "MATERIA PRIMA · 2 rubros")
         self.assertEqual(grupo["children_count"], 2)
-        self.assertEqual(fila[4], grupo["total_expense"])
-        self.assertEqual(fila[4], Decimal("100.00"))
-
-    def test_sin_objetivo_cada_fila_lo_dice(self):
-        doc, _ = self._leer()
-
-        self.assertEqual({row[6] for row in doc.table("Gasto por rubro").rows}, {"Sin objetivo"})
-
-    def test_con_objetivo_la_fila_muestra_el_desvio_del_snapshot(self):
-        self._objetivo_almacen()
-
-        doc, snapshot = self._leer()
-        tabla = doc.table("Gasto por rubro")
-        for row, item in zip(tabla.rows, snapshot["items"]):
-            esperado = item["deviation_amount"] if item["has_objective"] else "Sin objetivo"
-            self.assertEqual(row[6], esperado)
-        # El grupo compara solo Almacen: 80 de gasto contra 130 de objetivo.
-        self.assertEqual(self._fila(doc, "MATERIA PRIMA · 2 rubros")[6], Decimal("-50.00"))
-        self.assertEqual(self._fila(doc, "Personal")[6], "Sin objetivo")
-
-    def test_rubro_suelto_con_objetivo_muestra_su_propio_desvio(self):
-        self._objetivo_almacen()
-        self._objetivo(self.personal)
-
-        doc, snapshot = self._leer()
-
-        personal = next(item for item in snapshot["items"] if item["rubro_nombre"] == "Personal")
-        self.assertIsNone(personal.get("grupo"))
-        self.assertEqual(self._fila(doc, "Personal")[6], personal["deviation_amount"])
-        # 170 de gasto contra el 10 % de 500 de ventas.
-        self.assertEqual(self._fila(doc, "Personal")[6], Decimal("120.00"))
-        # La cabecera suma Almacen (-50) y Personal (120): la celda no es el total.
-        self.assertEqual(doc.kpi("Desvío vs objetivo").value, Decimal("70.00"))
+        self.assertEqual(fila[1], grupo["total_expense"])
+        self.assertEqual(fila[1], Decimal("100.00"))
 
     def test_filas_solo_de_ventas_no_se_listan(self):
         # Las ventas con tarjeta no tienen rubro: el snapshot arma "Sin rubro" sin gasto.
@@ -482,7 +399,7 @@ class SituacionEconomicaTablaTests(SituacionEconomicaFixtureMixin, TestCase):
         sin_rubro = next(item for item in snapshot["items"] if item["rubro_nombre"] == "Sin rubro")
         self.assertEqual(sin_rubro["sales_total"], Decimal("900.00"))
         self.assertEqual(sin_rubro["total_expense"], Decimal("0.00"))
-        tabla = doc.table("Gasto por rubro")
+        tabla = doc.table(TABLA)
         self.assertEqual(len(tabla.rows), len(snapshot["items"]) - 1)
         self.assertEqual(
             [row[0] for row in tabla.rows],
@@ -493,31 +410,25 @@ class SituacionEconomicaTablaTests(SituacionEconomicaFixtureMixin, TestCase):
         self.assertEqual(doc.kpi("Ventas").value, snapshot["sales_total"])
         self.assertEqual(doc.kpi("Ventas").value, Decimal("2700.00"))
 
-    def test_rubro_solo_de_ventas_se_lista_si_tiene_objetivo(self):
-        # Norte: Almacen vende 300 y no tiene gasto.
-        sin_objetivo, _ = self._leer(self.norte)
-        self.assertEqual([row[0] for row in sin_objetivo.table("Gasto por rubro").rows], ["Limpieza"])
-        self.assertIn(NOTA_SOLO_VENTAS, sin_objetivo.notes)
-
+    def test_rubro_con_objetivo_y_sin_egresos_no_se_lista(self):
+        # Norte: Almacen vende 300 y no tiene gasto. Sin columna de desvio, el
+        # objetivo no alcanza para listarlo.
         self._objetivo_almacen()
-        doc, snapshot = self._leer(self.norte)
 
-        grupo = next(item for item in snapshot["items"] if item.get("grupo"))
-        fila = self._fila(doc, "MATERIA PRIMA · 1 rubro")
-        self.assertEqual(fila[4], Decimal("0.00"))
-        self.assertEqual(fila[6], grupo["deviation_amount"])
-        self.assertEqual(fila[6], Decimal("-30.00"))
-        self.assertEqual(len(doc.table("Gasto por rubro").rows), len(snapshot["items"]))
-        self.assertNotIn(NOTA_SOLO_VENTAS, doc.notes)
+        doc, _ = self._leer(self.norte)
+
+        self.assertEqual([row[0] for row in doc.table(TABLA).rows], ["Limpieza"])
+        self.assertIn(NOTA_SOLO_VENTAS, doc.notes)
 
     def test_periodo_sin_datos_deja_la_tabla_vacia(self):
         doc, snapshot = self._leer(desde=date(2026, 8, 1), hasta=date(2026, 8, 31))
 
-        tabla = doc.table("Gasto por rubro")
+        tabla = doc.table(TABLA)
         self.assertEqual(snapshot["items"], [])
         self.assertEqual(tabla.rows, [])
-        self.assertEqual(tabla.empty_text, "No hay gastos imputados a rubros en el período.")
+        self.assertEqual(tabla.empty_text, "No hay egresos imputados a rubros en el período.")
         self.assertEqual(doc.kpi("Ventas").value, Decimal("0.00"))
+        self.assertEqual(doc.kpi("Egresos").value, Decimal("0.00"))
 
 
 class SituacionEconomicaNotasTests(SituacionEconomicaFixtureMixin, TestCase):
@@ -525,11 +436,10 @@ class SituacionEconomicaNotasTests(SituacionEconomicaFixtureMixin, TestCase):
         general, _ = self._leer()
         sucursal, _ = self._leer(self.centro)
 
-        self.assertEqual(general.notes, [NOTA_PORCENTAJE, NOTA_OBJETIVOS_GENERAL])
-        # En una sucursal se aplican sus objetivos: la aclaracion no corresponde.
-        self.assertEqual(sucursal.notes, [NOTA_PORCENTAJE])
+        self.assertEqual(general.notes, [NOTA_EGRESOS, NOTA_PORCENTAJE])
+        self.assertEqual(sucursal.notes, [NOTA_EGRESOS, NOTA_PORCENTAJE])
 
-    def test_egresos_y_deudas_sin_imputar_se_avisan(self):
+    def test_egresos_y_facturas_sin_imputar_se_avisan(self):
         self._egreso_sin_imputar(Decimal("70.00"))
         self._deuda_legacy(Decimal("250.00"))
 
@@ -539,42 +449,18 @@ class SituacionEconomicaNotasTests(SituacionEconomicaFixtureMixin, TestCase):
         self.assertEqual(snapshot["unmapped_payables_count"], 1)
         self.assertIn(
             "1 egreso de tesorería sin imputar (sucursal, rubro o período) por $ 70,00 "
-            "no suma en los rubros ni en el resultado económico.",
+            "no suma en los egresos ni en el resultado.",
             doc.notes,
         )
         self.assertIn(
-            "1 deuda del período sin rubro operativo por $ 250,00 no suma en los rubros ni en el resultado económico.",
+            "1 factura del período sin rubro operativo por $ 250,00 no suma en los egresos ni en el resultado.",
             doc.notes,
         )
         # Lo sin imputar no entra en los KPIs: siguen siendo las claves del snapshot.
-        self.assertEqual(doc.kpi("Gasto de tesorería").value, snapshot["treasury_expense_total"])
-        self.assertEqual(doc.kpi("Deuda del período").value, Decimal("200.00"))
+        self.assertEqual(doc.kpi("Egresos").value, snapshot["expense_total"])
+        self.assertEqual(doc.kpi("Egresos").value, Decimal("510.00"))
 
-    def test_grupo_con_objetivo_parcial_lo_aclara(self):
-        self._objetivo_almacen()
-
-        doc, _ = self._leer()
-
-        self.assertIn(
-            "MATERIA PRIMA: el desvío compara 1 de 2 rubros del grupo; los demás no tienen objetivo cargado.",
-            doc.notes,
-        )
-
-    def test_grupo_con_objetivo_en_todos_sus_rubros_no_lleva_aclaracion(self):
-        # Verdura necesita ventas para que su objetivo aplique.
-        self._venta(self.caja_centro, Decimal("200.00"), self.verdura)
-        self._objetivo_almacen()
-        self._objetivo(self.verdura)
-
-        doc, snapshot = self._leer()
-
-        grupo = next(item for item in snapshot["items"] if item.get("grupo"))
-        fila = next(row for row in doc.table("Gasto por rubro").rows if row[0] == "MATERIA PRIMA · 2 rubros")
-        self.assertTrue(grupo["objective_covers_all_children"])
-        self.assertEqual(fila[6], grupo["deviation_amount"])
-        self.assertEqual([nota for nota in doc.notes if nota.startswith("MATERIA PRIMA:")], [])
-
-    def test_egresos_y_deudas_sin_imputar_en_plural(self):
+    def test_egresos_y_facturas_sin_imputar_en_plural(self):
         self._egreso_sin_imputar(Decimal("70.00"))
         self._egreso_sin_imputar(Decimal("30.00"))
         self._deuda_legacy(Decimal("250.00"))
@@ -586,29 +472,21 @@ class SituacionEconomicaNotasTests(SituacionEconomicaFixtureMixin, TestCase):
         self.assertEqual(snapshot["unmapped_payables_count"], 2)
         self.assertIn(
             "2 egresos de tesorería sin imputar (sucursal, rubro o período) por $ 100,00 "
-            "no suman en los rubros ni en el resultado económico.",
+            "no suman en los egresos ni en el resultado.",
             doc.notes,
         )
         self.assertIn(
-            "2 deudas del período sin rubro operativo por $ 400,00 "
-            "no suman en los rubros ni en el resultado económico.",
+            "2 facturas del período sin rubro operativo por $ 400,00 "
+            "no suman en los egresos ni en el resultado.",
             doc.notes,
         )
 
     def test_empresa_de_una_sola_sucursal_se_lee_por_esa_sucursal(self):
         # Con una sola sucursal (y ninguna cerrada) el form solo ofrece el general,
-        # rotulado con ella. Se lee por la sucursal para que aplique sus objetivos
-        # propios: en el general no se comparan y no hay otro reporte donde verlos.
+        # rotulado con ella. Se lee por la sucursal, igual que el dashboard.
         caja = self._caja(self.vivre)
         self._venta(caja, Decimal("400.00"), self.almacen)
         self._gasto(caja, Decimal("60.00"), self.almacen)
-        ObjetivoRubroEconomico.objects.create(
-            rubro_operativo=self.almacen,
-            sucursal=self.vivre,
-            porcentaje_objetivo=Decimal("10.00"),
-            vigencia_desde=date(2026, 1, 1),
-            creado_por=self.admin,
-        )
 
         scope = self._scope(empresa=self.otra_empresa, sucursal_unica=self.vivre)
         doc = build_situacion_economica(scope)
@@ -617,11 +495,10 @@ class SituacionEconomicaNotasTests(SituacionEconomicaFixtureMixin, TestCase):
         )
 
         self.assertEqual(doc.alcance_label, "Sucursal: Vivre (única de la empresa)")
-        self.assertTrue(por_sucursal["branch_objectives_enabled"])
         self.assertEqual(doc.kpi("Ventas").value, por_sucursal["sales_total"])
-        self.assertEqual(doc.kpi("Objetivo").value, por_sucursal["objective_total"])
-        self.assertEqual(doc.kpi("Objetivo").value, Decimal("40.00"))
-        self.assertNotIn(NOTA_OBJETIVOS_GENERAL, doc.notes)
+        self.assertEqual(doc.kpi("Egresos").value, por_sucursal["expense_total"])
+        self.assertEqual(doc.kpi("Egresos").value, Decimal("60.00"))
+        self.assertEqual(doc.kpi("Resultado").value, Decimal("340.00"))
 
 
 class SituacionEconomicaAlcanceTests(SituacionEconomicaFixtureMixin, TestCase):

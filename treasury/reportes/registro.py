@@ -25,7 +25,7 @@ REPORTES = (
     ReporteDef(
         slug=economica.SLUG,
         titulo=economica.TITULO,
-        descripcion="Ventas, gasto por rubro con su porcentaje sobre las ventas, resultado económico y margen.",
+        descripcion="Ventas, egresos y resultado del período, con los egresos por rubro y su porcentaje sobre las ventas.",
         usa_periodo=True,
         builder=economica.build_situacion_economica,
         nombre_archivo=economica.nombre_archivo,
