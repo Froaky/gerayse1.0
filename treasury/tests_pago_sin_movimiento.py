@@ -694,9 +694,11 @@ class PantallasTests(PagoSinMovimientoBase):
         self.assertEqual(self._field(response, "Cancelado sin movimiento"), "$ 1.000,00")
         self.assertEqual(self._field(response, "Estado"), "Pagada (sin movimiento)")
         self.assertEqual(response.context["section_label"], "Pagada (sin movimiento)")
-        # PAGADA: sin botones de pago, edicion ni anulacion.
+        # D3: regularizada se puede pagar con plata real, que la reemplaza;
+        # no se edita ni se anula.
         self.assertEqual(
-            [action["label"] for action in response.context["actions"]], []
+            [action["label"] for action in response.context["actions"]],
+            ["Transferencia", "Cheque", "ECHEQ", "Efectivo"],
         )
         self.assertContains(response, "Sin movimiento de fondos")
 
@@ -809,10 +811,11 @@ class AdminProveedorInternoTests(TestCase):
 
 
 class PagoRealSobreDeudaCanceladaSinMovimientoTests(PagoSinMovimientoBase):
-    """US-3.20, slice 4 reducido: la cancelacion sin movimiento NO se reemplaza
-    sola por el pago real (D3 quedo cancelado). Un pago con plata sobre una deuda
-    ya saldada asi tiene que cortarse con un error que diga por que y que hacer,
-    en todos los caminos, y sin dejar nada a medias."""
+    """US-3.20, slice 4 reducido: la cancelacion INTERNO no se reemplaza sola por
+    el pago real. Un pago con plata sobre una deuda ya saldada asi tiene que
+    cortarse con un error que diga por que y que hacer, en todos los caminos, y
+    sin dejar nada a medias. La REGULARIZACION si se reemplaza (D3, retomado el
+    04/11/2026, ver tests_reemplazo_regularizacion)."""
 
     def setUp(self):
         super().setUp()
@@ -890,21 +893,24 @@ class PagoRealSobreDeudaCanceladaSinMovimientoTests(PagoSinMovimientoBase):
                 self._assert_rechazo_claro(error)
                 self.assertEqual(self._foto(), antes)
 
-    def test_una_regularizacion_tambien_se_explica(self):
+    def test_una_regularizacion_no_frena_el_pago_real(self):
+        """D3 (04/11/2026): la regularizacion si se reemplaza sola. El detalle
+        esta en tests_reemplazo_regularizacion."""
         deuda = self._payable("500.00", concepto="Regularizada")
         self._cancelar(deuda)
         deuda.refresh_from_db()
 
-        with self.assertRaises(ValidationError) as error:
-            register_transfer_payment(
-                payable=deuda,
-                bank_account=self.bank_account,
-                fecha_pago=CORTE,
-                monto=Decimal("500.00"),
-                actor=self.admin,
-            )
+        pago = register_transfer_payment(
+            payable=deuda,
+            bank_account=self.bank_account,
+            fecha_pago=CORTE,
+            monto=Decimal("500.00"),
+            actor=self.admin,
+        )
 
-        self._assert_rechazo_claro(error, detalle="regularizacion")
+        self.assertTrue(pago.mueve_fondos)
+        deuda.refresh_from_db()
+        self.assertEqual(deuda.estado, CuentaPorPagar.Estado.PAGADA)
 
     def test_la_deuda_leida_antes_de_cancelarla_igual_se_rechaza(self):
         """Pantalla abierta o reparto armado antes de la cancelacion: la deuda en

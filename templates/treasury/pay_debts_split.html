@@ -103,8 +103,15 @@
                 <div class="muted mt-8">
                   Vence {{ fila.payable.fecha_vencimiento|date:"d/m/Y" }} ·
                   Total {{ fila.payable.importe_total|money }} ·
-                  Pendiente {{ fila.payable.saldo_pendiente|money }}
+                  {% if fila.payable.es_regularizada %}
+                    Regularizada {{ fila.payable.saldo_a_pagar|money }}
+                  {% else %}
+                    Pendiente {{ fila.payable.saldo_a_pagar|money }}
+                  {% endif %}
                 </div>
+                {% if fila.payable.es_regularizada %}
+                  <div class="muted mt-8">Figura pagada fuera de Gerayse. Si le asignás esta transferencia, reemplaza a la regularización.</div>
+                {% endif %}
               </div>
               <div class="stack" style="gap:6px; min-width:220px;">
                 <label class="field" style="display:flex; align-items:center; gap:8px;">

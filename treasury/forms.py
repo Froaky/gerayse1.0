@@ -2,7 +2,8 @@ import uuid
 from decimal import Decimal
 
 from django import forms
-from django.db.models import Q
+from django.db.models import Case, DecimalField, ExpressionWrapper, F, IntegerField, OuterRef, Q, Subquery, Sum, Value, When
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from .models import (
@@ -598,20 +599,59 @@ class PayableChoiceField(forms.ModelChoiceField):
         etiqueta = f"{obj.proveedor} - {obj.concepto}"
         if obj.referencia_comprobante:
             etiqueta = f"{etiqueta} ({obj.referencia_comprobante})"
-        return f"{etiqueta} - saldo ${obj.saldo_pendiente}"
+        if getattr(obj, "es_regularizada", 0):
+            return f"{etiqueta} - regularizada ${saldo_a_pagar(obj)}"
+        return f"{etiqueta} - saldo ${saldo_a_pagar(obj)}"
+
+
+def saldo_a_pagar(payable) -> Decimal:
+    """Hasta cuanto se le puede pagar: la anotacion de open_payables_queryset o,
+    si la deuda no vino de ahi, su saldo pendiente. Con dos decimales: SQLite
+    devuelve la suma anotada sin escala."""
+    valor = getattr(payable, "saldo_a_pagar", payable.saldo_pendiente)
+    return Decimal(valor).quantize(Decimal("0.01"))
 
 
 def open_payables_queryset(empresa_ids=None):
-    """Deudas que todavia se deben (PENDIENTE/PARCIAL), acotadas a las empresas
-    seleccionadas. Se incluyen las deudas legacy sin sucursal, igual que el
+    """Deudas que se pueden pagar, acotadas a las empresas seleccionadas.
+
+    Las que todavia se deben (PENDIENTE/PARCIAL) y, despues de ellas, las
+    regularizadas (PAGADA con REGULARIZACION viva, pagadas fuera de Gerayse):
+    un pago real las reemplaza (D3, US-3.20), asi tesoreria puede atar a cada
+    una su transferencia o su pago en efectivo cuando lo carga.
+    Cada deuda trae `monto_regularizado`, `saldo_a_pagar` (saldo + regularizado)
+    y `es_regularizada`. Se incluyen las deudas legacy sin sucursal, igual que el
     listado de cuentas por pagar. empresa_ids=None significa 'sin filtro';
     una lista vacia significa 'ninguna empresa seleccionada' -> nada."""
+    dinero = DecimalField(max_digits=14, decimal_places=2)
+    regularizado = (
+        PagoTesoreria.objects.filter(
+            cuenta_por_pagar=OuterRef("pk"),
+            estado=PagoTesoreria.Estado.REGISTRADO,
+            medio_pago=PagoTesoreria.MedioPago.REGULARIZACION,
+        )
+        .values("cuenta_por_pagar")
+        .annotate(total=Sum("monto"))
+        .values("total")
+    )
     queryset = (
-        CuentaPorPagar.objects.filter(
-            estado__in=[CuentaPorPagar.Estado.PENDIENTE, CuentaPorPagar.Estado.PARCIAL]
+        CuentaPorPagar.objects.annotate(
+            monto_regularizado=Coalesce(Subquery(regularizado, output_field=dinero), Value(Decimal("0.00")), output_field=dinero)
+        )
+        .annotate(
+            saldo_a_pagar=ExpressionWrapper(F("saldo_pendiente") + F("monto_regularizado"), output_field=dinero),
+            es_regularizada=Case(
+                When(estado=CuentaPorPagar.Estado.PAGADA, then=Value(1)),
+                default=Value(0),
+                output_field=IntegerField(),
+            ),
+        )
+        .filter(
+            Q(estado__in=[CuentaPorPagar.Estado.PENDIENTE, CuentaPorPagar.Estado.PARCIAL])
+            | Q(estado=CuentaPorPagar.Estado.PAGADA, monto_regularizado__gt=0)
         )
         .select_related("proveedor", "categoria", "sucursal", "caja_origen")
-        .order_by("fecha_vencimiento", "proveedor__razon_social")
+        .order_by("es_regularizada", "fecha_vencimiento", "proveedor__razon_social")
     )
     if empresa_ids is not None:
         if not empresa_ids:
@@ -1383,8 +1423,8 @@ class SupplierPaymentBatchForm(AltaIdempotenteMixin, TreasuryStyledFormMixin, fo
                 max_digits=14,
                 decimal_places=2,
                 min_value=Decimal("0.01"),
-                max_value=payable.saldo_pendiente,
-                initial=payable.saldo_pendiente,
+                max_value=saldo_a_pagar(payable),
+                initial=saldo_a_pagar(payable),
                 label="Importe a pagar",
                 widget=forms.NumberInput(attrs={"step": "0.01", "class": "input"}),
             )
@@ -1411,7 +1451,7 @@ class SupplierPaymentBatchForm(AltaIdempotenteMixin, TreasuryStyledFormMixin, fo
             if not self.cleaned_data.get(f"pagar_{payable.pk}"):
                 continue
             monto = self.cleaned_data.get(f"monto_{payable.pk}")
-            lineas.append((payable, monto if monto else payable.saldo_pendiente))
+            lineas.append((payable, monto if monto else saldo_a_pagar(payable)))
         return lineas
 
     @property
@@ -1449,11 +1489,11 @@ class SupplierPaymentBatchForm(AltaIdempotenteMixin, TreasuryStyledFormMixin, fo
             campo = f"monto_{payable.pk}"
             monto = cleaned_data.get(campo)
             if monto is None:
-                cleaned_data[campo] = payable.saldo_pendiente
-            elif monto > payable.saldo_pendiente:
+                cleaned_data[campo] = saldo_a_pagar(payable)
+            elif monto > saldo_a_pagar(payable):
                 self.add_error(
                     campo,
-                    f"No podés pagar más que el saldo pendiente (${payable.saldo_pendiente}).",
+                    f"No podés pagar más que el saldo pendiente (${saldo_a_pagar(payable)}).",
                 )
 
         if cleaned_data.get("medio_pago") == PagoTesoreria.MedioPago.TRANSFERENCIA and not cleaned_data.get(

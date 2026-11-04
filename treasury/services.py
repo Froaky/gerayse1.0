@@ -736,13 +736,67 @@ _DESCRIPCION_CANCELACION_SIN_MOVIMIENTO = {
 }
 
 
+MOTIVO_REEMPLAZO_REGULARIZACION = "Reemplazada por el pago real"
+
+
+def monto_regularizado(payable: CuentaPorPagar) -> Decimal:
+    """Lo cancelado con REGULARIZACION (pagada fuera de Gerayse) que sigue vivo."""
+    return (
+        PagoTesoreria.objects.filter(
+            cuenta_por_pagar_id=payable.pk,
+            estado=PagoTesoreria.Estado.REGISTRADO,
+            medio_pago=PagoTesoreria.MedioPago.REGULARIZACION,
+        ).aggregate(total=Sum("monto"))["total"]
+        or Decimal("0.00")
+    )
+
+
+def saldo_para_pago_real(payable: CuentaPorPagar) -> Decimal:
+    """Hasta cuanto admite un pago con fondos: el saldo mas lo regularizado.
+
+    D3 (US-3.20, retomado el 04/11/2026): la regularizacion es un lugar guardado.
+    Un pago real sobre la factura la reemplaza (ver `_reemplazar_regularizacion`),
+    asi que para pagar cuenta como abierta por lo regularizado.
+    """
+    return payable.saldo_pendiente + monto_regularizado(payable)
+
+
+def _reemplazar_regularizacion(locked_payable: CuentaPorPagar, *, actor=None) -> list[PagoTesoreria]:
+    """Anula las REGULARIZACION vivas de la deuda antes de registrarle un pago real.
+
+    Con la deuda ya bloqueada y dentro de la transaccion del pago: si el pago
+    real falla, la anulacion se deshace con el. Devuelve las regularizaciones
+    anuladas para que el llamador vuelva a regularizar el resto, si el pago real
+    cubre menos que ellas.
+    """
+    regularizaciones = list(
+        PagoTesoreria.objects.select_for_update()
+        .filter(
+            cuenta_por_pagar_id=locked_payable.pk,
+            estado=PagoTesoreria.Estado.REGISTRADO,
+            medio_pago=PagoTesoreria.MedioPago.REGULARIZACION,
+        )
+        .order_by("pk")
+    )
+    for regularizacion in regularizaciones:
+        _annul_payment(payment=regularizacion, motivo=MOTIVO_REEMPLAZO_REGULARIZACION, actor=actor)
+    return regularizaciones
+
+
+def _referencia_del_resto(referencia: str) -> str:
+    base = (referencia or "REGULARIZACION").strip()
+    sufijo = " (resto)"
+    return base[: 80 - len(sufijo)] + sufijo
+
+
 def _ensure_not_settled_without_funds(payable: CuentaPorPagar) -> None:
-    """US-3.20: una deuda saldada con un medio sin movimiento no admite un pago real.
+    """US-3.20: una deuda saldada con INTERNO no admite un pago real.
 
     Sin esto el pago real igual se rechaza, pero con "ya esta cancelada" o "a la
     factura le quedan $ 0,00", que no dicen por que ni que hacer: la deuda figura
-    PAGADA aunque no salio plata. La cancelacion no se reemplaza sola (D3 quedo
-    cancelado): hay que anularla a mano y despues registrar el pago.
+    PAGADA aunque no salio plata. La cancelacion INTERNO no se reemplaza sola: hay
+    que anularla a mano y despues registrar el pago.
+    La REGULARIZACION si se reemplaza sola (D3): no frena, la anula el pago real.
     Solo mira deudas PAGADA; con saldo pendiente, el pago real sigue su camino.
     """
     if payable.estado != CuentaPorPagar.Estado.PAGADA:
@@ -752,6 +806,7 @@ def _ensure_not_settled_without_funds(payable: CuentaPorPagar) -> None:
             cuenta_por_pagar_id=payable.pk, estado=PagoTesoreria.Estado.REGISTRADO
         )
         .sin_movimiento_de_fondos()
+        .exclude(medio_pago=PagoTesoreria.MedioPago.REGULARIZACION)
         .values_list("medio_pago", flat=True)
     )
     if not medios:
@@ -1123,12 +1178,26 @@ def _register_payment(
     if existing is not None:
         return existing
     locked_payable = CuentaPorPagar.objects.select_for_update().get(pk=payable.pk)
+    # Con la deuda bloqueada, de nuevo: dos envios del mismo formulario pasan
+    # juntos el chequeo de arriba, y el segundo, al conseguir el lock, no tiene
+    # que reemplazar otra vez la regularizacion que el primero ya reemplazo.
+    existing = _existing_by_creation_token(PagoTesoreria.objects, token_alta)
+    if existing is not None:
+        return existing
     if bank_account:
         bank_account = CuentaBancaria.objects.get(pk=bank_account.pk)
         if not bank_account.activa:
             raise ValidationError({"cuenta_bancaria": "La cuenta bancaria está inactiva."})
     if locked_payable.estado == CuentaPorPagar.Estado.ANULADA:
         raise ValidationError({"cuenta_por_pagar": "La cuenta por pagar esta anulada."})
+    # D3: un pago con fondos reemplaza la regularizacion (pagada fuera de
+    # Gerayse). Se anula aca, con la deuda bloqueada; si el pago de abajo falla,
+    # la transaccion la devuelve. Lo que el pago no cubra se vuelve a regularizar.
+    regularizaciones = []
+    if not sin_movimiento:
+        regularizaciones = _reemplazar_regularizacion(locked_payable, actor=actor)
+        if regularizaciones:
+            locked_payable.refresh_from_db()
     if locked_payable.estado == CuentaPorPagar.Estado.PAGADA:
         if not sin_movimiento:
             # Con la deuda bloqueada: cubre tambien a quien llega con la deuda
@@ -1175,7 +1244,9 @@ def _register_payment(
             payment.save(skip_domain_guard=True)
     except (IntegrityError, ValidationError):
         existing = _existing_by_creation_token(PagoTesoreria.objects, token_alta)
-        if existing is None:
+        # Con regularizaciones ya anuladas aca, devolver el pago existente las
+        # dejaria anuladas sin pago que las reemplace: mejor que falle entero.
+        if existing is None or regularizaciones:
             raise
         return existing
 
@@ -1211,6 +1282,23 @@ def _register_payment(
 
     _recalculate_payable_locked(locked_payable)
     locked_payable.refresh_from_db()
+    # D3: si el pago real cubre menos que lo regularizado, el resto sigue
+    # pagado fuera de Gerayse: se vuelve a regularizar solo esa diferencia, con
+    # la misma fecha y el lote de la regularizacion original.
+    resto = sum((pago.monto for pago in regularizaciones), Decimal("0.00")) - payment.monto
+    if resto > 0:
+        original = regularizaciones[0]
+        _register_payment(
+            payable=locked_payable,
+            bank_account=None,
+            medio_pago=PagoTesoreria.MedioPago.REGULARIZACION,
+            fecha_pago=original.fecha_pago,
+            monto=resto,
+            referencia=_referencia_del_resto(original.referencia),
+            observaciones=f"Resto de la regularizacion que reemplazo el pago #{payment.pk}"[:255],
+            actor=actor,
+        )
+        locked_payable.refresh_from_db()
     _mark_special_commitment_if_paid(locked_payable, actor=actor)
     return payment
 
@@ -1383,11 +1471,13 @@ def pay_debt_from_bank_movement(
                 )
             }
         )
-    if monto > payable.saldo_pendiente:
+    # D3: lo regularizado cuenta como abierto, porque el pago lo reemplaza.
+    saldo_disponible = saldo_para_pago_real(payable)
+    if monto > saldo_disponible:
         raise ValidationError(
             {
                 "cuenta_por_pagar": (
-                    f"A la factura le quedan {_money(payable.saldo_pendiente)} y estas queriendo "
+                    f"A la factura le quedan {_money(saldo_disponible)} y estas queriendo "
                     f"asignarle {_money(monto)}."
                 )
             }

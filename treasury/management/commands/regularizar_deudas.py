@@ -156,6 +156,14 @@ class Command(BaseCommand):
             ),
         )
         parser.add_argument(
+            "--sin-movimiento",
+            action="store_true",
+            help=(
+                "Modo general: cancela con REGULARIZACION (pagada fuera de Gerayse), sin tocar caja "
+                "fuerte ni banco y sin atar debitos. Si despues cargan el pago real, la reemplaza solo."
+            ),
+        )
+        parser.add_argument(
             "--proveedor-interno",
             help="Modo interno: razon social (o id) del proveedor propio. Usa el medio INTERNO, sin plata.",
         )
@@ -228,6 +236,7 @@ class Command(BaseCommand):
                 incluir_posibles_pagos_en_efectivo=options["incluir_posibles_pagos_en_efectivo"],
                 atar_banco=not options["sin_atar_banco"],
                 atar_con_sobrante=options["atar_con_sobrante"],
+                sin_movimiento=options["sin_movimiento"],
             )
             aprobadas = leer_plan(options["plan"], regularizacion.medio) if options["plan"] else None
             ataduras = leer_ataduras(options["plan"]) if options["plan"] else None
