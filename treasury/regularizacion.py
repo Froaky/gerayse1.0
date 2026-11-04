@@ -2069,8 +2069,9 @@ class Regularizacion(_Informe):
     # --- lecturas para la consola ---------------------------------------------
     def bovedas(self) -> list[dict]:
         """Por empresa: saldo de la boveda antes, efectivo del lote y saldo que
-        queda. Es lo que tesoreria compara con el arqueo real."""
-        if self.interno:
+        queda. Es lo que tesoreria compara con el arqueo real. Sin movimiento
+        (interno o REGULARIZACION) no hay efectivo: nada que comparar."""
+        if self.interno or self.sin_movimiento:
             return []
         aplicado = self.boveda_despues is not None
         # Antes de aplicar, lo que se registraria; despues, lo que se registro.
@@ -2194,7 +2195,7 @@ class Regularizacion(_Informe):
         tesoreria compara con el arqueo de cada mes. Despues de aplicar, la
         base ya tiene el efectivo: hoy y proyectada coinciden.
         """
-        if self.interno:
+        if self.interno or self.sin_movimiento:
             return []
         aplicado = self.boveda_despues is not None
         # El efectivo: antes de aplicar, lo que se registraria; despues, lo que

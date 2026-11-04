@@ -1916,3 +1916,8 @@ class SinMovimientoTests(RegularizacionBase):
 
         self.assertEqual(PagoTesoreria.objects.count(), 0)
         self.assertEqual({fila["medio"] for fila in filas}, {REGULARIZACION})
+        consola = salida.getvalue()
+        self.assertIn("Cancelacion SIN movimiento", consola)
+        self.assertIn("la caja fuerte y el banco quedan como estan", consola)
+        self.assertNotIn("Pagos en EFECTIVO", consola)
+        self.assertNotIn("Caja fuerte en negativo", consola)
