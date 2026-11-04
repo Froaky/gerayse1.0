@@ -24,9 +24,30 @@ Last updated: 2026-10-21
 - Contexto de datos (lectura de produccion del 04/11, solo lectura; cifras fuera del repo):
   siguen abiertas cientos de facturas del 24/09 al 26/10 que Tais dice pagadas; todas las de
   octubre las cargan las cajeras desde la caja y el pago se carga despues en tesoreria. La
-  regularizacion NO se hizo: el comando paga en EFECTIVO desde la boveda (la de Vivre ya
-  coincide con el conteo de Tais) y el reemplazo automatico de REGULARIZACION por el pago real
-  (D3) sigue cancelado. Falta decidir el metodo con Mateo y Tais.
+  regularizacion NO se hizo todavia: el comando pagaba en EFECTIVO desde la boveda (la de Vivre
+  ya coincide con el conteo de Tais).
+- D3 retomado (pedido de Mateo, mismo dia): la REGULARIZACION se reemplaza sola.
+  - `_register_payment`: con la deuda bloqueada, un pago con fondos anula las REGULARIZACION
+    vivas (motivo "Reemplazada por el pago real") y registra el real; si cubre menos, vuelve a
+    regularizar solo la diferencia (misma fecha, referencia "<lote> (resto)") y la deuda sigue
+    PAGADA. Todo en la misma transaccion: si el pago falla, no se anula nada. Re-chequeo del
+    token despues del lock (dos envios del mismo form no reemplazan dos veces). INTERNO sigue
+    sin reemplazarse (`_ensure_not_settled_without_funds` ahora solo mira INTERNO).
+  - `saldo_para_pago_real` (saldo + regularizado) en `pay_debt_from_bank_movement`.
+  - `forms.open_payables_queryset` (lo usan todos los selectores de pago: transferencia,
+    cheque, ECHEQ, efectivo, pago por proveedor y repartir/pagar desde un debito) trae tambien
+    las regularizadas, despues de las abiertas, con `saldo_a_pagar` y `es_regularizada`; las
+    pantallas las rotulan "regularizada". El detalle de la deuda regularizada explica y ofrece
+    los botones de pago. Las lecturas de deuda (dashboard, reportes, listado) no cambian: la
+    regularizada sigue PAGADA.
+  - Comando `regularizar_deudas --sin-movimiento` (modo general): cancela con REGULARIZACION,
+    sin caja fuerte ni banco y sin atar debitos (los posibles pagos quedan para revisar).
+    `MEDIOS_DEL_COMANDO` suma REGULARIZACION para que `--revertir` funcione. Los restos
+    "(resto)" no llevan el token del lote: revertir el lote no los toca.
+  - No cubierto: las candidatas del importador de planillas (herramienta de una vez).
+  - Tests: `treasury/tests_reemplazo_regularizacion.py` (nuevo, 18) + `SinMovimientoTests`
+    (6) en `tests_regularizar_deudas.py`; ajustados 2 de `tests_pago_sin_movimiento.py`.
+    Suite completa 1376 OK (6 skipped).
 
 ### Celular usable, S1 layout comun (2026-10-23)
 

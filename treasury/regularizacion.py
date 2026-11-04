@@ -103,11 +103,13 @@ NAMESPACE_REGULARIZACION = uuid.UUID("a5abd050-2c91-4648-b944-dcc177f3456d")
 
 EFECTIVO = PagoTesoreria.MedioPago.EFECTIVO
 INTERNO = PagoTesoreria.MedioPago.INTERNO
+REGULARIZACION = PagoTesoreria.MedioPago.REGULARIZACION
 TRANSFERENCIA = PagoTesoreria.MedioPago.TRANSFERENCIA
 # Los unicos medios que escribe el comando sin movimiento bancario previo.
-# REGULARIZACION queda afuera a proposito (aclaracion de tesoreria del
-# 2026-10-13). Las ataduras usan el medio del debito (MEDIO_POR_CLASE).
-MEDIOS_DEL_COMANDO = (EFECTIVO, INTERNO)
+# REGULARIZACION solo con `sin_movimiento` (04/11/2026): pagadas fuera de
+# Gerayse, sin tocar caja fuerte ni banco; el pago real que carguen despues la
+# reemplaza solo (D3). Las ataduras usan el medio del debito (MEDIO_POR_CLASE).
+MEDIOS_DEL_COMANDO = (EFECTIVO, INTERNO, REGULARIZACION)
 
 ESTADOS_ABIERTOS = (CuentaPorPagar.Estado.PENDIENTE, CuentaPorPagar.Estado.PARCIAL)
 CERO = Decimal("0.00")
@@ -781,11 +783,17 @@ class Regularizacion(_Informe):
         incluir_posibles_pagos_en_efectivo: bool = False,
         atar_banco: bool = True,
         atar_con_sobrante: bool = False,
+        sin_movimiento: bool = False,
     ):
         self.actor = actor
         self.interno = proveedor_interno is not None
+        if sin_movimiento and self.interno:
+            raise ValidationError("--sin-movimiento es del modo general: el interno ya cancela sin plata.")
+        # Modo general sin movimiento (04/11/2026): cancela con REGULARIZACION,
+        # sin tocar caja fuerte ni banco, y no ata debitos.
+        self.sin_movimiento = sin_movimiento
         # El modo interno no paga con plata: no hay nada que atar al banco.
-        self.atar_banco = atar_banco and not self.interno
+        self.atar_banco = atar_banco and not self.interno and not sin_movimiento
         if atar_con_sobrante and not self.atar_banco:
             raise ValidationError(
                 "--atar-con-sobrante va solo con la atadura al banco del modo general."
@@ -821,7 +829,12 @@ class Regularizacion(_Informe):
                 )
         elif hasta is None:
             raise ValidationError("Falta la fecha de corte (--hasta).")
-        self.medio = INTERNO if self.interno else EFECTIVO
+        if self.interno:
+            self.medio = INTERNO
+        elif self.sin_movimiento:
+            self.medio = REGULARIZACION
+        else:
+            self.medio = EFECTIVO
         self.hasta = hasta
         self.fecha_pago = fecha_pago
         self.cargadas_hasta = cargadas_hasta or timezone.localdate()
@@ -863,6 +876,11 @@ class Regularizacion(_Informe):
     def observaciones(self) -> str:
         if self.interno:
             texto = f"Proveedor interno: cancelada sin movimiento de fondos, lote {self.lote}"
+        elif self.sin_movimiento:
+            texto = (
+                f"Pagada fuera de Gerayse segun tesoreria, regularizacion {self.lote} "
+                f"(corte {self.hasta:%d/%m/%Y}). Se reemplaza al cargar el pago real."
+            )
         else:
             texto = (
                 f"Pago en efectivo segun tesoreria, regularizacion {self.lote} "

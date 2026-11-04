@@ -4,8 +4,9 @@ Tesoreria declaro pagadas las facturas de proveedores hasta el 23/09/2026. Lo
 que no esta pagado por banco se pago en EFECTIVO desde la caja fuerte, asi que
 el modo general registra pagos en efectivo reales (con su EGRESO_PAGO en la
 boveda de la empresa de la deuda), a la fecha de cada factura. El modo interno
-cancela las facturas de la panaderia propia con INTERNO, sin plata. Nunca se
-usa REGULARIZACION.
+cancela las facturas de la panaderia propia con INTERNO, sin plata. Desde el
+04/11/2026, con sin_movimiento el modo general cancela con REGULARIZACION, sin
+tocar caja fuerte ni banco (ver SinMovimientoTests).
 """
 import csv
 from datetime import date, timedelta
@@ -692,9 +693,9 @@ class AplicacionGeneralTests(RegularizacionBase):
         self.assertEqual(self._por_deuda(regularizacion)[deuda.pk].accion, Accion.EXCLUIDA_MES_CERRADO)
         self.assertEqual(PagoTesoreria.objects.count(), 0)
 
-    def test_nunca_usa_regularizacion(self):
-        self.assertNotIn(REGULARIZACION, MEDIOS_DEL_COMANDO)
-        self.assertEqual(set(MEDIOS_DEL_COMANDO), {EFECTIVO, INTERNO})
+    def test_por_defecto_no_usa_regularizacion(self):
+        # REGULARIZACION solo con sin_movimiento (ver SinMovimientoTests).
+        self.assertEqual(set(MEDIOS_DEL_COMANDO), {EFECTIVO, INTERNO, REGULARIZACION})
         panaderia = self._proveedor("OVEJA NEGRA ARMADI SRL")
         self._deuda("100.00")
         self._deuda("200.00", proveedor=panaderia)
@@ -1830,3 +1831,88 @@ class ConceptoLargoYBovedaNegativaTests(RegularizacionBase):
         self.assertIn("Caja fuerte en negativo: MAPOGO SRL", texto)
         self.assertIn("no deja revertir la validacion", texto)
         self.assertNotIn("Caja fuerte en negativo: ARMADI SRL", texto)
+
+
+class SinMovimientoTests(RegularizacionBase):
+    """04/11/2026: pagadas fuera de Gerayse, sin tocar caja fuerte ni banco. El
+    pago real que carguen despues reemplaza la regularizacion (D3)."""
+
+    def test_cancela_con_regularizacion_sin_mover_la_caja_fuerte(self):
+        de_armadi = self._deuda("1000.00")
+        de_vivre = self._deuda("2000.00", sucursal=self.vivre)
+        bovedas = (self._boveda(self.armadi), self._boveda(self.mapogo))
+        movimientos = (MovimientoCajaCentral.objects.count(), MovimientoBancario.objects.count())
+
+        regularizacion = self._aplicar(sin_movimiento=True)
+
+        self.assertEqual(regularizacion.medio, REGULARIZACION)
+        self.assertEqual((self._boveda(self.armadi), self._boveda(self.mapogo)), bovedas)
+        self.assertEqual((MovimientoCajaCentral.objects.count(), MovimientoBancario.objects.count()), movimientos)
+        for deuda in (de_armadi, de_vivre):
+            deuda.refresh_from_db()
+            self.assertEqual(deuda.estado, CuentaPorPagar.Estado.PAGADA)
+            pago = deuda.pagos.get()
+            self.assertEqual(pago.medio_pago, REGULARIZACION)
+            self.assertEqual(pago.referencia, LOTE)
+            self.assertEqual(pago.fecha_pago, deuda.fecha_emision)
+            self.assertEqual(pago.estado_bancario, PagoTesoreria.EstadoBancario.NO_APLICA)
+            self.assertIn("Pagada fuera de Gerayse", pago.observaciones)
+
+    def test_no_ata_debitos_y_deja_el_posible_pago_para_revisar(self):
+        deuda = self._deuda("1000.00")
+        self._debito("1000.00", fecha=AGOSTO + timedelta(days=5))
+
+        regularizacion = self._plan(sin_movimiento=True)
+
+        self.assertFalse(regularizacion.atar_banco)
+        self.assertEqual(self._por_deuda(regularizacion)[deuda.pk].accion, Accion.POSIBLE_PAGO_EN_GERAYSE)
+
+    def test_no_va_con_el_modo_interno(self):
+        panaderia = self._proveedor("OVEJA NEGRA ARMADI SRL")
+        with self.assertRaises(ValidationError):
+            Regularizacion(actor=self.admin, proveedor_interno=panaderia, sin_movimiento=True)
+
+    def test_el_pago_real_posterior_la_reemplaza(self):
+        deuda = self._deuda("1000.00")
+        self._aplicar(sin_movimiento=True)
+        deuda.refresh_from_db()
+        regularizacion = deuda.pagos.get()
+
+        register_cash_payment(payable=deuda, fecha_pago=AGOSTO, monto=Decimal("1000.00"), actor=self.admin)
+
+        regularizacion.refresh_from_db()
+        deuda.refresh_from_db()
+        self.assertEqual(regularizacion.estado, PagoTesoreria.Estado.ANULADO)
+        self.assertEqual(deuda.estado, CuentaPorPagar.Estado.PAGADA)
+        self.assertEqual(self._boveda(self.armadi), Decimal("999000.00"))
+
+    def test_revertir_el_lote_reabre_las_deudas(self):
+        deuda = self._deuda("1000.00")
+        self._aplicar(sin_movimiento=True)
+
+        reversion = Reversion(actor=self.admin, lote=LOTE, motivo="Prueba")
+        reversion.planificar()
+        reversion.aplicar()
+
+        deuda.refresh_from_db()
+        self.assertEqual(deuda.estado, CuentaPorPagar.Estado.PENDIENTE)
+        self.assertEqual(self._boveda(self.armadi), Decimal("1000000.00"))
+
+    def test_el_comando_lo_ofrece_y_el_informe_dice_el_medio(self):
+        self._deuda("1000.00")
+        with TemporaryDirectory() as carpeta:
+            informe = Path(carpeta) / "plan.csv"
+            salida = StringIO()
+            call_command(
+                "regularizar_deudas",
+                usuario=self.admin.username,
+                hasta="2026-09-23",
+                sin_movimiento=True,
+                informe=str(informe),
+                stdout=salida,
+            )
+            with informe.open(encoding="utf-8-sig", newline="") as archivo:
+                filas = list(csv.DictReader(archivo, delimiter=";"))
+
+        self.assertEqual(PagoTesoreria.objects.count(), 0)
+        self.assertEqual({fila["medio"] for fila in filas}, {REGULARIZACION})

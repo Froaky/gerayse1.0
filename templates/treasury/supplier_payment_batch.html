@@ -94,8 +94,12 @@
                 <strong>${{ fila.payable.importe_total }}</strong>
               </div>
               <div class="summary">
-                <span class="muted">Saldo pendiente</span>
-                <strong>${{ fila.payable.saldo_pendiente }}</strong>
+                {% if fila.payable.es_regularizada %}
+                  <span class="muted">Regularizada (se reemplaza al pagarla)</span>
+                {% else %}
+                  <span class="muted">Saldo pendiente</span>
+                {% endif %}
+                <strong>${{ fila.payable.saldo_a_pagar }}</strong>
               </div>
               <div class="summary">
                 <span class="muted">Emisión / Vencimiento</span>

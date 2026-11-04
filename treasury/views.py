@@ -1277,6 +1277,18 @@ def cuentas_por_pagar_detail(request, payable_id: int):
         fields.append({"label": "Motivo anulacion", "value": payable.motivo_anulacion or "Sin motivo"})
     
     fields.append({"label": "Observaciones", "value": payable.observaciones or "Sin observaciones"})
+    # D3 (US-3.20): regularizada = pagada fuera de Gerayse. Se puede pagar con
+    # un movimiento real, que reemplaza a la regularizacion.
+    regularizada = payable.estado == CuentaPorPagar.Estado.PAGADA and payable.pagos.filter(
+        estado=PagoTesoreria.Estado.REGISTRADO, medio_pago=PagoTesoreria.MedioPago.REGULARIZACION
+    ).exists()
+    if regularizada:
+        fields.append(
+            {
+                "label": "Regularizada",
+                "value": "Figura pagada fuera de Gerayse. Si cargás el pago real, reemplaza a la regularización.",
+            }
+        )
     actions = []
     # US-3.20: la cancelacion INTERNO del proveedor interno no bloquea editar ni
     # anular (los servicios la anulan y, al editar, la vuelven a registrar).
@@ -1291,6 +1303,15 @@ def cuentas_por_pagar_detail(request, payable_id: int):
         actions.extend(
             [
                 _action(reverse("treasury:cuentas_por_pagar_update", args=[payable.pk]), "Editar"),
+                _action(reverse("treasury:pagos_transferencia_create") + f"?payable={payable.pk}", "Transferencia", "primary"),
+                _action(reverse("treasury:pagos_cheque_create") + f"?payable={payable.pk}", "Cheque"),
+                _action(reverse("treasury:pagos_echeq_create") + f"?payable={payable.pk}", "ECHEQ"),
+                _action(reverse("treasury:pagos_efectivo_create") + f"?payable={payable.pk}", "Efectivo"),
+            ]
+        )
+    elif regularizada:
+        actions.extend(
+            [
                 _action(reverse("treasury:pagos_transferencia_create") + f"?payable={payable.pk}", "Transferencia", "primary"),
                 _action(reverse("treasury:pagos_cheque_create") + f"?payable={payable.pk}", "Cheque"),
                 _action(reverse("treasury:pagos_echeq_create") + f"?payable={payable.pk}", "ECHEQ"),
@@ -2587,7 +2608,7 @@ def bank_movements_pay_debt(request, pk):
                 continue
             crudo = (request.POST.get(f"monto_{payable_id}") or "").strip()
             if not crudo:
-                monto = min(factura.saldo_pendiente, sin_asignar)
+                monto = min(factura.saldo_a_pagar, sin_asignar)
             else:
                 try:
                     monto = Decimal(crudo.replace(",", "."))
@@ -2641,21 +2662,21 @@ def bank_movements_pay_debt(request, pk):
     facturas = [
         {
             "payable": factura,
-            "sugerido": min(factura.saldo_pendiente, sin_asignar),
+            "sugerido": min(factura.saldo_a_pagar, sin_asignar),
             "elegida": str(factura.pk) in ya_elegidas,
             # El sugerido se topea con lo que queda sin asignar de la
             # transferencia. Cuando eso es menos que el saldo, tildar la linea
             # tal cual viene deja la factura pagada a medias sin que nada lo
             # diga: paso en produccion con una factura de $33.000 precargada en
             # $21.750. Se avisa cuanto quedaria debiendo.
-            "queda_debiendo": max(factura.saldo_pendiente - sin_asignar, Decimal("0.00")),
+            "queda_debiendo": max(factura.saldo_a_pagar - sin_asignar, Decimal("0.00")),
         }
         for factura in candidatas.order_by(
             "proveedor__razon_social", "sucursal__codigo", "fecha_emision", "pk"
         )
     ]
     # El total de lo filtrado es lo que tesoreria compara contra su planilla.
-    total_filtrado = sum((fila["payable"].saldo_pendiente for fila in facturas), Decimal("0.00"))
+    total_filtrado = sum((fila["payable"].saldo_a_pagar for fila in facturas), Decimal("0.00"))
     return render(
         request,
         "treasury/pay_debts_split.html",
