@@ -3639,6 +3639,27 @@ class EP13CashValidationViewTests(CashopsTestCase):
         close_box(caja=box, saldo_fisico=Decimal("50.00"), cerrado_por=self.operator_2, actor=self.operator_2)
         return box
 
+    def test_queue_puts_rejected_boxes_last_even_if_older(self):
+        # Rechazada cerrada de antes (como las de junio/julio que siguen en la
+        # cola): aunque sea mas vieja, va abajo de las pendientes.
+        rejected = open_box(
+            user=self.operator_2,
+            turno=self.turno_b,
+            sucursal=self.branch_b,
+            fecha_operativa=self.fecha_op - timedelta(days=30),
+            monto_inicial=Decimal("50.00"),
+            actor=self.operator_2,
+        )
+        close_box(caja=rejected, saldo_fisico=Decimal("50.00"), cerrado_por=self.operator_2, actor=self.operator_2)
+        Caja.objects.filter(pk=rejected.pk).update(validacion_estado=Caja.ValidacionEstado.RECHAZADA)
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("cashops:box_validation_queue"))
+
+        html = response.content.decode()
+        self.assertIn(f"Caja #{rejected.pk}<", html)
+        self.assertLess(html.index(f"Caja #{self.pending_box.pk}<"), html.index(f"Caja #{rejected.pk}<"))
+
     def test_queue_filters_by_sucursal(self):
         other_box = self._pending_box_in_branch_b()
         self.client.force_login(self.admin)

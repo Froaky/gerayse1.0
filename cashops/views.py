@@ -7,7 +7,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError
-from django.db.models import Count, Prefetch, Q
+from django.db.models import Case, Count, IntegerField, Prefetch, Q, Value, When
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -2211,7 +2211,17 @@ def box_validation_queue(request):
             validacion_estado__in=Caja.VALIDACION_BLOQUEA_TOTALES,
             sucursal__empresa_id__in=empresa_ids,
         )
-        .order_by("fecha_operativa", "id")
+        # Las rechazadas van al final: son las que ya se miraron y esperan al
+        # cajero, y si quedaban arriba por fecha habia que bajar para validar.
+        .order_by(
+            Case(
+                When(validacion_estado=Caja.ValidacionEstado.RECHAZADA, then=Value(1)),
+                default=Value(0),
+                output_field=IntegerField(),
+            ),
+            "fecha_operativa",
+            "id",
+        )
     )
     if selected_sucursal:
         boxes = boxes.filter(sucursal=selected_sucursal)
