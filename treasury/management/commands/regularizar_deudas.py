@@ -263,6 +263,16 @@ class Command(BaseCommand):
                 f"Modo interno: {proveedor.razon_social} (#{proveedor.pk}), medio INTERNO sin movimiento "
                 f"de fondos, lote {regularizacion.lote}."
             )
+        elif regularizacion.sin_movimiento:
+            fecha_pago = (
+                f"{regularizacion.fecha_pago:%d/%m/%Y}" if regularizacion.fecha_pago else "la de cada factura"
+            )
+            self.stdout.write(
+                f"Cancelacion SIN movimiento (REGULARIZACION, pagadas fuera de Gerayse): no toca caja fuerte "
+                f"ni banco. Corte {regularizacion.hasta:%d/%m/%Y}, cargadas hasta "
+                f"{regularizacion.cargadas_hasta:%d/%m/%Y}, fecha de pago: {fecha_pago}, lote {regularizacion.lote}. "
+                "Si despues cargan el pago real, reemplaza la regularizacion."
+            )
         else:
             fecha_pago = (
                 f"{regularizacion.fecha_pago:%d/%m/%Y}" if regularizacion.fecha_pago else "la de cada factura"
@@ -297,6 +307,11 @@ class Command(BaseCommand):
         self._imprimir_resumen(regularizacion)
         if regularizacion.interno:
             self._imprimir_interno(regularizacion, options["apply"])
+        elif regularizacion.sin_movimiento:
+            self.stdout.write("")
+            self.stdout.write("Sin movimiento de fondos: la caja fuerte y el banco quedan como estan.")
+            self._imprimir_top_proveedores(regularizacion)
+            self._imprimir_sin_rubro(regularizacion)
         else:
             self._imprimir_bovedas(regularizacion.bovedas(), aplicado=options["apply"])
             self._imprimir_por_mes(regularizacion, aplicado=options["apply"])
