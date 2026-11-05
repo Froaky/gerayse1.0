@@ -12,6 +12,7 @@ from .models import (
     CajaCentral,
     CategoriaCuentaPagar,
     CierreMensualTesoreria,
+    ClaveReparto,
     CompromisoEspecial,
     CuentaBancaria,
     CuentaPorPagar,
@@ -23,6 +24,7 @@ from .models import (
     Proveedor,
     SaldoInicialCuentaBancaria,
 )
+from .reparto import etiqueta_de_clave
 from .reportes.alcance import ReportScope, rango_de_meses
 from .services import CLASE_POR_MEDIO_DE_PAGO
 from cashops.models import Empresa, RubroOperativo, Sucursal
@@ -591,6 +593,36 @@ class SpecialCommitmentDecisionForm(TreasuryStyledFormMixin, forms.Form):
         return cleaned_data
 
 
+class ClaveRepartoChoiceField(forms.ModelChoiceField):
+    """Muestra como reparte cada clave, para elegirla sin abrir el admin."""
+
+    def label_from_instance(self, obj):
+        return etiqueta_de_clave(obj)
+
+
+AYUDA_REPARTO = (
+    "Reparte el importe con los porcentajes de la clave y registra un egreso por sucursal. "
+    "Si elige un reparto, no hace falta indicar la sucursal."
+)
+
+
+def claves_reparto_activas(empresa_ids=None):
+    claves = ClaveReparto.objects.filter(activa=True).prefetch_related("partes__sucursal")
+    if empresa_ids is not None:
+        claves = claves.filter(empresa_id__in=empresa_ids)
+    return claves.order_by("nombre")
+
+
+def campo_clave_reparto(queryset):
+    return ClaveRepartoChoiceField(
+        queryset=queryset,
+        required=False,
+        label="Repartir entre sucursales",
+        empty_label="No, va a una sola sucursal",
+        help_text=AYUDA_REPARTO,
+    )
+
+
 class PayableChoiceField(forms.ModelChoiceField):
     """Muestra el saldo pendiente en cada opcion: con cientos de deudas abiertas,
     'Proveedor - concepto' sin importe no alcanza para elegir bien."""
@@ -815,6 +847,16 @@ class BankMovementForm(AltaIdempotenteMixin, TreasuryStyledFormMixin, forms.Mode
         self.conditional_periodo = True
         self.periodo_field_id = self["periodo_pago"].id_for_label
         self.periodo_field_name = "periodo_pago"
+        # Repartir entre sucursales solo al dar de alta: editar un movimiento no
+        # lo parte en varios.
+        if not self.instance.pk:
+            claves = claves_reparto_activas()
+            if claves.exists():
+                self.fields["clave_reparto"] = campo_clave_reparto(claves)
+                orden = list(self.fields)
+                orden.remove("clave_reparto")
+                orden.insert(orden.index("sucursal_gasto") + 1, "clave_reparto")
+                self.order_fields(orden)
         self._apply_input_classes()
 
     def clean_periodo_pago(self):
@@ -825,6 +867,21 @@ class BankMovementForm(AltaIdempotenteMixin, TreasuryStyledFormMixin, forms.Mode
 
     def clean(self):
         cleaned_data = super().clean()
+        clave = cleaned_data.get("clave_reparto")
+        if clave is not None:
+            cuenta = cleaned_data.get("cuenta_bancaria")
+            if cleaned_data.get("tipo") != MovimientoBancario.Tipo.DEBITO:
+                self.add_error("clave_reparto", "Solo un débito se puede repartir entre sucursales.")
+            elif cleaned_data.get("clase") == MovimientoBancario.Clase.RETIRO:
+                self.add_error("clave_reparto", "Un retiro no es un gasto: no se reparte entre sucursales.")
+            elif cuenta is not None and cuenta.empresa_id and cuenta.empresa_id != clave.empresa_id:
+                self.add_error("clave_reparto", "La clave de reparto es de otra empresa que la cuenta bancaria.")
+            else:
+                # El modelo exige sucursal en un debito; cada parte lleva la suya
+                # al registrarse (create_bank_movement_repartido). Aca solo se
+                # pone una de la clave para que la validacion del modelo pase.
+                primera = clave.partes.select_related("sucursal").order_by("id").first()
+                cleaned_data["sucursal_gasto"] = primera.sucursal if primera else None
         if cleaned_data.get("tipo") != MovimientoBancario.Tipo.DEBITO:
             cleaned_data["sucursal_gasto"] = None
             cleaned_data["periodo_pago"] = None
@@ -1192,6 +1249,7 @@ class EgresoTesoreriaForm(AltaIdempotenteMixin, BovedaEmpresaFieldMixin, Treasur
     )
     sucursal = forms.ModelChoiceField(
         queryset=Sucursal.objects.none(),
+        required=False,
         label="Sucursal correspondiente",
         help_text="A qué local o unidad corresponde este gasto, aunque el dinero salga de tesorería central.",
     )
@@ -1223,6 +1281,13 @@ class EgresoTesoreriaForm(AltaIdempotenteMixin, BovedaEmpresaFieldMixin, Treasur
         self.fields["cuenta_bancaria"].queryset = cuentas.order_by("banco", "nombre")
         self.fields["rubro"].queryset = RubroOperativo.objects.filter(activo=True, es_sistema=False).order_by("nombre")
         self.fields["sucursal"].queryset = sucursales.order_by("nombre")
+        claves = claves_reparto_activas(empresa_ids)
+        if claves.exists():
+            self.fields["clave_reparto"] = campo_clave_reparto(claves)
+            orden = list(self.fields)
+            orden.remove("clave_reparto")
+            orden.insert(orden.index("sucursal") + 1, "clave_reparto")
+            self.order_fields(orden)
         self._setup_empresa_field(empresa_ids)
         selected_source = self.data.get(self.add_prefix("fuente")) if self.is_bound else self.initial.get("fuente")
         self.show_bank_account_field = selected_source == self.FUENTE_BANCO
@@ -1249,6 +1314,15 @@ class EgresoTesoreriaForm(AltaIdempotenteMixin, BovedaEmpresaFieldMixin, Treasur
             self.add_error("cuenta_bancaria", "La cuenta bancaria es obligatoria cuando el egreso sale de banco.")
         elif fuente != self.FUENTE_BANCO:
             cleaned_data["cuenta_bancaria"] = None
+        clave = cleaned_data.get("clave_reparto")
+        empresa = cleaned_data.get("empresa")
+        if clave is not None:
+            if empresa is not None and clave.empresa_id != empresa.pk:
+                self.add_error("clave_reparto", "La clave de reparto es de otra empresa.")
+            # Cada parte lleva su sucursal: la elegida a mano no se usa.
+            cleaned_data["sucursal"] = None
+        elif not cleaned_data.get("sucursal") and "sucursal" not in self.errors:
+            self.add_error("sucursal", "Indique la sucursal o elija un reparto.")
         return cleaned_data
 
 

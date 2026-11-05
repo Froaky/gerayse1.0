@@ -29,6 +29,7 @@ from .models import (
     SaldoInicialCuentaBancaria,
 )
 from .permissions import ensure_delete_central_cash_movement, ensure_treasury_admin
+from .reparto import observaciones_de_parte, repartir_importe, token_de_parte
 
 
 def formato_money(value) -> str:
@@ -4038,6 +4039,81 @@ def register_egreso_tesoreria(
         creado_por=actor,
     )
     return _guardar_alta_idempotente(movement, MovimientoCajaCentral.objects, token_alta)
+
+
+@transaction.atomic
+def register_egreso_tesoreria_repartido(
+    *,
+    empresa,
+    clave,
+    monto: Decimal,
+    observaciones: str = "",
+    token_alta=None,
+    actor=None,
+    **datos,
+) -> list:
+    """Un egreso de tesoreria por sucursal, con su parte de la clave.
+
+    Pedido de tesoreria del 04/11/2026 (impuestos y sueldos de estructura de
+    ARMADI). Todo o nada: si una parte no se puede registrar, no queda ninguna.
+    `datos` son los demas campos de `register_egreso_tesoreria` (fuente, fecha,
+    concepto, cuenta_bancaria, rubro, periodo), iguales para todas las partes.
+    """
+    _require_actor(actor)
+    empresa_id = getattr(empresa, "pk", empresa)
+    return [
+        register_egreso_tesoreria(
+            empresa=empresa,
+            monto=parte.importe,
+            sucursal=parte.sucursal,
+            observaciones=observaciones_de_parte(observaciones, clave, parte, monto),
+            token_alta=token_de_parte(token_alta, parte.sucursal),
+            actor=actor,
+            **datos,
+        )
+        for parte in repartir_importe(monto, clave, empresa_id=empresa_id)
+    ]
+
+
+@transaction.atomic
+def create_bank_movement_repartido(
+    *,
+    clave,
+    cuenta_bancaria: CuentaBancaria,
+    tipo: str,
+    monto: Decimal,
+    observaciones: str = "",
+    token_alta=None,
+    actor=None,
+    **datos,
+) -> list[MovimientoBancario]:
+    """Un debito por sucursal, con su parte de la clave (mismo pedido).
+
+    El banco queda con una linea por sucursal que suman el debito del extracto,
+    como ya lo cargaba tesoreria a mano. `datos` son los demas campos de
+    `create_bank_movement` (clase, rubro, proveedor, periodo, fecha, concepto,
+    referencia), iguales para todas las partes.
+    """
+    _require_actor(actor)
+    if tipo != MovimientoBancario.Tipo.DEBITO:
+        raise ValidationError({"clave_reparto": "Solo un débito se puede repartir entre sucursales."})
+    if datos.get("clase") == MovimientoBancario.Clase.RETIRO:
+        raise ValidationError({"clave_reparto": "Un retiro no es un gasto: no se reparte entre sucursales."})
+    if cuenta_bancaria.empresa_id is not None and cuenta_bancaria.empresa_id != clave.empresa_id:
+        raise ValidationError({"clave_reparto": "La clave de reparto es de otra empresa que la cuenta bancaria."})
+    return [
+        create_bank_movement(
+            cuenta_bancaria=cuenta_bancaria,
+            tipo=tipo,
+            monto=parte.importe,
+            sucursal_gasto=parte.sucursal,
+            observaciones=observaciones_de_parte(observaciones, clave, parte, monto),
+            token_alta=token_de_parte(token_alta, parte.sucursal),
+            actor=actor,
+            **datos,
+        )
+        for parte in repartir_importe(monto, clave)
+    ]
 
 
 def build_disponibilidades_snapshot(year: int, month: int, sucursal=None, empresa_ids=None) -> dict:

@@ -102,6 +102,7 @@ from .services import (
     correct_bank_payment_method,
     create_bank_account,
     create_bank_movement,
+    create_bank_movement_repartido,
     create_payable_category,
     create_pos_batch,
     create_supplier,
@@ -124,6 +125,7 @@ from .services import (
     register_echeq_payment,
     register_carga_inicial_caja_central,
     register_egreso_tesoreria,
+    register_egreso_tesoreria_repartido,
     register_payable,
     register_special_commitment,
     register_supplier_payment_batch,
@@ -249,6 +251,11 @@ def _filter_sucursal_qs(request, qs):
 def _money(value) -> str:
     # Un solo formato de plata en todo el sistema: services.formato_money.
     return formato_money(value)
+
+
+def _mensaje_reparto(movimientos) -> str:
+    detalle = " · ".join(f"{m.sucursal_gasto.codigo} {_money(m.monto)}" for m in movimientos)
+    return f"Se registraron {len(movimientos)} movimientos, uno por sucursal: {detalle}."
 
 
 def _payable_badge(payable: CuentaPorPagar) -> tuple[str, str]:
@@ -2137,8 +2144,15 @@ def bank_movements_create(request):
     if request.method == "POST":
         form = BankMovementForm(request.POST)
         if form.is_valid():
+            datos = dict(form.cleaned_data)
+            clave = datos.pop("clave_reparto", None)
             try:
-                movement = create_bank_movement(**form.cleaned_data, actor=request.user)
+                if clave is not None:
+                    datos.pop("sucursal_gasto", None)
+                    movimientos = create_bank_movement_repartido(clave=clave, **datos, actor=request.user)
+                    messages.success(request, _mensaje_reparto(movimientos))
+                    return redirect("treasury:bank_movements_list")
+                movement = create_bank_movement(**datos, actor=request.user)
                 messages.success(request, "Movimiento registrado correctamente.")
                 return redirect("treasury:bank_movements_detail", movement.pk)
             except ValidationError as error:
@@ -3312,22 +3326,27 @@ def egreso_tesoreria_create(request):
     if request.method == "POST":
         form = EgresoTesoreriaForm(request.POST, empresa_ids=empresa_ids)
         if form.is_valid():
+            datos = {
+                "empresa": form.cleaned_data["empresa"],
+                "fuente": form.cleaned_data["fuente"],
+                "fecha": form.cleaned_data["fecha"],
+                "monto": form.cleaned_data["monto"],
+                "concepto": form.cleaned_data["concepto"],
+                "cuenta_bancaria": form.cleaned_data.get("cuenta_bancaria"),
+                "observaciones": form.cleaned_data["observaciones"],
+                "rubro": form.cleaned_data.get("rubro"),
+                "periodo": form.cleaned_data.get("periodo"),
+                "token_alta": form.creation_token(),
+                "actor": request.user,
+            }
+            clave = form.cleaned_data.get("clave_reparto")
             try:
-                register_egreso_tesoreria(
-                    empresa=form.cleaned_data["empresa"],
-                    fuente=form.cleaned_data["fuente"],
-                    fecha=form.cleaned_data["fecha"],
-                    monto=form.cleaned_data["monto"],
-                    concepto=form.cleaned_data["concepto"],
-                    cuenta_bancaria=form.cleaned_data.get("cuenta_bancaria"),
-                    observaciones=form.cleaned_data["observaciones"],
-                    rubro=form.cleaned_data.get("rubro"),
-                    sucursal=form.cleaned_data.get("sucursal"),
-                    periodo=form.cleaned_data.get("periodo"),
-                    token_alta=form.creation_token(),
-                    actor=request.user,
-                )
-                messages.success(request, "Egreso administrativo de tesoreria registrado.")
+                if clave is not None:
+                    movimientos = register_egreso_tesoreria_repartido(clave=clave, **datos)
+                    messages.success(request, _mensaje_reparto(movimientos))
+                else:
+                    register_egreso_tesoreria(sucursal=form.cleaned_data.get("sucursal"), **datos)
+                    messages.success(request, "Egreso administrativo de tesoreria registrado.")
                 return redirect(reverse("treasury:central_cash_list"))
             except ValidationError as e:
                 form.add_error(None, e)
