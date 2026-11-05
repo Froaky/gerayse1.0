@@ -168,6 +168,13 @@
         color: var(--danger);
         font-size: 0.92rem;
       }
+      /* Un aviso puede traer un link (p. ej. a la deuda que traba eliminar la caja):
+         el reset global de `a` lo dejaba igual que el texto. */
+      .error a,
+      .errors a {
+        font-weight: 600;
+        text-decoration: underline;
+      }
       .messages {
         display: grid;
         gap: 8px;

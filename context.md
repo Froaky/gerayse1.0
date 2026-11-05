@@ -4,6 +4,19 @@ Last updated: 2026-10-21
 
 ## Current Session
 
+### Eliminar caja trabada por una deuda con pagos: link a la deuda (2026-11-05)
+
+- Pedido (05/11): al eliminar una caja, el aviso "La deuda #N originada en esta caja tiene pagos
+  registrados" nombraba la deuda pero no llevaba a ella, y decia "anula esa deuda", cuando una
+  deuda con pagos no tiene el boton Anular en tesoreria. Tesoreria no encontraba como seguir.
+- Ahora el numero es un link a la deuda en otra pestana (solo para quien puede leer tesoreria;
+  al resto le queda el texto) y el aviso dice lo que hay que hacer: anular esos pagos y volver a
+  eliminar la caja, la deuda se anula junto con ella. El servicio `annul_box` manda el error con
+  `code=CODIGO_DEUDA_CAJA_CON_PAGOS` y `params={"deuda_id"}`; la vista arma el link. Los links
+  dentro de `.error`/`.errors` se ven subrayados (el reset global de `a` los dejaba como texto).
+- No cambia ninguna regla: la caja sigue sin poder eliminarse con pagos vivos. Tests: 2 nuevos en
+  `EP13BoxExpenseDebtTests` (link para tesoreria, texto sin link para la cajera); suite 1430 OK.
+
 ### Egresos en efectivo, uno por uno (2026-11-05)
 
 - Pedido de Tais (05/11, audio): ver todo lo que salio en efectivo, de la caja fuerte y de los
