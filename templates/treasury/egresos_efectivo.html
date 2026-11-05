@@ -1,0 +1,184 @@
+{% extends "treasury/layout.html" %}
+{% load treasury_tags %}
+{% block title %}Egresos en efectivo | Tesorería | Gerayse{% endblock %}
+{% block content %}
+  <style>
+    .egresos-tabla-wrap { overflow-x: auto; margin-top: 16px; }
+    .egresos-tabla { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    .egresos-tabla th { text-align: left; padding: 8px 10px; border-bottom: 2px solid var(--line-strong); white-space: nowrap; color: var(--muted); font-weight: 600; }
+    .egresos-tabla td { padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    .egresos-tabla tbody tr:hover { background: var(--panel-soft); }
+    .egresos-tabla .num { text-align: right; white-space: nowrap; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+    .egresos-tabla .fecha { white-space: nowrap; }
+    .egresos-tabla tfoot td { font-weight: 600; border-top: 2px solid var(--line-strong); border-bottom: 0; }
+    .egresos-tabla a { text-decoration: underline; }
+    .egresos-nota { font-size: 0.85rem; }
+  </style>
+
+  <section class="card">
+    <div class="row">
+      <div>
+        <h1>Egresos en efectivo</h1>
+        <p class="muted">
+          Todo lo que salió en efectivo, uno por uno: pagos y egresos de la caja fuerte y gastos de las cajas
+          de los locales. Sirve para conciliar contra sus comprobantes.
+        </p>
+      </div>
+    </div>
+
+    <form method="get" class="stack" style="margin-top:16px;">
+      <div class="summary-grid">
+        {% for field in filter_form.visible_fields %}
+          <div class="field">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% for error in field.errors %}<small class="muted">{{ error }}</small>{% endfor %}
+          </div>
+        {% endfor %}
+      </div>
+      <div class="list-actions">
+        <button class="button" type="submit">Actualizar</button>
+        <a class="button-secondary" href="{% url 'treasury:egresos_efectivo' %}">Limpiar</a>
+        <a class="button-secondary" href="{% url 'treasury:egresos_efectivo_excel' %}{% if querystring %}?{{ querystring }}{% endif %}">Descargar Excel</a>
+      </div>
+    </form>
+  </section>
+
+  <section class="card" style="margin-top:16px;">
+    <p class="muted" style="margin-top:0;">
+      Del {{ filtros.date_from|date:"d/m/Y" }} al {{ filtros.date_to|date:"d/m/Y" }}.
+    </p>
+    <div class="summary-grid">
+      <div class="summary">
+        <span class="muted">Total</span>
+        <strong>{{ lectura.total|money }}</strong>
+        <small class="muted">{{ lectura.cantidad }} egreso{{ lectura.cantidad|pluralize }}</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Caja fuerte</span>
+        <strong>{{ lectura.total_caja_fuerte|money }}</strong>
+        <small class="muted">Pagos de facturas y egresos sin factura</small>
+      </div>
+      <div class="summary">
+        <span class="muted">Cajas de los locales</span>
+        <strong>{{ lectura.total_locales|money }}</strong>
+        <small class="muted">Gastos pagados con la plata de la caja</small>
+      </div>
+      {% if lectura.sin_validar_cantidad %}
+        <div class="summary">
+          <span class="muted">De cajas sin validar</span>
+          <strong>{{ lectura.sin_validar_total|money }}</strong>
+          <small class="muted">{{ lectura.sin_validar_cantidad }} gasto{{ lectura.sin_validar_cantidad|pluralize }}, incluidos en el total</small>
+        </div>
+      {% endif %}
+    </div>
+    <p class="muted egresos-nota">
+      No incluye depósitos al banco ni ajustes de saldo (arqueos y cierres negativos): esos movimientos están en
+      <a href="{% url 'treasury:central_cash_list' %}" style="text-decoration:underline;">Efectivo central</a>.
+      {% if lectura.sin_validar_cantidad %}
+        Los gastos de cajas sin validar se muestran porque la plata ya salió del local; el informe económico los suma
+        recién al validar la caja.
+      {% endif %}
+    </p>
+  </section>
+
+  {% if lectura.resumen_rubros %}
+    <section class="card" style="margin-top:16px;">
+      <h2>Por rubro</h2>
+      <div class="egresos-tabla-wrap">
+        <table class="egresos-tabla">
+          <thead>
+            <tr>
+              <th>Rubro</th>
+              <th class="num">Caja fuerte</th>
+              <th class="num">Cajas de los locales</th>
+              <th class="num">Total</th>
+              <th class="num">Egresos</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for fila in lectura.resumen_rubros %}
+              <tr>
+                <td>{{ fila.rubro }}</td>
+                <td class="num">{{ fila.caja_fuerte|money }}</td>
+                <td class="num">{{ fila.locales|money }}</td>
+                <td class="num">{{ fila.total|money }}</td>
+                <td class="num">{{ fila.cantidad }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td>Total</td>
+              <td class="num">{{ lectura.total_caja_fuerte|money }}</td>
+              <td class="num">{{ lectura.total_locales|money }}</td>
+              <td class="num">{{ lectura.total|money }}</td>
+              <td class="num">{{ lectura.cantidad }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
+  {% endif %}
+
+  <section class="card" style="margin-top:16px;">
+    <div class="row">
+      <div>
+        <h2>Uno por uno</h2>
+        <p class="muted">Ordenados por fecha. Para marcar lo conciliado, descargue el Excel: trae una columna para tildar.</p>
+      </div>
+      <span class="badge">{{ lectura.cantidad }}</span>
+    </div>
+    {% if recortado %}
+      <p class="muted egresos-nota">
+        Se muestran los primeros {{ tope }} de {{ lectura.cantidad }}. Acote las fechas o la sucursal, o descargue el Excel,
+        que los trae todos.
+      </p>
+    {% endif %}
+    {% if egresos %}
+      <div class="egresos-tabla-wrap">
+        <table class="egresos-tabla">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Origen</th>
+              <th>Sucursal</th>
+              <th>Rubro</th>
+              <th>Proveedor / categoría</th>
+              <th>Detalle</th>
+              <th class="num">Importe</th>
+              <th>Comprobante / caja</th>
+              <th>Cargado por</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for egreso in egresos %}
+              <tr>
+                <td class="fecha">{{ egreso.fecha|date:"d/m/Y" }}</td>
+                <td>{{ egreso.origen_label }}</td>
+                <td>{{ egreso.sucursal_label }}</td>
+                <td>{{ egreso.rubro_label }}</td>
+                <td>{{ egreso.proveedor_o_categoria }}</td>
+                <td>{{ egreso.detalle }}</td>
+                <td class="num">{{ egreso.importe|money }}</td>
+                <td>
+                  {% if egreso.cuenta_por_pagar_id %}
+                    <a href="{% url 'treasury:cuentas_por_pagar_detail' egreso.cuenta_por_pagar_id %}">{{ egreso.referencia }}</a>
+                  {% elif egreso.caja_id %}
+                    <a href="{% url 'cashops:box_detail' egreso.caja_id %}">{{ egreso.referencia }}</a>
+                    {% if egreso.caja_sin_validar %}<br><span class="badge badge-warning">{{ egreso.estado_caja }}</span>{% endif %}
+                  {% else %}
+                    {{ egreso.referencia }}
+                  {% endif %}
+                </td>
+                <td>{{ egreso.cargado_por }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="muted">No hay egresos en efectivo para los filtros elegidos.</p>
+    {% endif %}
+  </section>
+{% endblock %}

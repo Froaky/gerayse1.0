@@ -4,6 +4,32 @@ Last updated: 2026-10-21
 
 ## Current Session
 
+### Egresos en efectivo, uno por uno (2026-11-05)
+
+- Pedido de Tais (05/11, audio): ver todo lo que salio en efectivo, de la caja fuerte y de los
+  locales, por sucursal y rubro, operacion por operacion, para ir tildando y conciliar. No habia
+  una pantalla asi: el libro de efectivo central no tiene los gastos de los locales ni filtra por
+  rubro, y "Ver composicion" del informe muestra la factura como deuda y no el pago en efectivo.
+- Pantalla nueva, solo lectura: Tesoreria -> Reportes -> "Egresos en efectivo"
+  (`treasury:egresos_efectivo`, `/tesoreria/egresos-en-efectivo/`) + descarga a Excel con columna
+  "Conciliado" y total SUBTOTAL que acompana el filtro (`treasury:egresos_efectivo_excel`).
+  Filtros: fechas (por defecto el mes en curso), sucursal, rubro, origen. Permiso: lectura de
+  tesoreria. Respeta las empresas seleccionadas siempre, aunque venga una sucursal por URL.
+- `treasury/egresos_efectivo.py` (`leer_egresos_efectivo`, `excel_egresos_efectivo`). Entran:
+  EGRESO_PAGO y EGRESO_ADMIN de la caja fuerte por `fecha`, y los GASTO de las cajas por
+  `fecha_operativa` (sin cajas anuladas). No entran depositos al banco, ajustes de saldo
+  (arqueos, cierres negativos), aportes ni anulados. El pago de factura toma sucursal, rubro y
+  proveedor de la factura, y el filtro por sucursal/rubro tambien la mira.
+- Decision: los gastos de cajas SIN VALIDAR entran marcados (la plata ya salio del local); por eso
+  el total de locales puede ser mayor que "Gasto caja" del informe economico, que los suma recien
+  al validar. Se aclara en pantalla.
+- Bug conocido NO tocado en este slice: en el libro de efectivo central, filtrar por sucursal
+  pierde los pagos de facturas (EGRESO_PAGO no guarda `sucursal_gasto`; `scope_central_cash_movements`
+  filtra por `sucursal_gasto`/`sucursal_origen`). Cambiar el scope afecta saldos por sucursal y
+  disponibilidades: va aparte.
+- Tests: `treasury/tests_egresos_efectivo.py` (18). Suite 1428 OK (6 skipped). Probado en local
+  con datos ficticios, 1366 px y celular (la tabla scrollea adentro, la pagina no).
+
 ### Reparto de egresos entre sucursales (2026-11-06)
 
 - Pedido de Tais (04/11, confirmado 06/11): impuestos de ARMADI con la clave Terminal 27,

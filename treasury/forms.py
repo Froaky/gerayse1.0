@@ -343,6 +343,43 @@ class TreasuryDashboardFilterForm(TreasuryStyledFormMixin, forms.Form):
         return cleaned_data
 
 
+class EgresosEfectivoFilterForm(TreasuryStyledFormMixin, forms.Form):
+    """Filtros de la lista de egresos en efectivo. La sucursal se acota en la
+    vista a las empresas seleccionadas (una de otra empresa no valida)."""
+
+    fecha_desde = forms.DateField(
+        label="Desde", required=False, widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d")
+    )
+    fecha_hasta = forms.DateField(
+        label="Hasta", required=False, widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d")
+    )
+    sucursal = forms.ModelChoiceField(
+        queryset=Sucursal.objects.none(), required=False, empty_label="Todas las sucursales", label="Sucursal"
+    )
+    rubro = forms.ModelChoiceField(
+        queryset=RubroOperativo.objects.order_by("nombre"), required=False, empty_label="Todos los rubros", label="Rubro"
+    )
+    origen = forms.ChoiceField(
+        label="Origen",
+        required=False,
+        choices=[("", "Caja fuerte y locales"), ("caja_fuerte", "Solo caja fuerte"), ("local", "Solo cajas de los locales")],
+    )
+
+    def __init__(self, *args, sucursales=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if sucursales is not None:
+            self.fields["sucursal"].queryset = sucursales.order_by("nombre")
+        self._apply_input_classes()
+
+    def clean(self):
+        cleaned_data = super().clean()
+        fecha_desde = cleaned_data.get("fecha_desde")
+        fecha_hasta = cleaned_data.get("fecha_hasta")
+        if fecha_desde and fecha_hasta and fecha_hasta < fecha_desde:
+            cleaned_data["fecha_desde"], cleaned_data["fecha_hasta"] = fecha_hasta, fecha_desde
+        return cleaned_data
+
+
 class ReportFilterForm(TreasuryStyledFormMixin, forms.Form):
     """Alcance y periodo de un reporte PDF.
 

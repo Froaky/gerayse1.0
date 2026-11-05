@@ -33,6 +33,7 @@ from .forms import (
     ChequePaymentForm,
     DisponibilidadesFilterForm,
     ECheqPaymentForm,
+    EgresosEfectivoFilterForm,
     PayableAnnulForm,
     PayableCategoryFilterForm,
     PayableCategoryForm,
@@ -142,6 +143,7 @@ from .services import (
     update_pos_batch,
     update_supplier,
 )
+from .egresos_efectivo import CONTENT_TYPE_XLSX, ORIGENES, excel_egresos_efectivo, leer_egresos_efectivo
 from .reportes.pdf import render_report_pdf
 from .reportes.registro import REGISTRO as REPORTES_PDF
 
@@ -3195,6 +3197,86 @@ def central_cash_movements(request):
             {"label": "Movimiento manual", "href": reverse("treasury:central_cash_create"), "kind": "primary"},
         ],
     })
+
+
+# Arriba de esto la pantalla se vuelve pesada; el Excel no tiene tope.
+TOPE_EGRESOS_EFECTIVO = 1500
+
+
+def _egresos_efectivo_filtros(request):
+    """Form de filtros y alcance de la lectura, igual para la pantalla y el Excel."""
+    from cashops.models import Sucursal
+
+    today = timezone.localdate()
+    defaults = {"fecha_desde": today.replace(day=1), "fecha_hasta": today}
+    form = EgresosEfectivoFilterForm(
+        request.GET or None,
+        initial=defaults,
+        sucursales=_filter_sucursal_qs(request, Sucursal.objects.all()),
+    )
+    filtros = {
+        "date_from": defaults["fecha_desde"],
+        "date_to": defaults["fecha_hasta"],
+        "sucursal": None,
+        "rubro": None,
+        "origen": "",
+    }
+    if form.is_bound and form.is_valid():
+        datos = form.cleaned_data
+        filtros = {
+            "date_from": datos.get("fecha_desde") or defaults["fecha_desde"],
+            "date_to": datos.get("fecha_hasta") or defaults["fecha_hasta"],
+            "sucursal": datos.get("sucursal"),
+            "rubro": datos.get("rubro"),
+            "origen": datos.get("origen") or "",
+        }
+        if filtros["date_to"] < filtros["date_from"]:
+            filtros["date_from"], filtros["date_to"] = filtros["date_to"], filtros["date_from"]
+    return form, filtros
+
+
+@login_required
+def egresos_efectivo(request):
+    _require_treasury_admin(request)
+    form, filtros = _egresos_efectivo_filtros(request)
+    lectura = leer_egresos_efectivo(empresa_ids=_get_empresa_ids(request), **filtros)
+    return render(
+        request,
+        "treasury/egresos_efectivo.html",
+        {
+            "filter_form": form,
+            "filtros": filtros,
+            "lectura": lectura,
+            "egresos": lectura["egresos"][:TOPE_EGRESOS_EFECTIVO],
+            "recortado": lectura["cantidad"] > TOPE_EGRESOS_EFECTIVO,
+            "tope": TOPE_EGRESOS_EFECTIVO,
+            "querystring": request.GET.urlencode(),
+        },
+    )
+
+
+@login_required
+def egresos_efectivo_excel(request):
+    from cashops.models import Empresa
+
+    _require_treasury_admin(request)
+    form, filtros = _egresos_efectivo_filtros(request)
+    empresa_ids = _get_empresa_ids(request)
+    lectura = leer_egresos_efectivo(empresa_ids=empresa_ids, **filtros)
+    empresas = ", ".join(Empresa.objects.filter(pk__in=empresa_ids).order_by("nombre").values_list("nombre", flat=True))
+    partes = [
+        f"Del {filtros['date_from']:%d/%m/%Y} al {filtros['date_to']:%d/%m/%Y}",
+        empresas or "Sin empresa seleccionada",
+        filtros["sucursal"].nombre if filtros["sucursal"] else "Todas las sucursales",
+        filtros["rubro"].nombre if filtros["rubro"] else "Todos los rubros",
+        ORIGENES.get(filtros["origen"], "Caja fuerte y locales"),
+    ]
+    contenido = excel_egresos_efectivo(lectura, titulo="Egresos en efectivo", alcance=" · ".join(partes))
+    response = HttpResponse(contenido, content_type=CONTENT_TYPE_XLSX)
+    response["Content-Disposition"] = (
+        f'attachment; filename="egresos-efectivo-{filtros["date_from"]:%Y%m%d}-{filtros["date_to"]:%Y%m%d}.xlsx"'
+    )
+    return response
 
 
 @login_required
