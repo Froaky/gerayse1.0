@@ -50,6 +50,8 @@ Last updated: 2026-10-21
     Suite completa 1376 OK (6 skipped).
 - 05/11: regularizacion REG3 aplicada en produccion con `--sin-movimiento` (OK de Mateo): cajas
   fuertes y bancos sin cambios, resultado economico igual. Detalle y cifras fuera del repo.
+  Mismo dia, REG4 con el 27/10 inclusive (Mateo: "27/10 inclusive deben ir pagadas"): queda
+  abierta la mercaderia desde el 28/10.
 - Flujo de disponibilidades, saldo inicial sin cierre previo (05/11): `build_disponibilidades_snapshot`
   arrancaba en 0 (efectivo y bancos) cuando no habia ningun cierre anterior en el alcance, y en
   produccion nunca se cerro un mes: octubre de Vivre mostraba 0 con la caja fuerte negativa al
