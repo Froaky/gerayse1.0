@@ -488,6 +488,7 @@
                 <a class="nav-menu__item" href="{% url 'treasury:bank_reconciliation' %}">Conciliación</a>
                 <a class="nav-menu__item" href="{% url 'treasury:pos_batches_list' %}">Lotes POS</a>
                 <a class="nav-menu__item" href="{% url 'treasury:central_cash_list' %}">Efectivo central</a>
+                <a class="nav-menu__item" href="{% url 'treasury:egresos_efectivo' %}">Egresos en efectivo</a>
               </div>
             </details>
             {% if request.user.can_read_treasury or request.user.can_read_users %}

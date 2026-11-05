@@ -74,6 +74,8 @@ urlpatterns = [
     path("efectivo-central/", views.central_cash_movements, name="central_cash_list"),
     path("efectivo-central/nuevo/", views.central_cash_create, name="central_cash_create"),
     path("efectivo-central/carga-inicial/", views.carga_inicial_caja_central, name="carga_inicial_caja_central"),
+    path("egresos-en-efectivo/", views.egresos_efectivo, name="egresos_efectivo"),
+    path("egresos-en-efectivo/excel/", views.egresos_efectivo_excel, name="egresos_efectivo_excel"),
     path("efectivo-central/egreso/", views.egreso_tesoreria_create, name="egreso_tesoreria_create"),
     path(
         "efectivo-central/<int:pk>/anular/",
