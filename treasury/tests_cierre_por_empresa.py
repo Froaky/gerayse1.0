@@ -178,3 +178,160 @@ class CierrePorEmpresaVistaTests(TestCase):
                 mes=self.mes, empresa=self.armadi, cerrado=True
             ).exists()
         )
+
+
+class SaldoInicialSinCierreTests(TestCase):
+    """Sin ningun mes cerrado antes, el flujo arranca del saldo real, no de 0.
+
+    En produccion nunca se habia cerrado un mes: el flujo de octubre de Vivre
+    mostraba saldo inicial 0 con la caja fuerte en -11,8 M al 30/09.
+    """
+
+    def setUp(self):
+        from treasury.models import CuentaBancaria, MovimientoBancario
+
+        self.admin = User.objects.create_superuser(
+            username="admin-sin-cierre", password="test", email="sc@test.com"
+        )
+        self.armadi = Empresa.objects.create(nombre="ARMADI Sin Cierre")
+        self.mapogo = Empresa.objects.create(nombre="MAPOGO Sin Cierre")
+        self.suc_mapogo = Sucursal.objects.create(
+            codigo="SC1", nombre="Suc MAPOGO SC", razon_social="MAPOGO", empresa=self.mapogo
+        )
+        junio = timezone.datetime(2026, 6, 10).date()
+        julio = timezone.datetime(2026, 7, 5).date()
+        register_central_cash_movement(
+            empresa=self.armadi,
+            tipo=MovimientoCajaCentral.Tipo.APORTE,
+            monto=Decimal("1000.00"),
+            concepto="Efectivo ARMADI",
+            fecha=junio,
+            actor=self.admin,
+        )
+        register_central_cash_movement(
+            empresa=self.mapogo,
+            tipo=MovimientoCajaCentral.Tipo.APORTE,
+            monto=Decimal("400.00"),
+            concepto="Efectivo MAPOGO",
+            fecha=junio,
+            actor=self.admin,
+        )
+        # MAPOGO queda en negativo a fin de junio, como Vivre al 30/09.
+        register_central_cash_movement(
+            empresa=self.mapogo,
+            tipo=MovimientoCajaCentral.Tipo.EGRESO_ADMIN,
+            monto=Decimal("1000.00"),
+            concepto="Pago grande",
+            fecha=junio,
+            actor=self.admin,
+        )
+        register_central_cash_movement(
+            empresa=self.mapogo,
+            tipo=MovimientoCajaCentral.Tipo.APORTE,
+            monto=Decimal("50.00"),
+            concepto="Efectivo de julio",
+            fecha=julio,
+            actor=self.admin,
+        )
+        self.cuenta = CuentaBancaria.objects.create(
+            nombre="Banco MAPOGO", banco="Galicia", tipo_cuenta="CC", numero_cuenta="99",
+            empresa=self.mapogo, creado_por=self.admin,
+        )
+        for fecha, tipo, monto in (
+            (junio, MovimientoBancario.Tipo.CREDITO, "300.00"),
+            (junio, MovimientoBancario.Tipo.DEBITO, "40.00"),
+            (julio, MovimientoBancario.Tipo.CREDITO, "10.00"),
+        ):
+            MovimientoBancario.objects.create(
+                cuenta_bancaria=self.cuenta,
+                tipo=tipo,
+                clase=(
+                    MovimientoBancario.Clase.OTRO_INGRESO
+                    if tipo == MovimientoBancario.Tipo.CREDITO
+                    else MovimientoBancario.Clase.OTRO_EGRESO
+                ),
+                fecha=fecha,
+                monto=Decimal(monto),
+                concepto="Banco",
+                creado_por=self.admin,
+            )
+
+    def _cuenta(self, snapshot):
+        return next(item for item in snapshot["accounts_info"] if item["account"].pk == self.cuenta.pk)
+
+    def test_sin_cierre_el_efectivo_arranca_del_saldo_real_aunque_sea_negativo(self):
+        julio = build_disponibilidades_snapshot(2026, 7, empresa_ids=[self.mapogo.pk])
+
+        self.assertFalse(julio["saldo_inicial_desde_cierre"])
+        self.assertEqual(julio["saldo_inicial_efectivo"], Decimal("-600.00"))
+        self.assertEqual(julio["cash_in"], Decimal("50.00"))
+        self.assertEqual(julio["saldo_final_efectivo"], Decimal("-550.00"))
+
+    def test_sin_cierre_cada_empresa_y_el_consolidado_dan_su_saldo(self):
+        armadi = build_disponibilidades_snapshot(2026, 7, empresa_ids=[self.armadi.pk])
+        todo = build_disponibilidades_snapshot(2026, 7)
+
+        self.assertEqual(armadi["saldo_inicial_efectivo"], Decimal("1000.00"))
+        self.assertEqual(todo["saldo_inicial_efectivo"], Decimal("400.00"))
+
+    def test_sin_cierre_el_banco_arranca_de_su_saldo_real(self):
+        julio = build_disponibilidades_snapshot(2026, 7, empresa_ids=[self.mapogo.pk])
+
+        cuenta = self._cuenta(julio)
+        self.assertEqual(cuenta["initial"], Decimal("260.00"))
+        self.assertEqual(cuenta["final"], Decimal("270.00"))
+
+    def test_el_banco_respeta_el_saldo_inicial_cargado(self):
+        from treasury.services import set_initial_bank_balance
+
+        set_initial_bank_balance(
+            cuenta_bancaria=self.cuenta,
+            fecha_referencia=timezone.datetime(2026, 6, 1).date(),
+            importe=Decimal("5000.00"),
+            motivo="Extracto",
+            actor=self.admin,
+        )
+        julio = build_disponibilidades_snapshot(2026, 7, empresa_ids=[self.mapogo.pk])
+
+        self.assertEqual(self._cuenta(julio)["initial"], Decimal("5260.00"))
+
+    def test_el_primer_mes_sin_historia_previa_sigue_en_cero(self):
+        junio = build_disponibilidades_snapshot(2026, 6, empresa_ids=[self.mapogo.pk])
+
+        self.assertEqual(junio["saldo_inicial_efectivo"], Decimal("0.00"))
+        self.assertEqual(self._cuenta(junio)["initial"], Decimal("0.00"))
+
+    def test_con_un_cierre_se_usa_la_foto_del_cierre(self):
+        close_treasury_month(2026, 6, empresa=self.mapogo, actor=self.admin)
+        # Si la historia de junio cambia despues del cierre, el arrastre no:
+        # el mes cerrado es una foto congelada.
+        MovimientoCajaCentral.objects.filter(
+            caja_central__empresa=self.mapogo, concepto="Pago grande"
+        ).update(monto=Decimal("1.00"))
+        julio = build_disponibilidades_snapshot(2026, 7, empresa_ids=[self.mapogo.pk])
+
+        self.assertTrue(julio["saldo_inicial_desde_cierre"])
+        self.assertEqual(julio["saldo_inicial_efectivo"], Decimal("-600.00"))
+
+    def test_el_primer_cierre_guarda_el_saldo_real(self):
+        cierre = close_treasury_month(2026, 7, empresa=self.mapogo, actor=self.admin)
+
+        self.assertEqual(cierre.saldo_inicial_efectivo, Decimal("-600.00"))
+        self.assertEqual(cierre.saldo_final_efectivo, Decimal("-550.00"))
+        self.assertEqual(cierre.saldos_bancarios_json[str(self.cuenta.pk)], "270.00")
+
+    def test_la_pantalla_aclara_de_donde_sale_el_saldo_inicial(self):
+        from django.urls import reverse
+
+        self.admin.empresas_permitidas.set([self.armadi, self.mapogo])
+        self.client.force_login(self.admin)
+        sesion = self.client.session
+        sesion["empresa_ids"] = [self.mapogo.pk]
+        sesion.save()
+
+        response = self.client.get(reverse("treasury:disponibilidades"), {"year": 2026, "month": 7})
+
+        self.assertContains(
+            response,
+            "Sin un mes cerrado anterior, el saldo inicial surge de los movimientos registrados hasta el 30/06/2026.",
+        )

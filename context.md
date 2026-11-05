@@ -48,6 +48,18 @@ Last updated: 2026-10-21
   - Tests: `treasury/tests_reemplazo_regularizacion.py` (nuevo, 18) + `SinMovimientoTests`
     (6) en `tests_regularizar_deudas.py`; ajustados 2 de `tests_pago_sin_movimiento.py`.
     Suite completa 1376 OK (6 skipped).
+- 05/11: regularizacion REG3 aplicada en produccion con `--sin-movimiento` (OK de Mateo): cajas
+  fuertes y bancos sin cambios, resultado economico igual. Detalle y cifras fuera del repo.
+- Flujo de disponibilidades, saldo inicial sin cierre previo (05/11): `build_disponibilidades_snapshot`
+  arrancaba en 0 (efectivo y bancos) cuando no habia ningun cierre anterior en el alcance, y en
+  produccion nunca se cerro un mes: octubre de Vivre mostraba 0 con la caja fuerte negativa al
+  30/09. Ahora, sin cierre previo, el efectivo sale de `_central_cash_balance_until(dia anterior)`
+  y cada banco de `_bank_balance_until(dia anterior)` (respeta el saldo inicial cargado). Con un
+  cierre todo sigue igual (foto congelada). Consecuencia: el primer cierre guarda el saldo real y
+  no 0 + flujos del mes. La pantalla aclara de donde sale el saldo inicial. No cubierto: con
+  cierres de UNA empresa en el consolidado, o un hueco entre el ultimo cierre y el mes mirado, se
+  sigue usando solo la foto del ultimo cierre (como antes). Tests: `SaldoInicialSinCierreTests`
+  (8) en `tests_cierre_por_empresa.py`. Suite 1384 OK (6 skipped).
 
 ### Celular usable, S1 layout comun (2026-10-23)
 

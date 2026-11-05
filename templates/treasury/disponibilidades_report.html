@@ -127,6 +127,9 @@
                 <span>Saldo Inicial (Arrastre)</span>
                 <strong>{{ snapshot.saldo_inicial_efectivo|money }}</strong>
             </div>
+            {% if not snapshot.saldo_inicial_desde_cierre %}
+            <div class="muted" style="font-size: 0.8rem;">Sin un mes cerrado anterior, el saldo inicial surge de los movimientos registrados hasta el {{ snapshot.dia_anterior|date:"d/m/Y" }}.</div>
+            {% endif %}
             <div class="data-row">
                 <span class="has-text-success">Ingresos del Periodo</span>
                 <strong class="has-text-success">+ {{ snapshot.cash_in|money }}</strong>
