@@ -47,6 +47,14 @@ UNCATEGORIZED_OPERATIONAL_CATEGORY_NAME = "Sin clasificar"
 # US-3.20: texto de la caja para un gasto como deuda del proveedor interno (la
 # panaderia propia), que nace saldado sin mover fondos.
 TEXTO_DEUDA_PROVEEDOR_INTERNO = "Proveedor interno: se da por pagada sin mover fondos"
+# Eliminar una caja cuya deuda ya tiene pagos. Una deuda con pagos no tiene el
+# boton Anular en tesoreria: lo que se anula son sus pagos, y la deuda cae
+# junto con la caja. {deuda} es "#123" en texto o un link en la pantalla.
+CODIGO_DEUDA_CAJA_CON_PAGOS = "deuda_caja_con_pagos"
+TEXTO_DEUDA_CAJA_CON_PAGOS = (
+    "La deuda {deuda} originada en esta caja tiene pagos registrados. "
+    "Anule esos pagos en tesorería y vuelva a eliminar la caja: la deuda se anula junto con ella."
+)
 BRANCH_TRANSFER_DISABLED_REASON = (
     "La transferencia entre sucursales ya no esta habilitada en la operatoria actual. "
     "Mantene solo traspasos entre cajas."
@@ -2297,11 +2305,13 @@ def annul_box(
     for deuda in deudas_activas:
         pagos_internos = _cancelaciones_internas_a_liberar(deuda)
         if pagos_internos is None:
+            # code + params: la pantalla convierte el numero en un link a la deuda.
             raise ValidationError(
                 {
-                    "motivo": (
-                        f"La deuda #{deuda.id} originada en esta caja tiene pagos registrados. "
-                        "Anula o resolve esa deuda en tesoreria antes de eliminar la caja."
+                    "motivo": ValidationError(
+                        TEXTO_DEUDA_CAJA_CON_PAGOS.format(deuda=f"#{deuda.id}"),
+                        code=CODIGO_DEUDA_CAJA_CON_PAGOS,
+                        params={"deuda_id": deuda.id},
                     )
                 }
             )

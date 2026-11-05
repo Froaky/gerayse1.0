@@ -13,6 +13,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
+from django.utils.html import format_html
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_http_methods
 
@@ -66,6 +67,8 @@ from .services import (
     annul_box_originated_debt,
     BRANCH_TRANSFER_DISABLED_REASON,
     CLOSING_DIFF_THRESHOLD,
+    CODIGO_DEUDA_CAJA_CON_PAGOS,
+    TEXTO_DEUDA_CAJA_CON_PAGOS,
     OPERATIONAL_ALERT_SCOPE_POLICY,
     OPERATIONAL_ALERT_SCOPE_POLICY_RULES,
     build_box_activity_timeline,
@@ -278,6 +281,27 @@ def _handle_operation_error(form, error: Exception, fallback_message: str) -> No
         _apply_validation_error(form, error)
     else:
         form.add_error(None, fallback_message)
+
+
+def _deuda_con_pagos_que_traba(error: Exception) -> int | None:
+    """Numero de la deuda con pagos que impide eliminar la caja, si es ese error."""
+    if not isinstance(error, ValidationError) or not hasattr(error, "error_dict"):
+        return None
+    for detalle in error.error_dict.get("motivo", []):
+        if detalle.code == CODIGO_DEUDA_CAJA_CON_PAGOS:
+            return detalle.params["deuda_id"]
+    return None
+
+
+def _aviso_deuda_con_pagos(deuda_id: int):
+    """El mismo aviso del servicio, con el numero como link a la deuda en otra
+    pestana: una deuda con pagos no tiene Anular, hay que entrar a sus pagos."""
+    link = format_html(
+        '<a href="{}" target="_blank" rel="noopener">#{}</a>',
+        reverse("treasury:cuentas_por_pagar_detail", args=[deuda_id]),
+        deuda_id,
+    )
+    return format_html(TEXTO_DEUDA_CAJA_CON_PAGOS, deuda=link)
 
 
 def _build_close_preview_context(box: Caja, raw_amount: str | None = None):
@@ -627,7 +651,12 @@ def box_delete_view(request, box_id: int):
                 actor=request.user,
             )
         except (ValidationError, PermissionDenied) as exc:
-            _handle_operation_error(form, exc, "No se pudo eliminar la caja.")
+            deuda_id = _deuda_con_pagos_que_traba(exc)
+            # El link solo para quien puede abrir tesoreria; al resto, el texto.
+            if deuda_id is not None and request.user.can_read_treasury():
+                form.add_error("motivo", _aviso_deuda_con_pagos(deuda_id))
+            else:
+                _handle_operation_error(form, exc, "No se pudo eliminar la caja.")
         else:
             messages.success(request, f"Caja #{box.id} eliminada correctamente.")
             return _hx_redirect(back_url) if _is_htmx(request) else redirect(back_url)

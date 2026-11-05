@@ -4244,6 +4244,57 @@ class EP13BoxExpenseDebtTests(CashopsTestCase):
         self.caja.refresh_from_db()
         self.assertEqual(self.caja.estado, Caja.Estado.ABIERTA)
 
+    def _debt_paid_in_cash(self):
+        from treasury.models import MovimientoCajaCentral
+        from treasury.services import register_cash_payment, register_central_cash_movement
+
+        deuda = self._register_debt()
+        register_central_cash_movement(
+            empresa=self.empresa_a,
+            tipo=MovimientoCajaCentral.Tipo.APORTE,
+            monto=Decimal("500.00"),
+            concepto="Fondo central",
+            fecha=self.fecha_op,
+            actor=self.admin,
+        )
+        register_cash_payment(payable=deuda, fecha_pago=self.fecha_op, monto=Decimal("80.00"), actor=self.admin)
+        return deuda
+
+    def test_delete_box_view_links_blocking_debt_in_new_tab(self):
+        # Pedido de tesoreria (05/11): el aviso nombraba la deuda pero no habia
+        # forma de llegar a ella; una deuda con pagos tampoco tiene Anular.
+        deuda = self._debt_paid_in_cash()
+        self._grant_closed_box_fix(self.admin)
+        self.assertTrue(self.admin.can_read_treasury())
+        self.client.force_login(self.admin)
+
+        response = self.client.post(reverse("cashops:box_delete", args=[self.caja.pk]), {"motivo": "Error de fecha"})
+
+        url = reverse("treasury:cuentas_por_pagar_detail", args=[deuda.pk])
+        self.assertContains(
+            response,
+            f'La deuda <a href="{url}" target="_blank" rel="noopener">#{deuda.pk}</a> originada en esta caja',
+            status_code=400,
+        )
+        self.assertContains(response, "Anule esos pagos en tesorería y vuelva a eliminar la caja", status_code=400)
+        self.caja.refresh_from_db()
+        self.assertEqual(self.caja.estado, Caja.Estado.ABIERTA)
+
+    def test_delete_box_view_without_treasury_shows_debt_number_without_link(self):
+        deuda = self._debt_paid_in_cash()
+        self._grant_closed_box_fix(self.cajero)
+        self.assertFalse(self.cajero.can_read_treasury())
+        self.client.force_login(self.cajero)
+
+        response = self.client.post(reverse("cashops:box_delete", args=[self.caja.pk]), {"motivo": "Error de fecha"})
+
+        self.assertContains(response, f"La deuda #{deuda.pk} originada en esta caja", status_code=400)
+        self.assertNotContains(
+            response, reverse("treasury:cuentas_por_pagar_detail", args=[deuda.pk]), status_code=400
+        )
+        self.caja.refresh_from_db()
+        self.assertEqual(self.caja.estado, Caja.Estado.ABIERTA)
+
     def test_annulled_debt_is_marked_in_box_timeline(self):
         from treasury.services import annul_payable
 
