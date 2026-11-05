@@ -1,10 +1,15 @@
+from decimal import Decimal
+
 from django.contrib import admin
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.forms.models import BaseInlineFormSet
 
 from .models import (
     AcreditacionTarjeta,
     CajaCentral,
     CategoriaCuentaPagar,
+    ClaveReparto,
+    ClaveRepartoSucursal,
     CierreMensualTesoreria,
     CompromisoEspecial,
     CuentaBancaria,
@@ -255,3 +260,45 @@ class CierreMensualTesoreriaAdmin(TreasuryNoDeleteAdminMixin, admin.ModelAdmin):
     def has_add_permission(self, request):
         # El cierre se crea unicamente desde el servicio close_treasury_month.
         return False
+
+
+
+class ClaveRepartoSucursalFormSet(BaseInlineFormSet):
+    """Una clave tiene que sumar 100 % y usar sucursales de su empresa: si no,
+    repartir un egreso dejaria plata sin imputar o en otra empresa."""
+
+    def clean(self):
+        super().clean()
+        total = Decimal("0")
+        filas = 0
+        empresa_id = self.instance.empresa_id
+        for form in self.forms:
+            if not hasattr(form, "cleaned_data") or not form.cleaned_data or form.cleaned_data.get("DELETE"):
+                continue
+            filas += 1
+            total += form.cleaned_data.get("porcentaje") or Decimal("0")
+            sucursal = form.cleaned_data.get("sucursal")
+            if sucursal is not None and empresa_id and sucursal.empresa_id != empresa_id:
+                raise ValidationError(f"La sucursal {sucursal} no es de la empresa de la clave.")
+        if filas and total != Decimal("100"):
+            raise ValidationError(f"Los porcentajes suman {total} % y tienen que sumar 100 %.")
+        if not filas:
+            raise ValidationError("La clave necesita al menos una sucursal.")
+
+
+class ClaveRepartoSucursalInline(admin.TabularInline):
+    model = ClaveRepartoSucursal
+    formset = ClaveRepartoSucursalFormSet
+    extra = 0
+    min_num = 1
+    fields = ("sucursal", "porcentaje")
+
+
+@admin.register(ClaveReparto)
+class ClaveRepartoAdmin(TreasuryNoDeleteAdminMixin, admin.ModelAdmin):
+    """Claves para repartir egresos entre sucursales (impuestos, sueldos de
+    estructura). Sin borrado: se desactivan."""
+
+    list_display = ("nombre", "empresa", "activa", "creado_en")
+    list_filter = ("activa", "empresa")
+    inlines = (ClaveRepartoSucursalInline,)

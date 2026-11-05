@@ -1830,3 +1830,51 @@ class ArqueoDisponibilidades(models.Model):
 
     def __str__(self) -> str:
         return f"Arqueo {self.fecha:%d/%m/%Y %H:%M}"
+
+
+class ClaveReparto(models.Model):
+    """Porcentajes para repartir un egreso comun entre las sucursales de una
+    empresa (impuestos, sueldos de estructura).
+
+    No cambia como se guarda un egreso: al repartir se registra un egreso por
+    sucursal con su parte, que es la misma convencion que tesoreria ya usaba a
+    mano (y el importador de planillas). Asi el resultado por sucursal, el
+    libro de efectivo y el banco se leen igual que siempre.
+    """
+
+    empresa = models.ForeignKey(
+        "cashops.Empresa",
+        on_delete=models.PROTECT,
+        related_name="claves_reparto",
+    )
+    nombre = models.CharField(max_length=80)
+    activa = models.BooleanField(default=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["empresa_id", "nombre"]
+        constraints = [
+            models.UniqueConstraint(fields=["empresa", "nombre"], name="unique_clave_reparto_por_empresa"),
+        ]
+
+    def __str__(self) -> str:
+        return self.nombre
+
+
+class ClaveRepartoSucursal(models.Model):
+    clave = models.ForeignKey(ClaveReparto, on_delete=models.CASCADE, related_name="partes")
+    sucursal = models.ForeignKey("cashops.Sucursal", on_delete=models.PROTECT, related_name="+")
+    porcentaje = models.DecimalField(max_digits=5, decimal_places=2)
+
+    class Meta:
+        ordering = ["id"]
+        constraints = [
+            models.UniqueConstraint(fields=["clave", "sucursal"], name="unique_sucursal_por_clave_reparto"),
+            models.CheckConstraint(
+                condition=Q(porcentaje__gt=0) & Q(porcentaje__lte=100),
+                name="clave_reparto_porcentaje_valido",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.sucursal} {self.porcentaje} %"

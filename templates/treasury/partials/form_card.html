@@ -47,7 +47,7 @@
       {{ hidden }}
     {% endfor %}
     {% for field in form.visible_fields %}
-      <div class="field"{% if form.conditional_bank_account and field.name == form.bank_account_field_name %} data-bank-account-row{% if not form.show_bank_account_field %} hidden{% endif %}{% endif %}{% if form.conditional_sucursal and field.name == form.sucursal_field_name %} data-sucursal-row{% if not form.show_sucursal_field %} hidden{% endif %}{% endif %}{% if form.conditional_periodo and field.name == form.periodo_field_name %} data-periodo-row{% if not form.show_sucursal_field %} hidden{% endif %}{% endif %}>
+      <div class="field"{% if form.conditional_bank_account and field.name == form.bank_account_field_name %} data-bank-account-row{% if not form.show_bank_account_field %} hidden{% endif %}{% endif %}{% if form.conditional_sucursal and field.name == form.sucursal_field_name %} data-sucursal-row{% if not form.show_sucursal_field %} hidden{% endif %}{% endif %}{% if form.conditional_periodo and field.name == form.periodo_field_name %} data-periodo-row{% if not form.show_sucursal_field %} hidden{% endif %}{% endif %}{% if form.conditional_sucursal and field.name == "clave_reparto" %} data-reparto-row{% if not form.show_sucursal_field %} hidden{% endif %}{% endif %}>
         <label for="{{ field.id_for_label }}">{{ field.label }}</label>
         {{ field }}
         {% if field.help_text %}
@@ -98,6 +98,14 @@
             periodoRow.hidden = !show;
             periodoTarget.disabled = !show;
             if (!show) periodoTarget.value = "";
+          }
+          // Repartir entre sucursales solo tiene sentido donde hay sucursal.
+          const repartoRow = document.querySelector("[data-reparto-row]");
+          const repartoTarget = repartoRow ? repartoRow.querySelector("select") : null;
+          if (repartoRow && repartoTarget) {
+            repartoRow.hidden = !show;
+            repartoTarget.disabled = !show;
+            if (!show) repartoTarget.value = "";
           }
         };
         source.addEventListener("change", sync);

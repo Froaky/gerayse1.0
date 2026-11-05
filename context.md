@@ -4,6 +4,33 @@ Last updated: 2026-10-21
 
 ## Current Session
 
+### Reparto de egresos entre sucursales (2026-11-06)
+
+- Pedido de Tais (04/11, confirmado 06/11): impuestos de ARMADI con la clave Terminal 27,
+  Yo Helados 4, Centro 25, EB1 34, EB2 10; sueldos de estructura (Maria, Nacho, Ariel, Rafael,
+  Macarena) en partes iguales entre todos los locales, con la heladeria.
+- Decision: repartir = registrar UN egreso POR SUCURSAL con su parte (convencion que tesoreria
+  ya usaba a mano, p. ej. "Sueldos (Ariel)" 4 x 750 mil, y el importador de planillas). Ninguna
+  lectura cambia (resultado por sucursal, libro de efectivo, banco). Opcion OPTIMA para el
+  pedido; no se toca el modelo de egreso.
+- Modelos `ClaveReparto` (empresa, nombre, activa) + `ClaveRepartoSucursal` (sucursal,
+  porcentaje), migracion 0038. Semilla 0039: crea "Impuestos" y "Sueldos de estructura" solo si
+  existen TERM-01, YH-05, CENT-02, EB1-03, EB2-04 de una misma empresa (prod/staging); la
+  panaderia PP-OV-06 queda afuera (no es un local; supuesto, editable). Admin con inline que
+  exige 100 % y sucursales de la empresa; sin borrado (se desactivan).
+- `treasury/reparto.py`: `repartir_importe` (centavos, la ultima parte se lleva el redondeo,
+  ninguna parte negativa ni de $ 0), `validar_clave` (activa, suma 100, empresa, sucursales
+  activas, se valida al usar), token por parte = uuid5(token del form, sucursal) -> reenviar
+  no duplica.
+- Servicios `register_egreso_tesoreria_repartido` y `create_bank_movement_repartido` (atomicos,
+  todo o nada). El debito repartido: solo DEBITO, no RETIRO, cuenta de la misma empresa.
+- UI: campo "Repartir entre sucursales" en Egreso de tesoreria y en el ALTA de movimiento
+  bancario (no en editar); en banco se oculta con la sucursal en creditos. El selector muestra
+  los porcentajes. Sin claves en la empresa, el campo no aparece (Vivre).
+- No cubierto: repartir un movimiento ya cargado; facturas (CuentaPorPagar).
+- Tests: `treasury/tests_reparto.py` (26). Suite 1410 OK (6 skipped). Probado en local con
+  datos ficticios (egreso de caja fuerte y debito de banco).
+
 ### Pedidos de Tais del 04/11: validaciones y PDF economico (2026-11-04)
 
 - Rama `fix/pedidos-tais-2026-11-04` desde `main`. Dos slices, un commit cada uno.
