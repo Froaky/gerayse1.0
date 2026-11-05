@@ -4067,7 +4067,19 @@ def build_disponibilidades_snapshot(year: int, month: int, sucursal=None, empres
     saldo_inicial_efectivo = Decimal("0.00")
     saldos_iniciales_bancarios = {}  # Dict {str(id): combined_saldo}
 
-    if sucursal:
+    # Sin ningun cierre anterior en el alcance, el saldo inicial es el que dice
+    # la historia (caja fuerte y bancos hasta el dia anterior), no 0. En
+    # produccion no se habia cerrado nunca un mes y octubre de Vivre arrancaba
+    # en 0 cuando la caja fuerte venia en -11,8 M. Con algun cierre se sigue
+    # usando la foto congelada del cierre, como siempre.
+    saldo_inicial_desde_cierre = closings_prev.exists()
+    dia_anterior = first_day - timedelta(days=1)
+
+    if not saldo_inicial_desde_cierre:
+        saldo_inicial_efectivo = _central_cash_balance_until(
+            reference_date=dia_anterior, sucursal=sucursal, empresa_ids=empresa_ids
+        )
+    elif sucursal:
         cp = closings_prev.first()
         if cp:
             saldo_inicial_efectivo = cp.saldo_final_efectivo
@@ -4107,8 +4119,11 @@ def build_disponibilidades_snapshot(year: int, month: int, sucursal=None, empres
     total_bancos_final = Decimal("0.00")
 
     for acc in bank_accounts:
-        initial = Decimal(saldos_iniciales_bancarios.get(str(acc.id), "0.00"))
-        
+        if saldo_inicial_desde_cierre:
+            initial = Decimal(saldos_iniciales_bancarios.get(str(acc.id), "0.00"))
+        else:
+            initial = _bank_balance_until(acc, dia_anterior)["balance"]
+
         m_period = MovimientoBancario.objects.filter(
             cuenta_bancaria=acc,
             estado=MovimientoBancario.Estado.REGISTRADO,
@@ -4138,6 +4153,8 @@ def build_disponibilidades_snapshot(year: int, month: int, sucursal=None, empres
         "first_day": first_day,
         "last_day": last_day,
         "saldo_inicial_efectivo": saldo_inicial_efectivo,
+        "saldo_inicial_desde_cierre": saldo_inicial_desde_cierre,
+        "dia_anterior": dia_anterior,
         "cash_in": cash_in,
         "cash_out": cash_out,
         "saldo_final_efectivo": saldo_final_efectivo,
