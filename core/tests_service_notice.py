@@ -203,11 +203,13 @@ class InterruptorDesdeElAdminTests(TestCase):
         self.Config.objects.create(aviso_vencimiento_activo=True)
         self.assertEqual(self.Config.objects.count(), 1)
 
-    def test_fuera_de_la_ventana_no_consulta_la_base_por_la_configuracion(self):
+    def test_fuera_de_la_ventana_consulta_la_configuracion_una_sola_vez(self):
+        # Desde el interruptor de servicio vencido la fila se lee en cada pedido
+        # (puede estar tildado cualquier dia), pero es UNA consulta por pk.
         self.client.force_login(self.admin)
         with _con_fecha(date(2026, 10, 15)):
             self.client.get(reverse("cashops:dashboard"))  # calienta sesion y contexto
-            with self.assertNumQueries(0):
+            with self.assertNumQueries(1):
                 from core.service_notice import service_notice_for
 
                 self.assertIsNone(service_notice_for(self.admin))
@@ -235,3 +237,126 @@ class InterruptorDesdeElAdminTests(TestCase):
         self.client.force_login(self.root)
         self.assertEqual(self.client.get(reverse("admin:core_configuracionsistema_add")).status_code, 403)
         self.assertEqual(self.client.get(reverse("admin:core_configuracionsistema_delete", args=[1])).status_code, 403)
+
+
+class ServicioVencidoTests(TestCase):
+    """Interruptor "Servicio vencido" (09/11/2026): el aviso mensual desaparece pasado el 9
+    porque el sistema no sabe si pagaron. Cuando no pagaron, el superusuario lo tilda y el
+    cartel sale en rojo todos los dias hasta que lo destilde. Lo que se fija aca:
+
+    1. Que salga cualquier dia y le gane al aviso mensual, aunque este apagado por entorno o
+       por el admin (es una decision explicita de quien cobra).
+    2. Que lo vea la administracion del cliente (lectura de tesoreria), que con el aviso
+       mensual no lo veia, y que NO lo vean los cajeros.
+    3. Que el texto siga siendo formal, sin fecha (no puede decir un mes equivocado) y sin
+       hablar de los datos.
+    """
+
+    def setUp(self):
+        from core.models import ConfiguracionSistema
+        from users.models import PermissionModule, RolePermission
+
+        self.Config = ConfiguracionSistema
+        self.empresa = Empresa.objects.create(nombre="Empresa Vencida SA")
+        admin_rol = Role.objects.create(code="ADMIN", name="Administrador")
+        tesoreria_rol = Role.objects.create(code="TESORERIA", name="Tesoreria")
+        RolePermission.objects.create(
+            role=tesoreria_rol, module=PermissionModule.TREASURY, can_read=True, can_write=True
+        )
+        cajero_rol = Role.objects.create(code="OPERADOR", name="Operador")
+        self.admin = User.objects.create_user(username="admin_venc", password="test", role=admin_rol)
+        self.tesoreria = User.objects.create_user(username="teso_venc", password="test", role=tesoreria_rol)
+        self.cajero = User.objects.create_user(username="caja_venc", password="test", role=cajero_rol)
+        for usuario in (self.admin, self.tesoreria, self.cajero):
+            usuario.empresas_permitidas.set([self.empresa])
+
+    def _marcar_vencido(self, vencido=True):
+        configuracion = self.Config.cargar()
+        configuracion.servicio_vencido = vencido
+        configuracion.save()
+
+    def _html(self, usuario, url_name="cashops:dashboard", hoy=date(2026, 11, 15)):
+        self.client.force_login(usuario)
+        with _con_fecha(hoy):
+            respuesta = self.client.get(reverse(url_name))
+        self.assertEqual(respuesta.status_code, 200, url_name)
+        return respuesta.content.decode()
+
+    def test_por_defecto_el_servicio_esta_al_dia(self):
+        self.assertFalse(self.Config.cargar().servicio_vencido)
+        self.assertNotIn(MARCA, self._html(self.admin))
+
+    def test_sin_fila_vale_al_dia_y_no_la_crea(self):
+        self.assertEqual(self.Config.estado_de_avisos(), (True, False))
+        self.assertNotIn(MARCA, self._html(self.admin))
+        self.assertEqual(self.Config.objects.count(), 0)
+
+    def test_tildado_sale_en_rojo_pasado_el_9(self):
+        self._marcar_vencido()
+        for url_name in ("cashops:dashboard", "treasury:dashboard"):
+            html = self._html(self.admin, url_name)
+            self.assertIn(MARCA, html, url_name)
+            self.assertIn("service-notice--danger", html, url_name)
+            self.assertIn("se encuentra vencido", html, url_name)
+
+    def test_lo_ve_tesoreria_pero_no_el_cajero(self):
+        self._marcar_vencido()
+        html = self._html(self.tesoreria, "treasury:dashboard")
+        self.assertIn(MARCA, html)
+        self.assertIn("se encuentra vencido", html)
+        self.assertNotIn(MARCA, self._html(self.cajero))
+
+    def test_sin_tildar_tesoreria_sigue_sin_ver_el_aviso_mensual(self):
+        self.assertNotIn(MARCA, self._html(self.tesoreria, "treasury:dashboard", hoy=date(2026, 11, 7)))
+
+    def test_le_gana_al_aviso_mensual_dentro_de_la_ventana(self):
+        self._marcar_vencido()
+        html = self._html(self.admin, hoy=date(2026, 11, 3))
+        self.assertIn("se encuentra vencido", html)
+        self.assertNotIn("Quedan", html)
+
+    def test_sale_aunque_el_aviso_mensual_este_apagado(self):
+        configuracion = self.Config.cargar()
+        configuracion.aviso_vencimiento_activo = False
+        configuracion.servicio_vencido = True
+        configuracion.save()
+        with override_settings(SERVICE_NOTICE_DUE_DAY=0):
+            self.assertIn("se encuentra vencido", self._html(self.admin))
+
+    def test_destildado_vuelve_a_la_normalidad(self):
+        self._marcar_vencido()
+        self._marcar_vencido(False)
+        self.assertNotIn(MARCA, self._html(self.admin))
+        self.assertNotIn(MARCA, self._html(self.tesoreria, "treasury:dashboard"))
+
+    def test_es_un_aviso_formal_sin_fecha_ni_amenazas_sobre_los_datos(self):
+        from core.service_notice import build_overdue_notice
+
+        aviso = build_overdue_notice()
+        texto = aviso["texto"].lower()
+        self.assertEqual(aviso["nivel"], "danger")
+        self.assertIn("servicio de alojamiento", texto)
+        self.assertIn("regularice", texto)  # trato de usted
+        self.assertNotIn("base de datos", texto)
+        self.assertNotIn("datos", texto)
+        self.assertNotIn("mateo", texto)
+        for mes in ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
+                    "septiembre", "octubre", "noviembre", "diciembre"):
+            self.assertNotIn(mes, texto)
+
+    def test_no_bloquea_nada(self):
+        self._marcar_vencido()
+        self.assertEqual(self.client.get(reverse("treasury:dashboard")).status_code, 302)  # sin login, igual que siempre
+        html = self._html(self.tesoreria, "treasury:dashboard")
+        self.assertIn(MARCA, html)
+
+    def test_el_superusuario_lo_tilda_desde_el_admin(self):
+        root = User.objects.create_superuser(username="root_venc", password="test", email="rv@example.com")
+        self.client.force_login(root)
+        cambio = reverse("admin:core_configuracionsistema_change", args=[self.Config.cargar().pk])
+        self.assertContains(self.client.get(cambio), "Servicio vencido")
+        datos = {"aviso_vencimiento_activo": "on", "servicio_vencido": "on"}
+        self.assertEqual(self.client.post(cambio, datos).status_code, 302)
+        configuracion = self.Config.objects.get(pk=1)
+        self.assertTrue(configuracion.servicio_vencido)
+        self.assertTrue(configuracion.aviso_vencimiento_activo)

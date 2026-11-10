@@ -4,6 +4,31 @@ Last updated: 2026-10-21
 
 ## Current Session
 
+### Interruptor "Servicio vencido" (2026-11-09)
+
+- Pedido de Mateo (09/11): vencio el mantenimiento y no pagaron; el cartel mensual no hizo
+  efecto y sacarles permisos es demasiado. Por que no llego: lo ve solo `is_admin_role`
+  (tesoreria nunca lo vio) y pasado el 9 desaparece solo, porque el sistema no sabe si pagaron.
+- Contrato de cambio: OPTIMA = un tilde en `/admin/` que mantiene el cartel en rojo todos
+  los dias hasta destildarlo y que tambien ve quien lee tesoreria; ACEPTABLE = ampliar el
+  aviso mensual a tesoreria; NO OPTIMA = sacar permisos o bloquear (pega en los cajeros,
+  dificil de volver atras). Se hizo la OPTIMA. Solo lectura/bloqueo queda como paso aparte.
+- `core.ConfiguracionSistema.servicio_vencido` (default False, migracion `core/0002`, sin
+  datos) y `estado_de_avisos()` (los dos tildes en una consulta, sin crear la fila).
+  `service_notice_for`: con el tilde, `build_overdue_notice()` (danger, sin fecha a
+  proposito) para `is_admin_role` o `can_read_treasury()`; le gana al aviso mensual y no
+  depende de `SERVICE_NOTICE_DUE_DAY`. Sin el tilde todo sigue igual (tesoreria no ve el
+  mensual). Costo: ahora es 1 consulta por pk en cada pedido autenticado (antes 0 fuera de
+  la ventana); los permisos de tesoreria se miran solo con el tilde puesto.
+- Copy: "El servicio de alojamiento de Gerayse se encuentra vencido. Para evitar la
+  interrupcion del sistema, regularice el saldo pendiente a la brevedad." De usted, sin
+  nombres, sin hablar de datos. No bloquea nada.
+- Riesgo conocido: cualquier superusuario (incluida la cuenta `admin` compartida) puede
+  destildarlo; se resuelve rotando esa contrasena.
+- Tests: `ServicioVencidoTests` (11) en `core/tests_service_notice.py`; el test de 0
+  consultas fuera de la ventana pasa a 1. Suite 1441 OK (6 skipped), `makemigrations
+  --check` sin cambios. PRODUCCION.md explica como usarlo.
+
 ### Eliminar caja trabada por una deuda con pagos: link a la deuda (2026-11-05)
 
 - Pedido (05/11): al eliminar una caja, el aviso "La deuda #N originada en esta caja tiene pagos

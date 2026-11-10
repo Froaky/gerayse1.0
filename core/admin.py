@@ -9,7 +9,7 @@ from .models import ConfiguracionSistema
 class ConfiguracionSistemaAdmin(admin.ModelAdmin):
     """Una sola fila, solo para superusuarios: se edita, no se agrega ni se borra."""
 
-    fields = ("aviso_vencimiento_activo",)
+    fields = ("aviso_vencimiento_activo", "servicio_vencido")
 
     def changelist_view(self, request, extra_context=None):
         # Con una sola fila, el listado sobra: se entra directo a editarla.

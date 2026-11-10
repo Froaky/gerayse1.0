@@ -66,3 +66,17 @@ modelo nuevo (`core.ConfiguracionSistema`, una sola fila) y lleva migracion
 (activo). Ojo: `SERVICE_NOTICE_DUE_DAY=0` sigue apagandolo por entorno y manda sobre el
 interruptor, asi que para que el interruptor mande hay que dejar la variable en `9` (o
 borrarla).
+
+**Servicio vencido (cuando no pagaron).** Pasado el 9 el aviso mensual desaparece solo.
+Si el saldo no se pago, un superusuario entra a `/admin/` -> "Configuracion del sistema"
+y tilda "Servicio vencido". Desde ese momento, todos los dias y arriba de todas las
+pantallas, sale en rojo: "El servicio de alojamiento de Gerayse se encuentra vencido.
+Para evitar la interrupcion del sistema, regularice el saldo pendiente a la brevedad."
+
+- Lo ven el administrador y todo usuario con lectura de tesoreria (la administracion del
+  cliente, que con el aviso mensual no lo veia). Los cajeros no.
+- Le gana al aviso mensual y no depende de `SERVICE_NOTICE_DUE_DAY` ni del otro tilde.
+- No tiene fecha a proposito: si queda tildado mas de un mes, no dice un mes equivocado.
+- No bloquea ninguna operacion. Cuando pagan, se destilda y listo.
+- Migracion `core/0002`: agrega la columna con default destildado; no toca datos.
+- Ojo: lo puede destildar cualquier superusuario, incluida la cuenta `admin` compartida.
