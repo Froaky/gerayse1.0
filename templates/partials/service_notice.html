@@ -3,6 +3,8 @@
   `service_notice` al contexto cuando estamos a 7 dias o menos del vencimiento
   Y el usuario es administrador (core/context_processors.py ->
   core/service_notice.py). `nivel` es warning (del 2 al 5) o danger (del 6 al 9).
+  Con "Servicio vencido" tildado en /admin/ llega siempre en danger, tambien a
+  quien lee tesoreria.
 
   Los estilos viven aca y no en las shells porque las shells operativas
   (cashops, treasury) no cargan gerayse.css y este cartel tiene que verse

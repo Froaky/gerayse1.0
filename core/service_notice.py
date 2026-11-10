@@ -18,6 +18,14 @@ El copy es un aviso administrativo formal (trato de usted, sin nombres propios):
 habla del "servicio de alojamiento" y de "regularizar el saldo", nunca de "la
 base de datos". Es un aviso sobre la continuidad del servicio, no una amenaza
 sobre los datos.
+
+Servicio vencido (interruptor en /admin/, ``ConfiguracionSistema.servicio_vencido``):
+cuando el saldo no se pago, el superusuario lo tilda y el cartel sale en rojo
+todos los dias, diga lo que diga el calendario, hasta que lo destilde. Ahi si se
+afirma que esta vencido, porque lo dice quien cobra. Lo ven el administrador y
+quien tiene lectura de tesoreria (la administracion del cliente); los cajeros
+no. No bloquea ninguna operacion y no depende de ``SERVICE_NOTICE_DUE_DAY`` ni
+del aviso mensual: es una decision explicita.
 """
 from __future__ import annotations
 
@@ -96,15 +104,38 @@ def build_service_notice(*, hoy: date | None = None, dia_vencimiento: int | None
     return {"nivel": nivel, "vence": vence, "dias": dias, "texto": texto}
 
 
+TEXTO_SERVICIO_VENCIDO = (
+    "El servicio de alojamiento de Gerayse se encuentra vencido. "
+    "Para evitar la interrupción del sistema, regularice el saldo pendiente a la brevedad."
+)
+
+
+def build_overdue_notice() -> dict:
+    """Cartel de servicio vencido: siempre rojo y sin fecha, para no decir un mes equivocado
+    si el interruptor queda tildado mas de un mes."""
+    return {"nivel": "danger", "vence": None, "dias": None, "texto": TEXTO_SERVICIO_VENCIDO}
+
+
+def _ve_el_servicio_vencido(user) -> bool:
+    if getattr(user, "is_admin_role", False):
+        return True
+    puede_leer_tesoreria = getattr(user, "can_read_treasury", None)
+    return bool(puede_leer_tesoreria and puede_leer_tesoreria())
+
+
 def service_notice_for(user, *, hoy: date | None = None) -> dict | None:
-    """Aviso para este usuario, o ``None`` si no le corresponde verlo."""
-    if not getattr(user, "is_authenticated", False) or not getattr(user, "is_admin_role", False):
+    """Aviso para este usuario, o ``None`` si no le corresponde verlo.
+
+    Una sola consulta por pedido (la fila de configuracion), y los permisos de
+    tesoreria se miran solo si el servicio esta marcado como vencido.
+    """
+    if not getattr(user, "is_authenticated", False):
         return None
-    aviso = build_service_notice(hoy=hoy)
-    if aviso is None:
-        return None  # fuera de la ventana: ni siquiera se consulta la base
     from core.models import ConfiguracionSistema
 
-    if not ConfiguracionSistema.aviso_vencimiento_habilitado():
+    aviso_mensual_activo, servicio_vencido = ConfiguracionSistema.estado_de_avisos()
+    if servicio_vencido and _ve_el_servicio_vencido(user):
+        return build_overdue_notice()
+    if not getattr(user, "is_admin_role", False) or not aviso_mensual_activo:
         return None
-    return aviso
+    return build_service_notice(hoy=hoy)

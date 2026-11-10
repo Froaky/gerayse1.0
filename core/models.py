@@ -16,6 +16,15 @@ class ConfiguracionSistema(models.Model):
             "no se muestra a ningun administrador. Volver a tildarlo lo reactiva."
         ),
     )
+    servicio_vencido = models.BooleanField(
+        "Servicio vencido",
+        default=False,
+        help_text=(
+            "Si se tilda, todos los dias se muestra en rojo a la administracion y a tesoreria "
+            "que el servicio de alojamiento esta vencido, hasta que se destilde. No bloquea "
+            "ninguna operacion."
+        ),
+    )
 
     class Meta:
         verbose_name = "configuración del sistema"
@@ -37,5 +46,17 @@ class ConfiguracionSistema(models.Model):
     @classmethod
     def aviso_vencimiento_habilitado(cls) -> bool:
         """Lectura sin escribir: una sola consulta, y sin fila vale el default (activo)."""
-        valor = cls.objects.filter(pk=1).values_list("aviso_vencimiento_activo", flat=True).first()
-        return True if valor is None else valor
+        return cls.estado_de_avisos()[0]
+
+    @classmethod
+    def estado_de_avisos(cls) -> tuple[bool, bool]:
+        """``(aviso mensual activo, servicio vencido)`` en una sola consulta, sin crear la fila.
+
+        Sin fila valen los defaults: aviso mensual activo y servicio al dia.
+        """
+        fila = (
+            cls.objects.filter(pk=1)
+            .values_list("aviso_vencimiento_activo", "servicio_vencido")
+            .first()
+        )
+        return (True, False) if fila is None else fila
