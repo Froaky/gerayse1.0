@@ -70,8 +70,8 @@ borrarla).
 **Servicio vencido (cuando no pagaron).** Pasado el 9 el aviso mensual desaparece solo.
 Si el saldo no se pago, un superusuario entra a `/admin/` -> "Configuracion del sistema"
 y tilda "Servicio vencido". Desde ese momento, todos los dias y arriba de todas las
-pantallas, sale en rojo: "El servicio de alojamiento de Gerayse se encuentra vencido.
-Para evitar la interrupcion del sistema, regularice el saldo pendiente a la brevedad."
+pantallas, sale en rojo: "El servicio de alojamiento de Gerayse se encuentra vencido."
+Nada mas: sin fecha y sin pedido de pago en el cartel.
 
 - Lo ven el administrador y todo usuario con lectura de tesoreria (la administracion del
   cliente, que con el aviso mensual no lo veia). Los cajeros no.

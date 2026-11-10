@@ -20,9 +20,10 @@ Last updated: 2026-10-21
   depende de `SERVICE_NOTICE_DUE_DAY`. Sin el tilde todo sigue igual (tesoreria no ve el
   mensual). Costo: ahora es 1 consulta por pk en cada pedido autenticado (antes 0 fuera de
   la ventana); los permisos de tesoreria se miran solo con el tilde puesto.
-- Copy: "El servicio de alojamiento de Gerayse se encuentra vencido. Para evitar la
-  interrupcion del sistema, regularice el saldo pendiente a la brevedad." De usted, sin
-  nombres, sin hablar de datos. No bloquea nada.
+- Copy: "El servicio de alojamiento de Gerayse se encuentra vencido." y nada mas (Mateo,
+  10/11: "dejalo al cartel hasta vencido nomas"; se saco "Para evitar la interrupcion del
+  sistema, regularice el saldo pendiente a la brevedad."). Sin nombres, sin hablar de datos.
+  No bloquea nada.
 - Riesgo conocido: cualquier superusuario (incluida la cuenta `admin` compartida) puede
   destildarlo; se resuelve rotando esa contrasena.
 - Tests: `ServicioVencidoTests` (11) en `core/tests_service_notice.py`; el test de 0

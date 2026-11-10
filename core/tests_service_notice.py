@@ -335,8 +335,9 @@ class ServicioVencidoTests(TestCase):
         aviso = build_overdue_notice()
         texto = aviso["texto"].lower()
         self.assertEqual(aviso["nivel"], "danger")
-        self.assertIn("servicio de alojamiento", texto)
-        self.assertIn("regularice", texto)  # trato de usted
+        self.assertEqual(
+            aviso["texto"], "El servicio de alojamiento de Gerayse se encuentra vencido."
+        )
         self.assertNotIn("base de datos", texto)
         self.assertNotIn("datos", texto)
         self.assertNotIn("mateo", texto)

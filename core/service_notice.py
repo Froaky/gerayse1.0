@@ -104,10 +104,7 @@ def build_service_notice(*, hoy: date | None = None, dia_vencimiento: int | None
     return {"nivel": nivel, "vence": vence, "dias": dias, "texto": texto}
 
 
-TEXTO_SERVICIO_VENCIDO = (
-    "El servicio de alojamiento de Gerayse se encuentra vencido. "
-    "Para evitar la interrupción del sistema, regularice el saldo pendiente a la brevedad."
-)
+TEXTO_SERVICIO_VENCIDO = "El servicio de alojamiento de Gerayse se encuentra vencido."
 
 
 def build_overdue_notice() -> dict:
