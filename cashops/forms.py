@@ -131,10 +131,12 @@ class CajaAperturaForm(forms.Form):
             if not is_cashops_admin(self.actor):
                 self.fields["usuario"].help_text = "La caja se abre a tu nombre."
             if getattr(self.actor, "usuario_fijo", False) and getattr(self.actor, "sucursal_base_id", None):
+                # Su base y los otros locales donde trabaja; arranca en la base.
                 self.fields["sucursal"].initial = self.actor.sucursal_base_id
-                self.fields["sucursal"].queryset = Sucursal.objects.filter(
-                    pk=self.actor.sucursal_base_id, activa=True
-                )
+                locales = self.actor.locales_de_trabajo()
+                if empresa_ids is not None:
+                    locales = locales.filter(empresa_id__in=empresa_ids)
+                self.fields["sucursal"].queryset = locales
             elif empresa_ids is not None:
                 self.fields["sucursal"].queryset = Sucursal.objects.filter(
                     activa=True, empresa_id__in=empresa_ids
@@ -160,8 +162,14 @@ class CajaAperturaForm(forms.Form):
             and getattr(usuario, "usuario_fijo", False)
         ):
             base_sucursal_id = getattr(usuario, "sucursal_base_id", None)
-            if base_sucursal_id and sucursal and sucursal.id != base_sucursal_id:
-                self.add_error("sucursal", "El usuario fijo solo puede abrir cajas en su sucursal base.")
+            if (
+                base_sucursal_id
+                and sucursal
+                and not usuario.locales_de_trabajo().filter(pk=sucursal.id).exists()
+            ):
+                self.add_error(
+                    "sucursal", "El usuario fijo solo puede abrir cajas en su sucursal base o en sus otros locales."
+                )
         return cleaned_data
 
 
@@ -400,8 +408,14 @@ class BoxEditForm(forms.Form):
             and getattr(usuario, "usuario_fijo", False)
         ):
             base_sucursal_id = getattr(usuario, "sucursal_base_id", None)
-            if base_sucursal_id and sucursal and sucursal.id != base_sucursal_id:
-                self.add_error("sucursal", "El usuario fijo solo puede operar en su sucursal base.")
+            if (
+                base_sucursal_id
+                and sucursal
+                and not usuario.locales_de_trabajo().filter(pk=sucursal.id).exists()
+            ):
+                self.add_error(
+                    "sucursal", "El usuario fijo solo puede operar en su sucursal base o en sus otros locales."
+                )
         return cleaned_data
 
 
