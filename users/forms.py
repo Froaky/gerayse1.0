@@ -60,8 +60,8 @@ class PersonalForm(forms.ModelForm):
         queryset=Sucursal.objects.filter(activa=True).order_by("nombre"),
         required=False,
         widget=forms.CheckboxSelectMultiple,
-        label="Otros locales donde ficha asistencia",
-        help_text="Además de su sucursal base. Vacío = ficha solo en su sucursal base, sin poder elegir otra.",
+        label="Otros locales donde trabaja (abre caja y ficha)",
+        help_text="Además de su sucursal base. Ahí puede abrir caja y fichar asistencia, eligiendo el local. Vacío = solo su sucursal base.",
     )
 
     class Meta:
@@ -198,8 +198,8 @@ class UserAccessForm(forms.ModelForm):
         queryset=Sucursal.objects.filter(activa=True).order_by("nombre"),
         required=False,
         widget=forms.CheckboxSelectMultiple,
-        label="Otros locales donde ficha asistencia",
-        help_text="Además de su sucursal base. Vacío = ficha solo en su sucursal base, sin poder elegir otra.",
+        label="Otros locales donde trabaja (abre caja y ficha)",
+        help_text="Además de su sucursal base. Ahí puede abrir caja y fichar asistencia, eligiendo el local. Vacío = solo su sucursal base.",
     )
 
     class Meta:

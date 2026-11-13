@@ -134,7 +134,7 @@ class ElegirLocalAlFicharTests(FichajeTestCase):
         for formulario in (PersonalForm, UserAccessForm):
             with self.subTest(formulario=formulario.__name__):
                 campo = formulario(instance=self.cajero).fields["sucursales_asistencia"]
-                self.assertEqual(campo.label, "Otros locales donde ficha asistencia")
+                self.assertEqual(campo.label, "Otros locales donde trabaja (abre caja y ficha)")
         form = UserAccessForm(
             {"role": self.operator_role.pk, "usuario_fijo": "on", "sucursal_base": self.terminal.pk,
              "empresa_principal": self.armadi.pk, "empresas_permitidas": [self.armadi.pk],

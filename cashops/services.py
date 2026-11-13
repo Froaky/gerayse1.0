@@ -1476,8 +1476,11 @@ def open_box(*, user, turno: Turno, sucursal: Sucursal, fecha_operativa, monto_i
         base_sucursal_id = getattr(user, "sucursal_base_id", None)
         if base_sucursal_id is None:
             raise ValidationError({"sucursal": "El usuario fijo necesita sucursal base."})
-        if sucursal.id != base_sucursal_id:
-            raise ValidationError({"sucursal": "El usuario fijo solo puede abrir cajas en su sucursal base."})
+        # Su base o los otros locales donde trabaja (pedido del 13/11).
+        if not user.locales_de_trabajo().filter(pk=sucursal.id).exists():
+            raise ValidationError(
+                {"sucursal": "El usuario fijo solo puede abrir cajas en su sucursal base o en sus otros locales."}
+            )
 
     turno = Turno.objects.select_for_update().select_related("empresa").get(pk=turno.pk)
     if Caja.objects.filter(

@@ -1572,10 +1572,16 @@ def register_box_expense_debt_view(request, box_id: int):
     _require_cashops_write(request)
     box = _get_box_for_request(request, box_id)
     puede_caja_cerrada = can_load_debt_on_closed_box(request.user)
-    sucursales_deuda = request.user.sucursales_para_deuda().filter(empresa_id=box.sucursal.empresa_id)
+    # El local de la caja siempre es una opcion: si el cajero abrio caja en
+    # otro de sus locales (no la base), la deuda tiene que poder ir ahi.
+    sucursales_deuda = Sucursal.objects.filter(
+        Q(pk__in=request.user.sucursales_para_deuda().values("pk")) | Q(pk=box.sucursal_id),
+        activa=True,
+        empresa_id=box.sucursal.empresa_id,
+    ).order_by("nombre")
     form = GastoComoDeudaForm(
         request.POST or None,
-        initial={"fecha_factura": box.fecha_operativa},
+        initial={"fecha_factura": box.fecha_operativa, "sucursal": box.sucursal_id},
         sucursales=sucursales_deuda,
     )
     aviso_duplicado = ""

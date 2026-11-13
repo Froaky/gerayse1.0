@@ -4,6 +4,22 @@ Last updated: 2026-10-21
 
 ## Current Session
 
+### Cajero fijo en mas de un local: abre caja y ficha (2026-11-13)
+
+- Pedido de tesoreria (13/11): un cajero pasa de un local a otro y el lunes tiene que poder abrir
+  caja en el nuevo. El usuario fijo solo abria caja en su sucursal base (una sola); fichar ya
+  aceptaba "Otros locales donde ficha asistencia" (D14).
+- Decision: el MISMO campo (`User.sucursales_asistencia`, sin cambiar el nombre interno) pasa a
+  ser "Otros locales donde trabaja (abre caja y ficha)" y vale tambien para abrir caja.
+  `User.locales_de_trabajo()` = base + esos; `locales_de_fichaje()` lo llama. En produccion nadie
+  lo tenia cargado: no cambia nada a ningun usuario hasta que se tilde un local.
+- `open_box`, `CajaAperturaForm` (selector con sus locales, arranca en la base, filtrado por las
+  empresas del alcance) y `BoxEditForm` aceptan base u otros locales; un local no tildado se
+  sigue rechazando. La deuda cargada desde la caja ofrece siempre el local de la caja (antes
+  ofrecia solo base + "Sucursales adicionales para cargar deuda") y arranca en el.
+- Migracion `users/0022` solo cambia el nombre visible. Manual de administracion actualizado.
+  Tests: `cashops/tests_otros_locales.py` (9); suite 1450 OK (6 skipped). Sin cargo (Mateo).
+
 ### Interruptor "Servicio vencido" (2026-11-09)
 
 - Pedido de Mateo (09/11): vencio el mantenimiento y no pagaron; el cartel mensual no hizo

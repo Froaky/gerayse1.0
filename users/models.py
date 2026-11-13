@@ -115,14 +115,16 @@ class User(AbstractUser):
         related_name="usuarios_carga_deuda",
         verbose_name="Sucursales adicionales para cargar deuda",
     )
-    # EP-14: locales EXTRA (ademas de la base) donde el usuario puede fichar
-    # asistencia. Vacio = ficha solo en su sucursal base, sin poder elegir otra.
-    # Va aparte de sucursales_deuda para no habilitar deuda de rebote.
+    # Locales EXTRA (ademas de la base) donde el usuario trabaja: ficha
+    # asistencia (EP-14 D14) y, si es usuario fijo, tambien abre caja (pedido
+    # de tesoreria del 13/11: un cajero que pasa de un local a otro). Vacio =
+    # solo su sucursal base. Va aparte de sucursales_deuda para no habilitar
+    # deuda de rebote.
     sucursales_asistencia = models.ManyToManyField(
         "cashops.Sucursal",
         blank=True,
         related_name="usuarios_fichaje_asistencia",
-        verbose_name="Otros locales donde ficha asistencia",
+        verbose_name="Otros locales donde trabaja (abre caja y ficha)",
     )
 
     class Meta:
@@ -227,15 +229,20 @@ class User(AbstractUser):
             ids.add(self.sucursal_base_id)
         return Sucursal.objects.filter(pk__in=ids, activa=True).order_by("nombre")
 
-    def locales_de_fichaje(self):
-        """Locales activos donde el usuario ficha asistencia: su sucursal base mas
-        los otros que tenga asignados. Con uno solo, el local queda fijo."""
+    def locales_de_trabajo(self):
+        """Locales activos donde el usuario trabaja: su sucursal base mas los
+        otros que tenga asignados. Ahi ficha asistencia y, si es usuario fijo,
+        abre caja. Con uno solo, el local queda fijo."""
         from cashops.models import Sucursal
 
         ids = set(self.sucursales_asistencia.values_list("pk", flat=True))
         if self.sucursal_base_id:
             ids.add(self.sucursal_base_id)
         return Sucursal.objects.filter(pk__in=ids, activa=True).order_by("nombre")
+
+    def locales_de_fichaje(self):
+        """Locales donde ficha asistencia: los mismos en los que trabaja."""
+        return self.locales_de_trabajo()
 
     def can_read_config(self) -> bool:
         return self.has_module_permission(PermissionModule.CONFIG, "read")
