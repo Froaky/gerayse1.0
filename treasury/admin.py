@@ -62,7 +62,15 @@ class MovimientoCajaCentralAdmin(TreasuryReadOnlyAdminMixin, admin.ModelAdmin):
 
 @admin.register(Proveedor)
 class ProveedorAdmin(TreasuryNoDeleteAdminMixin, admin.ModelAdmin):
-    list_display = ("razon_social", "identificador_fiscal", "contacto", "activo", "es_interno", "creado_en")
+    list_display = (
+        "razon_social",
+        "identificador_fiscal",
+        "contacto",
+        "activo",
+        "es_interno",
+        "sucursal_vendedora",
+        "creado_en",
+    )
     list_filter = ("activo", "es_interno")
     search_fields = ("razon_social", "identificador_fiscal", "contacto", "email")
     autocomplete_fields = ("creado_por",)

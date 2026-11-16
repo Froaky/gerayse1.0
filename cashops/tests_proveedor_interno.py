@@ -15,7 +15,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import connection
 from django.urls import reverse
 
-from cashops.models import Caja
+from cashops.models import Caja, Sucursal
 from cashops.services import (
     TEXTO_DEUDA_PROVEEDOR_INTERNO,
     annul_box,
@@ -26,12 +26,14 @@ from cashops.services import (
 from cashops.tests import CashopsTestCase
 from treasury.models import CuentaPorPagar, MovimientoCajaCentral, PagoTesoreria
 from treasury.services import (
+    build_economic_period_snapshot,
     create_payable_category,
     create_supplier,
     register_cash_payment,
     register_central_cash_movement,
     register_payment,
     set_supplier_internal,
+    set_supplier_selling_branch,
 )
 from users.models import Role
 
@@ -125,6 +127,29 @@ class GastoComoDeudaInternoTests(InternoCajaBase):
         self.caja.refresh_from_db()
         self.assertEqual(self.caja.saldo_esperado, saldo_caja)
         self.assertEqual(MovimientoCajaCentral.objects.count(), boveda)
+
+    def test_cuenta_como_venta_interna_del_local_propio_de_la_panaderia(self):
+        # Pedido del 16/11/2026: lo que las cajeras cargan como deuda de la
+        # panaderia es venta de la panaderia, sin efectivo y sin caja propia.
+        local_panaderia = Sucursal.objects.create(
+            codigo="PAN-A", nombre="Panaderia propia", razon_social="ARMADI SRL", empresa=self.empresa_a
+        )
+        set_supplier_selling_branch(supplier=self.panaderia, sucursal=local_panaderia, actor=self.admin)
+
+        self._deuda("80.00")
+        self._deuda("15.00", proveedor=self.proveedor)
+
+        panaderia = build_economic_period_snapshot(
+            date_from=self.fecha_op, date_to=self.fecha_op, sucursal=local_panaderia
+        )
+        self.assertEqual(panaderia["internal_sales_total"], Decimal("80.00"))
+        self.assertEqual(panaderia["sales_total"], Decimal("80.00"))
+        self.assertFalse(Caja.objects.filter(sucursal=local_panaderia).exists())
+        cafeteria = build_economic_period_snapshot(
+            date_from=self.fecha_op, date_to=self.fecha_op, sucursal=self.branch_a
+        )
+        self.assertEqual(cafeteria["internal_sales_total"], Decimal("0.00"))
+        self.assertEqual(cafeteria["debt_period_total"], Decimal("95.00"))
 
     def test_reenviar_el_mismo_formulario_no_duplica_deuda_ni_cancelacion(self):
         token = uuid.uuid4()

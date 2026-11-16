@@ -32,6 +32,23 @@ class Proveedor(models.Model):
             "pagadas sin mover fondos."
         ),
     )
+    # Venta interna (pedido de tesoreria del 16/11/2026): la panaderia propia es
+    # tambien un local. Con este dato, cada factura que le carga a un local de
+    # su misma empresa cuenta como venta de ESTE local en la lectura economica,
+    # sin efectivo. Ninguna pantalla de la app lo edita: admin o
+    # `services.set_supplier_selling_branch`.
+    sucursal_vendedora = models.ForeignKey(
+        "cashops.Sucursal",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="proveedores_internos",
+        verbose_name="Local propio que vende",
+        help_text=(
+            "Solo para un proveedor interno: sus facturas a los locales de la misma "
+            "empresa cuentan como venta interna de este local, sin efectivo."
+        ),
+    )
     creado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -79,6 +96,10 @@ class Proveedor(models.Model):
         self.observaciones = (self.observaciones or "").strip()
         if not self.razon_social:
             raise ValidationError({"razon_social": "La razon social es obligatoria."})
+        if self.sucursal_vendedora_id and not self.es_interno:
+            raise ValidationError(
+                {"sucursal_vendedora": "Solo un proveedor interno puede tener un local propio que vende."}
+            )
 
     def __str__(self) -> str:
         return self.razon_social

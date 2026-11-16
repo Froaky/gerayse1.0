@@ -162,7 +162,10 @@
       <div class="summary">
         <span class="muted">Ventas base</span>
         <strong>{{ economic_snapshot.sales_total|money }}</strong>
-        <small class="muted">Ventas caja y digitales del periodo</small>
+        <small class="muted">
+          Ventas caja y digitales del periodo{% if economic_snapshot.internal_sales_total %}.
+          Incluye {{ economic_snapshot.internal_sales_total|money }} de ventas internas a locales propios, sin efectivo{% endif %}
+        </small>
       </div>
       <div class="summary">
         <span class="muted">Gasto caja</span>

@@ -4,6 +4,38 @@ Last updated: 2026-10-21
 
 ## Current Session
 
+### Venta interna: las facturas del proveedor interno son ventas de su local (2026-11-16)
+
+- Pedido de tesoreria (16/11): lo que los locales cargan como deuda de la panaderia propia
+  (proveedor interno, US-3.20) tiene que contar como venta de la panaderia, sin efectivo. Hasta
+  ahora contaba solo como gasto del local que compra; el local de la panaderia mostraba solo las
+  ventas de caja que tesoreria carga a mano (lo que le cobra a la otra empresa).
+- Decision: lectura DERIVADA, sin cajas ni movimientos. `Proveedor.sucursal_vendedora` (FK a
+  Sucursal, null, "Local propio que vende") une al proveedor interno con su local.
+  `services._internal_sales`: facturas del proveedor interno con local propio cargadas a un local
+  de la MISMA empresa, con las reglas con que esa factura cuenta como gasto (no anulada, con
+  rubro, importe total, `periodo_referencia`). `build_economic_period_snapshot` las suma a
+  `sales_total` y las informa aparte en `internal_sales_total`. Van sin rubro de venta (fila "Sin
+  rubro"): no activan objetivos.
+- Efectos: el local propio las ve como ventas; al local que compra no le cambia nada; en el total
+  de la empresa suben las ventas y el resultado deja de contar dos veces el costo (la venta
+  compensa el gasto), y el general vuelve a ser la suma de sus locales. Es RETROACTIVO: cambia la
+  lectura de todos los meses con facturas del proveedor interno. Anular o editar la factura
+  corrige la venta sola. Queda afuera la factura a un local de otra empresa (se cobra de verdad y
+  entra por caja) y la que no tiene sucursal.
+- Pantalla: "Ventas base" del dashboard de tesoreria aclara "Incluye $ X de ventas internas a
+  locales propios, sin efectivo"; el PDF Situacion economica suma una nota con el importe. El
+  detalle por rubro y por grupo no cambia (lista egresos).
+- Configuracion: ninguna pantalla de la app edita el local propio; se define en el admin
+  (`ProveedorAdmin`) o con `services.set_supplier_selling_branch`. Solo un proveedor interno
+  puede tenerlo (`Proveedor.clean`); `set_supplier_internal(es_interno=False)` lo limpia.
+  En produccion hay que definirlo despues del deploy: OVEJA NEGRA ARMADI SRL -> su sucursal.
+- Lo que NO hace: no crea ventas de caja ni toca la caja fuerte. Lo que la otra empresa paga en
+  efectivo se sigue cargando a mano como caja del local de la panaderia.
+- Migracion `treasury/0040_proveedor_sucursal_vendedora` (AddField nullable, no toca datos).
+- Tests: `treasury/tests_venta_interna.py` (19) y 1 en `cashops/tests_proveedor_interno.py`;
+  suite 1470 OK (6 skipped); `makemigrations --check` sin cambios.
+
 ### Cajero fijo en mas de un local: abre caja y ficha (2026-11-13)
 
 - Pedido de tesoreria (13/11): un cajero pasa de un local a otro y el lunes tiene que poder abrir

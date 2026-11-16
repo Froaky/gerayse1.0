@@ -34,6 +34,10 @@ NOTA_SOLO_VENTAS = (
     "No se listan los rubros que en el período solo tuvieron ventas, sin egresos; "
     "esas ventas sí cuentan en el total de ventas."
 )
+NOTA_VENTAS_INTERNAS = (
+    "Las ventas incluyen {importe} de ventas internas: facturas de un local propio "
+    "a otros locales de la empresa, sin movimiento de efectivo."
+)
 
 
 def _plural(cantidad: int, singular: str, plural: str) -> str:
@@ -93,6 +97,10 @@ def _notas(snapshot: dict) -> list[NoteBlock]:
     notas = [NOTA_EGRESOS, NOTA_PORCENTAJE]
     if any(_solo_ventas(item) for item in snapshot["items"]):
         notas.append(NOTA_SOLO_VENTAS)
+
+    internas = snapshot["internal_sales_total"]
+    if internas:
+        notas.append(NOTA_VENTAS_INTERNAS.format(importe=format_value(internas)))
 
     egresos = snapshot["treasury_unmapped_expenses_count"]
     if egresos:
