@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Count, DateField, Q, Sum
+from django.db.models import Count, DateField, F, Q, Sum
 from django.db.models.functions import TruncMonth
 from django.utils import timezone
 
@@ -278,10 +278,40 @@ def set_supplier_internal(*, supplier: Proveedor, es_interno: bool, actor=None) 
         return locked
     locked.es_interno = es_interno
     locked.actualizado_por = actor
+    update_fields = ["es_interno", "actualizado_por", "actualizado_en"]
+    if not es_interno and locked.sucursal_vendedora_id:
+        # Un proveedor que deja de ser interno no puede seguir generando ventas
+        # internas (y `Proveedor.clean` rechazaria editarlo con el local puesto).
+        locked.sucursal_vendedora = None
+        update_fields.append("sucursal_vendedora")
     # Sin full_clean a proposito, igual que toggle_supplier: solo cambia un
     # booleano, y un dato legacy invalido en otro campo (un email mal cargado)
     # no puede dejar al comando con las deudas canceladas y el proveedor sin marcar.
-    locked.save(update_fields=["es_interno", "actualizado_por", "actualizado_en"])
+    locked.save(update_fields=update_fields)
+    return locked
+
+
+@transaction.atomic
+def set_supplier_selling_branch(*, supplier: Proveedor, sucursal, actor=None) -> Proveedor:
+    """Define (o quita, con `sucursal=None`) el local propio que vende de un
+    proveedor interno: desde ahi, sus facturas a los locales de la misma empresa
+    cuentan como venta interna de ese local (`_internal_sales`).
+
+    No mueve plata ni toca deudas: solo cambia como se leen en la situacion
+    economica, tambien hacia atras. Ninguna pantalla de la app lo edita.
+    """
+    _require_actor(actor)
+    locked = Proveedor.objects.select_for_update().get(pk=supplier.pk)
+    if sucursal is not None and not locked.es_interno:
+        raise ValidationError(
+            {"sucursal_vendedora": "Solo un proveedor interno puede tener un local propio que vende."}
+        )
+    if locked.sucursal_vendedora_id == (sucursal.pk if sucursal is not None else None):
+        return locked
+    locked.sucursal_vendedora = sucursal
+    locked.actualizado_por = actor
+    # Sin full_clean, por lo mismo que set_supplier_internal.
+    locked.save(update_fields=["sucursal_vendedora", "actualizado_por", "actualizado_en"])
     return locked
 
 
@@ -2981,6 +3011,37 @@ def _collapse_economic_items_by_group(items: list, *, sales_total: Decimal) -> l
     return display
 
 
+def _internal_sales(*, period_from: date, period_end_exclusive: date, sucursal=None, empresa_ids=None):
+    """Ventas internas del periodo: el espejo de las facturas de un proveedor interno.
+
+    Cada factura que un proveedor interno con local propio
+    (`Proveedor.sucursal_vendedora`) le carga a un local de su misma empresa es,
+    para ese local propio, una venta sin efectivo. Entra con las mismas reglas
+    con que esa factura cuenta como gasto del local que compra: no anulada, con
+    rubro, por su importe total y en su periodo de referencia. Asi, en el total
+    de la empresa la venta y el gasto se compensan, y el resultado no cuenta dos
+    veces el costo de lo que la panaderia les entrega a las cafeterias.
+
+    No hay movimiento de caja ni registro propio: se deriva de la deuda, y
+    anularla o editarla corrige la venta sola. Queda afuera la factura a un
+    local de OTRA empresa (esa se cobra de verdad y entra como venta de caja) y
+    la que no tiene sucursal.
+    """
+    sales = CuentaPorPagar.objects.exclude(estado=CuentaPorPagar.Estado.ANULADA).filter(
+        periodo_referencia__gte=period_from,
+        periodo_referencia__lt=period_end_exclusive,
+        categoria__rubro_operativo__isnull=False,
+        proveedor__es_interno=True,
+        proveedor__sucursal_vendedora__isnull=False,
+        sucursal__empresa_id=F("proveedor__sucursal_vendedora__empresa_id"),
+    )
+    if sucursal is not None:
+        sales = sales.filter(proveedor__sucursal_vendedora=sucursal)
+    elif empresa_ids is not None:
+        sales = sales.filter(proveedor__sucursal_vendedora__empresa_id__in=empresa_ids)
+    return sales
+
+
 def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=None, empresa_ids=None) -> dict:
     if date_to < date_from:
         raise ValidationError({"fecha_hasta": "La fecha hasta no puede ser anterior a la fecha desde."})
@@ -3046,6 +3107,28 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
         sales_total += total
         sales_by_rubro[rubro_id] = sales_by_rubro.get(rubro_id, Decimal("0.00")) + total
         sales_by_rubro_month[(rubro_id, period_month)] = total
+
+    # Ventas internas (ver `_internal_sales`): suman a las ventas base, sin rubro
+    # de venta, y se informan aparte para poder leer las ventas sin ellas.
+    internal_sales_total = Decimal("0.00")
+    internal_sales_rows = (
+        _internal_sales(
+            period_from=period_from,
+            period_end_exclusive=period_end_exclusive,
+            sucursal=sucursal,
+            empresa_ids=empresa_ids,
+        )
+        .order_by()
+        .values("periodo_referencia")
+        .annotate(total=Sum("importe_total"))
+    )
+    for row in internal_sales_rows:
+        total = row["total"] or Decimal("0.00")
+        month_key = (None, _first_day_of_month(row["periodo_referencia"]))
+        internal_sales_total += total
+        sales_by_rubro[None] = sales_by_rubro.get(None, Decimal("0.00")) + total
+        sales_by_rubro_month[month_key] = sales_by_rubro_month.get(month_key, Decimal("0.00")) + total
+    sales_total += internal_sales_total
 
     cash_expense_total = expenses.aggregate(total=Sum("monto"))["total"] or Decimal("0.00")
     cash_expense_by_rubro = {
@@ -3311,6 +3394,8 @@ def build_economic_period_snapshot(*, date_from: date, date_to: date, sucursal=N
         "period_to": period_to,
         "sucursal": sucursal,
         "sales_total": sales_total,
+        # Parte de `sales_total` que es venta interna, sin efectivo.
+        "internal_sales_total": internal_sales_total,
         "cash_expense_total": cash_expense_total,
         "treasury_expense_total": treasury_expense_total,
         "debt_period_total": debt_period_total,
